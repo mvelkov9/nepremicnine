@@ -329,7 +329,10 @@
           </select>
         </div>
 
-        <div v-if="viewMode === 'transactions' && regionMunicipalities.length" class="control-field">
+        <div
+          v-if="viewMode === 'transactions' && regionMunicipalities.length"
+          class="control-field"
+        >
           <label class="form-label">{{ t('map.municipalityFilter') }}</label>
           <select v-model="selectedMunicipality" class="form-input" :disabled="loading">
             <option value="">{{ t('map.allMunicipalities') }}</option>

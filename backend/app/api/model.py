@@ -72,9 +72,7 @@ async def model_runs(
     _user: User = Depends(get_current_user),
 ):
     """Get model training run history."""
-    result = await db.execute(
-        select(ModelRun).order_by(ModelRun.created_at.desc()).limit(50)
-    )
+    result = await db.execute(select(ModelRun).order_by(ModelRun.created_at.desc()).limit(50))
     runs = result.scalars().all()
     return [
         {

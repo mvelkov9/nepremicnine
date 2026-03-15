@@ -47,9 +47,7 @@
   const filteredMunicipalities = computed(() => {
     if (!municipalityQuery.value) return []
     const q = municipalityQuery.value.toLowerCase()
-    return allMunicipalities.value
-      .filter((m) => m.toLowerCase().includes(q))
-      .slice(0, 10)
+    return allMunicipalities.value.filter((m) => m.toLowerCase().includes(q)).slice(0, 10)
   })
 
   async function fetchMunicipalities() {
@@ -225,31 +223,66 @@
         <!-- Property feature checkboxes -->
         <div class="checkbox-grid">
           <label class="checkbox-label">
-            <input type="checkbox" v-model.number="form.novogradnja" :true-value="1" :false-value="0" />
+            <input
+              type="checkbox"
+              v-model.number="form.novogradnja"
+              :true-value="1"
+              :false-value="0"
+            />
             {{ t('predict.novogradnja') }}
           </label>
           <label class="checkbox-label">
-            <input type="checkbox" v-model.number="form.has_garaza" :true-value="1" :false-value="0" />
+            <input
+              type="checkbox"
+              v-model.number="form.has_garaza"
+              :true-value="1"
+              :false-value="0"
+            />
             {{ t('predict.hasGaraza') }}
           </label>
           <label class="checkbox-label">
-            <input type="checkbox" v-model.number="form.has_klet" :true-value="1" :false-value="0" />
+            <input
+              type="checkbox"
+              v-model.number="form.has_klet"
+              :true-value="1"
+              :false-value="0"
+            />
             {{ t('predict.hasKlet') }}
           </label>
           <label class="checkbox-label">
-            <input type="checkbox" v-model.number="form.has_shramba" :true-value="1" :false-value="0" />
+            <input
+              type="checkbox"
+              v-model.number="form.has_shramba"
+              :true-value="1"
+              :false-value="0"
+            />
             {{ t('predict.hasShramba') }}
           </label>
           <label class="checkbox-label">
-            <input type="checkbox" v-model.number="form.has_terasa" :true-value="1" :false-value="0" />
+            <input
+              type="checkbox"
+              v-model.number="form.has_terasa"
+              :true-value="1"
+              :false-value="0"
+            />
             {{ t('predict.hasTerasa') }}
           </label>
           <label class="checkbox-label">
-            <input type="checkbox" v-model.number="form.stavba_je_dokoncana" :true-value="1" :false-value="0" />
+            <input
+              type="checkbox"
+              v-model.number="form.stavba_je_dokoncana"
+              :true-value="1"
+              :false-value="0"
+            />
             {{ t('predict.stavbaDokoncana') }}
           </label>
           <label class="checkbox-label">
-            <input type="checkbox" v-model.number="form.ddv_vkljucen" :true-value="1" :false-value="0" />
+            <input
+              type="checkbox"
+              v-model.number="form.ddv_vkljucen"
+              :true-value="1"
+              :false-value="0"
+            />
             {{ t('predict.ddvVkljucen') }}
           </label>
         </div>
@@ -281,7 +314,11 @@
         <div class="features-grid">
           <div v-for="(val, key) in result.features_used" :key="key" class="feature-item">
             <span class="feature-key">{{ key }}</span>
-            <span class="feature-val">{{ typeof val === 'number' ? val.toLocaleString('sl-SI', { maximumFractionDigits: 2 }) : val }}</span>
+            <span class="feature-val">{{
+              typeof val === 'number'
+                ? val.toLocaleString('sl-SI', { maximumFractionDigits: 2 })
+                : val
+            }}</span>
           </div>
         </div>
       </div>

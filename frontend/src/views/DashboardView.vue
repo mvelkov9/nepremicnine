@@ -180,7 +180,9 @@
 
   const importanceChartData = computed(() => {
     if (!featureImportance.value.length) return null
-    const sorted = [...featureImportance.value].sort((a, b) => b.importance - a.importance).slice(0, 15)
+    const sorted = [...featureImportance.value]
+      .sort((a, b) => b.importance - a.importance)
+      .slice(0, 15)
     return {
       labels: sorted.map((f) => f.feature),
       datasets: [

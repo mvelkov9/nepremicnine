@@ -1,4 +1,4 @@
-# Nepremičnine v0.2.0
+# Nepremičnine v0.2.1
 
 > Slovenian real estate price analysis & prediction platform — powered by machine learning on official ETN transaction data.
 
@@ -123,7 +123,7 @@ nepremicnine/
     ├── nginx.conf              # Reverse proxy + SPA + security headers
     ├── eslint.config.js        # ESLint flat config
     ├── src/
-    │   ├── views/              # 9 page components
+    │   ├── views/              # 10 page components
     │   ├── components/         # AppLayout (sidebar + nav)
     │   ├── stores/             # Pinia (auth, data, model, stats)
     │   ├── composables/        # useApi (axios + JWT refresh)
@@ -146,13 +146,17 @@ nepremicnine/
 | POST | `/api/data/upload` | admin | Upload ETN CSV files |
 | GET | `/api/data/datasets` | token | List uploaded datasets |
 | DELETE | `/api/data/datasets/{id}` | admin | Delete a dataset |
-| POST | `/api/data/prepare` | admin | Process ETN pairs for training |
+| POST | `/api/data/prepare-etn-kpp` | admin | Prepare single ETN pair |
+| POST | `/api/data/prepare-etn-kpp-bulk` | admin | Prepare bulk ETN pairs |
+| POST | `/api/data/prepare-train` | admin | Manual column mapping |
 | GET | `/api/data/preview/{id}` | token | Preview dataset rows |
 | **Stats** | | | |
 | GET | `/api/stats/overview` | token | Dataset statistics summary |
 | GET | `/api/stats/regions` | token | Per-region statistics |
 | GET | `/api/stats/price-distribution` | token | Price distribution data |
 | GET | `/api/stats/trend` | token | Price trend over time |
+| GET | `/api/stats/map-transactions` | token | Individual transactions with location |
+| GET | `/api/stats/municipalities-by-region` | token | Municipalities in a region |
 | **Regions** | | | |
 | GET | `/api/regions/municipalities` | token | Municipality list |
 | GET | `/api/regions/regions` | token | Statistical regions |
@@ -167,6 +171,9 @@ nepremicnine/
 | **Model** | | | |
 | GET | `/api/model/info` | token | Model metrics & info |
 | GET | `/api/model/importance` | token | Feature importance |
+| GET | `/api/model/runs` | token | Model training history |
+| DELETE | `/api/model/runs/clear` | admin | Clear training history |
+| GET | `/api/model/diagnostics` | token | Diagnostic metrics |
 | **Analysis** | | | |
 | POST | `/api/analysis/score` | token | Score listings vs model |
 | **Admin** | | | |

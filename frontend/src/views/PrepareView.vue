@@ -176,10 +176,7 @@
         <button :class="['tab-btn', { active: etnMode === 'single' }]" @click="etnMode = 'single'">
           {{ t('prepare.singleEtn') }}
         </button>
-        <button
-          :class="['tab-btn', { active: etnMode === 'manual' }]"
-          @click="etnMode = 'manual'"
-        >
+        <button :class="['tab-btn', { active: etnMode === 'manual' }]" @click="etnMode = 'manual'">
           {{ t('prepare.manualMapping') }}
         </button>
       </div>

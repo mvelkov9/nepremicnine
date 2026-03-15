@@ -310,16 +310,18 @@ async def map_transactions(
         size = float(area.loc[row.name]) if row.name in area.index else None
         price_per_m2 = float(price / size) if price and size and size > 0 else None
 
-        transactions.append({
-            "lat": float(row["latitude"]),
-            "lon": float(row["longitude"]),
-            "price_eur": float(price) if pd.notna(price) else None,
-            "size_m2": float(row.get("size_m2", 0)) if pd.notna(row.get("size_m2")) else None,
-            "price_per_m2": round(price_per_m2, 2) if price_per_m2 else None,
-            "municipality": str(row.get("municipality", "")),
-            "property_type": str(row.get("property_type", "")),
-            "year": str(row.get("transaction_year", row.get("source_label", "")))[:4],
-            "rooms": float(row.get("rooms", 0)) if pd.notna(row.get("rooms")) else None,
-        })
+        transactions.append(
+            {
+                "lat": float(row["latitude"]),
+                "lon": float(row["longitude"]),
+                "price_eur": float(price) if pd.notna(price) else None,
+                "size_m2": float(row.get("size_m2", 0)) if pd.notna(row.get("size_m2")) else None,
+                "price_per_m2": round(price_per_m2, 2) if price_per_m2 else None,
+                "municipality": str(row.get("municipality", "")),
+                "property_type": str(row.get("property_type", "")),
+                "year": str(row.get("transaction_year", row.get("source_label", "")))[:4],
+                "rooms": float(row.get("rooms", 0)) if pd.notna(row.get("rooms")) else None,
+            }
+        )
 
     return {"transactions": transactions, "count": len(transactions)}

@@ -1,4 +1,4 @@
-# Nepremičnine v0.1 — Master Tracking
+# Nepremičnine v0.2 — Master Tracking
 
 ## Overview
 
@@ -6,7 +6,7 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 
 | Item | Value |
 |------|-------|
-| **Version** | 0.1.0 |
+| **Version** | 0.2.1 |
 | **Repo** | [github.com/mvelkov9/nepremicnine](https://github.com/mvelkov9/nepremicnine) |
 | **Backend** | FastAPI + Python 3.13 + PostgreSQL 17 + SQLAlchemy 2.x async |
 | **Frontend** | Vue 3 Composition API + Pinia + pnpm 9, Vite 6 |
@@ -26,6 +26,18 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 | [Phase 3](PHASE_3_ML_PIPELINE.md) | ML Pipeline — training, prediction, ARQ | ✅ Complete | `1b227cb` |
 | [Phase 4](PHASE_4_FEATURES.md) | Features — map, diagnostics, admin, i18n | ✅ Complete | `fc18742` |
 | [Phase 5](PHASE_5_PRODUCTION.md) | Production — Docker, CI/CD, deploy | ✅ Complete | `153f140` |
+
+## Changelog
+
+### v0.2.1
+- Fix CI pipeline: ruff format (backend) + Prettier (frontend) formatting issues
+- Version bump across all config files
+
+### v0.2.0
+- **Backend**: Add model training history endpoints (GET/DELETE /model/runs), map transactions endpoint with region/year/municipality filters, manual column mapping endpoint (POST /data/prepare-train)
+- **Frontend**: New PrepareView (3-tab data preparation), PredictionView expanded with 9 fields + municipality autocomplete, MapView transaction-level view with price/m² gradient + region/year filters, DashboardView with type filter + feature importance & per-type R² charts
+- **Locales**: 60+ new i18n keys in both Slovenian and English
+- **Version**: 0.1.2 → 0.2.0
 
 ## Architecture
 
