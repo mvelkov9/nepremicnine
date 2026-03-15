@@ -1,5 +1,5 @@
 <script setup>
-  import { ref, onMounted, computed, watch } from 'vue'
+  import { ref, onMounted, computed } from 'vue'
   import { useI18n } from 'vue-i18n'
   import { useDataStore } from '../stores/data'
   import api from '../composables/useApi'
@@ -13,8 +13,6 @@
 
   // ETN pair mode
   const etnMode = ref('bulk') // 'bulk' | 'single' | 'manual'
-  const detectedPairs = ref([])
-  const selectedPairs = ref([])
   const singlePosli = ref('')
   const singleDelistavb = ref('')
 
@@ -36,69 +34,61 @@
     dataStore.fetchDatasets()
   })
 
-  watch(datasets, () => {
-    detectEtnPairs()
-  })
+  // --- Dataset role & year helpers (mirrors v1 logic) ---
 
-  function detectEtnPairs() {
-    const files = datasets.value
-    const pairs = []
-    const posliFiles = files.filter(
-      (f) =>
-        f.original_name.toLowerCase().includes('posli') ||
-        f.original_name.toLowerCase().includes('posle'),
-    )
-    const delistavbFiles = files.filter(
-      (f) =>
-        f.original_name.toLowerCase().includes('deli') ||
-        f.original_name.toLowerCase().includes('delistav'),
-    )
-
-    for (const posli of posliFiles) {
-      // Extract year from filename
-      const yearMatch = posli.original_name.match(/(\d{4})/)
-      const year = yearMatch ? yearMatch[1] : ''
-
-      // Find matching delistavb by year
-      const match = delistavbFiles.find((d) => {
-        const dYear = d.original_name.match(/(\d{4})/)
-        return dYear && dYear[1] === year
-      })
-
-      if (match) {
-        pairs.push({
-          year,
-          posli_path: posli.stored_path,
-          posli_name: posli.original_name,
-          delistavb_path: match.stored_path,
-          delistavb_name: match.original_name,
-          selected: true,
-        })
-      }
-    }
-
-    detectedPairs.value = pairs
-    selectedPairs.value = pairs.filter((p) => p.selected)
+  function datasetRole(item) {
+    const text = `${item.original_name || ''} ${item.stored_path || ''}`.toLowerCase()
+    if (text.includes('posli') || text.includes('posle')) return 'posli'
+    if (text.includes('delistavb') || text.includes('deli_stavb')) return 'delistavb'
+    if (text.includes('zemljisca') || text.includes('zemljisc')) return 'zemljisca'
+    return 'other'
   }
+
+  function datasetYear(item) {
+    const match = `${item.original_name || ''} ${item.stored_path || ''}`.match(/(20\d{2})/)
+    return match ? Number(match[1]) : null
+  }
+
+  // Reactive computed: auto-detects ETN pairs grouped by year
+  const detectedPairs = computed(() => {
+    const byYear = new Map()
+    for (const item of datasets.value) {
+      const role = datasetRole(item)
+      const year = datasetYear(item)
+      if (!year || (role !== 'posli' && role !== 'delistavb' && role !== 'zemljisca')) continue
+      if (!byYear.has(year))
+        byYear.set(year, { year, posli: null, delistavb: null, zemljisca: null, selected: true })
+      const row = byYear.get(year)
+      // Keep latest upload per role (highest id)
+      if (role === 'posli' && (!row.posli || item.id > row.posli.id)) row.posli = item
+      if (role === 'delistavb' && (!row.delistavb || item.id > row.delistavb.id))
+        row.delistavb = item
+      if (role === 'zemljisca' && (!row.zemljisca || item.id > row.zemljisca.id))
+        row.zemljisca = item
+    }
+    return Array.from(byYear.values())
+      .filter((r) => r.posli && r.delistavb)
+      .sort((a, b) => a.year - b.year)
+  })
 
   async function prepareEtnBulk() {
     loading.value = true
     error.value = ''
     result.value = null
     try {
-      const pairs = detectedPairs.value
-        .filter((p) => p.selected)
-        .map((p) => ({
-          posli_csv_path: p.posli_path,
-          delistavb_csv_path: p.delistavb_path,
-          year: p.year,
-          label: p.year,
-        }))
-
-      if (!pairs.length) {
+      const selected = detectedPairs.value.filter((p) => p.selected)
+      if (!selected.length) {
         error.value = t('prepare.noPairs')
         return
       }
+
+      const pairs = selected.map((p) => ({
+        posli_csv_path: p.posli.stored_path,
+        delistavb_csv_path: p.delistavb.stored_path,
+        ...(p.zemljisca ? { zemljisca_csv_path: p.zemljisca.stored_path } : {}),
+        year: String(p.year),
+        label: String(p.year),
+      }))
 
       const { data } = await api.post('/api/data/prepare-etn-kpp-bulk', { pairs })
       result.value = data
@@ -152,11 +142,6 @@
     detectedPairs.value[index].selected = !detectedPairs.value[index].selected
   }
 
-  function switchToBulk() {
-    etnMode.value = 'bulk'
-    detectEtnPairs()
-  }
-
   function getDatasetPaths() {
     return datasets.value.map((d) => ({
       label: d.original_name,
@@ -172,7 +157,7 @@
     <!-- Mode tabs -->
     <div class="card" style="margin-bottom: 1.5rem">
       <div class="mode-tabs">
-        <button :class="['tab-btn', { active: etnMode === 'bulk' }]" @click="switchToBulk()">
+        <button :class="['tab-btn', { active: etnMode === 'bulk' }]" @click="etnMode = 'bulk'">
           {{ t('prepare.autoEtn') }}
         </button>
         <button :class="['tab-btn', { active: etnMode === 'single' }]" @click="etnMode = 'single'">
@@ -218,8 +203,8 @@
                 <td>
                   <span class="badge-blue">{{ pair.year }}</span>
                 </td>
-                <td>{{ pair.posli_name }}</td>
-                <td>{{ pair.delistavb_name }}</td>
+                <td>{{ pair.posli.original_name }}</td>
+                <td>{{ pair.delistavb.original_name }}</td>
               </tr>
             </tbody>
           </table>

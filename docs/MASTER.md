@@ -6,7 +6,7 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 
 | Item | Value |
 |------|-------|
-| **Version** | 0.2.4 |
+| **Version** | 0.2.5 |
 | **Repo** | [github.com/mvelkov9/nepremicnine](https://github.com/mvelkov9/nepremicnine) |
 | **Backend** | FastAPI + Python 3.13 + PostgreSQL 17 + SQLAlchemy 2.x async |
 | **Frontend** | Vue 3 Composition API + Pinia + pnpm 9, Vite 6 |
@@ -28,6 +28,14 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 | [Phase 5](PHASE_5_PRODUCTION.md) | Production — Docker, CI/CD, deploy | ✅ Complete | `153f140` |
 
 ## Changelog
+
+### v0.2.5
+- Rewrite ETN pair detection: use reactive `computed` (like v1) instead of fragile `watch` + imperative function
+- Search both `original_name` AND `stored_path` for file role detection (posli/delistavb/zemljisca)
+- Restrict year regex to `/(20\d{2})/` to avoid false 4-digit matches
+- Pick latest upload per role per year (highest ID) when duplicates exist
+- Add zemljisca file support to bulk preparation (optional, passed to API when detected)
+- Version: 0.2.4 → 0.2.5
 
 ### v0.2.4
 - Fix PrepareView i18n: added missing locale keys (`autoEtn`, `singleEtn`, `manualMapping`, `autoEtnDesc`, `singleEtnDesc`, `columnMapping`, `prepareButton`, `outputRows`, `outputColumns`, `year`, `noPairsDetected`, `noPairs`, `invalidJson`) to both sl.json and en.json
