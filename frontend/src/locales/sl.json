@@ -64,5 +64,37 @@
     "confirm": "Potrdi",
     "search": "Iskanje",
     "noData": "Ni podatkov"
+  },
+  "model": {
+    "trainModel": "Urjenje modela",
+    "selectDataset": "Izberi nabor podatkov",
+    "trainButton": "Začni urjenje",
+    "training": "Urjenje...",
+    "currentModel": "Trenuten model",
+    "trainedAt": "Naučen ob",
+    "perTypeModels": "modelov po tipu",
+    "perTypeMetrics": "Metrike po tipu nepremičnine",
+    "propertyType": "Tip nepremičnine",
+    "featureImportance": "Pomembnost značilk",
+    "importance": "Pomembnost",
+    "medianError": "Mediana napake",
+    "noModel": "Model še ni naučen. Naložite podatke in začnite urjenje."
+  },
+  "predict": {
+    "title": "Napoved cene nepremičnine",
+    "size": "Velikost (m²)",
+    "rooms": "Število sob",
+    "yearBuilt": "Leto gradnje",
+    "floor": "Nadstropje",
+    "latitude": "GPS širina",
+    "longitude": "GPS dolžina",
+    "municipality": "Občina",
+    "propertyType": "Tip nepremičnine",
+    "predictButton": "Napovej ceno",
+    "result": "Rezultat napovedi",
+    "predictedPrice": "Napovedana cena",
+    "modelUsed": "Uporabljen model",
+    "history": "Zgodovina napovedi",
+    "date": "Datum"
   }
 }

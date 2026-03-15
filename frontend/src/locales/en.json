@@ -64,5 +64,37 @@
     "confirm": "Confirm",
     "search": "Search",
     "noData": "No data"
+  },
+  "model": {
+    "trainModel": "Train Model",
+    "selectDataset": "Select dataset",
+    "trainButton": "Start Training",
+    "training": "Training...",
+    "currentModel": "Current Model",
+    "trainedAt": "Trained at",
+    "perTypeModels": "per-type models",
+    "perTypeMetrics": "Per Property Type Metrics",
+    "propertyType": "Property Type",
+    "featureImportance": "Feature Importance",
+    "importance": "Importance",
+    "medianError": "Median Error",
+    "noModel": "No model trained yet. Upload data and start training."
+  },
+  "predict": {
+    "title": "Property Price Prediction",
+    "size": "Size (m²)",
+    "rooms": "Rooms",
+    "yearBuilt": "Year Built",
+    "floor": "Floor",
+    "latitude": "Latitude",
+    "longitude": "Longitude",
+    "municipality": "Municipality",
+    "propertyType": "Property Type",
+    "predictButton": "Predict Price",
+    "result": "Prediction Result",
+    "predictedPrice": "Predicted Price",
+    "modelUsed": "Model Used",
+    "history": "Prediction History",
+    "date": "Date"
   }
 }

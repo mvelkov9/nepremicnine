@@ -10,6 +10,9 @@ from app.api.auth import router as auth_router
 from app.api.data import router as data_router
 from app.api.regions import router as regions_router
 from app.api.stats import router as stats_router
+from app.api.train import router as train_router
+from app.api.predict import router as predict_router
+from app.api.model import router as model_router
 from app.config import get_settings
 from app.database import engine, Base
 
@@ -51,6 +54,9 @@ def create_app() -> FastAPI:
     app.include_router(data_router, prefix="/api")
     app.include_router(regions_router, prefix="/api")
     app.include_router(stats_router, prefix="/api")
+    app.include_router(train_router, prefix="/api")
+    app.include_router(predict_router, prefix="/api")
+    app.include_router(model_router, prefix="/api")
 
     return app
 

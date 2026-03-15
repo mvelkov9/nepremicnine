@@ -441,3 +441,47 @@ th { font-weight: 600; color: var(--text-muted); font-size: 12px; text-transform
   .main { padding: 16px; }
   .charts-grid { grid-template-columns: 1fr; }
 }
+
+/* ── Progress Bar ──────────────────────── */
+.progress-bar {
+  width: 100%;
+  height: 12px;
+  background: var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.progress-bar-fill {
+  height: 100%;
+  background: var(--primary);
+  border-radius: 6px;
+  transition: width 0.4s ease;
+}
+
+/* ── Forms ──────────────────────────────── */
+.form-label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 0.35rem;
+}
+.form-input {
+  width: 100%;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+  background: #fff;
+  color: var(--text);
+  transition: border-color 0.15s;
+}
+.form-input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+.error-text {
+  color: var(--danger);
+  font-size: 0.9rem;
+  font-weight: 500;
+}

@@ -36,8 +36,26 @@ services:
     volumes:
       - ./backend:/app
       - backend-data:/app/data
+      - backend-models:/app/models
     ports:
       - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: ["arq", "app.tasks.training_worker.WorkerSettings"]
+    env_file: .env
+    volumes:
+      - ./backend:/app
+      - backend-data:/app/data
+      - backend-models:/app/models
     depends_on:
       postgres:
         condition: service_healthy
@@ -61,3 +79,4 @@ services:
 volumes:
   pgdata:
   backend-data:
+  backend-models:
