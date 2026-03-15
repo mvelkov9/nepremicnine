@@ -14,6 +14,7 @@ import pandas as pd
 from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.impute import SimpleImputer
+from sklearn.inspection import permutation_importance
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
@@ -223,7 +224,21 @@ def _train_single_model(
     importance = {}
     try:
         feat_names = pipeline.named_steps["preprocessor"].get_feature_names_out()
-        importances = regressor.feature_importances_
+        try:
+            # Permutation importance on the test set is more reliable than
+            # built-in feature_importances_ because it reflects actual
+            # out-of-sample predictive contribution.
+            perm = permutation_importance(
+                pipeline,
+                X_test,
+                y_test,
+                n_repeats=3,
+                random_state=42,
+                n_jobs=1,
+            )
+            importances = perm.importances_mean
+        except Exception:
+            importances = regressor.feature_importances_
         importance = dict(zip([str(n) for n in feat_names], [float(v) for v in importances], strict=False))
     except Exception:
         pass

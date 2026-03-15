@@ -6,7 +6,7 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 
 | Item | Value |
 |------|-------|
-| **Version** | 0.2.5 |
+| **Version** | 0.3.0 |
 | **Repo** | [github.com/mvelkov9/nepremicnine](https://github.com/mvelkov9/nepremicnine) |
 | **Backend** | FastAPI + Python 3.13 + PostgreSQL 17 + SQLAlchemy 2.x async |
 | **Frontend** | Vue 3 Composition API + Pinia + pnpm 9, Vite 6 |
@@ -28,6 +28,11 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 | [Phase 5](PHASE_5_PRODUCTION.md) | Production — Docker, CI/CD, deploy | ✅ Complete | `153f140` |
 
 ## Changelog
+
+### v0.3.0
+- **ML improvement**: Replace built-in `feature_importances_` with permutation importance (`sklearn.inspection.permutation_importance`, `n_repeats=3` on test set) for more reliable, out-of-sample feature contribution scores; falls back to built-in importances if permutation step fails
+- **Tests**: Add `test_model.py` — four smoke tests for `train_from_csv` covering return keys, global metrics structure, non-empty importance dict, and model file persistence; uses synthetic in-memory CSV so no real data or DB needed
+- Version: 0.2.5 → 0.3.0
 
 ### v0.2.5
 - Rewrite ETN pair detection: use reactive `computed` (like v1) instead of fragile `watch` + imperative function
