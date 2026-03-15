@@ -106,3 +106,18 @@ async def list_jobs(
         )
         for j in jobs
     ]
+
+
+@router.delete("/jobs/clear", status_code=status.HTTP_200_OK)
+async def clear_jobs(
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(require_admin),
+):
+    """Delete all training job records."""
+    result = await db.execute(select(TrainingJob))
+    jobs = result.scalars().all()
+    count = len(jobs)
+    for j in jobs:
+        await db.delete(j)
+    await db.commit()
+    return {"deleted": count}

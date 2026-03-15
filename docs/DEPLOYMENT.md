@@ -126,3 +126,68 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 docker compose exec backend alembic upgrade head
 docker image prune -f
 ```
+
+## Custom Domain Setup (napoved-nepremicnin.com)
+
+### 1. DNS Configuration
+
+At your domain registrar, create an **A record**:
+
+| Type | Name | Value | TTL |
+|------|------|-------|-----|
+| A | `@` | `<your-vps-ip>` | 300 |
+| A | `www` | `<your-vps-ip>` | 300 |
+
+### 2. Host Nginx Config
+
+Create `/etc/nginx/sites-available/napoved-nepremicnin`:
+
+```nginx
+server {
+    listen 80;
+    server_name napoved-nepremicnin.com www.napoved-nepremicnin.com;
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 300s;
+        client_max_body_size 100M;
+    }
+}
+```
+
+```bash
+sudo ln -s /etc/nginx/sites-available/napoved-nepremicnin /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+### 3. SSL via Let's Encrypt
+
+```bash
+sudo certbot --nginx -d napoved-nepremicnin.com -d www.napoved-nepremicnin.com
+```
+
+Certbot will auto-configure HTTPS and redirect HTTP → HTTPS.
+
+### 4. Update CORS
+
+In your `.env`:
+
+```env
+CORS_ORIGINS=https://napoved-nepremicnin.com,https://www.napoved-nepremicnin.com,http://localhost:5173
+```
+
+Restart the backend:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml restart backend
+```
+
+### 5. Verify
+
+```bash
+curl -I https://napoved-nepremicnin.com/api/health
+```

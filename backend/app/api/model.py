@@ -1,4 +1,4 @@
-"""Model info routes — current model metadata, feature importance."""
+"""Model info routes — current model metadata, feature importance, diagnostics."""
 
 from __future__ import annotations
 
@@ -40,3 +40,21 @@ async def feature_importance(_user: User = Depends(get_current_user)):
         }
         for feat, val in items
     ]
+
+
+@router.get("/diagnostics")
+async def model_diagnostics(_user: User = Depends(get_current_user)):
+    """Get per-type and per-region model diagnostics."""
+    info = get_model_info()
+    if info is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No trained model found")
+
+    return {
+        "version": info.get("version"),
+        "trained_at": info.get("trained_at"),
+        "rows": info.get("rows"),
+        "global_metrics": info.get("global_metrics"),
+        "per_type_metrics": info.get("per_type_metrics", {}),
+        "per_region_metrics": info.get("per_region_metrics", {}),
+        "per_type_count": info.get("per_type_count", 0),
+    }

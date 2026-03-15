@@ -29,6 +29,25 @@ def _load_df(property_type: str | None = None) -> pd.DataFrame | None:
     return df
 
 
+def _effective_area(df: pd.DataFrame) -> pd.Series:
+    """Return uporabna_povrsina when available (>0), otherwise size_m2."""
+    area = df["size_m2"].copy()
+    if "uporabna_povrsina" in df.columns:
+        up = df["uporabna_povrsina"]
+        mask = up.notna() & (up > 0)
+        area.loc[mask] = up.loc[mask]
+    return area
+
+
+def _format_eur(val: float) -> str:
+    """Human-readable EUR: 150k, 1.2M etc."""
+    if val >= 1_000_000:
+        return f"{val / 1_000_000:.1f}M"
+    if val >= 1_000:
+        return f"{val / 1_000:.0f}k"
+    return f"{val:.0f}"
+
+
 @router.get("/overview")
 async def overview(
     property_type: str | None = None,
@@ -59,9 +78,12 @@ async def overview(
     }
 
     if "price_eur" in df.columns and "size_m2" in df.columns:
-        valid = df[(df["size_m2"] > 0)]
+        tmp = df[["price_eur"]].copy()
+        tmp["_area"] = _effective_area(df)
+        valid = tmp.dropna()
+        valid = valid[valid["_area"] > 0]
         if not valid.empty:
-            result["avg_price_per_m2"] = round(float((valid["price_eur"] / valid["size_m2"]).mean()), 2)
+            result["avg_price_per_m2"] = round(float((valid["price_eur"] / valid["_area"]).mean()), 2)
 
     if "municipality" in df.columns:
         muni_groups = df.groupby("municipality")
@@ -108,9 +130,13 @@ async def regions_stats(
             "avg_price_per_m2": None,
         }
         if "price_eur" in group.columns and "size_m2" in group.columns:
-            valid = group[group["size_m2"] > 0]
+            tmp = group[["price_eur"]].copy()
+            tmp["_area"] = _effective_area(group)
+            valid = tmp.dropna()
+            valid = valid[valid["_area"] > 0]
             if not valid.empty:
-                entry["avg_price_per_m2"] = round(float((valid["price_eur"] / valid["size_m2"]).mean()), 2)
+                entry["avg_price_per_m2"] = round(float((valid["price_eur"] / valid["_area"]).mean()), 2)
+                entry["median_price_per_m2"] = round(float((valid["price_eur"] / valid["_area"]).median()), 2)
         results.append(entry)
 
     return sorted(results, key=lambda x: x["count"], reverse=True)
@@ -127,11 +153,12 @@ async def price_distribution(
         return {"bins": [], "counts": [], "bin_labels": []}
 
     prices = df["price_eur"].dropna()
+    prices = prices[(prices > 0) & (prices < prices.quantile(0.99))]
     if prices.empty:
         return {"bins": [], "counts": [], "bin_labels": []}
 
     counts_arr, bin_edges = np.histogram(prices, bins=bins)
-    bin_labels = [f"{int(bin_edges[i])}-{int(bin_edges[i + 1])}" for i in range(len(counts_arr))]
+    bin_labels = [f"{_format_eur(bin_edges[i])}\u2013{_format_eur(bin_edges[i + 1])}" for i in range(len(counts_arr))]
 
     return {
         "bins": [float(b) for b in bin_edges],
@@ -167,16 +194,60 @@ async def trend(
             "count": len(group),
             "avg_price": round(float(group["price_eur"].mean()), 2) if "price_eur" in group.columns else None,
             "median_price": round(float(group["price_eur"].median()), 2) if "price_eur" in group.columns else None,
+            "avg_price_per_m2": None,
             "by_type": {},
         }
+        if "size_m2" in group.columns and "price_eur" in group.columns:
+            tmp = group[["price_eur"]].copy()
+            tmp["_area"] = _effective_area(group)
+            valid = tmp.dropna()
+            valid = valid[valid["_area"] > 0]
+            if not valid.empty:
+                entry["avg_price_per_m2"] = round(float((valid["price_eur"] / valid["_area"]).mean()), 2)
         if "property_type" in group.columns:
             for pt, pt_group in group.groupby("property_type"):
-                entry["by_type"][pt] = {
+                if len(pt_group) < 5:
+                    continue
+                pt_entry: dict = {
                     "count": len(pt_group),
                     "avg_price": round(float(pt_group["price_eur"].mean()), 2)
                     if "price_eur" in pt_group.columns
                     else None,
+                    "median_price": round(float(pt_group["price_eur"].median()), 2)
+                    if "price_eur" in pt_group.columns
+                    else None,
                 }
+                if "size_m2" in pt_group.columns and "price_eur" in pt_group.columns:
+                    pt_tmp = pt_group[["price_eur"]].copy()
+                    pt_tmp["_area"] = _effective_area(pt_group)
+                    pt_valid = pt_tmp.dropna()
+                    pt_valid = pt_valid[pt_valid["_area"] > 0]
+                    if not pt_valid.empty:
+                        pt_entry["median_price_per_m2"] = round(
+                            float((pt_valid["price_eur"] / pt_valid["_area"]).median()), 2
+                        )
+                entry["by_type"][pt] = pt_entry
         results.append(entry)
 
     return results
+
+
+@router.get("/municipalities-by-region")
+async def municipalities_by_region(
+    _user: User = Depends(get_current_user),
+):
+    """Return {region: [municipality, ...]} from training data."""
+    df = _load_df()
+    if df is None or "municipality" not in df.columns:
+        return {}
+
+    if "statistical_region" not in df.columns:
+        df["statistical_region"] = df["municipality"].apply(
+            lambda m: lookup_region(str(m)) if pd.notna(m) else "neznana"
+        )
+
+    mapping = df[["municipality", "statistical_region"]].dropna().drop_duplicates()
+    result: dict[str, list[str]] = {}
+    for region, group in mapping.groupby("statistical_region"):
+        result[str(region)] = sorted(group["municipality"].unique().tolist())
+    return result

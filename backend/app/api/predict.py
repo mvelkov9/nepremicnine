@@ -1,4 +1,4 @@
-"""Prediction routes — predict price, get history."""
+"""Prediction routes — predict price, get history, clear history."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.dependencies.auth import get_current_user
+from app.dependencies.auth import get_current_user, require_admin
 from app.models.prediction import PredictionLog
 from app.models.user import User
 from app.schemas.model import PredictRequest, PredictResponse
@@ -64,3 +64,18 @@ async def prediction_history(
         }
         for log in logs
     ]
+
+
+@router.delete("/history/clear", status_code=status.HTTP_200_OK)
+async def clear_history(
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(require_admin),
+):
+    """Delete all prediction history."""
+    result = await db.execute(select(PredictionLog))
+    logs = result.scalars().all()
+    count = len(logs)
+    for log in logs:
+        await db.delete(log)
+    await db.commit()
+    return {"deleted": count}

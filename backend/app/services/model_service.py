@@ -62,6 +62,23 @@ PERTYPE_CATEGORICAL = [f for f in CATEGORICAL_FEATURES if f != "property_type"]
 
 MIN_SAMPLES_PER_TYPE = 200
 
+# Core features to always keep even with low fill rates
+ALWAYS_INCLUDE_NUMERIC = {
+    "size_m2",
+    "year_built",
+    "novogradnja",
+    "has_klet",
+    "has_garaza",
+    "has_terasa",
+    "has_shramba",
+    "stavba_je_dokoncana",
+}
+
+ALWAYS_INCLUDE_CATEGORICAL = {
+    "municipality",
+    "lega_v_stavbi",
+}
+
 FEATURE_LABELS_SL: dict[str, str] = {
     "size_m2": "Velikost (m²)",
     "rooms": "Število sob",
@@ -90,6 +107,29 @@ FEATURE_LABELS_SL: dict[str, str] = {
 }
 
 MODEL_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "models")
+
+_MIN_FILL_RATE = 0.10
+
+
+def _filter_features(
+    df: pd.DataFrame,
+    candidate_numeric: list[str],
+    candidate_categorical: list[str],
+) -> tuple[list[str], list[str]]:
+    """Filter features by fill rate, keeping ALWAYS_INCLUDE even when sparse."""
+    numeric = [
+        c
+        for c in candidate_numeric
+        if c in df.columns
+        and (df[c].notna().mean() >= _MIN_FILL_RATE or (c in ALWAYS_INCLUDE_NUMERIC and df[c].notna().any()))
+    ]
+    categorical = [
+        c
+        for c in candidate_categorical
+        if c in df.columns
+        and (df[c].notna().mean() >= _MIN_FILL_RATE or (c in ALWAYS_INCLUDE_CATEGORICAL and df[c].notna().any()))
+    ]
+    return numeric, categorical
 
 
 def _adaptive_hyperparams(n_samples: int) -> dict:
@@ -226,10 +266,13 @@ def train_from_csv(
     y = df["price_eur"].values
     X = df.drop(columns=["price_eur"], errors="ignore")
 
+    # Filter features by fill rate
+    global_num, global_cat = _filter_features(X, NUMERIC_FEATURES, CATEGORICAL_FEATURES)
+
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
     # Global model
-    global_pipeline = _build_pipeline(NUMERIC_FEATURES, CATEGORICAL_FEATURES, len(X_train))
+    global_pipeline = _build_pipeline(global_num, global_cat, len(X_train))
     global_result = _train_single_model(
         global_pipeline,
         X_train,
@@ -259,7 +302,8 @@ def train_from_csv(
             if len(Xte) < 10:
                 continue
 
-            pt_pipeline = _build_pipeline(PERTYPE_NUMERIC, PERTYPE_CATEGORICAL, len(Xt))
+            pt_num, pt_cat = _filter_features(Xt, PERTYPE_NUMERIC, PERTYPE_CATEGORICAL)
+            pt_pipeline = _build_pipeline(pt_num, pt_cat, len(Xt))
             pt_result = _train_single_model(
                 pt_pipeline,
                 Xt,
@@ -269,7 +313,11 @@ def train_from_csv(
                 f"type:{ptype}",
                 progress_callback,
             )
-            per_type_models[ptype] = pt_pipeline
+            per_type_models[ptype] = {
+                "pipeline": pt_pipeline,
+                "numeric_features": pt_num,
+                "categorical_features": pt_cat,
+            }
             per_type_metrics[ptype] = pt_result["metrics"]
 
     # Per-region metrics (not separate models)
@@ -299,7 +347,13 @@ def train_from_csv(
     # Save artifact
     os.makedirs(MODEL_DIR, exist_ok=True)
     artifact = {
-        "version": "2.0",
+        "version": "3.5",
+        "global_model": {
+            "pipeline": global_pipeline,
+            "numeric_features": global_num,
+            "categorical_features": global_cat,
+        },
+        # Backward compat
         "global_pipeline": global_pipeline,
         "per_type_models": per_type_models,
         "region_medians": region_medians,
@@ -338,41 +392,176 @@ def load_model() -> dict | None:
     return joblib.load(model_path)
 
 
+def _coerce_binary(value: Any, default: int = 0) -> int:
+    """Coerce a value to a binary 0/1 flag."""
+    if value is None:
+        return default
+    if isinstance(value, float) and np.isnan(value):
+        return default
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, str):
+        low = value.strip().lower()
+        if low in {"1", "true", "yes", "da"}:
+            return 1
+        if low in {"0", "false", "no", "ne", ""}:
+            return 0
+    try:
+        fval = float(value)
+        if np.isnan(fval):
+            return default
+        return 1 if fval > 0 else 0
+    except (TypeError, ValueError):
+        return default
+
+
+def _build_normalized_payload(
+    payload: dict[str, Any],
+    numeric_features: list[str],
+    categorical_features: list[str],
+    artifact: dict[str, Any],
+) -> dict[str, Any]:
+    """Build a normalized input row for prediction, including derived features and imputation."""
+    from app.services.regions_service import lookup_region, normalize
+
+    coords_by_muni = artifact.get("coords_by_municipality", {})
+    region_medians = artifact.get("region_medians", {})
+    type_medians = artifact.get("type_medians", {})
+    global_median = artifact.get("global_median_ppm2", 2000.0)
+
+    row: dict[str, Any] = {}
+
+    # Numeric features
+    for col in numeric_features:
+        val = payload.get(col)
+        if val is None or (isinstance(val, float) and np.isnan(val)):
+            row[col] = np.nan
+        else:
+            try:
+                row[col] = float(val)
+            except (TypeError, ValueError):
+                row[col] = np.nan
+
+    # Categorical features
+    for col in categorical_features:
+        if col == "statistical_region" and col not in payload:
+            muni = normalize(str(payload.get("municipality", "unknown")))
+            row[col] = lookup_region(muni)
+        else:
+            val = payload.get(col, "unknown")
+            row[col] = normalize(str(val)) if val else "unknown"
+
+    # Derived: building_age
+    if "building_age" in numeric_features and "building_age" not in payload:
+        yb = payload.get("year_built")
+        if yb is not None and not (isinstance(yb, float) and np.isnan(yb)):
+            row["building_age"] = float(pd.Timestamp.now().year - int(yb))
+        else:
+            row["building_age"] = np.nan
+
+    # Derived: log_size_m2
+    if "log_size_m2" in numeric_features and "log_size_m2" not in payload:
+        sm2 = payload.get("size_m2")
+        if sm2 is not None and not (isinstance(sm2, float) and np.isnan(sm2)):
+            row["log_size_m2"] = float(np.log1p(max(0, float(sm2))))
+        else:
+            row["log_size_m2"] = np.nan
+
+    # Binary flags
+    for amenity in (
+        "novogradnja",
+        "has_klet",
+        "has_garaza",
+        "has_terasa",
+        "has_shramba",
+        "ddv_vkljucen",
+        "stavba_je_dokoncana",
+    ):
+        if amenity in numeric_features:
+            default = 1 if amenity == "stavba_je_dokoncana" else 0
+            row[amenity] = float(_coerce_binary(payload.get(amenity, default), default=default))
+
+    # num_prostori
+    if "num_prostori" in numeric_features:
+        val = payload.get("num_prostori", 0)
+        try:
+            v = float(val)
+            row["num_prostori"] = 0.0 if np.isnan(v) else v
+        except (TypeError, ValueError):
+            row["num_prostori"] = 0.0
+
+    # transaction_year
+    if "transaction_year" in numeric_features and "transaction_year" not in payload:
+        row["transaction_year"] = float(pd.Timestamp.now().year)
+
+    # Lat/lon imputation from municipality coords
+    municipality_norm = normalize(str(payload.get("municipality", "unknown")))
+    for coord_key in ("latitude", "longitude"):
+        val = row.get(coord_key)
+        if val is None or (isinstance(val, float) and np.isnan(val)):
+            muni_coords = coords_by_muni.get(municipality_norm, {})
+            coord_val = muni_coords.get("lat" if coord_key == "latitude" else "lon")
+            if coord_val is None:
+                coord_val = muni_coords.get(coord_key)
+            row[coord_key] = float(coord_val) if coord_val is not None else np.nan
+
+    # Group medians
+    if "price_per_m2_region" in numeric_features:
+        region = row.get("statistical_region", "neznana")
+        row["price_per_m2_region"] = region_medians.get(region, global_median)
+
+    if "price_per_m2_type" in numeric_features:
+        ptype = row.get("property_type", "unknown")
+        row["price_per_m2_type"] = type_medians.get(ptype, global_median)
+
+    return row
+
+
 def predict_one(features: dict[str, Any]) -> dict[str, Any]:
     """Predict price for a single property."""
     artifact = load_model()
     if artifact is None:
         raise RuntimeError("No trained model found. Train a model first.")
 
-    # Prepare input
-    row = pd.DataFrame([features])
-    row = enrich_training_df(row)
+    from app.services.regions_service import normalize
 
-    # Add group medians
-    region_medians = artifact.get("region_medians", {})
-    type_medians = artifact.get("type_medians", {})
-    global_median = artifact.get("global_median_ppm2", 2000.0)
+    ptype = normalize(str(features.get("property_type", "unknown")))
 
-    region = row.get("statistical_region", pd.Series(["unknown"])).iloc[0]
-    ptype = row.get("property_type", pd.Series(["unknown"])).iloc[0]
-    row["price_per_m2_region"] = region_medians.get(region, global_median)
-    row["price_per_m2_type"] = type_medians.get(ptype, global_median)
-
-    # Route to per-type model or fallback to global
+    # Route to per-type model or global
     per_type_models = artifact.get("per_type_models", {})
+    global_model = artifact.get("global_model", {})
+
     if ptype in per_type_models:
-        pipeline = per_type_models[ptype]
+        tm = per_type_models[ptype]
+        if isinstance(tm, dict) and "pipeline" in tm:
+            pipeline = tm["pipeline"]
+            num_feats = tm["numeric_features"]
+            cat_feats = tm["categorical_features"]
+        else:
+            # Legacy: pipeline stored directly
+            pipeline = tm
+            num_feats = PERTYPE_NUMERIC
+            cat_feats = PERTYPE_CATEGORICAL
         model_used = f"per_type:{ptype}"
+    elif global_model and "pipeline" in global_model:
+        pipeline = global_model["pipeline"]
+        num_feats = global_model["numeric_features"]
+        cat_feats = global_model["categorical_features"]
+        model_used = "global"
     else:
         pipeline = artifact["global_pipeline"]
+        num_feats = NUMERIC_FEATURES
+        cat_feats = CATEGORICAL_FEATURES
         model_used = "global"
 
-    predicted = float(pipeline.predict(row)[0])
+    normalized = _build_normalized_payload(features, num_feats, cat_feats, artifact)
+    row = pd.DataFrame([normalized])
+    predicted = max(0.0, float(pipeline.predict(row)[0]))
 
     return {
         "predicted_price_eur": round(predicted, 2),
         "model_used": model_used,
-        "features_used": features,
+        "features_used": {k: str(v) for k, v in normalized.items()},
     }
 
 
@@ -392,5 +581,6 @@ def get_model_info() -> dict[str, Any] | None:
         "global_importance": artifact.get("global_importance"),
         "feature_labels": artifact.get("feature_labels"),
         "per_type_count": len(artifact.get("per_type_models", {})),
+        "type_models_trained": sorted(artifact.get("per_type_models", {}).keys()),
         "coords_by_municipality": artifact.get("coords_by_municipality"),
     }

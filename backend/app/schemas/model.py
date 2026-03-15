@@ -42,6 +42,17 @@ class PredictRequest(BaseModel):
     longitude: float | None = None
     municipality: str | None = None
     property_type: str = "stanovanje"
+    novogradnja: int | None = None
+    has_klet: int | None = None
+    has_garaza: int | None = None
+    has_terasa: int | None = None
+    has_shramba: int | None = None
+    num_prostori: int | None = None
+    transaction_year: int | None = None
+    uporabna_povrsina: float | None = None
+    lega_v_stavbi: str | None = None
+    stavba_je_dokoncana: int | None = None
+    ddv_vkljucen: int | None = None
 
 
 class PredictResponse(BaseModel):

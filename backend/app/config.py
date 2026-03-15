@@ -14,7 +14,7 @@ class Settings(BaseSettings):
 
     # App
     app_env: str = "development"
-    app_version: str = "0.1.0"
+    app_version: str = "0.1.1"
 
     # Postgres
     database_url: str = "postgresql+asyncpg://nepremicnine:changeme_in_production@postgres:5432/nepremicnine"
@@ -38,4 +38,9 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    s = Settings()
+    if s.app_env == "production" and ("changeme" in s.jwt_secret_key or "changeme" in s.database_url):
+        raise RuntimeError(
+            "Placeholder credentials detected in production. Set JWT_SECRET_KEY and DATABASE_URL to real values."
+        )
+    return s

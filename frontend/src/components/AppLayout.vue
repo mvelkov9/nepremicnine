@@ -1,4 +1,5 @@
 <script setup>
+import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../stores/auth'
 import { useRouter } from 'vue-router'
@@ -6,6 +7,20 @@ import { useRouter } from 'vue-router'
 const { t, locale } = useI18n()
 const auth = useAuthStore()
 const router = useRouter()
+
+const appVersion = ref('')
+
+onMounted(async () => {
+  try {
+    const res = await fetch('/api/health')
+    if (res.ok) {
+      const data = await res.json()
+      appVersion.value = data.version || ''
+    }
+  } catch {
+    /* health endpoint unavailable */
+  }
+})
 
 const navItems = [
   { to: '/', icon: '📊', label: 'nav.dashboard' },
@@ -96,6 +111,8 @@ function handleLogout() {
           <span class="nav-icon">🚪</span>
           {{ t('nav.logout') }}
         </button>
+
+        <div v-if="appVersion" class="app-version">v{{ appVersion }}</div>
       </div>
     </aside>
 

@@ -78,6 +78,7 @@ jobs:
           version: 9.15.4
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
+      - run: pnpm format:check
 
   frontend-build:
     runs-on: ubuntu-latest

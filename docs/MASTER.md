@@ -14,7 +14,7 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 | **Auth** | JWT (access 15 min + refresh 7 days), admin/viewer roles |
 | **i18n** | Slovenian (default) + English |
 | **CI/CD** | GitHub Actions → GHCR → VPS (SSH) |
-| **Infra** | Docker Compose (dev + prod profiles), Hetzner VPS |
+| **Infra** | Docker Compose (dev + prod profiles), cloud VPS |
 
 ## Phase Progress
 

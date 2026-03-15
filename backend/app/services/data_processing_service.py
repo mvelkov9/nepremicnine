@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import os
+import shutil
+import struct as _struct
 import unicodedata
+import uuid
+import zipfile
 from typing import Any
 
 import numpy as np
 import pandas as pd
 
-from app.services.regions_service import lookup_region
+from app.services.regions_service import FALLBACK_REGIONS, lookup_region, normalize
 
 # Property type mapping from VRSTA_DELA_STAVBE codes
 _PROPERTY_TYPE_MAP = {
@@ -236,4 +241,593 @@ def prepare_training_csv(
         "output_csv_path": output_csv_path,
         "rows": len(training_df),
         "columns": list(training_df.columns),
+    }
+
+
+# ── ZIP extraction ──────────────────────────────────────────────────
+
+
+def extract_zip_csvs(zip_path: str, upload_dir: str) -> list[str]:
+    """Extract a ZIP (incl. nested ZIPs) and return paths to all CSV files."""
+    extract_dir = os.path.join(upload_dir, f"unzipped_{uuid.uuid4().hex}")
+    os.makedirs(extract_dir, exist_ok=True)
+    try:
+        with zipfile.ZipFile(zip_path, "r") as archive:
+            archive.extractall(extract_dir)
+
+        # Expand nested ZIPs
+        for root, _, files in os.walk(extract_dir):
+            for fname in files:
+                if fname.lower().endswith(".zip"):
+                    nested_path = os.path.join(root, fname)
+                    nested_dir = os.path.join(root, f"inner_{os.path.splitext(fname)[0]}")
+                    os.makedirs(nested_dir, exist_ok=True)
+                    try:
+                        with zipfile.ZipFile(nested_path, "r") as nested:
+                            nested.extractall(nested_dir)
+                    except zipfile.BadZipFile:
+                        continue
+
+        csv_paths: list[str] = []
+        for root, _, files in os.walk(extract_dir):
+            for fname in files:
+                if fname.lower().endswith(".csv"):
+                    src = os.path.join(root, fname)
+                    safe_name = fname.replace("/", "_").replace("\\", "_")
+                    dst = os.path.join(upload_dir, f"{uuid.uuid4().hex}_{safe_name}")
+                    shutil.move(src, dst)
+                    csv_paths.append(dst)
+        return csv_paths
+    finally:
+        shutil.rmtree(extract_dir, ignore_errors=True)
+
+
+def extract_zip_all(zip_path: str, upload_dir: str) -> str:
+    """Extract ZIP (incl. nested ZIPs) and return the extraction directory."""
+    extract_dir = os.path.join(upload_dir, f"unzipped_{uuid.uuid4().hex}")
+    os.makedirs(extract_dir, exist_ok=True)
+    with zipfile.ZipFile(zip_path, "r") as archive:
+        archive.extractall(extract_dir)
+
+    for root, _, files in os.walk(extract_dir):
+        for fname in files:
+            if fname.lower().endswith(".zip"):
+                nested_path = os.path.join(root, fname)
+                nested_dir = os.path.join(root, f"inner_{os.path.splitext(fname)[0]}")
+                os.makedirs(nested_dir, exist_ok=True)
+                try:
+                    with zipfile.ZipFile(nested_path, "r") as nested:
+                        nested.extractall(nested_dir)
+                except zipfile.BadZipFile:
+                    continue
+    return extract_dir
+
+
+# ── CSV inspection ──────────────────────────────────────────────────
+
+
+def inspect_csv(csv_path: str, preview_rows: int = 8) -> dict[str, Any]:
+    df = read_csv_flexible(csv_path)
+    preview = df.head(preview_rows).fillna("").to_dict(orient="records")
+    return {
+        "row_count": len(df),
+        "columns": list(df.columns),
+        "preview": preview,
+    }
+
+
+# ── RPE / RN import ────────────────────────────────────────────────
+
+
+def _read_dbf(dbf_path: str, encoding: str = "cp1250") -> pd.DataFrame:
+    """Read a .dbf file into a DataFrame without external dependencies."""
+    with open(dbf_path, "rb") as fh:
+        data = fh.read()
+
+    num_records = _struct.unpack_from("<I", data, 4)[0]
+    header_size = _struct.unpack_from("<H", data, 8)[0]
+    record_size = _struct.unpack_from("<H", data, 10)[0]
+
+    fields: list[tuple[str, int]] = []
+    pos = 32
+    while pos < header_size - 1:
+        if data[pos] == 0x0D:
+            break
+        fname = data[pos : pos + 11].split(b"\x00")[0].decode("ascii")
+        fsize = data[pos + 16]
+        fields.append((fname, fsize))
+        pos += 32
+
+    rows: list[dict[str, str]] = []
+    data_start = header_size
+    for r in range(num_records):
+        rec_offset = data_start + r * record_size
+        if rec_offset + record_size > len(data):
+            break
+        offset = 1  # skip deletion flag
+        row: dict[str, str] = {}
+        for fname, fsize in fields:
+            raw = data[rec_offset + offset : rec_offset + offset + fsize]
+            try:
+                val = raw.decode(encoding).strip()
+            except Exception:
+                val = raw.decode("latin1", errors="replace").strip()
+            val = val.replace("\x00", "").strip()
+            row[fname] = val
+            offset += fsize
+        rows.append(row)
+
+    return pd.DataFrame(rows)
+
+
+def import_rpe_from_zip(zip_path: str, upload_dir: str) -> dict[str, Any]:
+    """Import RPE data from a ZIP with shapefiles (.dbf)."""
+    extract_dir = extract_zip_all(zip_path, upload_dir)
+    try:
+        obcine_dbf = None
+        stat_regije_dbf = None
+        for root, _, files in os.walk(extract_dir):
+            for fname in files:
+                if not fname.lower().endswith(".dbf"):
+                    continue
+                upper = fname.upper()
+                full = os.path.join(root, fname)
+                if "OBCINE" in upper:
+                    obcine_dbf = full
+                elif "STATISTICNE_REGIJE" in upper:
+                    stat_regije_dbf = full
+
+        if not obcine_dbf:
+            raise ValueError("RPE ZIP does not contain an OBCINE .dbf file.")
+
+        obcine_df = _read_dbf(obcine_dbf)
+        if "SIFRA" not in obcine_df.columns or "NAZIV" not in obcine_df.columns:
+            raise ValueError(f"OBCINE .dbf missing SIFRA/NAZIV columns. Found: {list(obcine_df.columns)}")
+
+        regije_info: list[str] = []
+        if stat_regije_dbf:
+            sr_df = _read_dbf(stat_regije_dbf)
+            if "NAZIV" in sr_df.columns:
+                regije_info = sorted(sr_df["NAZIV"].dropna().unique().tolist())
+
+        mappings: list[dict[str, Any]] = []
+        for _, row in obcine_df.iterrows():
+            sifra = row.get("SIFRA", "")
+            naziv = row.get("NAZIV", "")
+            if not sifra or not naziv:
+                continue
+            try:
+                sifra_int = int(sifra)
+            except (ValueError, TypeError):
+                continue
+            normalized_name = normalize(naziv)
+            regija = FALLBACK_REGIONS.get(normalized_name, "neznana")
+            if regija == "neznana":
+                for key, val in FALLBACK_REGIONS.items():
+                    if key in normalized_name or normalized_name in key:
+                        regija = val
+                        break
+            mappings.append(
+                {
+                    "obcina_sifra": sifra_int,
+                    "obcina_naziv": naziv.strip(),
+                    "regija_naziv": regija,
+                    "vir": "RPE",
+                }
+            )
+
+        return {
+            "mappings": mappings,
+            "count": len(mappings),
+            "regije": regije_info or sorted({m["regija_naziv"] for m in mappings if m["regija_naziv"] != "neznana"}),
+        }
+    finally:
+        shutil.rmtree(extract_dir, ignore_errors=True)
+
+
+def import_rpe_rn(
+    rn_csv_path: str,
+    stat_regije_csv_path: str | None,
+    upload_dir: str,
+) -> dict[str, Any]:
+    """Import RPE + RN data and build municipality → region mapping."""
+    if rn_csv_path.lower().endswith(".zip"):
+        return import_rpe_from_zip(rn_csv_path, upload_dir)
+
+    rn_df = read_csv_flexible(rn_csv_path)
+    required_rn = ["OBCINA_SIFRA", "OBCINA_NAZIV", "EID_STATISTICNA_REGIJA"]
+    missing_rn = [c for c in required_rn if c not in rn_df.columns]
+    if missing_rn:
+        raise ValueError(f"RN file missing columns: {', '.join(missing_rn)}. Found: {', '.join(rn_df.columns[:20])}")
+
+    eid_to_name: dict[str, str] = {}
+    if stat_regije_csv_path:
+        sr_df = read_csv_flexible(stat_regije_csv_path)
+        eid_col = next((c for c in sr_df.columns if "EID_STATISTICNA_REGIJA" in c.upper()), None)
+        naziv_col = next((c for c in sr_df.columns if c.upper() == "NAZIV"), None)
+        if eid_col and naziv_col:
+            for _, row in sr_df.dropna(subset=[eid_col, naziv_col]).iterrows():
+                eid_to_name[str(row[eid_col]).strip()] = str(row[naziv_col]).strip()
+
+    rn_clean = rn_df[required_rn].dropna(subset=required_rn).copy()
+    rn_clean["OBCINA_SIFRA"] = pd.to_numeric(rn_clean["OBCINA_SIFRA"], errors="coerce")
+    rn_clean = rn_clean.dropna(subset=["OBCINA_SIFRA"])
+    rn_clean["OBCINA_SIFRA"] = rn_clean["OBCINA_SIFRA"].astype(int)
+
+    obcina_groups = rn_clean.groupby(["OBCINA_SIFRA", "OBCINA_NAZIV"])["EID_STATISTICNA_REGIJA"].agg(
+        lambda x: x.mode().iloc[0] if len(x) > 0 else None
+    )
+
+    mappings: list[dict[str, Any]] = []
+    for (sifra, naziv), eid_regija in obcina_groups.items():
+        regija_naziv = eid_to_name.get(str(eid_regija).strip(), str(eid_regija).strip())
+        mappings.append(
+            {
+                "obcina_sifra": int(sifra),
+                "obcina_naziv": str(naziv).strip(),
+                "eid_statisticna_regija": str(eid_regija).strip(),
+                "regija_naziv": regija_naziv,
+                "vir": "RPE/RN",
+            }
+        )
+
+    return {
+        "mappings": mappings,
+        "count": len(mappings),
+        "regije": sorted({m["regija_naziv"] for m in mappings}),
+        "eid_to_name_count": len(eid_to_name),
+    }
+
+
+# ── ETN KPP pairing ────────────────────────────────────────────────
+
+
+def _enrich_with_sifra(df: pd.DataFrame, merged: pd.DataFrame) -> pd.DataFrame:
+    """Add statistical_region using RPE_OBCINE_SIFRA when available, fallback to name."""
+    result = df.copy()
+
+    if "municipality" in result.columns:
+        norm = result["municipality"].apply(normalize_text)
+        result["statistical_region"] = norm.apply(lookup_region)
+
+    if "year_built" in result.columns:
+        current_year = pd.Timestamp.now().year
+        result["building_age"] = current_year - pd.to_numeric(result["year_built"], errors="coerce")
+        result["building_age"] = result["building_age"].clip(lower=0)
+
+    if "size_m2" in result.columns:
+        result["log_size_m2"] = np.log1p(pd.to_numeric(result["size_m2"], errors="coerce").fillna(0).clip(lower=0))
+
+    return result
+
+
+def build_training_df_from_etn_kpp(
+    posli_df: pd.DataFrame,
+    deli_df: pd.DataFrame,
+    zemljisca_df: pd.DataFrame | None = None,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """Core ETN KPP pairing: merge posli + delistavb, extract features, filter."""
+    if "ID_POSLA" not in posli_df.columns or "ID_POSLA" not in deli_df.columns:
+        raise ValueError("Both ETN files must contain ID_POSLA.")
+
+    required_posli = ["ID_POSLA", "POGODBENA_CENA_ODSKODNINA"]
+    for col in required_posli:
+        if col not in posli_df.columns:
+            raise ValueError(f"Missing required column in posli.csv: {col}")
+
+    candidate_size = ["PRODANA_POVRSINA", "PRODANA_POVRSINA_DELA_STAVBE", "UPORABNA_POVRSINA", "POVRSINA_DELA_STAVBE"]
+    size_col = next((c for c in candidate_size if c in deli_df.columns), None)
+    if not size_col:
+        raise ValueError(f"No area column in delistavb.csv. Expected: {', '.join(candidate_size)}")
+
+    posli_selected = ["ID_POSLA", "POGODBENA_CENA_ODSKODNINA"]
+    for opt_col in [
+        "TRZNOST_POSLA",
+        "RPE_OBCINE_SIFRA",
+        "RPE_OBCINE_IME",
+        "IME_OBCINE",
+        "DATUM_POGODBE",
+        "POGODBENA_CENA_DELA_STAVBE",
+        "VRSTA_KUPOPRODAJNEGA_POSLA",
+        "VKLJUCENOST_DDV",
+    ]:
+        if opt_col in posli_df.columns:
+            posli_selected.append(opt_col)
+
+    merged = deli_df.merge(posli_df[posli_selected], on="ID_POSLA", how="inner", suffixes=("", "_POSLI"))
+    if merged.empty:
+        raise ValueError("Merging posli.csv and delistavb.csv returned 0 rows.")
+
+    training_df = pd.DataFrame()
+    training_df["size_m2"] = pd.to_numeric(merged[size_col], errors="coerce")
+
+    # Rooms
+    training_df["rooms"] = (
+        pd.to_numeric(merged.get("STEVILO_SOB", np.nan), errors="coerce") if "STEVILO_SOB" in merged.columns else np.nan
+    )
+
+    # PROSTORI_DELA_STAVBE features
+    if "PROSTORI_DELA_STAVBE" in merged.columns:
+        prostori_raw = merged["PROSTORI_DELA_STAVBE"].fillna("")
+        prostori_lower = prostori_raw.str.lower()
+        training_df["num_prostori"] = prostori_raw.str.split(r"\|").apply(
+            lambda parts: len([p for p in parts if p.strip()]) if isinstance(parts, list) else 0
+        )
+        training_df["has_klet"] = prostori_lower.str.contains(r"klet", na=False).astype(int)
+        training_df["has_garaza"] = prostori_lower.str.contains(r"gara[zž]", na=False).astype(int)
+        training_df["has_terasa"] = prostori_lower.str.contains(r"terasa|balkon|lo[zž]a", na=False).astype(int)
+        training_df["has_shramba"] = prostori_lower.str.contains(r"shramba", na=False).astype(int)
+    else:
+        for col in ["num_prostori", "has_klet", "has_garaza", "has_terasa", "has_shramba"]:
+            training_df[col] = 0
+
+    training_df["year_built"] = pd.to_numeric(merged.get("LETO_IZGRADNJE_DELA_STAVBE", np.nan), errors="coerce")
+    training_df["floor"] = pd.to_numeric(merged.get("NADSTROPJE_DELA_STAVBE", np.nan), errors="coerce")
+
+    # Coordinates (ETRS89/TM)
+    if "E_CENTROID" in merged.columns and "N_CENTROID" in merged.columns:
+        training_df["longitude"] = pd.to_numeric(merged["E_CENTROID"], errors="coerce")
+        training_df["latitude"] = pd.to_numeric(merged["N_CENTROID"], errors="coerce")
+    else:
+        training_df["latitude"] = np.nan
+        training_df["longitude"] = np.nan
+
+    # Novogradnja
+    if "NOVOGRADNJA" in merged.columns:
+        training_df["novogradnja"] = (
+            pd.to_numeric(merged["NOVOGRADNJA"], errors="coerce").fillna(0).clip(0, 1).astype(int)
+        )
+    else:
+        training_df["novogradnja"] = 0
+
+    # Stavba je dokončana
+    if "STAVBA_JE_DOKONCANA" in merged.columns:
+        training_df["stavba_je_dokoncana"] = (
+            pd.to_numeric(merged["STAVBA_JE_DOKONCANA"], errors="coerce").fillna(1).clip(0, 1).astype(int)
+        )
+    else:
+        training_df["stavba_je_dokoncana"] = 1
+
+    # Uporabna površina
+    training_df["uporabna_povrsina"] = (
+        pd.to_numeric(merged.get("UPORABNA_POVRSINA", np.nan), errors="coerce")
+        if "UPORABNA_POVRSINA" in merged.columns
+        else np.nan
+    )
+
+    # Lega dela stavbe v stavbi
+    if "LEGA_DELA_STAVBE_V_STAVBI" in merged.columns:
+        lega_raw = merged["LEGA_DELA_STAVBE_V_STAVBI"].fillna("").astype(str).str.strip().str.lower()
+
+        def _map_lega(val: str) -> str:
+            if not val:
+                return "unknown"
+            if "klet" in val or "suteren" in val:
+                return "klet"
+            if any(w in val for w in ("nadstropje", "mansarda")):
+                return "nadstropje"
+            if any(w in val for w in ("pritlicje", "pritličje", "pritlic")):
+                return "pritlicje"
+            return "unknown"
+
+        training_df["lega_v_stavbi"] = lega_raw.apply(_map_lega)
+    else:
+        training_df["lega_v_stavbi"] = "unknown"
+
+    # Parking
+    if "STEVILO_ZUNANJIH_PARKIRNIH_MEST" in merged.columns:
+        training_df["has_parking"] = (
+            pd.to_numeric(merged["STEVILO_ZUNANJIH_PARKIRNIH_MEST"], errors="coerce")
+            .fillna(0)
+            .clip(lower=0)
+            .gt(0)
+            .astype(int)
+        )
+    else:
+        training_df["has_parking"] = 0
+
+    # DDV
+    vkljucenost_col = next((c for c in ["VKLJUCENOST_DDV", "VKLJUCENOST_DDV_POSLI"] if c in merged.columns), None)
+    if vkljucenost_col is not None:
+        training_df["ddv_vkljucen"] = (
+            pd.to_numeric(merged[vkljucenost_col], errors="coerce").fillna(0).clip(0, 1).astype(int)
+        )
+    else:
+        training_df["ddv_vkljucen"] = 0
+
+    # Municipality
+    municipality_source = None
+    municipality_series = None
+    for muni_candidate in [
+        "OBCINA",
+        "IME_OBCINE",
+        "RPE_OBCINE_IME",
+        "OBCINA_POSLI",
+        "IME_OBCINE_POSLI",
+        "RPE_OBCINE_IME_POSLI",
+    ]:
+        if muni_candidate in merged.columns:
+            candidate_series = merged[muni_candidate].astype(str).str.strip()
+            if (candidate_series != "").mean() > 0:
+                municipality_source = muni_candidate
+                municipality_series = candidate_series
+                break
+    training_df["municipality"] = municipality_series if municipality_series is not None else "unknown"
+
+    # Property type
+    property_type_source = None
+    for type_candidate in ["DEJANSKA_RABA_DELA_STAVBE", "VRSTA_DELA_STAVBE"]:
+        if type_candidate in merged.columns:
+            property_type_source = type_candidate
+            break
+    training_df["property_type"] = (
+        merged[property_type_source].apply(group_property_type) if property_type_source else "ostalo"
+    )
+
+    # Price: pro-rate total transaction price by area share
+    total_price = pd.to_numeric(merged["POGODBENA_CENA_ODSKODNINA"], errors="coerce")
+    per_unit_price = None
+    for per_unit_col in ["POGODBENA_CENA_DELA_STAVBE"]:
+        for candidate in [per_unit_col, f"{per_unit_col}_POSLI"]:
+            if candidate in merged.columns:
+                per_unit_price = pd.to_numeric(merged[candidate], errors="coerce")
+                break
+        if per_unit_price is not None:
+            break
+
+    merged["_area_numeric"] = pd.to_numeric(merged[size_col], errors="coerce").fillna(0)
+    total_area_per_deal = merged.groupby("ID_POSLA")["_area_numeric"].transform("sum")
+    area_ratio = merged["_area_numeric"] / total_area_per_deal.replace(0, np.nan)
+    prorated_price = total_price * area_ratio
+
+    if per_unit_price is not None:
+        has_unit_price = per_unit_price.notna() & (per_unit_price > 0)
+        training_df["price_eur"] = prorated_price.copy()
+        training_df.loc[has_unit_price, "price_eur"] = per_unit_price[has_unit_price]
+    else:
+        training_df["price_eur"] = prorated_price
+
+    training_df = training_df.dropna(subset=["size_m2", "price_eur"])
+    training_df = training_df[(training_df["size_m2"] > 0) & (training_df["price_eur"] > 0)]
+
+    # TRZNOST_POSLA: keep only market transactions (1=market, 2=market/poor quality, 5=under review)
+    if "TRZNOST_POSLA" in merged.columns:
+        trznost = pd.to_numeric(merged["TRZNOST_POSLA"], errors="coerce")
+        trznost_aligned = trznost.reindex(training_df.index)
+        training_df = training_df.loc[trznost_aligned.isin([1, 2, 5])].copy()
+
+    # VRSTA_KUPOPRODAJNEGA_POSLA: keep only open market (1) and voluntary auction (2)
+    vrsta_posla_col = next(
+        (c for c in ["VRSTA_KUPOPRODAJNEGA_POSLA", "VRSTA_KUPOPRODAJNEGA_POSLA_POSLI"] if c in merged.columns), None
+    )
+    if vrsta_posla_col is not None:
+        vrsta_posla = pd.to_numeric(merged[vrsta_posla_col], errors="coerce")
+        vrsta_aligned = vrsta_posla.reindex(training_df.index)
+        training_df = training_df.loc[vrsta_aligned.isin([1, 2]) | vrsta_aligned.isna()].copy()
+
+    # Exclude non-market types
+    training_df = training_df[~training_df["property_type"].isin(EXCLUDED_PROPERTY_TYPES)].copy()
+
+    # Outlier removal
+    price_per_m2 = training_df["price_eur"] / training_df["size_m2"]
+    training_df = training_df[
+        (training_df["price_eur"] <= 2_000_000)
+        & (price_per_m2 <= 15_000)
+        & (training_df["size_m2"] <= 1000)
+        & (training_df["size_m2"] >= 5)
+    ].copy()
+
+    # Remove symbolic/absurd transactions
+    if len(training_df) > 0:
+        price_floor = max(1_000.0, training_df["price_eur"].quantile(0.005))
+        training_df = training_df[training_df["price_eur"] >= price_floor].copy()
+        ppm2 = training_df["price_eur"] / training_df["size_m2"]
+        ppm2_ceil = ppm2.quantile(0.999)
+        training_df = training_df[ppm2 <= ppm2_ceil].copy()
+
+    training_df["municipality"] = training_df["municipality"].apply(normalize_text)
+    training_df["property_type"] = training_df["property_type"].apply(normalize_text)
+
+    # Enrich
+    training_df = _enrich_with_sifra(training_df, merged)
+
+    # Land area from ZEMLJISCA
+    if zemljisca_df is not None and "ID_POSLA" in zemljisca_df.columns and "POVRSINA_PARCELE" in zemljisca_df.columns:
+        z_agg = zemljisca_df.groupby("ID_POSLA")["POVRSINA_PARCELE"].sum().reset_index()
+        z_agg.columns = ["ID_POSLA", "parcela_m2"]
+        z_agg["parcela_m2"] = pd.to_numeric(z_agg["parcela_m2"], errors="coerce")
+        id_posla_aligned = merged["ID_POSLA"].reindex(training_df.index)
+        training_df["parcela_m2"] = id_posla_aligned.map(z_agg.set_index("ID_POSLA")["parcela_m2"])
+    else:
+        training_df["parcela_m2"] = np.nan
+
+    if training_df.empty:
+        raise ValueError("No valid rows after filtering ETN data.")
+
+    meta = {
+        "used_size_column": size_col,
+        "used_property_type_column": property_type_source,
+        "used_municipality_column": municipality_source,
+    }
+    return training_df, meta
+
+
+def prepare_training_csv_from_etn_kpp(
+    posli_csv_path: str,
+    delistavb_csv_path: str,
+    output_csv_path: str,
+) -> dict[str, Any]:
+    """Prepare training CSV from ETN KPP posli + delistavb pair."""
+    posli_df = read_csv_flexible(posli_csv_path)
+    deli_df = read_csv_flexible(delistavb_csv_path)
+    training_df, meta = build_training_df_from_etn_kpp(posli_df, deli_df)
+
+    os.makedirs(os.path.dirname(output_csv_path), exist_ok=True)
+    training_df.to_csv(output_csv_path, index=False)
+
+    return {
+        "output_csv_path": output_csv_path,
+        "rows": len(training_df),
+        "columns": list(training_df.columns),
+        "source": "etn_kpp",
+        **meta,
+    }
+
+
+def prepare_training_csv_from_etn_kpp_bulk(
+    pairs: list[dict[str, Any]],
+    output_csv_path: str,
+) -> dict[str, Any]:
+    """Prepare training CSV from multiple ETN KPP pairs (multi-year)."""
+    if not pairs:
+        raise ValueError("No ETN pairs provided.")
+
+    training_frames: list[pd.DataFrame] = []
+    reports: list[dict[str, Any]] = []
+
+    for pair in pairs:
+        posli_csv_path = pair.get("posli_csv_path")
+        delistavb_csv_path = pair.get("delistavb_csv_path")
+        zemljisca_csv_path = pair.get("zemljisca_csv_path")
+        label = str(pair.get("label") or pair.get("year") or "unknown")
+
+        if not posli_csv_path or not delistavb_csv_path:
+            reports.append({"label": label, "status": "skipped", "reason": "missing paths"})
+            continue
+
+        posli_df = read_csv_flexible(posli_csv_path)
+        deli_df = read_csv_flexible(delistavb_csv_path)
+        zemljisca_df = None
+        if zemljisca_csv_path:
+            with contextlib.suppress(Exception):
+                zemljisca_df = read_csv_flexible(zemljisca_csv_path)
+
+        try:
+            frame, meta = build_training_df_from_etn_kpp(posli_df, deli_df, zemljisca_df)
+            frame["source_label"] = label
+            frame["transaction_year"] = pd.to_numeric(label, errors="coerce")
+            training_frames.append(frame)
+            reports.append({"label": label, "status": "ok", "rows": len(frame), **meta})
+        except Exception as exc:
+            reports.append({"label": label, "status": "error", "reason": str(exc)})
+
+    if not training_frames:
+        raise ValueError("No valid ETN pairs produced training data.")
+
+    combined = pd.concat(training_frames, ignore_index=True)
+    combined = combined.drop_duplicates(
+        subset=["size_m2", "year_built", "municipality", "property_type", "price_eur", "source_label"]
+    )
+
+    os.makedirs(os.path.dirname(output_csv_path), exist_ok=True)
+    combined.to_csv(output_csv_path, index=False)
+
+    return {
+        "output_csv_path": output_csv_path,
+        "rows": len(combined),
+        "columns": list(combined.columns),
+        "source": "etn_kpp_bulk",
+        "pairs_received": len(pairs),
+        "pairs_used": len(training_frames),
+        "reports": reports,
     }

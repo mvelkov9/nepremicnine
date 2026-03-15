@@ -129,6 +129,13 @@ body {
   font-weight: 700;
 }
 
+.app-version {
+  text-align: center;
+  color: #64748b;
+  font-size: 11px;
+  margin-top: 4px;
+}
+
 .locale-toggle {
   display: flex;
   gap: 4px;
