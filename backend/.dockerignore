@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.env
+*.egg-info/
+dist/
+build/
+tests/
+.git/
+.gitignore
+data/uploads/
+data/raw/
+models/*.joblib

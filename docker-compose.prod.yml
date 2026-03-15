@@ -1,0 +1,44 @@
+# docker-compose.prod.yml — Production overrides
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# This removes dev volume mounts, uses built images, runs as non-root,
+# and serves the frontend via nginx (not Vite dev server).
+
+services:
+  postgres:
+    ports: !reset []
+    # Don't expose Postgres externally in production
+
+  redis:
+    ports: !reset []
+    # Don't expose Redis externally in production
+
+  backend:
+    # Remove dev overrides: no source mount, no reload, run as appuser
+    user: appuser
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+    volumes:
+      - backend-data:/app/data
+      - backend-models:/app/models
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      APP_ENV: production
+
+  worker:
+    user: appuser
+    volumes:
+      - backend-data:/app/data
+      - backend-models:/app/models
+    environment:
+      APP_ENV: production
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      # No target override — uses full multi-stage (builder → nginx)
+    command: !reset []
+    volumes: !reset []
+    ports:
+      - "80:80"
