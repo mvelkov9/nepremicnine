@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import os
 import unicodedata
-import uuid
 from typing import Any
 
 import numpy as np
@@ -15,29 +14,84 @@ from app.services.regions_service import lookup_region
 
 # Property type mapping from VRSTA_DELA_STAVBE codes
 _PROPERTY_TYPE_MAP = {
-    1: "hisa", 2: "stanovanje", 3: "stanovanje", 4: "poslovni_prostor",
-    5: "poslovni_prostor", 6: "industrijski", 7: "industrijski", 8: "industrijski",
-    9: "poslovni_prostor", 10: "turisticni", 11: "gostinstvo", 12: "gostinstvo",
-    13: "klet_shramba", 14: "klet_shramba", 15: "garaza", 16: "garaza",
-    17: "kmetijsko", 18: "kmetijsko", 19: "kmetijsko", 20: "kmetijsko",
-    21: "industrijski", 22: "poslovni_prostor", 23: "poslovni_prostor",
-    24: "poslovni_prostor", 25: "poslovni_prostor", 26: "poslovni_prostor",
-    27: "kmetijsko", 28: "kmetijsko", 29: "kmetijsko", 30: "poslovni_prostor",
-    31: "poslovni_prostor", 32: "poslovni_prostor", 33: "klet_shramba",
-    34: "klet_shramba", 35: "ostalo", 36: "ostalo", 37: "ostalo", 38: "ostalo",
-    39: "ostalo", 40: "stanovanje", 41: "stanovanje", 42: "hisa", 43: "hisa",
-    44: "hisa", 45: "hisa", 46: "hisa", 47: "stanovanje", 48: "stanovanje",
-    49: "stanovanje", 50: "poslovni_prostor", 51: "industrijski",
-    52: "industrijski", 53: "poslovni_prostor", 54: "turisticni", 55: "turisticni",
-    56: "gostinstvo", 57: "klet_shramba", 58: "garaza", 59: "garaza", 60: "hisa",
-    61: "kmetijsko", 62: "kmetijsko",
+    1: "hisa",
+    2: "stanovanje",
+    3: "stanovanje",
+    4: "poslovni_prostor",
+    5: "poslovni_prostor",
+    6: "industrijski",
+    7: "industrijski",
+    8: "industrijski",
+    9: "poslovni_prostor",
+    10: "turisticni",
+    11: "gostinstvo",
+    12: "gostinstvo",
+    13: "klet_shramba",
+    14: "klet_shramba",
+    15: "garaza",
+    16: "garaza",
+    17: "kmetijsko",
+    18: "kmetijsko",
+    19: "kmetijsko",
+    20: "kmetijsko",
+    21: "industrijski",
+    22: "poslovni_prostor",
+    23: "poslovni_prostor",
+    24: "poslovni_prostor",
+    25: "poslovni_prostor",
+    26: "poslovni_prostor",
+    27: "kmetijsko",
+    28: "kmetijsko",
+    29: "kmetijsko",
+    30: "poslovni_prostor",
+    31: "poslovni_prostor",
+    32: "poslovni_prostor",
+    33: "klet_shramba",
+    34: "klet_shramba",
+    35: "ostalo",
+    36: "ostalo",
+    37: "ostalo",
+    38: "ostalo",
+    39: "ostalo",
+    40: "stanovanje",
+    41: "stanovanje",
+    42: "hisa",
+    43: "hisa",
+    44: "hisa",
+    45: "hisa",
+    46: "hisa",
+    47: "stanovanje",
+    48: "stanovanje",
+    49: "stanovanje",
+    50: "poslovni_prostor",
+    51: "industrijski",
+    52: "industrijski",
+    53: "poslovni_prostor",
+    54: "turisticni",
+    55: "turisticni",
+    56: "gostinstvo",
+    57: "klet_shramba",
+    58: "garaza",
+    59: "garaza",
+    60: "hisa",
+    61: "kmetijsko",
+    62: "kmetijsko",
 }
 
 _CC_SI_PREFIX_MAP = {
-    "1110": "hisa", "1121": "hisa", "1122": "stanovanje", "1130": "stanovanje",
-    "1211": "gostinstvo", "1212": "turisticni", "1220": "poslovni_prostor",
-    "1230": "poslovni_prostor", "1242": "garaza", "1251": "industrijski",
-    "1252": "industrijski", "1261": "poslovni_prostor", "1271": "kmetijsko",
+    "1110": "hisa",
+    "1121": "hisa",
+    "1122": "stanovanje",
+    "1130": "stanovanje",
+    "1211": "gostinstvo",
+    "1212": "turisticni",
+    "1220": "poslovni_prostor",
+    "1230": "poslovni_prostor",
+    "1242": "garaza",
+    "1251": "industrijski",
+    "1252": "industrijski",
+    "1261": "poslovni_prostor",
+    "1271": "kmetijsko",
     "1274": "klet_shramba",
 }
 
@@ -92,8 +146,12 @@ def read_csv_flexible(csv_path: str) -> pd.DataFrame:
             except Exception:
                 try:
                     return pd.read_csv(
-                        csv_path, encoding=encoding, sep=sep,
-                        engine="python", on_bad_lines="skip", low_memory=False,
+                        csv_path,
+                        encoding=encoding,
+                        sep=sep,
+                        engine="python",
+                        on_bad_lines="skip",
+                        low_memory=False,
                     )
                 except Exception:
                     continue
@@ -116,13 +174,18 @@ def enrich_training_df(df: pd.DataFrame) -> pd.DataFrame:
         result["building_age"] = np.nan
 
     if "size_m2" in result.columns:
-        result["log_size_m2"] = np.log1p(
-            pd.to_numeric(result["size_m2"], errors="coerce").fillna(0).clip(lower=0)
-        )
+        result["log_size_m2"] = np.log1p(pd.to_numeric(result["size_m2"], errors="coerce").fillna(0).clip(lower=0))
     else:
         result["log_size_m2"] = np.nan
 
-    for col in ["num_prostori", "has_klet", "has_garaza", "has_terasa", "has_shramba", "ddv_vkljucen"]:
+    for col in [
+        "num_prostori",
+        "has_klet",
+        "has_garaza",
+        "has_terasa",
+        "has_shramba",
+        "ddv_vkljucen",
+    ]:
         if col not in result.columns:
             result[col] = 0
 
@@ -141,14 +204,23 @@ def enrich_training_df(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def prepare_training_csv(
-    source_csv_path: str, column_map: dict[str, str], output_csv_path: str,
+    source_csv_path: str,
+    column_map: dict[str, str],
+    output_csv_path: str,
 ) -> dict[str, Any]:
     df = read_csv_flexible(source_csv_path)
     renamed = df.rename(columns=column_map)
 
     required = [
-        "size_m2", "rooms", "year_built", "floor",
-        "latitude", "longitude", "municipality", "property_type", "price_eur",
+        "size_m2",
+        "rooms",
+        "year_built",
+        "floor",
+        "latitude",
+        "longitude",
+        "municipality",
+        "property_type",
+        "price_eur",
     ]
     missing = [col for col in required if col not in renamed.columns]
     if missing:

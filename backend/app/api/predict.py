@@ -27,10 +27,11 @@ async def predict(
     try:
         result = predict_one(features)
     except RuntimeError as exc:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc))
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
 
     # Log prediction
     import json
+
     log = PredictionLog(
         payload_json=json.dumps(features),
         predicted_price_eur=result["predicted_price_eur"],
@@ -50,13 +51,10 @@ async def prediction_history(
     _user: User = Depends(get_current_user),
 ):
     """Get recent prediction history."""
-    result = await db.execute(
-        select(PredictionLog)
-        .order_by(PredictionLog.created_at.desc())
-        .limit(min(limit, 200))
-    )
+    result = await db.execute(select(PredictionLog).order_by(PredictionLog.created_at.desc()).limit(min(limit, 200)))
     logs = result.scalars().all()
     import json
+
     return [
         {
             "id": log.id,

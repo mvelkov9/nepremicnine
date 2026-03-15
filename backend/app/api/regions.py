@@ -20,9 +20,7 @@ async def get_regions(
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(RegionLookup).order_by(RegionLookup.regija_naziv, RegionLookup.obcina_naziv)
-    )
+    result = await db.execute(select(RegionLookup).order_by(RegionLookup.regija_naziv, RegionLookup.obcina_naziv))
     rows = result.scalars().all()
 
     # If DB is empty and stats requested, return fallback data
@@ -62,15 +60,10 @@ async def get_region_stats(
     if not rows:
         # Return from fallback
         from collections import Counter
+
         counts = Counter(FALLBACK_REGIONS.values())
-        return [
-            {"region": r, "municipality_count": c}
-            for r, c in sorted(counts.items())
-        ]
-    return [
-        {"region": row.regija_naziv, "municipality_count": row.municipality_count}
-        for row in rows
-    ]
+        return [{"region": r, "municipality_count": c} for r, c in sorted(counts.items())]
+    return [{"region": row.regija_naziv, "municipality_count": row.municipality_count} for row in rows]
 
 
 @router.get("/municipalities")
@@ -92,10 +85,7 @@ async def get_municipalities(
 
     if not rows:
         # Return from fallback
-        items = [
-            {"municipality": m, "region": r}
-            for m, r in sorted(FALLBACK_REGIONS.items())
-        ]
+        items = [{"municipality": m, "region": r} for m, r in sorted(FALLBACK_REGIONS.items())]
         if region:
             items = [i for i in items if i["region"] == region]
         return items

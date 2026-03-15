@@ -71,14 +71,16 @@ async def refresh(body: RefreshRequest, db: AsyncSession = Depends(get_db)):
     settings = get_settings()
     try:
         payload = jwt.decode(
-            body.refresh_token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm]
+            body.refresh_token,
+            settings.jwt_secret_key,
+            algorithms=[settings.jwt_algorithm],
         )
         user_id = payload.get("sub")
         token_type = payload.get("type")
         if not user_id or token_type != "refresh":
             raise HTTPException(status_code=401, detail="Invalid refresh token")
     except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid refresh token")
+        raise HTTPException(status_code=401, detail="Invalid refresh token") from None
 
     result = await db.execute(select(User).where(User.id == int(user_id)))
     user = result.scalar_one_or_none()

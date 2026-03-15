@@ -13,7 +13,10 @@ from app.services.regions_service import lookup_region
 router = APIRouter(prefix="/stats", tags=["stats"])
 
 TRAIN_CSV = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "raw", "train.csv"
+    os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+    "data",
+    "raw",
+    "train.csv",
 )
 
 
@@ -73,9 +76,7 @@ async def overview(
 
     if "property_type" in df.columns:
         types = df["property_type"].value_counts()
-        result["property_types"] = [
-            {"type": t, "count": int(c)} for t, c in types.items()
-        ]
+        result["property_types"] = [{"type": t, "count": int(c)} for t, c in types.items()]
 
     return result
 
@@ -130,7 +131,7 @@ async def price_distribution(
         return {"bins": [], "counts": [], "bin_labels": []}
 
     counts_arr, bin_edges = np.histogram(prices, bins=bins)
-    bin_labels = [f"{int(bin_edges[i])}-{int(bin_edges[i+1])}" for i in range(len(counts_arr))]
+    bin_labels = [f"{int(bin_edges[i])}-{int(bin_edges[i + 1])}" for i in range(len(counts_arr))]
 
     return {
         "bins": [float(b) for b in bin_edges],
@@ -172,7 +173,9 @@ async def trend(
             for pt, pt_group in group.groupby("property_type"):
                 entry["by_type"][pt] = {
                     "count": len(pt_group),
-                    "avg_price": round(float(pt_group["price_eur"].mean()), 2) if "price_eur" in pt_group.columns else None,
+                    "avg_price": round(float(pt_group["price_eur"].mean()), 2)
+                    if "price_eur" in pt_group.columns
+                    else None,
                 }
         results.append(entry)
 

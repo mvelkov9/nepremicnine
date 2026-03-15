@@ -5,18 +5,18 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.health import router as health_router
+from app.api.admin import router as admin_router
+from app.api.analysis import router as analysis_router
 from app.api.auth import router as auth_router
 from app.api.data import router as data_router
+from app.api.health import router as health_router
+from app.api.model import router as model_router
+from app.api.predict import router as predict_router
 from app.api.regions import router as regions_router
 from app.api.stats import router as stats_router
 from app.api.train import router as train_router
-from app.api.predict import router as predict_router
-from app.api.model import router as model_router
-from app.api.admin import router as admin_router
-from app.api.analysis import router as analysis_router
 from app.config import get_settings
-from app.database import engine, Base
+from app.database import Base, engine
 
 
 @asynccontextmanager

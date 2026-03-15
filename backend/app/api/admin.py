@@ -67,7 +67,7 @@ async def update_user(
         try:
             user.role = UserRole(body.role)
         except ValueError:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Invalid role: {body.role}")
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Invalid role: {body.role}") from None
 
     if body.is_active is not None:
         user.is_active = body.is_active

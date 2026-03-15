@@ -5,7 +5,8 @@ from __future__ import annotations
 import logging
 import os
 import time
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import joblib
 import numpy as np
@@ -21,24 +22,39 @@ from sklearn.preprocessing import TargetEncoder
 from app.services.data_processing_service import (
     EXCLUDED_PROPERTY_TYPES,
     enrich_training_df,
-    normalize_text,
     read_csv_flexible,
 )
-from app.services.regions_service import lookup_region
 
 logger = logging.getLogger(__name__)
 
 NUMERIC_FEATURES = [
-    "size_m2", "year_built", "rooms", "floor", "latitude", "longitude",
-    "building_age", "novogradnja", "num_prostori",
-    "has_klet", "has_garaza", "has_terasa", "has_shramba",
-    "uporabna_povrsina", "stavba_je_dokoncana", "ddv_vkljucen",
-    "log_size_m2", "transaction_year",
-    "price_per_m2_region", "price_per_m2_type",
+    "size_m2",
+    "year_built",
+    "rooms",
+    "floor",
+    "latitude",
+    "longitude",
+    "building_age",
+    "novogradnja",
+    "num_prostori",
+    "has_klet",
+    "has_garaza",
+    "has_terasa",
+    "has_shramba",
+    "uporabna_povrsina",
+    "stavba_je_dokoncana",
+    "ddv_vkljucen",
+    "log_size_m2",
+    "transaction_year",
+    "price_per_m2_region",
+    "price_per_m2_type",
 ]
 
 CATEGORICAL_FEATURES = [
-    "municipality", "property_type", "statistical_region", "lega_v_stavbi",
+    "municipality",
+    "property_type",
+    "statistical_region",
+    "lega_v_stavbi",
 ]
 
 PERTYPE_NUMERIC = [f for f in NUMERIC_FEATURES if f != "price_per_m2_type"]
@@ -91,10 +107,12 @@ def _build_pipeline(
     y_train: np.ndarray | None = None,
 ) -> Pipeline:
     numeric_transformer = SimpleImputer(strategy="median")
-    categorical_transformer = Pipeline([
-        ("imputer", SimpleImputer(strategy="constant", fill_value="unknown")),
-        ("target_enc", TargetEncoder(smooth="auto")),
-    ])
+    categorical_transformer = Pipeline(
+        [
+            ("imputer", SimpleImputer(strategy="constant", fill_value="unknown")),
+            ("target_enc", TargetEncoder(smooth="auto")),
+        ]
+    )
 
     preprocessor = ColumnTransformer(
         transformers=[
@@ -166,7 +184,7 @@ def _train_single_model(
     try:
         feat_names = pipeline.named_steps["preprocessor"].get_feature_names_out()
         importances = regressor.feature_importances_
-        importance = dict(zip([str(n) for n in feat_names], [float(v) for v in importances]))
+        importance = dict(zip([str(n) for n in feat_names], [float(v) for v in importances], strict=False))
     except Exception:
         pass
 
@@ -196,7 +214,9 @@ def train_from_csv(
     valid = df[df["size_m2"] > 0].copy()
     valid["ppm2"] = valid["price_eur"] / valid["size_m2"]
 
-    region_medians = valid.groupby("statistical_region")["ppm2"].median().to_dict() if "statistical_region" in valid.columns else {}
+    region_medians = (
+        valid.groupby("statistical_region")["ppm2"].median().to_dict() if "statistical_region" in valid.columns else {}
+    )
     type_medians = valid.groupby("property_type")["ppm2"].median().to_dict() if "property_type" in valid.columns else {}
 
     global_median_ppm2 = float(valid["ppm2"].median()) if len(valid) > 0 else 2000.0
@@ -211,7 +231,13 @@ def train_from_csv(
     # Global model
     global_pipeline = _build_pipeline(NUMERIC_FEATURES, CATEGORICAL_FEATURES, len(X_train))
     global_result = _train_single_model(
-        global_pipeline, X_train, y_train, X_test, y_test, "global", progress_callback,
+        global_pipeline,
+        X_train,
+        y_train,
+        X_test,
+        y_test,
+        "global",
+        progress_callback,
     )
 
     # Per-type models
@@ -235,7 +261,13 @@ def train_from_csv(
 
             pt_pipeline = _build_pipeline(PERTYPE_NUMERIC, PERTYPE_CATEGORICAL, len(Xt))
             pt_result = _train_single_model(
-                pt_pipeline, Xt, yt, Xte, yte, f"type:{ptype}", progress_callback,
+                pt_pipeline,
+                Xt,
+                yt,
+                Xte,
+                yte,
+                f"type:{ptype}",
+                progress_callback,
             )
             per_type_models[ptype] = pt_pipeline
             per_type_metrics[ptype] = pt_result["metrics"]
@@ -257,7 +289,10 @@ def train_from_csv(
                 lat = grp[col_pair[1]].median()
                 lon = grp[col_pair[2]].median()
                 if pd.notna(lat) and pd.notna(lon):
-                    coords_by_municipality[str(mun)] = {"lat": float(lat), "lon": float(lon)}
+                    coords_by_municipality[str(mun)] = {
+                        "lat": float(lat),
+                        "lon": float(lon),
+                    }
 
     duration = time.time() - start
 

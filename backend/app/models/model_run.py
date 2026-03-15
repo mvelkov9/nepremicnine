@@ -20,6 +20,4 @@ class ModelRun(Base):
     features_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     importance_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     trained_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

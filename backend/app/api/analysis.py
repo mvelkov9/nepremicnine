@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,7 +10,7 @@ from app.database import get_db
 from app.dependencies.auth import get_current_user
 from app.models.listings_run import ListingsRun
 from app.models.user import User
-from app.services.model_service import get_model_info, load_model, predict_one
+from app.services.model_service import load_model, predict_one
 
 router = APIRouter(prefix="/analysis", tags=["analysis"])
 
@@ -83,13 +81,15 @@ async def score_listings(
             label = "market_aligned"
             market_aligned += 1
 
-        scored.append(ScoredListing(
-            index=i,
-            asking_price=listing.asking_price,
-            predicted_price=round(predicted, 2),
-            deviation_pct=round(deviation, 2),
-            label=label,
-        ))
+        scored.append(
+            ScoredListing(
+                index=i,
+                asking_price=listing.asking_price,
+                predicted_price=round(predicted, 2),
+                deviation_pct=round(deviation, 2),
+                label=label,
+            )
+        )
 
     # Save run to DB
     run = ListingsRun(

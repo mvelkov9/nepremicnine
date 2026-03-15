@@ -16,7 +16,7 @@ from app.database import get_db
 from app.dependencies.auth import get_current_user, require_admin
 from app.models.training_job import JobStatus, TrainingJob
 from app.models.user import User
-from app.schemas.model import TrainRequest, TrainJobResponse, TrainStatusResponse
+from app.schemas.model import TrainJobResponse, TrainRequest, TrainStatusResponse
 from app.tasks.training_worker import JOB_PREFIX, _parse_redis_url
 
 router = APIRouter(prefix="/train", tags=["training"])
@@ -89,9 +89,7 @@ async def list_jobs(
     _user: User = Depends(get_current_user),
 ):
     """List all training jobs (most recent first)."""
-    result = await db.execute(
-        select(TrainingJob).order_by(TrainingJob.created_at.desc()).limit(50)
-    )
+    result = await db.execute(select(TrainingJob).order_by(TrainingJob.created_at.desc()).limit(50))
     jobs = result.scalars().all()
     return [
         TrainJobResponse(

@@ -17,6 +17,4 @@ class RegionLookup(Base):
     eid_statisticna_regija: Mapped[str | None] = mapped_column(String(50), nullable=True)
     regija_naziv: Mapped[str] = mapped_column(String(200), nullable=False)
     vir: Mapped[str] = mapped_column(String(50), default="privzeto", nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

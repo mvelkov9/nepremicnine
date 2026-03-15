@@ -7,30 +7,42 @@ from httpx import AsyncClient
 
 
 async def _get_admin_token(client: AsyncClient) -> str:
-    await client.post("/api/auth/register", json={
-        "email": "admin@test.com",
-        "password": "testpass123",
-        "full_name": "Admin",
-    })
-    resp = await client.post("/api/auth/login", json={
-        "email": "admin@test.com",
-        "password": "testpass123",
-    })
+    await client.post(
+        "/api/auth/register",
+        json={
+            "email": "admin@test.com",
+            "password": "testpass123",
+            "full_name": "Admin",
+        },
+    )
+    resp = await client.post(
+        "/api/auth/login",
+        json={
+            "email": "admin@test.com",
+            "password": "testpass123",
+        },
+    )
     return resp.json()["access_token"]
 
 
 async def _get_viewer_token(client: AsyncClient) -> str:
     # Ensure admin exists first
     await _get_admin_token(client)
-    await client.post("/api/auth/register", json={
-        "email": "viewer@test.com",
-        "password": "testpass123",
-        "full_name": "Viewer",
-    })
-    resp = await client.post("/api/auth/login", json={
-        "email": "viewer@test.com",
-        "password": "testpass123",
-    })
+    await client.post(
+        "/api/auth/register",
+        json={
+            "email": "viewer@test.com",
+            "password": "testpass123",
+            "full_name": "Viewer",
+        },
+    )
+    resp = await client.post(
+        "/api/auth/login",
+        json={
+            "email": "viewer@test.com",
+            "password": "testpass123",
+        },
+    )
     return resp.json()["access_token"]
 
 

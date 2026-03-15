@@ -14,7 +14,11 @@ from app.database import get_db
 from app.dependencies.auth import get_current_user, require_admin
 from app.models.dataset import DatasetFile
 from app.models.user import User
-from app.schemas.dataset import DatasetFileResponse, DatasetPreviewResponse, DatasetUploadResponse
+from app.schemas.dataset import (
+    DatasetFileResponse,
+    DatasetPreviewResponse,
+    DatasetUploadResponse,
+)
 
 router = APIRouter(prefix="/data", tags=["data"])
 
@@ -37,9 +41,7 @@ async def upload_files(
         file_hash = hashlib.sha256(content).hexdigest()
 
         # Dedup check
-        existing = await db.execute(
-            select(DatasetFile).where(DatasetFile.file_hash == file_hash)
-        )
+        existing = await db.execute(select(DatasetFile).where(DatasetFile.file_hash == file_hash))
         if existing.scalar_one_or_none():
             skipped.append(file.filename or "unknown")
             continue
@@ -90,9 +92,7 @@ async def list_datasets(
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(DatasetFile).order_by(DatasetFile.uploaded_at.desc())
-    )
+    result = await db.execute(select(DatasetFile).order_by(DatasetFile.uploaded_at.desc()))
     return result.scalars().all()
 
 
@@ -119,7 +119,7 @@ async def preview_dataset(
             total_rows=dataset.row_count or len(df),
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Cannot read file: {e}")
+        raise HTTPException(status_code=500, detail=f"Cannot read file: {e}") from e
 
 
 @router.delete("/datasets/{dataset_id}", status_code=status.HTTP_204_NO_CONTENT)
