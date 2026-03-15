@@ -6,7 +6,7 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 
 | Item | Value |
 |------|-------|
-| **Version** | 0.2.3 |
+| **Version** | 0.2.4 |
 | **Repo** | [github.com/mvelkov9/nepremicnine](https://github.com/mvelkov9/nepremicnine) |
 | **Backend** | FastAPI + Python 3.13 + PostgreSQL 17 + SQLAlchemy 2.x async |
 | **Frontend** | Vue 3 Composition API + Pinia + pnpm 9, Vite 6 |
@@ -28,6 +28,11 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 | [Phase 5](PHASE_5_PRODUCTION.md) | Production — Docker, CI/CD, deploy | ✅ Complete | `153f140` |
 
 ## Changelog
+
+### v0.2.4
+- Fix PrepareView i18n: added missing locale keys (`autoEtn`, `singleEtn`, `manualMapping`, `autoEtnDesc`, `singleEtnDesc`, `columnMapping`, `prepareButton`, `outputRows`, `outputColumns`, `year`, `noPairsDetected`, `noPairs`, `invalidJson`) to both sl.json and en.json
+- Fix ETN pair detection: `detectEtnPairs()` now runs via `watch(datasets)` instead of `onMounted`, so it fires after async `fetchDatasets()` completes
+- Version: 0.2.3 → 0.2.4
 
 ### v0.2.3
 - Fix PrepareView.vue build error: multi-statement `@click` handler incompatible with Vue 3.5.30 compiler (extracted to `switchToBulk()` method)

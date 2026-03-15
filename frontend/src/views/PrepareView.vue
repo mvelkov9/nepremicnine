@@ -1,5 +1,5 @@
 <script setup>
-  import { ref, onMounted, computed } from 'vue'
+  import { ref, onMounted, computed, watch } from 'vue'
   import { useI18n } from 'vue-i18n'
   import { useDataStore } from '../stores/data'
   import api from '../composables/useApi'
@@ -34,6 +34,9 @@
 
   onMounted(() => {
     dataStore.fetchDatasets()
+  })
+
+  watch(datasets, () => {
     detectEtnPairs()
   })
 
