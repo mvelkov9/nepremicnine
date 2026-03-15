@@ -1,11 +1,14 @@
-"""Smoke tests for model training (train_from_csv)."""
+"""Smoke tests for model training (train_from_csv) and model API endpoints."""
 
 from __future__ import annotations
 
 import os
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
+import pytest
+from httpx import AsyncClient
 
 
 def _make_synthetic_csv(path: str, n: int = 80) -> None:
@@ -92,3 +95,144 @@ def test_train_from_csv_model_file_saved(tmp_path, monkeypatch):
 
     result = ms.train_from_csv(csv_path)
     assert os.path.exists(result["model_path"]), "Model .joblib file was not saved"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# API endpoint tests for /api/model/*
+# ══════════════════════════════════════════════════════════════════════════════
+
+_FAKE_MODEL_INFO = {
+    "version": "test-v1",
+    "trained_at": "2024-01-01T00:00:00",
+    "rows": 100,
+    "duration_sec": 5.0,
+    "global_metrics": {"mae": 10_000, "rmse": 15_000, "r2": 0.85},
+    "per_type_metrics": {},
+    "per_region_metrics": {},
+    "global_importance": {"size_m2": 0.5, "rooms": 0.3},
+    "feature_labels": {"size_m2": "Velikost (m²)"},
+    "per_type_count": 0,
+    "type_models_trained": [],
+    "coords_by_municipality": {},
+}
+
+
+# ── GET /api/model/info ──────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_model_info_unauthenticated(client: AsyncClient):
+    resp = await client.get("/api/model/info")
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_model_info_no_model(client: AsyncClient, admin_headers: dict):
+    """When no model file exists, the endpoint returns 404."""
+    with patch("app.api.model.get_model_info", return_value=None):
+        resp = await client.get("/api/model/info", headers=admin_headers)
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_model_info_with_model(client: AsyncClient, admin_headers: dict):
+    with patch("app.api.model.get_model_info", return_value=_FAKE_MODEL_INFO):
+        resp = await client.get("/api/model/info", headers=admin_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["version"] == "test-v1"
+    assert data["rows"] == 100
+
+
+# ── GET /api/model/importance ────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_model_importance_unauthenticated(client: AsyncClient):
+    resp = await client.get("/api/model/importance")
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_model_importance_no_model(client: AsyncClient, admin_headers: dict):
+    with patch("app.api.model.get_model_info", return_value=None):
+        resp = await client.get("/api/model/importance", headers=admin_headers)
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_model_importance_with_model(client: AsyncClient, admin_headers: dict):
+    with patch("app.api.model.get_model_info", return_value=_FAKE_MODEL_INFO):
+        resp = await client.get("/api/model/importance", headers=admin_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert isinstance(data, list)
+    assert len(data) == 2
+    assert data[0]["feature"] == "size_m2"  # sorted by importance desc
+
+
+# ── GET /api/model/diagnostics ───────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_model_diagnostics_unauthenticated(client: AsyncClient):
+    resp = await client.get("/api/model/diagnostics")
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_model_diagnostics_no_model(client: AsyncClient, admin_headers: dict):
+    with patch("app.api.model.get_model_info", return_value=None):
+        resp = await client.get("/api/model/diagnostics", headers=admin_headers)
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_model_diagnostics_with_model(client: AsyncClient, admin_headers: dict):
+    with patch("app.api.model.get_model_info", return_value=_FAKE_MODEL_INFO):
+        resp = await client.get("/api/model/diagnostics", headers=admin_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "global_metrics" in data
+    assert "per_type_metrics" in data
+    assert "per_region_metrics" in data
+
+
+# ── GET /api/model/runs ──────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_model_runs_unauthenticated(client: AsyncClient):
+    resp = await client.get("/api/model/runs")
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_model_runs_empty(client: AsyncClient, admin_headers: dict):
+    resp = await client.get("/api/model/runs", headers=admin_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["items"] == []
+    assert data["total"] == 0
+
+
+# ── DELETE /api/model/runs/clear ─────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_clear_model_runs_unauthenticated(client: AsyncClient):
+    resp = await client.delete("/api/model/runs/clear")
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_clear_model_runs_viewer_forbidden(client: AsyncClient, viewer_headers: dict):
+    resp = await client.delete("/api/model/runs/clear", headers=viewer_headers)
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_clear_model_runs_admin_success(client: AsyncClient, admin_headers: dict):
+    resp = await client.delete("/api/model/runs/clear", headers=admin_headers)
+    assert resp.status_code == 200
+    assert resp.json()["deleted"] == 0

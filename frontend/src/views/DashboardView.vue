@@ -17,6 +17,7 @@
   } from 'chart.js'
   import { useStatsStore } from '../stores/stats'
   import api from '../composables/useApi'
+  import LoadingSpinner from '../components/LoadingSpinner.vue'
 
   ChartJS.register(
     CategoryScale,
@@ -259,7 +260,7 @@
       </div>
     </div>
 
-    <p v-if="stats.loading" class="muted">{{ t('common.loading') }}</p>
+    <LoadingSpinner v-if="stats.loading" :label="t('common.loading')" />
 
     <div class="kpi-grid">
       <div class="kpi-card">

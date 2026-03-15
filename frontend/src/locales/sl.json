@@ -67,7 +67,17 @@
     "delete": "Izbriši",
     "confirm": "Potrdi",
     "search": "Iskanje",
-    "noData": "Ni podatkov"
+    "noData": "Ni podatkov",
+    "close": "Zapri",
+    "success": "Uspeh",
+    "warning": "Opozorilo",
+    "info": "Informacija",
+    "retry": "Ponovi",
+    "yes": "Da",
+    "no": "Ne",
+    "actions": "Dejanja",
+    "back": "Nazaj",
+    "next": "Naprej"
   },
   "model": {
     "trainModel": "Urjenje modela",
@@ -236,6 +246,54 @@
     "disabled": "Onemogočen",
     "disable": "Onemogoči",
     "enable": "Omogoči",
-    "confirmDelete": "Ali ste prepričani, da želite izbrisati uporabnika {name}?"
+    "confirmDelete": "Ali ste prepričani, da želite izbrisati uporabnika {name}?",
+    "makeAdmin": "→ admin",
+    "makeViewer": "→ viewer"
+  },
+  "ui": {
+    "toggleTheme": "Preklopi temo",
+    "lightMode": "Svetli način",
+    "darkMode": "Temni način",
+    "openMenu": "Odpri meni",
+    "closeMenu": "Zapri meni"
+  },
+  "empty": {
+    "noDatasets": "Ni naloženih naborov podatkov",
+    "noPredictions": "Ni zgodovine napovedi",
+    "noResults": "Ni rezultatov za prikaz",
+    "noUsers": "Ni registriranih uporabnikov",
+    "noTrainingJobs": "Ni zaključenih urjenj"
+  },
+  "validation": {
+    "required": "To polje je obvezno",
+    "minSize": "Velikost mora biti večja od 0",
+    "invalidEmail": "Neveljaven e-poštni naslov",
+    "minPassword": "Geslo mora imeti vsaj 8 znakov",
+    "minValue": "Vrednost je premajhna",
+    "maxValue": "Vrednost je prevelika"
+  },
+  "error": {
+    "network": "Napaka omrežja. Preverite povezavo.",
+    "unauthorized": "Seja je potekla. Prijavite se znova.",
+    "forbidden": "Nimate dovoljenja za to dejanje.",
+    "notFound": "Zahtevani vir ni bil najden.",
+    "server": "Napaka strežnika. Poskusite znova.",
+    "timeout": "Zahteva je potekla. Poskusite znova.",
+    "rateLimited": "Preveč zahtev. Počakajte in poskusite znova."
+  },
+  "health": {
+    "status": "Stanje sistema",
+    "healthy": "Zdravo",
+    "unhealthy": "Nezdravo",
+    "database": "Podatkovna baza",
+    "redis": "Redis",
+    "model": "Model"
+  },
+  "pagination": {
+    "page": "Stran",
+    "of": "od",
+    "perPage": "na stran",
+    "next": "Naslednja",
+    "previous": "Prejšnja"
   }
 }

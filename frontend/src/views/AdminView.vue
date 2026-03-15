@@ -2,6 +2,7 @@
   import { ref, onMounted } from 'vue'
   import { useI18n } from 'vue-i18n'
   import api from '../composables/useApi'
+  import LoadingSpinner from '../components/LoadingSpinner.vue'
 
   const { t } = useI18n()
 
@@ -74,7 +75,7 @@
       <h2>{{ t('admin.userManagement') }}</h2>
       <p v-if="error" class="error-text" style="margin-bottom: 1rem">{{ error }}</p>
 
-      <div v-if="loading" class="muted">{{ t('common.loading') }}</div>
+      <LoadingSpinner v-if="loading" :label="t('common.loading')" />
 
       <div v-else class="table-wrap">
         <table>
@@ -110,7 +111,7 @@
                     style="padding: 4px 10px; font-size: 12px"
                     @click="toggleRole(user)"
                   >
-                    {{ user.role === 'admin' ? '→ viewer' : '→ admin' }}
+                    {{ user.role === 'admin' ? t('admin.makeViewer') : t('admin.makeAdmin') }}
                   </button>
                   <button
                     :class="user.is_active ? 'danger' : ''"

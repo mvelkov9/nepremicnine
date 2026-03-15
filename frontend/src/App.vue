@@ -2,6 +2,7 @@
   import { onMounted, ref } from 'vue'
   import { RouterView, useRoute } from 'vue-router'
   import AppLayout from './components/AppLayout.vue'
+  import ToastContainer from './components/ToastContainer.vue'
   import { useAuthStore } from './stores/auth'
 
   const auth = useAuthStore()
@@ -16,7 +17,7 @@
 
 <template>
   <div v-if="!ready" class="login-page">
-    <p>Nalaganje...</p>
+    <p>{{ $t('common.loading') }}</p>
   </div>
   <template v-else>
     <AppLayout v-if="route.meta.requiresAuth && auth.isAuthenticated">
@@ -24,4 +25,5 @@
     </AppLayout>
     <RouterView v-else />
   </template>
+  <ToastContainer />
 </template>

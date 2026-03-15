@@ -2,13 +2,14 @@
 
 import hashlib
 import json
+import logging
 import os
 import uuid
 
 import pandas as pd
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -29,6 +30,8 @@ from app.services.data_processing_service import (
     prepare_training_csv_from_etn_kpp_bulk,
     read_csv_flexible,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/data", tags=["data"])
 
@@ -112,8 +115,8 @@ async def upload_files(
                     df = read_csv_flexible(csv_path)
                     columns_json = json.dumps(list(df.columns))
                     row_count = len(df)
-                except Exception:
-                    pass
+                except (pd.errors.ParserError, pd.errors.EmptyDataError, ValueError, UnicodeDecodeError, OSError):
+                    logger.exception("Failed to read CSV metadata from extracted file %s", csv_path)
 
                 record = DatasetFile(
                     original_name=os.path.basename(csv_path),
@@ -138,8 +141,8 @@ async def upload_files(
                 df = read_csv_flexible(stored_path)
                 columns_json = json.dumps(list(df.columns))
                 row_count = len(df)
-            except Exception:
-                pass
+            except (pd.errors.ParserError, pd.errors.EmptyDataError, ValueError, UnicodeDecodeError, OSError):
+                logger.exception("Failed to read CSV metadata from %s", stored_path)
 
         record = DatasetFile(
             original_name=file.filename or "unknown",
@@ -163,13 +166,32 @@ async def upload_files(
     )
 
 
-@router.get("/datasets", response_model=list[DatasetFileResponse])
+@router.get("/datasets")
 async def list_datasets(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
-    result = await db.execute(select(DatasetFile).order_by(DatasetFile.uploaded_at.desc()))
-    return result.scalars().all()
+    import math
+
+    # Count total
+    count_result = await db.execute(select(func.count(DatasetFile.id)))
+    total = count_result.scalar() or 0
+    pages = math.ceil(total / per_page) if total > 0 else 0
+
+    offset = (page - 1) * per_page
+    result = await db.execute(
+        select(DatasetFile).order_by(DatasetFile.uploaded_at.desc()).offset(offset).limit(per_page)
+    )
+    items = [DatasetFileResponse.model_validate(r) for r in result.scalars().all()]
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "pages": pages,
+    }
 
 
 @router.get("/preview/{dataset_id}", response_model=DatasetPreviewResponse)
@@ -194,7 +216,8 @@ async def preview_dataset(
             rows=df.fillna("").to_dict(orient="records"),
             total_rows=dataset.row_count or len(df),
         )
-    except Exception:
+    except (pd.errors.ParserError, pd.errors.EmptyDataError, ValueError, UnicodeDecodeError, OSError):
+        logger.exception("Cannot read dataset file %s for preview", dataset.stored_path)
         raise HTTPException(status_code=500, detail="Cannot read the dataset file") from None
 
 
@@ -343,7 +366,8 @@ async def inspect_dataset(
         raise HTTPException(status_code=404, detail="File not found on disk")
     try:
         return inspect_csv(dataset.stored_path)
-    except Exception:
+    except (pd.errors.ParserError, pd.errors.EmptyDataError, ValueError, UnicodeDecodeError, OSError):
+        logger.exception("Cannot inspect dataset file %s", dataset.stored_path)
         raise HTTPException(status_code=500, detail="Cannot inspect the dataset file") from None
 
 

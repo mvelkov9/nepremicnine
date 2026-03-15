@@ -30,9 +30,31 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 ## Changelog
 
 ### v0.3.0
-- **ML improvement**: Replace built-in `feature_importances_` with permutation importance (`sklearn.inspection.permutation_importance`, `n_repeats=3` on test set) for more reliable, out-of-sample feature contribution scores; falls back to built-in importances if permutation step fails
-- **Tests**: Add `test_model.py` — four smoke tests for `train_from_csv` covering return keys, global metrics structure, non-empty importance dict, and model file persistence; uses synthetic in-memory CSV so no real data or DB needed
-- Version: 0.2.5 → 0.3.0
+- **Security**: Rate limiting on auth endpoints (slowapi, 5 req/min per IP)
+- **Security**: Token blacklist for logout via Redis
+- **Security**: Security response headers (X-Content-Type-Options, X-Frame-Options, Referrer-Policy)
+- **Security**: Input range validation on prediction requests (Pydantic Field constraints)
+- **Security**: Fixed silent exception swallowing — specific exceptions with logging throughout
+- **ML**: Permutation importance (sklearn, n_repeats=3) replaces built-in feature_importances_
+- **Backend**: Structured request logging middleware with correlation IDs (X-Request-ID)
+- **Backend**: Global exception handler — structured JSON errors, no stack trace leaks
+- **Backend**: Production-grade logging config (JSON format in prod, human-readable in dev)
+- **Backend**: Redis caching for stats and model info endpoints (5-min TTL)
+- **Backend**: Pagination for datasets, prediction history, training jobs, model runs
+- **Backend**: Enhanced health check — DB, Redis, and model status
+- **Backend**: GZip compression middleware
+- **Backend**: Database indexes on prediction_logs and model_runs
+- **Testing**: 14 → 96 tests covering all endpoint groups (auth, data, predict, train, model, stats, admin, analysis, regions)
+- **Frontend**: Dark mode with system preference detection and localStorage persistence
+- **Frontend**: Mobile responsive layout (hamburger menu, collapsible sidebar)
+- **Frontend**: WCAG AA contrast fix for sidebar text
+- **Frontend**: Loading spinners and empty state components
+- **Frontend**: Toast notification system for API errors
+- **Frontend**: Inline form validation (PredictionView, LoginView)
+- **Frontend**: ARIA labels and keyboard navigation improvements
+- **Frontend**: Axios request timeout (30s)
+- **i18n**: Added missing locale keys for UI elements, validation, empty states
+- **Version**: 0.2.5 → 0.3.0
 
 ### v0.2.5
 - Rewrite ETN pair detection: use reactive `computed` (like v1) instead of fragile `watch` + imperative function
@@ -116,6 +138,7 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 | Auth | python-jose (JWT) + bcrypt | — |
 | Task Queue | ARQ | 0.26+ |
 | ML | scikit-learn (HistGBR) | 1.6+ |
+| Rate Limiting | slowapi | 0.1.9+ |
 | Data | pandas + numpy | — |
 | Frontend | Vue 3 (Composition API) | 3.5+ |
 | State | Pinia | 2.3+ |

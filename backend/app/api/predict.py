@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import json
+import math
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -45,20 +46,28 @@ async def predict(
 
 @router.get("/history")
 async def prediction_history(
-    limit: int = 50,
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     """Get recent prediction history for the current user."""
+    # Count total for this user
+    count_result = await db.execute(select(func.count(PredictionLog.id)).where(PredictionLog.user_id == user.id))
+    total = count_result.scalar() or 0
+    pages = math.ceil(total / per_page) if total > 0 else 0
+
+    offset = (page - 1) * per_page
     result = await db.execute(
         select(PredictionLog)
         .where(PredictionLog.user_id == user.id)
         .order_by(PredictionLog.created_at.desc())
-        .limit(min(limit, 200))
+        .offset(offset)
+        .limit(per_page)
     )
     logs = result.scalars().all()
 
-    return [
+    items = [
         {
             "id": log.id,
             "payload": json.loads(log.payload_json),
@@ -67,6 +76,13 @@ async def prediction_history(
         }
         for log in logs
     ]
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "pages": pages,
+    }
 
 
 @router.delete("/history/clear", status_code=status.HTTP_200_OK)

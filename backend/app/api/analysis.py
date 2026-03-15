@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +13,8 @@ from app.dependencies.auth import get_current_user
 from app.models.listings_run import ListingsRun
 from app.models.user import User
 from app.services.model_service import load_model, predict_one
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/analysis", tags=["analysis"])
 
@@ -66,7 +70,8 @@ async def score_listings(
         try:
             result = predict_one(features)
             predicted = result["predicted_price_eur"]
-        except Exception:
+        except (RuntimeError, ValueError):
+            logger.warning("Prediction failed for listing %d, skipping", i, exc_info=True)
             continue
 
         deviation = ((listing.asking_price - predicted) / predicted) * 100 if predicted > 0 else 0

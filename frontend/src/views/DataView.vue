@@ -3,6 +3,8 @@
   import { useI18n } from 'vue-i18n'
   import { useAuthStore } from '../stores/auth'
   import { useDataStore } from '../stores/data'
+  import LoadingSpinner from '../components/LoadingSpinner.vue'
+  import EmptyState from '../components/EmptyState.vue'
 
   const { t } = useI18n()
   const auth = useAuthStore()
@@ -82,8 +84,12 @@
     <!-- Dataset table -->
     <div class="card">
       <div class="card-title">{{ t('data.datasets') }}</div>
-      <p v-if="dataStore.loading" class="muted">{{ t('common.loading') }}</p>
-      <p v-else-if="!dataStore.datasets.length" class="muted">{{ t('common.noData') }}</p>
+      <LoadingSpinner v-if="dataStore.loading" :label="t('common.loading')" />
+      <EmptyState
+        v-else-if="!dataStore.datasets.length"
+        icon="📁"
+        :message="t('empty.noDatasets')"
+      />
       <div v-else class="table-wrap">
         <table>
           <thead>

@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import logging
+import math
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,16 +17,52 @@ from app.models.user import User
 from app.schemas.model import ModelInfoResponse
 from app.services.model_service import get_model_info
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/model", tags=["model"])
+
+CACHE_TTL = 300  # 5 minutes
+
+
+async def _cache_get(request: Request, key: str):
+    """Try to get cached value from Redis."""
+    try:
+        redis = getattr(request.app.state, "redis", None)
+        if redis is None:
+            return None
+        raw = await redis.get(key)
+        if raw is not None:
+            return json.loads(raw)
+    except Exception:
+        logger.debug("Redis cache miss/error for key=%s", key)
+    return None
+
+
+async def _cache_set(request: Request, key: str, value) -> None:
+    """Store value in Redis cache with TTL."""
+    try:
+        redis = getattr(request.app.state, "redis", None)
+        if redis is None:
+            return
+        await redis.set(key, json.dumps(value, default=str), ex=CACHE_TTL)
+    except Exception:
+        logger.debug("Redis cache set error for key=%s", key)
 
 
 @router.get("/info", response_model=ModelInfoResponse)
-async def model_info(_user: User = Depends(get_current_user)):
+async def model_info(request: Request, _user: User = Depends(get_current_user)):
     """Get current trained model metadata."""
+    cache_key = "cache:model:info"
+    cached = await _cache_get(request, cache_key)
+    if cached is not None:
+        return ModelInfoResponse(**cached)
+
     info = get_model_info()
     if info is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No trained model found")
-    return ModelInfoResponse(**info)
+    response = ModelInfoResponse(**info)
+    await _cache_set(request, cache_key, response.model_dump())
+    return response
 
 
 @router.get("/importance")
@@ -68,13 +106,21 @@ async def model_diagnostics(_user: User = Depends(get_current_user)):
 
 @router.get("/runs")
 async def model_runs(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
     """Get model training run history."""
-    result = await db.execute(select(ModelRun).order_by(ModelRun.created_at.desc()).limit(50))
+    # Count total
+    count_result = await db.execute(select(func.count(ModelRun.id)))
+    total = count_result.scalar() or 0
+    pages = math.ceil(total / per_page) if total > 0 else 0
+
+    offset = (page - 1) * per_page
+    result = await db.execute(select(ModelRun).order_by(ModelRun.created_at.desc()).offset(offset).limit(per_page))
     runs = result.scalars().all()
-    return [
+    items = [
         {
             "id": r.id,
             "source_csv_path": r.source_csv_path,
@@ -88,6 +134,13 @@ async def model_runs(
         }
         for r in runs
     ]
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "pages": pages,
+    }
 
 
 @router.delete("/runs/clear", status_code=status.HTTP_200_OK)

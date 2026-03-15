@@ -2,6 +2,7 @@
   import { ref, onMounted, computed } from 'vue'
   import { useI18n } from 'vue-i18n'
   import api from '../composables/useApi'
+  import EmptyState from '../components/EmptyState.vue'
 
   const { t } = useI18n()
 
@@ -74,8 +75,19 @@
   const history = ref([])
   const loading = ref(false)
   const error = ref(null)
+  const formErrors = ref({})
+
+  function validateForm() {
+    const errors = {}
+    if (!form.value.size_m2 || form.value.size_m2 <= 0) {
+      errors.size_m2 = t('validation.minSize')
+    }
+    formErrors.value = errors
+    return Object.keys(errors).length === 0
+  }
 
   async function predict() {
+    if (!validateForm()) return
     loading.value = true
     error.value = null
     result.value = null
@@ -127,8 +139,11 @@
               step="0.1"
               min="1"
               class="form-input"
+              :class="{ 'input-error': formErrors.size_m2 }"
               required
+              @input="formErrors.size_m2 = null"
             />
+            <span v-if="formErrors.size_m2" class="field-error">{{ formErrors.size_m2 }}</span>
           </div>
           <div>
             <label class="form-label">{{ t('predict.rooms') }}</label>
@@ -325,9 +340,10 @@
     </div>
 
     <!-- History -->
-    <div v-if="history.length" class="card">
+    <div class="card">
       <h2>{{ t('predict.history') }}</h2>
-      <div class="table-wrap">
+      <EmptyState v-if="!history.length" icon="📋" :message="t('empty.noPredictions')" />
+      <div v-else class="table-wrap">
         <table>
           <thead>
             <tr>
@@ -365,8 +381,8 @@
     top: 100%;
     left: 0;
     right: 0;
-    background: #fff;
-    border: 1px solid #d1d5db;
+    background: var(--card-bg, #fff);
+    border: 1px solid var(--border, #d1d5db);
     border-radius: 6px;
     max-height: 200px;
     overflow-y: auto;
@@ -382,7 +398,7 @@
     font-size: 0.875rem;
   }
   .suggestions li:hover {
-    background: #eff6ff;
+    background: var(--card-bg-muted, #eff6ff);
   }
   .checkbox-grid {
     display: flex;
@@ -390,9 +406,9 @@
     gap: 1rem;
     margin-top: 1rem;
     padding: 1rem;
-    background: #f9fafb;
+    background: var(--card-bg-muted, #f9fafb);
     border-radius: 8px;
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--border, #e5e7eb);
   }
   .checkbox-label {
     display: flex;
@@ -426,7 +442,7 @@
   }
   .features-used h3 {
     font-size: 0.875rem;
-    color: #6b7280;
+    color: var(--text-muted, #6b7280);
     margin-bottom: 0.5rem;
   }
   .features-grid {
@@ -439,11 +455,11 @@
     justify-content: space-between;
     padding: 4px 8px;
     font-size: 0.8rem;
-    background: #f3f4f6;
+    background: var(--card-bg-muted, #f3f4f6);
     border-radius: 4px;
   }
   .feature-key {
-    color: #6b7280;
+    color: var(--text-muted, #6b7280);
   }
   .feature-val {
     font-weight: 600;

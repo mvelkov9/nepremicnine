@@ -81,7 +81,7 @@ async def test_upload_and_list(client: AsyncClient):
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp.status_code == 200
-    assert len(resp.json()) == 1
+    assert len(resp.json()["items"]) == 1
 
 
 @pytest.mark.asyncio

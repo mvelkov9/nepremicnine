@@ -14,8 +14,19 @@
   const fullName = ref('')
   const error = ref('')
   const loading = ref(false)
+  const formErrors = ref({})
+
+  function validateForm() {
+    const errors = {}
+    if (!email.value.trim()) errors.email = t('validation.required')
+    if (!password.value) errors.password = t('validation.required')
+    if (!isLogin.value && !fullName.value.trim()) errors.fullName = t('validation.required')
+    formErrors.value = errors
+    return Object.keys(errors).length === 0
+  }
 
   async function handleSubmit() {
+    if (!validateForm()) return
     error.value = ''
     loading.value = true
     try {
@@ -48,17 +59,40 @@
       <form @submit.prevent="handleSubmit">
         <div v-if="!isLogin" class="field">
           <label>{{ t('auth.fullName') }}</label>
-          <input v-model="fullName" type="text" required />
+          <input
+            v-model="fullName"
+            type="text"
+            required
+            :class="{ 'input-error': formErrors.fullName }"
+            @input="formErrors.fullName = null"
+          />
+          <span v-if="formErrors.fullName" class="field-error">{{ formErrors.fullName }}</span>
         </div>
 
         <div class="field">
           <label>{{ t('auth.email') }}</label>
-          <input v-model="email" type="email" required autocomplete="username" />
+          <input
+            v-model="email"
+            type="email"
+            required
+            autocomplete="username"
+            :class="{ 'input-error': formErrors.email }"
+            @input="formErrors.email = null"
+          />
+          <span v-if="formErrors.email" class="field-error">{{ formErrors.email }}</span>
         </div>
 
         <div class="field">
           <label>{{ t('auth.password') }}</label>
-          <input v-model="password" type="password" required autocomplete="current-password" />
+          <input
+            v-model="password"
+            type="password"
+            required
+            autocomplete="current-password"
+            :class="{ 'input-error': formErrors.password }"
+            @input="formErrors.password = null"
+          />
+          <span v-if="formErrors.password" class="field-error">{{ formErrors.password }}</span>
         </div>
 
         <p v-if="error" class="error" style="margin-bottom: 12px">{{ error }}</p>

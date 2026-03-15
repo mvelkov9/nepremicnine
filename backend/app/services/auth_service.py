@@ -28,3 +28,14 @@ def create_refresh_token(user_id: int) -> str:
     expire = datetime.now(UTC) + timedelta(days=settings.refresh_token_expire_days)
     payload = {"sub": str(user_id), "type": "refresh", "exp": expire}
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+
+
+async def blacklist_token(redis, token: str, ttl_seconds: int) -> None:
+    """Add a token to the blacklist in Redis with TTL matching token expiry."""
+    await redis.set(f"token_blacklist:{token}", "1", ex=ttl_seconds)
+
+
+async def is_token_blacklisted(redis, token: str) -> bool:
+    """Check if a token has been blacklisted."""
+    result = await redis.get(f"token_blacklist:{token}")
+    return result is not None

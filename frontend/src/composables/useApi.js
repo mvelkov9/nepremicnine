@@ -1,8 +1,10 @@
 import axios from 'axios'
+import { useToast } from './useToast'
 
 const api = axios.create({
   baseURL: '',
   headers: { 'Content-Type': 'application/json' },
+  timeout: 30000,
 })
 
 // Request interceptor: attach JWT
@@ -36,6 +38,13 @@ api.interceptors.response.use(
           window.location.href = '/login'
         }
       }
+    }
+    // Show error toast for non-401 HTTP errors
+    const status = error.response?.status
+    if (status && status !== 401) {
+      const { showToast } = useToast()
+      const detail = error.response?.data?.detail || error.message || 'Request failed'
+      showToast(detail, 'error')
     }
     return Promise.reject(error)
   },

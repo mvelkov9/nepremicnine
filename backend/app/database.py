@@ -9,12 +9,11 @@ from app.config import get_settings
 
 settings = get_settings()
 
-engine = create_async_engine(
-    settings.database_url,
-    echo=settings.app_env == "development",
-    pool_size=5,
-    max_overflow=10,
-)
+_engine_kwargs: dict = {"echo": settings.app_env == "development"}
+if "sqlite" not in settings.database_url:
+    _engine_kwargs.update({"pool_size": 5, "max_overflow": 10})
+
+engine = create_async_engine(settings.database_url, **_engine_kwargs)
 
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 

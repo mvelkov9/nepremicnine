@@ -1,14 +1,16 @@
-"""Auth routes: register, login, refresh, me."""
+"""Auth routes: register, login, refresh, me, logout."""
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.security import HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.database import get_db
-from app.dependencies.auth import get_current_user
+from app.dependencies.auth import get_current_user, security
 from app.models.user import User, UserRole
+from app.rate_limit import limiter
 from app.schemas.auth import (
     LoginRequest,
     RefreshRequest,
@@ -17,6 +19,7 @@ from app.schemas.auth import (
     UserResponse,
 )
 from app.services.auth_service import (
+    blacklist_token,
     create_access_token,
     create_refresh_token,
     hash_password,
@@ -27,7 +30,8 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
+@limiter.limit("5/minute")
+async def register(request: Request, body: RegisterRequest, db: AsyncSession = Depends(get_db)):
     # Check duplicate email
     existing = await db.execute(select(User).where(User.email == body.email))
     if existing.scalar_one_or_none():
@@ -50,7 +54,8 @@ async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
+@limiter.limit("5/minute")
+async def login(request: Request, body: LoginRequest, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).where(User.email == body.email))
     user = result.scalar_one_or_none()
 
@@ -96,3 +101,16 @@ async def refresh(body: RefreshRequest, db: AsyncSession = Depends(get_db)):
 @router.get("/me", response_model=UserResponse)
 async def me(user: User = Depends(get_current_user)):
     return user
+
+
+@router.post("/logout")
+async def logout(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _user: User = Depends(get_current_user),
+):
+    """Blacklist the current access token."""
+    settings = get_settings()
+    ttl = settings.access_token_expire_minutes * 60
+    await blacklist_token(request.app.state.redis, credentials.credentials, ttl)
+    return {"detail": "Logged out"}

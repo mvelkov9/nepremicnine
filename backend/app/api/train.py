@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import logging
+import math
 import os
 import uuid
 
 from arq import create_pool
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,9 +21,29 @@ from app.models.user import User
 from app.schemas.model import TrainJobResponse, TrainRequest, TrainStatusResponse
 from app.tasks.training_worker import JOB_PREFIX, _parse_redis_url
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/train", tags=["training"])
 
 DATA_DIR = os.path.realpath(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data"))
+
+CACHE_PREFIXES = ["cache:stats:", "cache:model:"]
+
+
+async def _invalidate_caches(request: Request) -> None:
+    """Delete all stats and model cache keys after training completes."""
+    try:
+        redis = getattr(request.app.state, "redis", None)
+        if redis is None:
+            return
+        for prefix in CACHE_PREFIXES:
+            cursor = b"0"
+            while cursor:
+                cursor, keys = await redis.scan(cursor=cursor, match=f"{prefix}*", count=100)
+                if keys:
+                    await redis.delete(*keys)
+    except Exception:
+        logger.debug("Failed to invalidate caches")
 
 
 @router.post("/start", response_model=TrainStatusResponse)
@@ -61,6 +83,7 @@ async def start_training(
 @router.get("/status/{job_id}", response_model=TrainStatusResponse)
 async def get_training_status(
     job_id: str,
+    request: Request,
     _user: User = Depends(get_current_user),
 ):
     """Get training job status from Redis."""
@@ -75,9 +98,15 @@ async def get_training_status(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Job not found")
 
     data = json.loads(raw)
+    job_status = data.get("status", "unknown")
+
+    # Invalidate caches when training completes
+    if job_status == "completed":
+        await _invalidate_caches(request)
+
     return TrainStatusResponse(
         job_id=job_id,
-        status=data.get("status", "unknown"),
+        status=job_status,
         stage=data.get("stage"),
         progress=data.get("progress", 0),
         result=data.get("result"),
@@ -85,15 +114,25 @@ async def get_training_status(
     )
 
 
-@router.get("/jobs", response_model=list[TrainJobResponse])
+@router.get("/jobs")
 async def list_jobs(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
     """List all training jobs (most recent first)."""
-    result = await db.execute(select(TrainingJob).order_by(TrainingJob.created_at.desc()).limit(50))
+    # Count total
+    count_result = await db.execute(select(func.count(TrainingJob.id)))
+    total = count_result.scalar() or 0
+    pages = math.ceil(total / per_page) if total > 0 else 0
+
+    offset = (page - 1) * per_page
+    result = await db.execute(
+        select(TrainingJob).order_by(TrainingJob.created_at.desc()).offset(offset).limit(per_page)
+    )
     jobs = result.scalars().all()
-    return [
+    items = [
         TrainJobResponse(
             id=j.id,
             job_id=j.job_id,
@@ -108,6 +147,13 @@ async def list_jobs(
         )
         for j in jobs
     ]
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "pages": pages,
+    }
 
 
 @router.delete("/jobs/clear", status_code=status.HTTP_200_OK)

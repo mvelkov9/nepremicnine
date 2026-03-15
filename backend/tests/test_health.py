@@ -14,5 +14,6 @@ async def test_health():
         resp = await client.get("/api/health")
     assert resp.status_code == 200
     data = resp.json()
-    assert data["status"] == "ok"
+    assert data["status"] in ("healthy", "degraded")
     assert data["version"] == get_settings().app_version
+    assert "checks" in data

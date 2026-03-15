@@ -3,11 +3,14 @@
   import { useI18n } from 'vue-i18n'
   import { useAuthStore } from '../stores/auth'
   import { useRouter } from 'vue-router'
+  import { useDarkMode } from '../composables/useDarkMode'
 
   const { t, locale } = useI18n()
   const auth = useAuthStore()
   const router = useRouter()
+  const { isDark, toggleDark } = useDarkMode()
 
+  const mobileMenuOpen = ref(false)
   const appVersion = ref('')
 
   onMounted(async () => {
@@ -51,21 +54,40 @@
 
 <template>
   <div class="app-shell">
-    <aside class="sidebar">
+    <div class="mobile-topbar">
+      <button
+        class="hamburger-btn"
+        @click="mobileMenuOpen = !mobileMenuOpen"
+        :aria-label="mobileMenuOpen ? t('ui.closeMenu') : t('ui.openMenu')"
+        :aria-expanded="mobileMenuOpen"
+      >
+        {{ mobileMenuOpen ? '✕' : '☰' }}
+      </button>
+      <span class="mobile-brand">{{ t('app.title') }}</span>
+    </div>
+
+    <div v-if="mobileMenuOpen" class="mobile-backdrop" @click="mobileMenuOpen = false"></div>
+
+    <aside class="sidebar" :class="{ 'mobile-open': mobileMenuOpen }">
       <div class="sidebar-brand">
         {{ t('app.title') }}
         <small>{{ t('app.subtitle') }}</small>
       </div>
 
-      <nav class="sidebar-nav">
+      <nav class="sidebar-nav" aria-label="Main navigation">
         <template v-for="item in navItems" :key="item.to">
-          <RouterLink v-if="!item.admin || auth.isAdmin" :to="item.to" class="nav-btn">
+          <RouterLink
+            v-if="!item.admin || auth.isAdmin"
+            :to="item.to"
+            class="nav-btn"
+            @click="mobileMenuOpen = false"
+          >
             <span class="nav-icon">{{ item.icon }}</span>
             {{ t(item.label) }}
           </RouterLink>
         </template>
 
-        <RouterLink v-if="auth.isAdmin" to="/admin" class="nav-btn">
+        <RouterLink v-if="auth.isAdmin" to="/admin" class="nav-btn" @click="mobileMenuOpen = false">
           <span class="nav-icon">⚙️</span>
           {{ t('nav.admin') }}
         </RouterLink>
@@ -73,11 +95,29 @@
 
       <div class="side-meta">
         <div class="locale-toggle">
-          <button class="locale-btn" :class="{ active: locale === 'sl' }" @click="locale = 'sl'">
+          <button
+            class="locale-btn"
+            :class="{ active: locale === 'sl' }"
+            @click="locale = 'sl'"
+            aria-label="Slovenščina"
+          >
             SI
           </button>
-          <button class="locale-btn" :class="{ active: locale === 'en' }" @click="locale = 'en'">
+          <button
+            class="locale-btn"
+            :class="{ active: locale === 'en' }"
+            @click="locale = 'en'"
+            aria-label="English"
+          >
             EN
+          </button>
+          <button
+            class="locale-btn"
+            @click="toggleDark"
+            :aria-label="t('ui.toggleTheme')"
+            :title="isDark ? t('ui.lightMode') : t('ui.darkMode')"
+          >
+            {{ isDark ? '☀️' : '🌙' }}
           </button>
         </div>
 
@@ -93,7 +133,7 @@
           </div>
         </div>
 
-        <button class="nav-btn" @click="handleLogout">
+        <button class="nav-btn" @click="handleLogout" :aria-label="t('nav.logout')">
           <span class="nav-icon">🚪</span>
           {{ t('nav.logout') }}
         </button>

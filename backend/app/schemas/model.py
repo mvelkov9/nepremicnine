@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class TrainRequest(BaseModel):
@@ -34,12 +34,12 @@ class TrainJobResponse(BaseModel):
 
 
 class PredictRequest(BaseModel):
-    size_m2: float
-    rooms: float | None = None
-    year_built: int | None = None
-    floor: int | None = None
-    latitude: float | None = None
-    longitude: float | None = None
+    size_m2: float = Field(..., ge=1, le=50000)
+    rooms: float | None = Field(default=None, ge=0, le=100)
+    year_built: int | None = Field(default=None, ge=1800, le=2030)
+    floor: int | None = Field(default=None, ge=-5, le=100)
+    latitude: float | None = Field(default=None, ge=45.0, le=47.0)
+    longitude: float | None = Field(default=None, ge=13.0, le=17.0)
     municipality: str | None = None
     property_type: str = "stanovanje"
     novogradnja: int | None = None

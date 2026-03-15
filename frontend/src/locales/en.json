@@ -67,7 +67,17 @@
     "delete": "Delete",
     "confirm": "Confirm",
     "search": "Search",
-    "noData": "No data"
+    "noData": "No data",
+    "close": "Close",
+    "success": "Success",
+    "warning": "Warning",
+    "info": "Info",
+    "retry": "Retry",
+    "yes": "Yes",
+    "no": "No",
+    "actions": "Actions",
+    "back": "Back",
+    "next": "Next"
   },
   "model": {
     "trainModel": "Train Model",
@@ -236,6 +246,54 @@
     "disabled": "Disabled",
     "disable": "Disable",
     "enable": "Enable",
-    "confirmDelete": "Are you sure you want to delete user {name}?"
+    "confirmDelete": "Are you sure you want to delete user {name}?",
+    "makeAdmin": "→ admin",
+    "makeViewer": "→ viewer"
+  },
+  "ui": {
+    "toggleTheme": "Toggle theme",
+    "lightMode": "Light mode",
+    "darkMode": "Dark mode",
+    "openMenu": "Open menu",
+    "closeMenu": "Close menu"
+  },
+  "empty": {
+    "noDatasets": "No datasets uploaded",
+    "noPredictions": "No prediction history",
+    "noResults": "No results to display",
+    "noUsers": "No registered users",
+    "noTrainingJobs": "No training jobs completed"
+  },
+  "validation": {
+    "required": "This field is required",
+    "minSize": "Size must be greater than 0",
+    "invalidEmail": "Invalid email address",
+    "minPassword": "Password must be at least 8 characters",
+    "minValue": "Value is too small",
+    "maxValue": "Value is too large"
+  },
+  "error": {
+    "network": "Network error. Check your connection.",
+    "unauthorized": "Session expired. Please log in again.",
+    "forbidden": "You do not have permission for this action.",
+    "notFound": "The requested resource was not found.",
+    "server": "Server error. Please try again.",
+    "timeout": "Request timed out. Please try again.",
+    "rateLimited": "Too many requests. Please wait and try again."
+  },
+  "health": {
+    "status": "System Status",
+    "healthy": "Healthy",
+    "unhealthy": "Unhealthy",
+    "database": "Database",
+    "redis": "Redis",
+    "model": "Model"
+  },
+  "pagination": {
+    "page": "Page",
+    "of": "of",
+    "perPage": "per page",
+    "next": "Next",
+    "previous": "Previous"
   }
 }

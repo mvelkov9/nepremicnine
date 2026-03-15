@@ -4,6 +4,7 @@
   import L from 'leaflet'
   import 'leaflet/dist/leaflet.css'
   import api from '../composables/useApi'
+  import LoadingSpinner from '../components/LoadingSpinner.vue'
 
   const { t } = useI18n()
 
@@ -354,7 +355,9 @@
           <button class="clear-btn" @click="clearFilters" :title="t('map.clearFilter')">✕</button>
         </div>
 
-        <p v-if="loading" class="muted loading-text">{{ t('map.loading') }}</p>
+        <p v-if="loading" class="muted loading-text">
+          <LoadingSpinner :label="t('map.loading')" />
+        </p>
         <p v-if="error" class="muted error-text">{{ error }}</p>
       </div>
     </div>

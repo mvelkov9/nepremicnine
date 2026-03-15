@@ -8,6 +8,8 @@
 - **Visualize** market trends, regional statistics, and price distributions on interactive dashboards and maps
 - **Analyze** listings against trained models to identify over/under-priced properties
 - **Manage** datasets, model training, and users through a full admin interface
+- **Secure** with rate limiting, token blacklist, security headers, and input validation
+- **Accessible** with dark mode, mobile responsive layout, WCAG AA contrast, and keyboard navigation
 
 ## Tech Stack
 
@@ -15,8 +17,10 @@
 |-------|-----------|
 | Backend | FastAPI + Python 3.13 + uvicorn |
 | Database | PostgreSQL 17 + SQLAlchemy 2.x (async) + Alembic |
+| Cache | Redis 7 (caching + task queue + token blacklist) |
 | Task Queue | ARQ + Redis 7 |
 | ML | scikit-learn HistGradientBoostingRegressor (per property type) |
+| Security | slowapi rate limiting, security headers, input validation |
 | Frontend | Vue 3 (Composition API) + Pinia + Vite 6 |
 | Charts | Chart.js + vue-chartjs |
 | Maps | Leaflet 1.9 |
@@ -116,7 +120,7 @@ nepremicnine/
 │   │   ├── services/           # Business logic (data processing, ML, regions)
 │   │   └── tasks/              # ARQ async workers (model training)
 │   ├── models/                 # Trained model artifacts (*.joblib)
-│   └── tests/                  # pytest tests (14 tests)
+│   └── tests/                  # pytest tests (96 tests)
 │
 └── frontend/
     ├── Dockerfile              # Multi-stage: node build → nginx
@@ -214,6 +218,7 @@ docker compose exec frontend pnpm build
 - [Phase 3: ML Pipeline](docs/PHASE_3_ML_PIPELINE.md)
 - [Phase 4: Features](docs/PHASE_4_FEATURES.md)
 - [Phase 5: Production](docs/PHASE_5_PRODUCTION.md)
+- [Phase 6: v0.3.0 Hardening](docs/PHASE_6_V030.md)
 - [Deployment Guide](docs/DEPLOYMENT.md)
 
 ## License
