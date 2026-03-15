@@ -17,6 +17,8 @@ COPY --from=builder /install /usr/local
 WORKDIR /app
 COPY . .
 
+ENV PYTHONPATH=/app
+
 # In development, we run as root for volume mounts
 # In production, switch to appuser
 # USER appuser
