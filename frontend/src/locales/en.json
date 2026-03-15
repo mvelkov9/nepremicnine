@@ -29,8 +29,31 @@
     "title": "Dashboard",
     "totalRecords": "Total Records",
     "medianPrice": "Median Price",
+    "avgPrice": "Average Price",
     "pricePerM2": "€/m²",
-    "modelR2": "Model R²"
+    "avgArea": "Avg. Area",
+    "modelR2": "Model R²",
+    "regionPrices": "Prices by Region (€/m²)",
+    "priceDistribution": "Price Distribution",
+    "priceTrend": "Price Trend Over Years",
+    "propertyTypes": "Property Types",
+    "topMunicipalities": "Top Municipalities by Transactions",
+    "municipality": "Municipality",
+    "transactions": "Transactions"
+  },
+  "data": {
+    "upload": "File Upload",
+    "uploadButton": "Upload",
+    "datasets": "Datasets",
+    "fileName": "File Name",
+    "rows": "Rows",
+    "uploaded": "Uploaded",
+    "actions": "Actions",
+    "preview": "Preview",
+    "columns": "Columns",
+    "confirmDelete": "Are you sure you want to delete this dataset?",
+    "uploadedCount": "{count} files uploaded",
+    "skippedCount": "{count} files skipped (duplicate)"
   },
   "common": {
     "loading": "Loading...",

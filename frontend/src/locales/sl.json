@@ -29,8 +29,31 @@
     "title": "Nadzorna plošča",
     "totalRecords": "Skupno zapisov",
     "medianPrice": "Mediana cene",
+    "avgPrice": "Povprečna cena",
     "pricePerM2": "€/m²",
-    "modelR2": "R² modela"
+    "avgArea": "Povp. površina",
+    "modelR2": "R² modela",
+    "regionPrices": "Cene po regijah (€/m²)",
+    "priceDistribution": "Porazdelitev cen",
+    "priceTrend": "Trend cen skozi leta",
+    "propertyTypes": "Tipi nepremičnin",
+    "topMunicipalities": "Top občine po transakcijah",
+    "municipality": "Občina",
+    "transactions": "Transakcije"
+  },
+  "data": {
+    "upload": "Nalaganje datotek",
+    "uploadButton": "Naloži",
+    "datasets": "Nabori podatkov",
+    "fileName": "Ime datoteke",
+    "rows": "Vrstic",
+    "uploaded": "Naloženo",
+    "actions": "Dejanja",
+    "preview": "Predogled",
+    "columns": "Stolpci",
+    "confirmDelete": "Ali ste prepričani, da želite izbrisati ta nabor podatkov?",
+    "uploadedCount": "{count} datotek naloženih",
+    "skippedCount": "{count} datotek preskočenih (duplikat)"
   },
   "common": {
     "loading": "Nalaganje...",
