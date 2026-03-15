@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -29,9 +31,6 @@ async def predict(
     except RuntimeError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
 
-    # Log prediction
-    import json
-
     log = PredictionLog(
         payload_json=json.dumps(features),
         predicted_price_eur=result["predicted_price_eur"],
@@ -48,12 +47,16 @@ async def predict(
 async def prediction_history(
     limit: int = 50,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ):
-    """Get recent prediction history."""
-    result = await db.execute(select(PredictionLog).order_by(PredictionLog.created_at.desc()).limit(min(limit, 200)))
+    """Get recent prediction history for the current user."""
+    result = await db.execute(
+        select(PredictionLog)
+        .where(PredictionLog.user_id == user.id)
+        .order_by(PredictionLog.created_at.desc())
+        .limit(min(limit, 200))
+    )
     logs = result.scalars().all()
-    import json
 
     return [
         {
@@ -72,10 +75,8 @@ async def clear_history(
     _user: User = Depends(require_admin),
 ):
     """Delete all prediction history."""
-    result = await db.execute(select(PredictionLog))
-    logs = result.scalars().all()
-    count = len(logs)
-    for log in logs:
-        await db.delete(log)
+    result = await db.execute(select(func.count(PredictionLog.id)))
+    count = result.scalar() or 0
+    await db.execute(delete(PredictionLog))
     await db.commit()
     return {"deleted": count}

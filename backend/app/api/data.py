@@ -32,8 +32,20 @@ from app.services.data_processing_service import (
 
 router = APIRouter(prefix="/data", tags=["data"])
 
-UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "uploads")
+DATA_DIR = os.path.realpath(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data"))
+UPLOAD_DIR = os.path.join(DATA_DIR, "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+MAX_UPLOAD_SIZE = 500 * 1024 * 1024  # 500 MB
+ALLOWED_EXTENSIONS = {".csv", ".zip"}
+
+
+def _validate_path_within_data_dir(raw_path: str) -> str:
+    """Resolve a path and ensure it stays within DATA_DIR. Raises 400 on traversal."""
+    resolved = os.path.realpath(raw_path)
+    if not resolved.startswith(DATA_DIR + os.sep) and resolved != DATA_DIR:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Path is outside the allowed data directory")
+    return resolved
 
 
 @router.post("/upload", response_model=DatasetUploadResponse)
@@ -47,7 +59,17 @@ async def upload_files(
     skipped = []
 
     for file in files:
+        # Validate file extension
+        ext = os.path.splitext(file.filename or "file.csv")[1].lower()
+        if ext not in ALLOWED_EXTENSIONS:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, f"File type '{ext}' not allowed. Only .csv and .zip accepted.")
+
         content = await file.read()
+
+        # Validate file size
+        if len(content) > MAX_UPLOAD_SIZE:
+            raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, f"File exceeds {MAX_UPLOAD_SIZE // (1024*1024)} MB limit")
+
         file_hash = hashlib.sha256(content).hexdigest()
 
         # Dedup check
@@ -57,7 +79,6 @@ async def upload_files(
             continue
 
         # Save to disk
-        ext = os.path.splitext(file.filename or "file.csv")[1].lower()
         stored_name = f"{uuid.uuid4().hex}_{file.filename}"
         stored_path = os.path.join(UPLOAD_DIR, stored_name)
         with open(stored_path, "wb") as f:
@@ -169,8 +190,8 @@ async def preview_dataset(
             rows=df.fillna("").to_dict(orient="records"),
             total_rows=dataset.row_count or len(df),
         )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Cannot read file: {e}") from e
+    except Exception:
+        raise HTTPException(status_code=500, detail="Cannot read the dataset file") from None
 
 
 @router.delete("/datasets/{dataset_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -229,8 +250,10 @@ async def prepare_etn_kpp(
     _user: User = Depends(require_admin),
 ):
     """Prepare training CSV from a single ETN KPP posli+delistavb pair."""
+    posli = _validate_path_within_data_dir(req.posli_csv_path)
+    delistavb = _validate_path_within_data_dir(req.delistavb_csv_path)
     try:
-        result = prepare_training_csv_from_etn_kpp(req.posli_csv_path, req.delistavb_csv_path, TRAIN_CSV)
+        result = prepare_training_csv_from_etn_kpp(posli, delistavb, TRAIN_CSV)
     except Exception as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
     return result
@@ -254,6 +277,11 @@ async def prepare_etn_kpp_bulk(
     _user: User = Depends(require_admin),
 ):
     """Prepare training CSV from multiple ETN KPP pairs (multi-year)."""
+    for p in req.pairs:
+        _validate_path_within_data_dir(p.posli_csv_path)
+        _validate_path_within_data_dir(p.delistavb_csv_path)
+        if p.zemljisca_csv_path:
+            _validate_path_within_data_dir(p.zemljisca_csv_path)
     try:
         pairs_dicts = [p.model_dump() for p in req.pairs]
         result = prepare_training_csv_from_etn_kpp_bulk(pairs_dicts, TRAIN_CSV)
@@ -276,8 +304,10 @@ async def import_rpe_rn_endpoint(
     """Import RPE + RN data, store municipality→region mappings in DB."""
     from app.models.region import RegionLookup as RegionLookupModel
 
+    rn_path = _validate_path_within_data_dir(req.rn_csv_path)
+    stat_path = _validate_path_within_data_dir(req.stat_regije_csv_path) if req.stat_regije_csv_path else None
     try:
-        result = import_rpe_rn(req.rn_csv_path, req.stat_regije_csv_path, UPLOAD_DIR)
+        result = import_rpe_rn(rn_path, stat_path, UPLOAD_DIR)
     except Exception as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
 
@@ -309,8 +339,8 @@ async def inspect_dataset(
         raise HTTPException(status_code=404, detail="File not found on disk")
     try:
         return inspect_csv(dataset.stored_path)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Cannot inspect: {e}") from e
+    except Exception:
+        raise HTTPException(status_code=500, detail="Cannot inspect the dataset file") from None
 
 
 class PrepareTrainRequest(BaseModel):
@@ -324,8 +354,9 @@ async def prepare_train(
     _user: User = Depends(require_admin),
 ):
     """Prepare training CSV from a source CSV with custom column mapping."""
+    source = _validate_path_within_data_dir(req.source_csv_path)
     try:
-        result = prepare_training_csv(req.source_csv_path, req.column_map, TRAIN_CSV)
+        result = prepare_training_csv(source, req.column_map, TRAIN_CSV)
     except Exception as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
     return result

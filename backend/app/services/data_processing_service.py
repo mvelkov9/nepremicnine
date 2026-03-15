@@ -247,13 +247,23 @@ def prepare_training_csv(
 # ── ZIP extraction ──────────────────────────────────────────────────
 
 
+def _safe_extractall(archive: zipfile.ZipFile, dest: str) -> None:
+    """Extract ZIP members after verifying none escape the destination directory."""
+    dest = os.path.realpath(dest)
+    for member in archive.namelist():
+        member_path = os.path.realpath(os.path.join(dest, member))
+        if not member_path.startswith(dest + os.sep) and member_path != dest:
+            raise ValueError(f"ZIP member would escape target directory: {member}")
+    archive.extractall(dest)
+
+
 def extract_zip_csvs(zip_path: str, upload_dir: str) -> list[str]:
     """Extract a ZIP (incl. nested ZIPs) and return paths to all CSV files."""
     extract_dir = os.path.join(upload_dir, f"unzipped_{uuid.uuid4().hex}")
     os.makedirs(extract_dir, exist_ok=True)
     try:
         with zipfile.ZipFile(zip_path, "r") as archive:
-            archive.extractall(extract_dir)
+            _safe_extractall(archive, extract_dir)
 
         # Expand nested ZIPs
         for root, _, files in os.walk(extract_dir):
@@ -264,8 +274,8 @@ def extract_zip_csvs(zip_path: str, upload_dir: str) -> list[str]:
                     os.makedirs(nested_dir, exist_ok=True)
                     try:
                         with zipfile.ZipFile(nested_path, "r") as nested:
-                            nested.extractall(nested_dir)
-                    except zipfile.BadZipFile:
+                            _safe_extractall(nested, nested_dir)
+                    except (zipfile.BadZipFile, ValueError):
                         continue
 
         csv_paths: list[str] = []
@@ -287,7 +297,7 @@ def extract_zip_all(zip_path: str, upload_dir: str) -> str:
     extract_dir = os.path.join(upload_dir, f"unzipped_{uuid.uuid4().hex}")
     os.makedirs(extract_dir, exist_ok=True)
     with zipfile.ZipFile(zip_path, "r") as archive:
-        archive.extractall(extract_dir)
+        _safe_extractall(archive, extract_dir)
 
     for root, _, files in os.walk(extract_dir):
         for fname in files:
@@ -297,8 +307,8 @@ def extract_zip_all(zip_path: str, upload_dir: str) -> str:
                 os.makedirs(nested_dir, exist_ok=True)
                 try:
                     with zipfile.ZipFile(nested_path, "r") as nested:
-                        nested.extractall(nested_dir)
-                except zipfile.BadZipFile:
+                        _safe_extractall(nested, nested_dir)
+                except (zipfile.BadZipFile, ValueError):
                     continue
     return extract_dir
 

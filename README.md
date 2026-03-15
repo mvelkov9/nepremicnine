@@ -1,4 +1,4 @@
-# Nepremičnine v0.2.1
+# Nepremičnine v0.2.2
 
 > Slovenian real estate price analysis & prediction platform — powered by machine learning on official ETN transaction data.
 
@@ -149,7 +149,10 @@ nepremicnine/
 | POST | `/api/data/prepare-etn-kpp` | admin | Prepare single ETN pair |
 | POST | `/api/data/prepare-etn-kpp-bulk` | admin | Prepare bulk ETN pairs |
 | POST | `/api/data/prepare-train` | admin | Manual column mapping |
+| POST | `/api/data/datasets/delete-bulk` | admin | Bulk delete datasets |
+| POST | `/api/data/regions/import-rpe-rn` | admin | Import RPE/RN region data |
 | GET | `/api/data/preview/{id}` | token | Preview dataset rows |
+| GET | `/api/data/inspect/{id}` | token | Inspect dataset columns & stats |
 | **Stats** | | | |
 | GET | `/api/stats/overview` | token | Dataset statistics summary |
 | GET | `/api/stats/regions` | token | Per-region statistics |
@@ -165,9 +168,11 @@ nepremicnine/
 | POST | `/api/train/start` | admin | Start model training (async) |
 | GET | `/api/train/status/{job_id}` | token | Training job status |
 | GET | `/api/train/jobs` | token | List all training jobs |
+| DELETE | `/api/train/jobs/clear` | admin | Clear training job history |
 | **Prediction** | | | |
 | POST | `/api/predict` | token | Predict property price |
-| GET | `/api/predict/history` | token | Prediction history |
+| GET | `/api/predict/history` | token | Prediction history (user-scoped) |
+| DELETE | `/api/predict/history/clear` | admin | Clear all prediction history |
 | **Model** | | | |
 | GET | `/api/model/info` | token | Model metrics & info |
 | GET | `/api/model/importance` | token | Feature importance |

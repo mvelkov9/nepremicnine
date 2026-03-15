@@ -6,7 +6,7 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 
 | Item | Value |
 |------|-------|
-| **Version** | 0.2.1 |
+| **Version** | 0.2.2 |
 | **Repo** | [github.com/mvelkov9/nepremicnine](https://github.com/mvelkov9/nepremicnine) |
 | **Backend** | FastAPI + Python 3.13 + PostgreSQL 17 + SQLAlchemy 2.x async |
 | **Frontend** | Vue 3 Composition API + Pinia + pnpm 9, Vite 6 |
@@ -28,6 +28,19 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 | [Phase 5](PHASE_5_PRODUCTION.md) | Production — Docker, CI/CD, deploy | ✅ Complete | `153f140` |
 
 ## Changelog
+
+### v0.2.2
+- **Security**: Path traversal fix — all file-path endpoints validate paths stay within the data directory
+- **Security**: ZIP slip fix — ZIP extraction validates no member escapes the target directory
+- **Security**: Upload validation — 500 MB size limit + `.csv`/`.zip` extension allowlist
+- **Security**: Password minimum 8 characters on registration
+- **Security**: CORS tightened to explicit method/header allowlists
+- **Security**: Error messages no longer leak internal paths to clients
+- **Performance**: Bulk delete endpoints use SQL `DELETE FROM` instead of per-row ORM delete
+- **Bug fix**: Prediction history scoped to current user (was returning all users' history)
+- **Bug fix**: Added missing `/priprava` route for PrepareView (was in sidebar but not in router)
+- **Code quality**: Inline imports moved to top-level
+- **Version**: 0.2.1 → 0.2.2
 
 ### v0.2.1
 - Fix CI pipeline: ruff format (backend) + Prettier (frontend) formatting issues

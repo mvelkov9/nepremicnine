@@ -8,7 +8,7 @@ import uuid
 
 from arq import create_pool
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import select, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -21,6 +21,8 @@ from app.tasks.training_worker import JOB_PREFIX, _parse_redis_url
 
 router = APIRouter(prefix="/train", tags=["training"])
 
+DATA_DIR = os.path.realpath(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data"))
+
 
 @router.post("/start", response_model=TrainStatusResponse)
 async def start_training(
@@ -31,12 +33,12 @@ async def start_training(
     """Start an async training job. Admin only."""
     csv_path = req.csv_path
     if not os.path.isabs(csv_path):
-        csv_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-            csv_path,
-        )
+        csv_path = os.path.join(DATA_DIR, csv_path)
+    csv_path = os.path.realpath(csv_path)
+    if not csv_path.startswith(DATA_DIR + os.sep) and csv_path != DATA_DIR:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "CSV path is outside the allowed data directory")
     if not os.path.exists(csv_path):
-        raise HTTPException(status.HTTP_404_NOT_FOUND, f"CSV not found: {req.csv_path}")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "CSV not found")
 
     job_id = uuid.uuid4().hex[:16]
 
@@ -114,10 +116,8 @@ async def clear_jobs(
     _user: User = Depends(require_admin),
 ):
     """Delete all training job records."""
-    result = await db.execute(select(TrainingJob))
-    jobs = result.scalars().all()
-    count = len(jobs)
-    for j in jobs:
-        await db.delete(j)
+    result = await db.execute(select(func.count(TrainingJob.id)))
+    count = result.scalar() or 0
+    await db.execute(delete(TrainingJob))
     await db.commit()
     return {"deleted": count}

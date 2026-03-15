@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -96,10 +96,8 @@ async def clear_model_runs(
     _user: User = Depends(require_admin),
 ):
     """Delete all model run records."""
-    result = await db.execute(select(ModelRun))
-    runs = result.scalars().all()
-    count = len(runs)
-    for r in runs:
-        await db.delete(r)
+    result = await db.execute(select(func.count(ModelRun.id)))
+    count = result.scalar() or 0
+    await db.execute(delete(ModelRun))
     await db.commit()
     return {"deleted": count}
