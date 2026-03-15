@@ -1,0 +1,45 @@
+{
+  "app": {
+    "title": "Nepremičnine",
+    "subtitle": "Analiza in napovedovanje cen nepremičnin"
+  },
+  "nav": {
+    "dashboard": "Nadzorna plošča",
+    "data": "Podatki",
+    "model": "Model",
+    "prediction": "Napoved",
+    "map": "Zemljevid",
+    "diagnostics": "Diagnostika",
+    "analysis": "Analiza",
+    "admin": "Administracija",
+    "logout": "Odjava"
+  },
+  "auth": {
+    "login": "Prijava",
+    "register": "Registracija",
+    "email": "E-pošta",
+    "password": "Geslo",
+    "fullName": "Polno ime",
+    "loginButton": "Prijavi se",
+    "registerButton": "Registriraj se",
+    "noAccount": "Nimate računa?",
+    "hasAccount": "Že imate račun?"
+  },
+  "dashboard": {
+    "title": "Nadzorna plošča",
+    "totalRecords": "Skupno zapisov",
+    "medianPrice": "Mediana cene",
+    "pricePerM2": "€/m²",
+    "modelR2": "R² modela"
+  },
+  "common": {
+    "loading": "Nalaganje...",
+    "error": "Napaka",
+    "save": "Shrani",
+    "cancel": "Prekliči",
+    "delete": "Izbriši",
+    "confirm": "Potrdi",
+    "search": "Iskanje",
+    "noData": "Ni podatkov"
+  }
+}

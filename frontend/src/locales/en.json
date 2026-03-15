@@ -1,0 +1,45 @@
+{
+  "app": {
+    "title": "Nepremičnine",
+    "subtitle": "Real estate price analysis & prediction"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "data": "Data",
+    "model": "Model",
+    "prediction": "Prediction",
+    "map": "Map",
+    "diagnostics": "Diagnostics",
+    "analysis": "Analysis",
+    "admin": "Admin",
+    "logout": "Logout"
+  },
+  "auth": {
+    "login": "Login",
+    "register": "Register",
+    "email": "Email",
+    "password": "Password",
+    "fullName": "Full name",
+    "loginButton": "Sign in",
+    "registerButton": "Sign up",
+    "noAccount": "Don't have an account?",
+    "hasAccount": "Already have an account?"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "totalRecords": "Total Records",
+    "medianPrice": "Median Price",
+    "pricePerM2": "€/m²",
+    "modelR2": "Model R²"
+  },
+  "common": {
+    "loading": "Loading...",
+    "error": "Error",
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "confirm": "Confirm",
+    "search": "Search",
+    "noData": "No data"
+  }
+}
