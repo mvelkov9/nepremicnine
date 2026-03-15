@@ -3,7 +3,7 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from app.config import settings
+from app.config import get_settings
 from app.main import app
 
 
@@ -15,4 +15,4 @@ async def test_health():
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "ok"
-    assert data["version"] == settings.app_version
+    assert data["version"] == get_settings().app_version

@@ -1,67 +1,69 @@
 <script setup>
-import { ref, onMounted } from 'vue'
-import { useI18n } from 'vue-i18n'
-import api from '../composables/useApi'
+  import { ref, onMounted } from 'vue'
+  import { useI18n } from 'vue-i18n'
+  import api from '../composables/useApi'
 
-const { t } = useI18n()
+  const { t } = useI18n()
 
-const users = ref([])
-const loading = ref(false)
-const error = ref(null)
+  const users = ref([])
+  const loading = ref(false)
+  const error = ref(null)
 
-async function fetchUsers() {
-  loading.value = true
-  error.value = null
-  try {
-    const { data } = await api.get('/api/admin/users')
-    users.value = data
-  } catch (e) {
-    error.value = e.response?.data?.detail || e.message
-  } finally {
-    loading.value = false
+  async function fetchUsers() {
+    loading.value = true
+    error.value = null
+    try {
+      const { data } = await api.get('/api/admin/users')
+      users.value = data
+    } catch (e) {
+      error.value = e.response?.data?.detail || e.message
+    } finally {
+      loading.value = false
+    }
   }
-}
 
-async function toggleRole(user) {
-  const newRole = user.role === 'admin' ? 'viewer' : 'admin'
-  try {
-    const { data } = await api.patch(`/api/admin/users/${user.id}`, { role: newRole })
-    const idx = users.value.findIndex((u) => u.id === user.id)
-    if (idx !== -1) users.value[idx] = data
-  } catch (e) {
-    error.value = e.response?.data?.detail || e.message
+  async function toggleRole(user) {
+    const newRole = user.role === 'admin' ? 'viewer' : 'admin'
+    try {
+      const { data } = await api.patch(`/api/admin/users/${user.id}`, { role: newRole })
+      const idx = users.value.findIndex((u) => u.id === user.id)
+      if (idx !== -1) users.value[idx] = data
+    } catch (e) {
+      error.value = e.response?.data?.detail || e.message
+    }
   }
-}
 
-async function toggleActive(user) {
-  try {
-    const { data } = await api.patch(`/api/admin/users/${user.id}`, { is_active: !user.is_active })
-    const idx = users.value.findIndex((u) => u.id === user.id)
-    if (idx !== -1) users.value[idx] = data
-  } catch (e) {
-    error.value = e.response?.data?.detail || e.message
+  async function toggleActive(user) {
+    try {
+      const { data } = await api.patch(`/api/admin/users/${user.id}`, {
+        is_active: !user.is_active,
+      })
+      const idx = users.value.findIndex((u) => u.id === user.id)
+      if (idx !== -1) users.value[idx] = data
+    } catch (e) {
+      error.value = e.response?.data?.detail || e.message
+    }
   }
-}
 
-async function deleteUser(user) {
-  if (!confirm(t('admin.confirmDelete', { name: user.full_name }))) return
-  try {
-    await api.delete(`/api/admin/users/${user.id}`)
-    users.value = users.value.filter((u) => u.id !== user.id)
-  } catch (e) {
-    error.value = e.response?.data?.detail || e.message
+  async function deleteUser(user) {
+    if (!confirm(t('admin.confirmDelete', { name: user.full_name }))) return
+    try {
+      await api.delete(`/api/admin/users/${user.id}`)
+      users.value = users.value.filter((u) => u.id !== user.id)
+    } catch (e) {
+      error.value = e.response?.data?.detail || e.message
+    }
   }
-}
 
-function roleBadge(role) {
-  return role === 'admin' ? 'badge-blue' : 'badge-gray'
-}
+  function roleBadge(role) {
+    return role === 'admin' ? 'badge-blue' : 'badge-gray'
+  }
 
-function activeBadge(active) {
-  return active ? 'badge-green' : 'badge-red'
-}
+  function activeBadge(active) {
+    return active ? 'badge-green' : 'badge-red'
+  }
 
-onMounted(fetchUsers)
+  onMounted(fetchUsers)
 </script>
 
 <template>
@@ -103,17 +105,25 @@ onMounted(fetchUsers)
               <td>{{ new Date(user.created_at).toLocaleDateString() }}</td>
               <td>
                 <div style="display: flex; gap: 0.5rem; flex-wrap: wrap">
-                  <button class="secondary" style="padding: 4px 10px; font-size: 12px"
-                          @click="toggleRole(user)">
+                  <button
+                    class="secondary"
+                    style="padding: 4px 10px; font-size: 12px"
+                    @click="toggleRole(user)"
+                  >
                     {{ user.role === 'admin' ? '→ viewer' : '→ admin' }}
                   </button>
-                  <button :class="user.is_active ? 'danger' : ''"
-                          style="padding: 4px 10px; font-size: 12px"
-                          @click="toggleActive(user)">
+                  <button
+                    :class="user.is_active ? 'danger' : ''"
+                    style="padding: 4px 10px; font-size: 12px"
+                    @click="toggleActive(user)"
+                  >
                     {{ user.is_active ? t('admin.disable') : t('admin.enable') }}
                   </button>
-                  <button class="danger" style="padding: 4px 10px; font-size: 12px"
-                          @click="deleteUser(user)">
+                  <button
+                    class="danger"
+                    style="padding: 4px 10px; font-size: 12px"
+                    @click="deleteUser(user)"
+                  >
                     {{ t('common.delete') }}
                   </button>
                 </div>

@@ -1,135 +1,148 @@
 <script setup>
-import { onMounted, computed } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { Bar, Doughnut, Line } from 'vue-chartjs'
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  LineElement,
-  PointElement,
-  ArcElement,
-  Title,
-  Tooltip,
-  Legend,
-  Filler,
-} from 'chart.js'
-import { useStatsStore } from '../stores/stats'
+  import { onMounted, computed } from 'vue'
+  import { useI18n } from 'vue-i18n'
+  import { Bar, Doughnut, Line } from 'vue-chartjs'
+  import {
+    Chart as ChartJS,
+    CategoryScale,
+    LinearScale,
+    BarElement,
+    LineElement,
+    PointElement,
+    ArcElement,
+    Title,
+    Tooltip,
+    Legend,
+    Filler,
+  } from 'chart.js'
+  import { useStatsStore } from '../stores/stats'
 
-ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, ArcElement, Title, Tooltip, Legend, Filler)
+  ChartJS.register(
+    CategoryScale,
+    LinearScale,
+    BarElement,
+    LineElement,
+    PointElement,
+    ArcElement,
+    Title,
+    Tooltip,
+    Legend,
+    Filler,
+  )
 
-const { t } = useI18n()
-const stats = useStatsStore()
+  const { t } = useI18n()
+  const stats = useStatsStore()
 
-onMounted(() => stats.fetchAll())
+  onMounted(() => stats.fetchAll())
 
-function fmt(val, decimals = 0) {
-  if (val == null) return '—'
-  return Number(val).toLocaleString('sl-SI', { maximumFractionDigits: decimals })
-}
-
-const regionChartData = computed(() => {
-  if (!stats.regions.length) return null
-  const sorted = [...stats.regions].sort((a, b) => (b.avg_price_per_m2 || 0) - (a.avg_price_per_m2 || 0))
-  return {
-    labels: sorted.map((r) => r.region),
-    datasets: [
-      {
-        label: '€/m²',
-        data: sorted.map((r) => r.avg_price_per_m2 || 0),
-        backgroundColor: '#3b82f6',
-        borderRadius: 6,
-      },
-    ],
+  function fmt(val, decimals = 0) {
+    if (val == null) return '—'
+    return Number(val).toLocaleString('sl-SI', { maximumFractionDigits: decimals })
   }
-})
 
-const regionChartOptions = {
-  responsive: true,
-  maintainAspectRatio: false,
-  indexAxis: 'y',
-  plugins: { legend: { display: false } },
-  scales: { x: { grid: { display: false } } },
-}
+  const regionChartData = computed(() => {
+    if (!stats.regions.length) return null
+    const sorted = [...stats.regions].sort(
+      (a, b) => (b.avg_price_per_m2 || 0) - (a.avg_price_per_m2 || 0),
+    )
+    return {
+      labels: sorted.map((r) => r.region),
+      datasets: [
+        {
+          label: '€/m²',
+          data: sorted.map((r) => r.avg_price_per_m2 || 0),
+          backgroundColor: '#3b82f6',
+          borderRadius: 6,
+        },
+      ],
+    }
+  })
 
-const distributionChartData = computed(() => {
-  if (!stats.priceDistribution) return null
-  return {
-    labels: stats.priceDistribution.bin_labels,
-    datasets: [
-      {
-        label: t('dashboard.transactions'),
-        data: stats.priceDistribution.counts,
-        backgroundColor: '#3b82f680',
-        borderColor: '#3b82f6',
-        borderWidth: 1,
-        borderRadius: 4,
-      },
-    ],
+  const regionChartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    indexAxis: 'y',
+    plugins: { legend: { display: false } },
+    scales: { x: { grid: { display: false } } },
   }
-})
 
-const distributionChartOptions = {
-  responsive: true,
-  maintainAspectRatio: false,
-  plugins: { legend: { display: false } },
-  scales: {
-    x: { grid: { display: false }, ticks: { maxRotation: 45, font: { size: 10 } } },
-    y: { beginAtZero: true },
-  },
-}
+  const distributionChartData = computed(() => {
+    if (!stats.priceDistribution) return null
+    return {
+      labels: stats.priceDistribution.bin_labels,
+      datasets: [
+        {
+          label: t('dashboard.transactions'),
+          data: stats.priceDistribution.counts,
+          backgroundColor: '#3b82f680',
+          borderColor: '#3b82f6',
+          borderWidth: 1,
+          borderRadius: 4,
+        },
+      ],
+    }
+  })
 
-const trendChartData = computed(() => {
-  if (!stats.trend.length) return null
-  return {
-    labels: stats.trend.map((p) => p.year),
-    datasets: [
-      {
-        label: t('dashboard.medianPrice'),
-        data: stats.trend.map((p) => p.median_price),
-        borderColor: '#3b82f6',
-        backgroundColor: '#3b82f620',
-        fill: true,
-        tension: 0.3,
-      },
-      {
-        label: t('dashboard.avgPrice'),
-        data: stats.trend.map((p) => p.avg_price),
-        borderColor: '#f59e0b',
-        borderDash: [5, 5],
-        fill: false,
-        tension: 0.3,
-      },
-    ],
+  const distributionChartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { grid: { display: false }, ticks: { maxRotation: 45, font: { size: 10 } } },
+      y: { beginAtZero: true },
+    },
   }
-})
 
-const trendChartOptions = {
-  responsive: true,
-  maintainAspectRatio: false,
-  plugins: { legend: { position: 'bottom' } },
-  scales: { y: { beginAtZero: false } },
-}
+  const trendChartData = computed(() => {
+    if (!stats.trend.length) return null
+    return {
+      labels: stats.trend.map((p) => p.year),
+      datasets: [
+        {
+          label: t('dashboard.medianPrice'),
+          data: stats.trend.map((p) => p.median_price),
+          borderColor: '#3b82f6',
+          backgroundColor: '#3b82f620',
+          fill: true,
+          tension: 0.3,
+        },
+        {
+          label: t('dashboard.avgPrice'),
+          data: stats.trend.map((p) => p.avg_price),
+          borderColor: '#f59e0b',
+          borderDash: [5, 5],
+          fill: false,
+          tension: 0.3,
+        },
+      ],
+    }
+  })
 
-const typeChartData = computed(() => {
-  if (!stats.overview?.property_types?.length) return null
-  return {
-    labels: stats.overview.property_types.map((p) => p.type),
-    datasets: [
-      {
-        data: stats.overview.property_types.map((p) => p.count),
-        backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'],
-      },
-    ],
+  const trendChartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { position: 'bottom' } },
+    scales: { y: { beginAtZero: false } },
   }
-})
 
-const typeChartOptions = {
-  responsive: true,
-  maintainAspectRatio: false,
-  plugins: { legend: { position: 'right', labels: { font: { size: 11 } } } },
-}
+  const typeChartData = computed(() => {
+    if (!stats.overview?.property_types?.length) return null
+    return {
+      labels: stats.overview.property_types.map((p) => p.type),
+      datasets: [
+        {
+          data: stats.overview.property_types.map((p) => p.count),
+          backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'],
+        },
+      ],
+    }
+  })
+
+  const typeChartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { position: 'right', labels: { font: { size: 11 } } } },
+  }
 </script>
 
 <template>

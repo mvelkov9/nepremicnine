@@ -1,80 +1,80 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { Bar } from 'vue-chartjs'
-import { Chart as ChartJS, BarElement, CategoryScale, LinearScale, Tooltip } from 'chart.js'
-import { useModelStore } from '../stores/model'
-import { useDataStore } from '../stores/data'
-import { useAuthStore } from '../stores/auth'
+  import { ref, onMounted, computed } from 'vue'
+  import { useI18n } from 'vue-i18n'
+  import { Bar } from 'vue-chartjs'
+  import { Chart as ChartJS, BarElement, CategoryScale, LinearScale, Tooltip } from 'chart.js'
+  import { useModelStore } from '../stores/model'
+  import { useDataStore } from '../stores/data'
+  import { useAuthStore } from '../stores/auth'
 
-ChartJS.register(BarElement, CategoryScale, LinearScale, Tooltip)
+  ChartJS.register(BarElement, CategoryScale, LinearScale, Tooltip)
 
-const { t } = useI18n()
-const model = useModelStore()
-const data = useDataStore()
-const auth = useAuthStore()
+  const { t } = useI18n()
+  const model = useModelStore()
+  const data = useDataStore()
+  const auth = useAuthStore()
 
-const selectedCsv = ref('')
-const pollTimer = ref(null)
+  const selectedCsv = ref('')
+  const pollTimer = ref(null)
 
-const isAdmin = computed(() => auth.user?.role === 'admin')
+  const isAdmin = computed(() => auth.user?.role === 'admin')
 
-const metricsCards = computed(() => {
-  const m = model.info?.global_metrics
-  if (!m) return []
-  return [
-    { label: 'MAE', value: `€${Math.round(m.mae).toLocaleString()}` },
-    { label: 'RMSE', value: `€${Math.round(m.rmse).toLocaleString()}` },
-    { label: 'R²', value: m.r2?.toFixed(4) },
-    { label: 'MAPE', value: `${m.mape?.toFixed(1)}%` },
-    { label: t('model.medianError'), value: `€${Math.round(m.median_ae).toLocaleString()}` },
-  ]
-})
+  const metricsCards = computed(() => {
+    const m = model.info?.global_metrics
+    if (!m) return []
+    return [
+      { label: 'MAE', value: `€${Math.round(m.mae).toLocaleString()}` },
+      { label: 'RMSE', value: `€${Math.round(m.rmse).toLocaleString()}` },
+      { label: 'R²', value: m.r2?.toFixed(4) },
+      { label: 'MAPE', value: `${m.mape?.toFixed(1)}%` },
+      { label: t('model.medianError'), value: `€${Math.round(m.median_ae).toLocaleString()}` },
+    ]
+  })
 
-const importanceChart = computed(() => {
-  const items = model.importance.slice(0, 15)
-  return {
-    labels: items.map((i) => i.label),
-    datasets: [
-      {
-        label: t('model.importance'),
-        data: items.map((i) => i.importance),
-        backgroundColor: '#3b82f6',
-        borderRadius: 4,
-      },
-    ],
+  const importanceChart = computed(() => {
+    const items = model.importance.slice(0, 15)
+    return {
+      labels: items.map((i) => i.label),
+      datasets: [
+        {
+          label: t('model.importance'),
+          data: items.map((i) => i.importance),
+          backgroundColor: '#3b82f6',
+          borderRadius: 4,
+        },
+      ],
+    }
+  })
+
+  const importanceOptions = {
+    indexAxis: 'y',
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: { x: { beginAtZero: true } },
   }
-})
 
-const importanceOptions = {
-  indexAxis: 'y',
-  responsive: true,
-  maintainAspectRatio: false,
-  plugins: { legend: { display: false } },
-  scales: { x: { beginAtZero: true } },
-}
-
-async function train() {
-  if (!selectedCsv.value) return
-  const result = await model.startTraining(selectedCsv.value)
-  if (result?.job_id) {
-    pollTimer.value = setInterval(async () => {
-      const status = await model.pollStatus(result.job_id)
-      if (!status || status.status === 'completed' || status.status === 'failed') {
-        clearInterval(pollTimer.value)
-        pollTimer.value = null
-        if (status?.status === 'completed') {
-          await model.fetchInfo()
-          await model.fetchImportance()
+  async function train() {
+    if (!selectedCsv.value) return
+    const result = await model.startTraining(selectedCsv.value)
+    if (result?.job_id) {
+      pollTimer.value = setInterval(async () => {
+        const status = await model.pollStatus(result.job_id)
+        if (!status || status.status === 'completed' || status.status === 'failed') {
+          clearInterval(pollTimer.value)
+          pollTimer.value = null
+          if (status?.status === 'completed') {
+            await model.fetchInfo()
+            await model.fetchImportance()
+          }
         }
-      }
-    }, 2000)
+      }, 2000)
+    }
   }
-}
 
-onMounted(async () => {
-  await Promise.all([model.fetchInfo(), model.fetchImportance(), data.fetchDatasets()])
-})
+  onMounted(async () => {
+    await Promise.all([model.fetchInfo(), model.fetchImportance(), data.fetchDatasets()])
+  })
 </script>
 
 <template>
@@ -95,11 +95,7 @@ onMounted(async () => {
             </option>
           </select>
         </div>
-        <button
-          class="btn btn-primary"
-          :disabled="!selectedCsv || model.training"
-          @click="train"
-        >
+        <button class="btn btn-primary" :disabled="!selectedCsv || model.training" @click="train">
           {{ model.training ? t('model.training') : t('model.trainButton') }}
         </button>
       </div>
@@ -113,8 +109,9 @@ onMounted(async () => {
           />
         </div>
         <p class="muted" style="margin-top: 0.5rem">
-          {{ model.trainingStatus.status }} — {{ model.trainingStatus.stage || '' }}
-          ({{ model.trainingStatus.progress || 0 }}%)
+          {{ model.trainingStatus.status }} — {{ model.trainingStatus.stage || '' }} ({{
+            model.trainingStatus.progress || 0
+          }}%)
         </p>
       </div>
 
@@ -125,10 +122,10 @@ onMounted(async () => {
     <div v-if="model.info" class="card" style="margin-bottom: 1.5rem">
       <h2>{{ t('model.currentModel') }}</h2>
       <p class="muted">
-        {{ t('model.trainedAt') }}: {{ new Date(model.info.trained_at).toLocaleString() }}
-        · {{ model.info.rows?.toLocaleString() }} {{ t('data.rows') }}
-        · {{ model.info.duration_sec?.toFixed(1) }}s
-        · {{ model.info.per_type_count }} {{ t('model.perTypeModels') }}
+        {{ t('model.trainedAt') }}: {{ new Date(model.info.trained_at).toLocaleString() }} ·
+        {{ model.info.rows?.toLocaleString() }} {{ t('data.rows') }} ·
+        {{ model.info.duration_sec?.toFixed(1) }}s · {{ model.info.per_type_count }}
+        {{ t('model.perTypeModels') }}
       </p>
 
       <!-- Metrics cards -->

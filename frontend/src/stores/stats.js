@@ -38,5 +38,16 @@ export const useStatsStore = defineStore('stats', () => {
     }
   }
 
-  return { overview, regions, priceDistribution, trend, loading, fetchAll, fetchOverview, fetchRegions, fetchPriceDistribution, fetchTrend }
+  return {
+    overview,
+    regions,
+    priceDistribution,
+    trend,
+    loading,
+    fetchAll,
+    fetchOverview,
+    fetchRegions,
+    fetchPriceDistribution,
+    fetchTrend,
+  }
 })

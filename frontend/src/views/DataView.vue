@@ -1,54 +1,58 @@
 <script setup>
-import { onMounted, ref } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { useAuthStore } from '../stores/auth'
-import { useDataStore } from '../stores/data'
+  import { onMounted, ref } from 'vue'
+  import { useI18n } from 'vue-i18n'
+  import { useAuthStore } from '../stores/auth'
+  import { useDataStore } from '../stores/data'
 
-const { t } = useI18n()
-const auth = useAuthStore()
-const dataStore = useDataStore()
+  const { t } = useI18n()
+  const auth = useAuthStore()
+  const dataStore = useDataStore()
 
-const fileInput = ref(null)
-const previewData = ref(null)
-const previewName = ref('')
-const uploadResult = ref(null)
-const error = ref('')
+  const fileInput = ref(null)
+  const previewData = ref(null)
+  const previewName = ref('')
+  const uploadResult = ref(null)
+  const error = ref('')
 
-onMounted(() => dataStore.fetchDatasets())
+  onMounted(() => dataStore.fetchDatasets())
 
-async function handleUpload() {
-  const files = fileInput.value?.files
-  if (!files?.length) return
-  error.value = ''
-  uploadResult.value = null
-  try {
-    const result = await dataStore.uploadFiles(files)
-    uploadResult.value = result
-    fileInput.value.value = ''
-  } catch (e) {
-    error.value = e.response?.data?.detail || t('common.error')
+  async function handleUpload() {
+    const files = fileInput.value?.files
+    if (!files?.length) return
+    error.value = ''
+    uploadResult.value = null
+    try {
+      const result = await dataStore.uploadFiles(files)
+      uploadResult.value = result
+      fileInput.value.value = ''
+    } catch (e) {
+      error.value = e.response?.data?.detail || t('common.error')
+    }
   }
-}
 
-async function showPreview(dataset) {
-  previewName.value = dataset.original_name
-  previewData.value = await dataStore.fetchPreview(dataset.id)
-}
+  async function showPreview(dataset) {
+    previewName.value = dataset.original_name
+    previewData.value = await dataStore.fetchPreview(dataset.id)
+  }
 
-async function handleDelete(id) {
-  if (!confirm(t('data.confirmDelete'))) return
-  await dataStore.deleteDataset(id)
-}
+  async function handleDelete(id) {
+    if (!confirm(t('data.confirmDelete'))) return
+    await dataStore.deleteDataset(id)
+  }
 
-function formatDate(iso) {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleDateString('sl-SI', { day: '2-digit', month: '2-digit', year: 'numeric' })
-}
+  function formatDate(iso) {
+    if (!iso) return '—'
+    return new Date(iso).toLocaleDateString('sl-SI', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    })
+  }
 
-function formatSize(rows) {
-  if (rows == null) return '—'
-  return Number(rows).toLocaleString('sl-SI')
-}
+  function formatSize(rows) {
+    if (rows == null) return '—'
+    return Number(rows).toLocaleString('sl-SI')
+  }
 </script>
 
 <template>
@@ -59,13 +63,7 @@ function formatSize(rows) {
     <div v-if="auth.isAdmin" class="card">
       <div class="card-title">{{ t('data.upload') }}</div>
       <div class="actions">
-        <input
-          ref="fileInput"
-          type="file"
-          multiple
-          accept=".csv"
-          style="flex: 1"
-        />
+        <input ref="fileInput" type="file" multiple accept=".csv" style="flex: 1" />
         <button :disabled="dataStore.uploading" @click="handleUpload">
           {{ dataStore.uploading ? t('common.loading') : t('data.uploadButton') }}
         </button>
@@ -103,7 +101,11 @@ function formatSize(rows) {
               <td>{{ formatDate(ds.uploaded_at) }}</td>
               <td>
                 <div class="actions" style="margin-top: 0">
-                  <button class="secondary" style="padding: 4px 10px; font-size: 12px" @click="showPreview(ds)">
+                  <button
+                    class="secondary"
+                    style="padding: 4px 10px; font-size: 12px"
+                    @click="showPreview(ds)"
+                  >
                     {{ t('data.preview') }}
                   </button>
                   <button
@@ -125,9 +127,22 @@ function formatSize(rows) {
     <!-- Preview modal -->
     <div v-if="previewData" class="modal-overlay" @click.self="previewData = null">
       <div class="modal-content">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px">
+        <div
+          style="
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+          "
+        >
           <div class="card-title" style="margin-bottom: 0">{{ previewName }}</div>
-          <button class="secondary" style="padding: 4px 10px; font-size: 12px" @click="previewData = null">✕</button>
+          <button
+            class="secondary"
+            style="padding: 4px 10px; font-size: 12px"
+            @click="previewData = null"
+          >
+            ✕
+          </button>
         </div>
         <p class="muted" style="margin-bottom: 8px">
           {{ t('data.columns') }}: {{ previewData.columns?.join(', ') }}

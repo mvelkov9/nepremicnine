@@ -1,17 +1,17 @@
 <script setup>
-import { onMounted, ref } from 'vue'
-import { RouterView, useRoute } from 'vue-router'
-import AppLayout from './components/AppLayout.vue'
-import { useAuthStore } from './stores/auth'
+  import { onMounted, ref } from 'vue'
+  import { RouterView, useRoute } from 'vue-router'
+  import AppLayout from './components/AppLayout.vue'
+  import { useAuthStore } from './stores/auth'
 
-const auth = useAuthStore()
-const route = useRoute()
-const ready = ref(false)
+  const auth = useAuthStore()
+  const route = useRoute()
+  const ready = ref(false)
 
-onMounted(async () => {
-  await auth.init()
-  ready.value = true
-})
+  onMounted(async () => {
+    await auth.init()
+    ready.value = true
+  })
 </script>
 
 <template>

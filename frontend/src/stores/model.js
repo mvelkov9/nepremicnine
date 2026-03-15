@@ -67,7 +67,16 @@ export const useModelStore = defineStore('model', () => {
   }
 
   return {
-    info, importance, training, trainingStatus, loading, error,
-    fetchInfo, fetchImportance, startTraining, pollStatus, reset,
+    info,
+    importance,
+    training,
+    trainingStatus,
+    loading,
+    error,
+    fetchInfo,
+    fetchImportance,
+    startTraining,
+    pollStatus,
+    reset,
   }
 })

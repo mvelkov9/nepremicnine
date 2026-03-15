@@ -1,161 +1,164 @@
 <script setup>
-import { ref, reactive, onMounted, onBeforeUnmount, watch, computed, nextTick } from 'vue'
-import { useI18n } from 'vue-i18n'
-import L from 'leaflet'
-import 'leaflet/dist/leaflet.css'
-import api from '../composables/useApi'
+  import { ref, reactive, onMounted, onBeforeUnmount, watch, computed, nextTick } from 'vue'
+  import { useI18n } from 'vue-i18n'
+  import L from 'leaflet'
+  import 'leaflet/dist/leaflet.css'
+  import api from '../composables/useApi'
 
-const { t } = useI18n()
+  const { t } = useI18n()
 
-/* ── state ─────────────────────────────────────────────── */
-const mapContainer = ref(null)
-let map = null
-let markersLayer = null
+  /* ── state ─────────────────────────────────────────────── */
+  const mapContainer = ref(null)
+  let map = null
+  let markersLayer = null
 
-const loading = ref(false)
-const error = ref('')
-const selectedType = ref('')
+  const loading = ref(false)
+  const error = ref('')
+  const selectedType = ref('')
 
-const coords = ref({})          // { municipality: {lat, lon} }
-const municipalities = ref([])  // [{name, count, avg_price}]
-const propertyTypes = ref([])   // [{type, count}]
-const regionStats = ref([])     // [{region, count, avg_price, ...}]
+  const coords = ref({}) // { municipality: {lat, lon} }
+  const municipalities = ref([]) // [{name, count, avg_price}]
+  const propertyTypes = ref([]) // [{type, count}]
+  const regionStats = ref([]) // [{region, count, avg_price, ...}]
 
-const TYPE_COLORS = {
-  stanovanje:       '#3b82f6',
-  hisa:             '#22c55e',
-  poslovni_prostor: '#f59e0b',
-  garaza:           '#6b7280',
-  turisticni:       '#a855f7',
-  gostinstvo:       '#ef4444',
-  industrijski:     '#64748b',
-  kmetijsko:        '#84cc16',
-}
-const DEFAULT_COLOR = '#3b82f6'
-
-/* ── computed ──────────────────────────────────────────── */
-const markersData = computed(() => {
-  const out = []
-  for (const m of municipalities.value) {
-    const c = coords.value[m.name]
-    if (!c) continue
-    out.push({ ...m, lat: c.lat, lon: c.lon })
+  const TYPE_COLORS = {
+    stanovanje: '#3b82f6',
+    hisa: '#22c55e',
+    poslovni_prostor: '#f59e0b',
+    garaza: '#6b7280',
+    turisticni: '#a855f7',
+    gostinstvo: '#ef4444',
+    industrijski: '#64748b',
+    kmetijsko: '#84cc16',
   }
-  return out
-})
+  const DEFAULT_COLOR = '#3b82f6'
 
-const totalCount = computed(() => municipalities.value.reduce((s, m) => s + m.count, 0))
-const avgPrice = computed(() => {
-  const withPrice = municipalities.value.filter((m) => m.avg_price)
-  if (!withPrice.length) return null
-  return withPrice.reduce((s, m) => s + m.avg_price * m.count, 0) / withPrice.reduce((s, m) => s + m.count, 0)
-})
-const topMunicipality = computed(() => municipalities.value[0] || null)
-const regionCount = computed(() => regionStats.value.length)
+  /* ── computed ──────────────────────────────────────────── */
+  const markersData = computed(() => {
+    const out = []
+    for (const m of municipalities.value) {
+      const c = coords.value[m.name]
+      if (!c) continue
+      out.push({ ...m, lat: c.lat, lon: c.lon })
+    }
+    return out
+  })
 
-/* ── helpers ───────────────────────────────────────────── */
-function fmt(val, decimals = 0) {
-  if (val == null) return '—'
-  return Number(val).toLocaleString('sl-SI', { maximumFractionDigits: decimals })
-}
+  const totalCount = computed(() => municipalities.value.reduce((s, m) => s + m.count, 0))
+  const avgPrice = computed(() => {
+    const withPrice = municipalities.value.filter((m) => m.avg_price)
+    if (!withPrice.length) return null
+    return (
+      withPrice.reduce((s, m) => s + m.avg_price * m.count, 0) /
+      withPrice.reduce((s, m) => s + m.count, 0)
+    )
+  })
+  const topMunicipality = computed(() => municipalities.value[0] || null)
+  const regionCount = computed(() => regionStats.value.length)
 
-function markerRadius(count) {
-  if (!totalCount.value) return 5
-  const ratio = count / totalCount.value
-  return Math.max(4, Math.min(30, 4 + ratio * 400))
-}
-
-function markerColor(municipality) {
-  if (selectedType.value) {
-    return TYPE_COLORS[selectedType.value] || DEFAULT_COLOR
+  /* ── helpers ───────────────────────────────────────────── */
+  function fmt(val, decimals = 0) {
+    if (val == null) return '—'
+    return Number(val).toLocaleString('sl-SI', { maximumFractionDigits: decimals })
   }
-  return DEFAULT_COLOR
-}
 
-/* ── map ───────────────────────────────────────────────── */
-function initMap() {
-  if (!mapContainer.value) return
-  map = L.map(mapContainer.value, { preferCanvas: true }).setView([46.1512, 14.9955], 8)
+  function markerRadius(count) {
+    if (!totalCount.value) return 5
+    const ratio = count / totalCount.value
+    return Math.max(4, Math.min(30, 4 + ratio * 400))
+  }
 
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a>',
-    maxZoom: 18,
-  }).addTo(map)
+  function markerColor(municipality) {
+    if (selectedType.value) {
+      return TYPE_COLORS[selectedType.value] || DEFAULT_COLOR
+    }
+    return DEFAULT_COLOR
+  }
 
-  markersLayer = L.layerGroup().addTo(map)
-}
+  /* ── map ───────────────────────────────────────────────── */
+  function initMap() {
+    if (!mapContainer.value) return
+    map = L.map(mapContainer.value, { preferCanvas: true }).setView([46.1512, 14.9955], 8)
 
-function renderMarkers() {
-  if (!markersLayer) return
-  markersLayer.clearLayers()
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a>',
+      maxZoom: 18,
+    }).addTo(map)
 
-  for (const m of markersData.value) {
-    const color = markerColor(m.name)
-    const radius = markerRadius(m.count)
+    markersLayer = L.layerGroup().addTo(map)
+  }
 
-    const circle = L.circleMarker([m.lat, m.lon], {
-      radius,
-      fillColor: color,
-      color: '#1e3a5f',
-      weight: 1,
-      opacity: 0.85,
-      fillOpacity: 0.6,
-    })
+  function renderMarkers() {
+    if (!markersLayer) return
+    markersLayer.clearLayers()
 
-    circle.bindPopup(
-      `<div style="font-size:13px;line-height:1.6;min-width:140px">
+    for (const m of markersData.value) {
+      const color = markerColor(m.name)
+      const radius = markerRadius(m.count)
+
+      const circle = L.circleMarker([m.lat, m.lon], {
+        radius,
+        fillColor: color,
+        color: '#1e3a5f',
+        weight: 1,
+        opacity: 0.85,
+        fillOpacity: 0.6,
+      })
+
+      circle.bindPopup(
+        `<div style="font-size:13px;line-height:1.6;min-width:140px">
         <strong>${m.name}</strong><br>
         ${t('map.transactions')}: <b>${fmt(m.count)}</b><br>
         ${t('map.avgPrice')}: <b>${fmt(m.avg_price)} €</b>
-      </div>`
-    )
+      </div>`,
+      )
 
-    markersLayer.addLayer(circle)
+      markersLayer.addLayer(circle)
+    }
   }
-}
 
-/* ── data fetching ─────────────────────────────────────── */
-async function fetchData() {
-  loading.value = true
-  error.value = ''
-  try {
-    const params = selectedType.value ? { property_type: selectedType.value } : {}
+  /* ── data fetching ─────────────────────────────────────── */
+  async function fetchData() {
+    loading.value = true
+    error.value = ''
+    try {
+      const params = selectedType.value ? { property_type: selectedType.value } : {}
 
-    const [overviewRes, regionsRes, modelRes] = await Promise.all([
-      api.get('/api/stats/overview', { params }),
-      api.get('/api/stats/regions'),
-      api.get('/api/model/info').catch(() => ({ data: {} })),
-    ])
+      const [overviewRes, regionsRes, modelRes] = await Promise.all([
+        api.get('/api/stats/overview', { params }),
+        api.get('/api/stats/regions'),
+        api.get('/api/model/info').catch(() => ({ data: {} })),
+      ])
 
-    municipalities.value = overviewRes.data.top_municipalities || []
-    propertyTypes.value = overviewRes.data.property_types || []
-    regionStats.value = regionsRes.data || []
-    coords.value = modelRes.data.coords_by_municipality || {}
+      municipalities.value = overviewRes.data.top_municipalities || []
+      propertyTypes.value = overviewRes.data.property_types || []
+      regionStats.value = regionsRes.data || []
+      coords.value = modelRes.data.coords_by_municipality || {}
 
-    await nextTick()
-    renderMarkers()
-  } catch (e) {
-    error.value = e?.response?.data?.detail || e.message
-  } finally {
-    loading.value = false
+      await nextTick()
+      renderMarkers()
+    } catch (e) {
+      error.value = e?.response?.data?.detail || e.message
+    } finally {
+      loading.value = false
+    }
   }
-}
 
-/* ── watchers ──────────────────────────────────────────── */
-watch(selectedType, () => fetchData())
+  /* ── watchers ──────────────────────────────────────────── */
+  watch(selectedType, () => fetchData())
 
-/* ── lifecycle ─────────────────────────────────────────── */
-onMounted(() => {
-  initMap()
-  fetchData()
-})
+  /* ── lifecycle ─────────────────────────────────────────── */
+  onMounted(() => {
+    initMap()
+    fetchData()
+  })
 
-onBeforeUnmount(() => {
-  if (map) {
-    map.remove()
-    map = null
-  }
-})
+  onBeforeUnmount(() => {
+    if (map) {
+      map.remove()
+      map = null
+    }
+  })
 </script>
 
 <template>
@@ -177,7 +180,9 @@ onBeforeUnmount(() => {
 
         <div v-if="selectedType" class="active-filter">
           <span class="badge-blue">{{ selectedType }}</span>
-          <button class="clear-btn" @click="selectedType = ''" :title="t('map.clearFilter')">✕</button>
+          <button class="clear-btn" @click="selectedType = ''" :title="t('map.clearFilter')">
+            ✕
+          </button>
         </div>
 
         <p v-if="loading" class="muted loading-text">{{ t('map.loading') }}</p>
@@ -194,7 +199,10 @@ onBeforeUnmount(() => {
         <span class="legend-title">{{ t('map.legend') }}:</span>
         <template v-if="selectedType">
           <span class="legend-item">
-            <span class="legend-dot" :style="{ background: TYPE_COLORS[selectedType] || DEFAULT_COLOR }"></span>
+            <span
+              class="legend-dot"
+              :style="{ background: TYPE_COLORS[selectedType] || DEFAULT_COLOR }"
+            ></span>
             {{ selectedType }}
           </span>
         </template>
@@ -272,7 +280,9 @@ onBeforeUnmount(() => {
           <tbody>
             <tr v-for="r in regionStats" :key="r.region">
               <td>{{ r.region }}</td>
-              <td><span class="badge-green">{{ fmt(r.count) }}</span></td>
+              <td>
+                <span class="badge-green">{{ fmt(r.count) }}</span>
+              </td>
               <td>{{ fmt(r.avg_price) }} €</td>
               <td>{{ fmt(r.median_price) }} €</td>
               <td>{{ fmt(r.avg_price_per_m2) }} €</td>
@@ -285,93 +295,93 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.map-page {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
+  .map-page {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
 
-.map-controls {
-  padding: 16px 20px;
-}
-.control-row {
-  display: flex;
-  align-items: flex-end;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-.control-field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 220px;
-}
+  .map-controls {
+    padding: 16px 20px;
+  }
+  .control-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .control-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 220px;
+  }
 
-.active-filter {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding-bottom: 2px;
-}
-.clear-btn {
-  background: none;
-  border: none;
-  color: var(--danger);
-  cursor: pointer;
-  font-size: 14px;
-  padding: 2px 4px;
-  line-height: 1;
-}
-.clear-btn:hover {
-  background: #fee2e2;
-  border-radius: 4px;
-}
+  .active-filter {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding-bottom: 2px;
+  }
+  .clear-btn {
+    background: none;
+    border: none;
+    color: var(--danger);
+    cursor: pointer;
+    font-size: 14px;
+    padding: 2px 4px;
+    line-height: 1;
+  }
+  .clear-btn:hover {
+    background: #fee2e2;
+    border-radius: 4px;
+  }
 
-.loading-text {
-  color: var(--primary);
-}
-.error-text {
-  color: var(--danger);
-}
+  .loading-text {
+    color: var(--primary);
+  }
+  .error-text {
+    color: var(--danger);
+  }
 
-.map-card {
-  padding: 0;
-  overflow: hidden;
-}
-.map-container {
-  width: 100%;
-  height: 560px;
-  z-index: 1;
-}
+  .map-card {
+    padding: 0;
+    overflow: hidden;
+  }
+  .map-container {
+    width: 100%;
+    height: 560px;
+    z-index: 1;
+  }
 
-.map-legend {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 16px;
-  font-size: 12px;
-  border-top: 1px solid #e5e7eb;
-  flex-wrap: wrap;
-}
-.legend-title {
-  font-weight: 600;
-  color: #374151;
-}
-.legend-item {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  color: #555;
-}
-.legend-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  display: inline-block;
-  border: 1px solid rgba(0, 0, 0, 0.15);
-}
-.legend-hint {
-  color: #9ca3af;
-  font-style: italic;
-}
+  .map-legend {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    font-size: 12px;
+    border-top: 1px solid #e5e7eb;
+    flex-wrap: wrap;
+  }
+  .legend-title {
+    font-weight: 600;
+    color: #374151;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    color: #555;
+  }
+  .legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+    border: 1px solid rgba(0, 0, 0, 0.15);
+  }
+  .legend-hint {
+    color: #9ca3af;
+    font-style: italic;
+  }
 </style>
