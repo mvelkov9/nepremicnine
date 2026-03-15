@@ -15,11 +15,18 @@
   const loading = ref(false)
   const error = ref('')
   const selectedType = ref('')
+  const selectedRegion = ref('')
+  const selectedYear = ref('')
+  const selectedMunicipality = ref('')
+  const viewMode = ref('transactions') // 'transactions' | 'overview'
 
   const coords = ref({}) // { municipality: {lat, lon} }
   const municipalities = ref([]) // [{name, count, avg_price}]
   const propertyTypes = ref([]) // [{type, count}]
   const regionStats = ref([]) // [{region, count, avg_price, ...}]
+  const transactions = ref([]) // [{lat, lon, price_eur, size_m2, ...}]
+  const availableYears = ref([])
+  const regionMunicipalities = ref([])
 
   const TYPE_COLORS = {
     stanovanje: '#3b82f6',
@@ -44,8 +51,15 @@
     return out
   })
 
-  const totalCount = computed(() => municipalities.value.reduce((s, m) => s + m.count, 0))
+  const totalCount = computed(() => {
+    if (viewMode.value === 'transactions') return transactions.value.length
+    return municipalities.value.reduce((s, m) => s + m.count, 0)
+  })
   const avgPrice = computed(() => {
+    if (viewMode.value === 'transactions') {
+      if (!transactions.value.length) return null
+      return transactions.value.reduce((s, t) => s + t.price_eur, 0) / transactions.value.length
+    }
     const withPrice = municipalities.value.filter((m) => m.avg_price)
     if (!withPrice.length) return null
     return (
@@ -75,6 +89,21 @@
     return DEFAULT_COLOR
   }
 
+  function priceGradientColor(pricePerM2) {
+    // Green (cheap) → Yellow (mid) → Red (expensive)
+    const min = 500
+    const max = 5000
+    const clamped = Math.max(min, Math.min(max, pricePerM2))
+    const ratio = (clamped - min) / (max - min)
+    if (ratio < 0.5) {
+      const r = Math.round(255 * (ratio * 2))
+      return `rgb(${r}, 200, 50)`
+    } else {
+      const g = Math.round(200 * (1 - (ratio - 0.5) * 2))
+      return `rgb(255, ${g}, 50)`
+    }
+  }
+
   /* ── map ───────────────────────────────────────────────── */
   function initMap() {
     if (!mapContainer.value) return
@@ -88,7 +117,40 @@
     markersLayer = L.layerGroup().addTo(map)
   }
 
-  function renderMarkers() {
+  function renderTransactionMarkers() {
+    if (!markersLayer) return
+    markersLayer.clearLayers()
+
+    for (const tx of transactions.value) {
+      const ppm2 = tx.price_per_m2 || (tx.size_m2 ? tx.price_eur / tx.size_m2 : 0)
+      const color = priceGradientColor(ppm2)
+
+      const circle = L.circleMarker([tx.lat, tx.lon], {
+        radius: 5,
+        fillColor: color,
+        color: '#333',
+        weight: 0.5,
+        opacity: 0.9,
+        fillOpacity: 0.7,
+      })
+
+      circle.bindPopup(
+        `<div style="font-size:13px;line-height:1.6;min-width:160px">
+        <strong>${tx.municipality || '—'}</strong><br>
+        ${t('map.price')}: <b>${fmt(tx.price_eur)} €</b><br>
+        ${t('predict.size')}: <b>${fmt(tx.size_m2, 1)} m²</b><br>
+        €/m²: <b>${fmt(ppm2)} €</b><br>
+        ${tx.property_type ? `${t('map.propertyType')}: ${tx.property_type}<br>` : ''}
+        ${tx.year ? `${t('map.year')}: ${tx.year}<br>` : ''}
+        ${tx.rooms ? `${t('predict.rooms')}: ${tx.rooms}` : ''}
+      </div>`,
+      )
+
+      markersLayer.addLayer(circle)
+    }
+  }
+
+  function renderOverviewMarkers() {
     if (!markersLayer) return
     markersLayer.clearLayers()
 
@@ -117,23 +179,74 @@
     }
   }
 
+  function renderMarkers() {
+    if (viewMode.value === 'transactions') {
+      renderTransactionMarkers()
+    } else {
+      renderOverviewMarkers()
+    }
+  }
+
   /* ── data fetching ─────────────────────────────────────── */
+  async function fetchTransactions() {
+    const params = {}
+    if (selectedType.value) params.property_type = selectedType.value
+    if (selectedRegion.value) params.statistical_region = selectedRegion.value
+    if (selectedYear.value) params.year = parseInt(selectedYear.value)
+    if (selectedMunicipality.value) params.municipality = selectedMunicipality.value
+    params.limit = 5000
+
+    const { data } = await api.get('/api/stats/map-transactions', { params })
+    transactions.value = data.transactions || []
+  }
+
+  async function fetchMunicipalitiesByRegion() {
+    if (!selectedRegion.value) {
+      regionMunicipalities.value = []
+      return
+    }
+    try {
+      const { data } = await api.get('/api/stats/municipalities-by-region', {
+        params: { region: selectedRegion.value },
+      })
+      regionMunicipalities.value = (data || []).map((m) => m.municipality)
+    } catch {
+      regionMunicipalities.value = []
+    }
+  }
+
   async function fetchData() {
     loading.value = true
     error.value = ''
     try {
       const params = selectedType.value ? { property_type: selectedType.value } : {}
 
-      const [overviewRes, regionsRes, modelRes] = await Promise.all([
+      const fetches = [
         api.get('/api/stats/overview', { params }),
         api.get('/api/stats/regions'),
         api.get('/api/model/info').catch(() => ({ data: {} })),
-      ])
+      ]
+
+      if (viewMode.value === 'transactions') {
+        fetches.push(fetchTransactions())
+      }
+
+      const [overviewRes, regionsRes, modelRes] = await Promise.all(fetches)
 
       municipalities.value = overviewRes.data.top_municipalities || []
       propertyTypes.value = overviewRes.data.property_types || []
       regionStats.value = regionsRes.data || []
       coords.value = modelRes.data.coords_by_municipality || {}
+
+      // Extract available years from trend data
+      if (!availableYears.value.length) {
+        try {
+          const { data } = await api.get('/api/stats/trend')
+          availableYears.value = (data || []).map((t) => t.year).sort((a, b) => b - a)
+        } catch {
+          availableYears.value = []
+        }
+      }
 
       await nextTick()
       renderMarkers()
@@ -146,6 +259,18 @@
 
   /* ── watchers ──────────────────────────────────────────── */
   watch(selectedType, () => fetchData())
+  watch(viewMode, () => fetchData())
+  watch(selectedYear, () => {
+    if (viewMode.value === 'transactions') fetchData()
+  })
+  watch(selectedRegion, () => {
+    selectedMunicipality.value = ''
+    fetchMunicipalitiesByRegion()
+    if (viewMode.value === 'transactions') fetchData()
+  })
+  watch(selectedMunicipality, () => {
+    if (viewMode.value === 'transactions') fetchData()
+  })
 
   /* ── lifecycle ─────────────────────────────────────────── */
   onMounted(() => {
@@ -169,6 +294,14 @@
     <div class="card map-controls">
       <div class="control-row">
         <div class="control-field">
+          <label class="form-label">{{ t('map.viewMode') }}</label>
+          <select v-model="viewMode" class="form-input" :disabled="loading">
+            <option value="transactions">{{ t('map.transactionView') }}</option>
+            <option value="overview">{{ t('map.overviewMode') }}</option>
+          </select>
+        </div>
+
+        <div class="control-field">
           <label class="form-label">{{ t('map.propertyType') }}</label>
           <select v-model="selectedType" class="form-input" :disabled="loading">
             <option value="">{{ t('map.allTypes') }}</option>
@@ -178,9 +311,46 @@
           </select>
         </div>
 
-        <div v-if="selectedType" class="active-filter">
-          <span class="badge-blue">{{ selectedType }}</span>
-          <button class="clear-btn" @click="selectedType = ''" :title="t('map.clearFilter')">
+        <div v-if="viewMode === 'transactions'" class="control-field">
+          <label class="form-label">{{ t('map.regionFilter') }}</label>
+          <select v-model="selectedRegion" class="form-input" :disabled="loading">
+            <option value="">{{ t('map.allRegions') }}</option>
+            <option v-for="r in regionStats" :key="r.region" :value="r.region">
+              {{ r.region }}
+            </option>
+          </select>
+        </div>
+
+        <div v-if="viewMode === 'transactions'" class="control-field">
+          <label class="form-label">{{ t('map.yearFilter') }}</label>
+          <select v-model="selectedYear" class="form-input" :disabled="loading">
+            <option value="">{{ t('map.allYears') }}</option>
+            <option v-for="y in availableYears" :key="y" :value="y">{{ y }}</option>
+          </select>
+        </div>
+
+        <div v-if="viewMode === 'transactions' && regionMunicipalities.length" class="control-field">
+          <label class="form-label">{{ t('map.municipalityFilter') }}</label>
+          <select v-model="selectedMunicipality" class="form-input" :disabled="loading">
+            <option value="">{{ t('map.allMunicipalities') }}</option>
+            <option v-for="m in regionMunicipalities" :key="m" :value="m">{{ m }}</option>
+          </select>
+        </div>
+
+        <div v-if="selectedType || selectedRegion || selectedYear" class="active-filter">
+          <span v-if="selectedType" class="badge-blue">{{ selectedType }}</span>
+          <span v-if="selectedRegion" class="badge-green">{{ selectedRegion }}</span>
+          <span v-if="selectedYear" class="badge-blue">{{ selectedYear }}</span>
+          <button
+            class="clear-btn"
+            @click="
+              selectedType = ''
+              selectedRegion = ''
+              selectedYear = ''
+              selectedMunicipality = ''
+            "
+            :title="t('map.clearFilter')"
+          >
             ✕
           </button>
         </div>
@@ -197,7 +367,22 @@
       <!-- legend -->
       <div class="map-legend">
         <span class="legend-title">{{ t('map.legend') }}:</span>
-        <template v-if="selectedType">
+        <template v-if="viewMode === 'transactions'">
+          <span class="legend-item">
+            <span class="legend-dot" style="background: rgb(0, 200, 50)"></span>
+            {{ t('map.cheap') }}
+          </span>
+          <span class="legend-item">
+            <span class="legend-dot" style="background: rgb(255, 200, 50)"></span>
+            {{ t('map.mid') }}
+          </span>
+          <span class="legend-item">
+            <span class="legend-dot" style="background: rgb(255, 0, 50)"></span>
+            {{ t('map.expensive') }}
+          </span>
+          <span class="legend-hint">{{ t('map.priceGradientHint') }}</span>
+        </template>
+        <template v-else-if="selectedType">
           <span class="legend-item">
             <span
               class="legend-dot"
@@ -212,7 +397,7 @@
             {{ t('map.allTypes') }}
           </span>
         </template>
-        <span class="legend-hint">{{ t('map.sizeHint') }}</span>
+        <span v-if="viewMode === 'overview'" class="legend-hint">{{ t('map.sizeHint') }}</span>
       </div>
     </div>
 

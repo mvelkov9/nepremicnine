@@ -1,5 +1,5 @@
 <script setup>
-  import { onMounted, computed } from 'vue'
+  import { ref, onMounted, computed, watch } from 'vue'
   import { useI18n } from 'vue-i18n'
   import { Bar, Doughnut, Line } from 'vue-chartjs'
   import {
@@ -16,6 +16,7 @@
     Filler,
   } from 'chart.js'
   import { useStatsStore } from '../stores/stats'
+  import api from '../composables/useApi'
 
   ChartJS.register(
     CategoryScale,
@@ -33,7 +34,40 @@
   const { t } = useI18n()
   const stats = useStatsStore()
 
-  onMounted(() => stats.fetchAll())
+  const selectedType = ref('')
+  const modelInfo = ref(null)
+  const featureImportance = ref([])
+
+  const propertyTypes = [
+    '',
+    'stanovanje',
+    'hisa',
+    'poslovni_prostor',
+    'industrijski',
+    'turisticni',
+    'gostinstvo',
+    'garaza',
+    'kmetijsko',
+  ]
+
+  onMounted(async () => {
+    stats.fetchAll()
+    try {
+      const [infoRes, impRes] = await Promise.all([
+        api.get('/api/model/info').catch(() => ({ data: {} })),
+        api.get('/api/model/importance').catch(() => ({ data: [] })),
+      ])
+      modelInfo.value = infoRes.data
+      featureImportance.value = impRes.data || []
+    } catch {
+      /* ignore */
+    }
+  })
+
+  watch(selectedType, (val) => {
+    const params = val ? { property_type: val } : {}
+    stats.fetchOverview(params)
+  })
 
   function fmt(val, decimals = 0) {
     if (val == null) return '—'
@@ -143,11 +177,85 @@
     maintainAspectRatio: false,
     plugins: { legend: { position: 'right', labels: { font: { size: 11 } } } },
   }
+
+  const importanceChartData = computed(() => {
+    if (!featureImportance.value.length) return null
+    const sorted = [...featureImportance.value].sort((a, b) => b.importance - a.importance).slice(0, 15)
+    return {
+      labels: sorted.map((f) => f.feature),
+      datasets: [
+        {
+          label: t('model.importance'),
+          data: sorted.map((f) => f.importance),
+          backgroundColor: '#10b981',
+          borderRadius: 6,
+        },
+      ],
+    }
+  })
+
+  const importanceChartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    indexAxis: 'y',
+    plugins: { legend: { display: false } },
+    scales: { x: { grid: { display: false } } },
+  }
+
+  const perTypeR2Data = computed(() => {
+    if (!modelInfo.value?.per_type_metrics) return null
+    const metrics = modelInfo.value.per_type_metrics
+    const types = Object.keys(metrics).sort()
+    return {
+      labels: types,
+      datasets: [
+        {
+          label: 'R²',
+          data: types.map((t) => metrics[t].r2 || 0),
+          backgroundColor: types.map(
+            (t) =>
+              ({
+                stanovanje: '#3b82f6',
+                hisa: '#22c55e',
+                poslovni_prostor: '#f59e0b',
+                garaza: '#6b7280',
+                turisticni: '#a855f7',
+                gostinstvo: '#ef4444',
+                industrijski: '#64748b',
+                kmetijsko: '#84cc16',
+              })[t] || '#3b82f6',
+          ),
+          borderRadius: 6,
+        },
+      ],
+    }
+  })
+
+  const perTypeR2Options = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      y: { beginAtZero: true, max: 1 },
+      x: { grid: { display: false } },
+    },
+  }
 </script>
 
 <template>
   <div>
     <h1 class="page-title">{{ t('dashboard.title') }}</h1>
+
+    <!-- Type filter -->
+    <div class="card" style="padding: 12px 20px; margin-bottom: 1rem">
+      <div style="display: flex; align-items: center; gap: 12px">
+        <label class="form-label" style="margin: 0">{{ t('dashboard.filterByType') }}:</label>
+        <select v-model="selectedType" class="form-input" style="max-width: 220px">
+          <option value="">{{ t('map.allTypes') }}</option>
+          <option v-for="pt in propertyTypes.slice(1)" :key="pt" :value="pt">{{ pt }}</option>
+        </select>
+      </div>
+    </div>
 
     <p v-if="stats.loading" class="muted">{{ t('common.loading') }}</p>
 
@@ -221,6 +329,25 @@
             </tr>
           </tbody>
         </table>
+      </div>
+    </div>
+
+    <!-- Feature importance & per-type R² -->
+    <div class="charts-grid">
+      <div class="card">
+        <div class="card-title">{{ t('dashboard.featureImportance') }}</div>
+        <div v-if="importanceChartData" style="height: 360px">
+          <Bar :data="importanceChartData" :options="importanceChartOptions" />
+        </div>
+        <p v-else class="muted">{{ t('common.noData') }}</p>
+      </div>
+
+      <div class="card">
+        <div class="card-title">{{ t('dashboard.perTypeR2') }}</div>
+        <div v-if="perTypeR2Data" style="height: 360px">
+          <Bar :data="perTypeR2Data" :options="perTypeR2Options" />
+        </div>
+        <p v-else class="muted">{{ t('common.noData') }}</p>
       </div>
     </div>
   </div>

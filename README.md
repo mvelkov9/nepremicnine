@@ -1,4 +1,4 @@
-# Nepremičnine v0.1.2
+# Nepremičnine v0.2.0
 
 > Slovenian real estate price analysis & prediction platform — powered by machine learning on official ETN transaction data.
 

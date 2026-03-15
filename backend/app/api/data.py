@@ -24,6 +24,7 @@ from app.services.data_processing_service import (
     extract_zip_csvs,
     import_rpe_rn,
     inspect_csv,
+    prepare_training_csv,
     prepare_training_csv_from_etn_kpp,
     prepare_training_csv_from_etn_kpp_bulk,
     read_csv_flexible,
@@ -310,3 +311,21 @@ async def inspect_dataset(
         return inspect_csv(dataset.stored_path)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Cannot inspect: {e}") from e
+
+
+class PrepareTrainRequest(BaseModel):
+    source_csv_path: str
+    column_map: dict[str, str]
+
+
+@router.post("/prepare-train")
+async def prepare_train(
+    req: PrepareTrainRequest,
+    _user: User = Depends(require_admin),
+):
+    """Prepare training CSV from a source CSV with custom column mapping."""
+    try:
+        result = prepare_training_csv(req.source_csv_path, req.column_map, TRAIN_CSV)
+    except Exception as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    return result

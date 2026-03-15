@@ -251,3 +251,75 @@ async def municipalities_by_region(
     for region, group in mapping.groupby("statistical_region"):
         result[str(region)] = sorted(group["municipality"].unique().tolist())
     return result
+
+
+@router.get("/map-transactions")
+async def map_transactions(
+    property_type: str | None = None,
+    statistical_region: str | None = None,
+    year: str | None = None,
+    municipality: str | None = None,
+    limit: int = Query(5000, ge=100, le=50000),
+    _user: User = Depends(get_current_user),
+):
+    """Return transaction points for map visualization (WGS84 coords)."""
+    df = _load_df()
+    if df is None or df.empty:
+        return {"transactions": [], "count": 0}
+
+    # Ensure statistical_region
+    if "statistical_region" not in df.columns and "municipality" in df.columns:
+        df["statistical_region"] = df["municipality"].apply(
+            lambda m: lookup_region(str(m)) if pd.notna(m) else "neznana"
+        )
+
+    # Apply filters
+    if property_type and "property_type" in df.columns:
+        df = df[df["property_type"] == property_type]
+    if statistical_region and "statistical_region" in df.columns:
+        df = df[df["statistical_region"] == statistical_region]
+    if municipality and "municipality" in df.columns:
+        df = df[df["municipality"] == municipality]
+
+    # Year filter
+    if year:
+        year_col = None
+        for col in ["source_label", "year", "sale_year", "transaction_year"]:
+            if col in df.columns:
+                year_col = col
+                break
+        if year_col:
+            df = df[df[year_col].astype(str).str[:4] == year]
+
+    # Require lat/lon
+    if "latitude" not in df.columns or "longitude" not in df.columns:
+        return {"transactions": [], "count": 0}
+
+    df = df.dropna(subset=["latitude", "longitude"])
+    df = df[(df["latitude"] > 0) & (df["longitude"] > 0)]
+
+    # Sample if too many
+    if len(df) > limit:
+        df = df.sample(n=limit, random_state=42)
+
+    area = _effective_area(df)
+
+    transactions = []
+    for _, row in df.iterrows():
+        price = row.get("price_eur")
+        size = float(area.loc[row.name]) if row.name in area.index else None
+        price_per_m2 = float(price / size) if price and size and size > 0 else None
+
+        transactions.append({
+            "lat": float(row["latitude"]),
+            "lon": float(row["longitude"]),
+            "price_eur": float(price) if pd.notna(price) else None,
+            "size_m2": float(row.get("size_m2", 0)) if pd.notna(row.get("size_m2")) else None,
+            "price_per_m2": round(price_per_m2, 2) if price_per_m2 else None,
+            "municipality": str(row.get("municipality", "")),
+            "property_type": str(row.get("property_type", "")),
+            "year": str(row.get("transaction_year", row.get("source_label", "")))[:4],
+            "rooms": float(row.get("rooms", 0)) if pd.notna(row.get("rooms")) else None,
+        })
+
+    return {"transactions": transactions, "count": len(transactions)}

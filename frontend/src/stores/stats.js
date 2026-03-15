@@ -9,8 +9,8 @@ export const useStatsStore = defineStore('stats', () => {
   const trend = ref([])
   const loading = ref(false)
 
-  async function fetchOverview() {
-    const { data } = await api.get('/api/stats/overview')
+  async function fetchOverview(params = {}) {
+    const { data } = await api.get('/api/stats/overview', { params })
     overview.value = data
   }
 

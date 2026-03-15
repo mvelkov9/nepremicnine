@@ -1,5 +1,5 @@
 <script setup>
-  import { ref, onMounted } from 'vue'
+  import { ref, onMounted, computed } from 'vue'
   import { useI18n } from 'vue-i18n'
   import api from '../composables/useApi'
 
@@ -14,6 +14,15 @@
     longitude: null,
     municipality: '',
     property_type: 'stanovanje',
+    uporabna_povrsina: null,
+    lega_v_stavbi: '',
+    novogradnja: 0,
+    has_garaza: 0,
+    has_klet: 0,
+    has_shramba: 0,
+    has_terasa: 0,
+    stavba_je_dokoncana: 1,
+    ddv_vkljucen: 0,
   })
 
   const propertyTypes = [
@@ -26,6 +35,42 @@
     'garaza',
     'kmetijsko',
   ]
+
+  const legaOptions = ['pritlicje', 'nadstropje', 'klet', 'unknown']
+
+  // Municipality autocomplete
+  const municipalityQuery = ref('')
+  const municipalitySuggestions = ref([])
+  const allMunicipalities = ref([])
+  const showSuggestions = ref(false)
+
+  const filteredMunicipalities = computed(() => {
+    if (!municipalityQuery.value) return []
+    const q = municipalityQuery.value.toLowerCase()
+    return allMunicipalities.value
+      .filter((m) => m.toLowerCase().includes(q))
+      .slice(0, 10)
+  })
+
+  async function fetchMunicipalities() {
+    try {
+      const { data } = await api.get('/api/municipalities')
+      allMunicipalities.value = data.map((m) => m.municipality)
+    } catch {
+      allMunicipalities.value = []
+    }
+  }
+
+  function selectMunicipality(name) {
+    form.value.municipality = name
+    municipalityQuery.value = name
+    showSuggestions.value = false
+  }
+
+  function onMunicipalityInput() {
+    form.value.municipality = municipalityQuery.value
+    showSuggestions.value = true
+  }
 
   const result = ref(null)
   const history = ref([])
@@ -62,7 +107,10 @@
     }
   }
 
-  onMounted(fetchHistory)
+  onMounted(() => {
+    fetchHistory()
+    fetchMunicipalities()
+  })
 </script>
 
 <template>
@@ -128,14 +176,26 @@
               placeholder="14.50"
             />
           </div>
-          <div>
+          <div class="municipality-field">
             <label class="form-label">{{ t('predict.municipality') }}</label>
             <input
-              v-model="form.municipality"
+              v-model="municipalityQuery"
               type="text"
               class="form-input"
-              placeholder="Ljubljana"
+              :placeholder="t('predict.municipalityPlaceholder')"
+              @input="onMunicipalityInput"
+              @focus="showSuggestions = true"
+              @blur="setTimeout(() => (showSuggestions = false), 200)"
             />
+            <ul v-if="showSuggestions && filteredMunicipalities.length" class="suggestions">
+              <li
+                v-for="m in filteredMunicipalities"
+                :key="m"
+                @mousedown.prevent="selectMunicipality(m)"
+              >
+                {{ m }}
+              </li>
+            </ul>
           </div>
           <div>
             <label class="form-label">{{ t('predict.propertyType') }}</label>
@@ -143,6 +203,55 @@
               <option v-for="pt in propertyTypes" :key="pt" :value="pt">{{ pt }}</option>
             </select>
           </div>
+          <div>
+            <label class="form-label">{{ t('predict.uporabnaPovrsina') }}</label>
+            <input
+              v-model.number="form.uporabna_povrsina"
+              type="number"
+              step="0.1"
+              min="0"
+              class="form-input"
+            />
+          </div>
+          <div>
+            <label class="form-label">{{ t('predict.legaVStavbi') }}</label>
+            <select v-model="form.lega_v_stavbi" class="form-input">
+              <option value="">—</option>
+              <option v-for="l in legaOptions" :key="l" :value="l">{{ l }}</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Property feature checkboxes -->
+        <div class="checkbox-grid">
+          <label class="checkbox-label">
+            <input type="checkbox" v-model.number="form.novogradnja" :true-value="1" :false-value="0" />
+            {{ t('predict.novogradnja') }}
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" v-model.number="form.has_garaza" :true-value="1" :false-value="0" />
+            {{ t('predict.hasGaraza') }}
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" v-model.number="form.has_klet" :true-value="1" :false-value="0" />
+            {{ t('predict.hasKlet') }}
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" v-model.number="form.has_shramba" :true-value="1" :false-value="0" />
+            {{ t('predict.hasShramba') }}
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" v-model.number="form.has_terasa" :true-value="1" :false-value="0" />
+            {{ t('predict.hasTerasa') }}
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" v-model.number="form.stavba_je_dokoncana" :true-value="1" :false-value="0" />
+            {{ t('predict.stavbaDokoncana') }}
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" v-model.number="form.ddv_vkljucen" :true-value="1" :false-value="0" />
+            {{ t('predict.ddvVkljucen') }}
+          </label>
         </div>
 
         <button
@@ -165,6 +274,17 @@
         €{{ Math.round(result.predicted_price_eur).toLocaleString() }}
       </div>
       <p class="muted">{{ t('predict.modelUsed') }}: {{ result.model_used }}</p>
+
+      <!-- Show features used -->
+      <div v-if="result.features_used" class="features-used">
+        <h3>{{ t('predict.featuresUsed') }}</h3>
+        <div class="features-grid">
+          <div v-for="(val, key) in result.features_used" :key="key" class="feature-item">
+            <span class="feature-key">{{ key }}</span>
+            <span class="feature-val">{{ typeof val === 'number' ? val.toLocaleString('sl-SI', { maximumFractionDigits: 2 }) : val }}</span>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- History -->
@@ -200,6 +320,56 @@
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
     gap: 1rem;
   }
+  .municipality-field {
+    position: relative;
+  }
+  .suggestions {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: #fff;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    max-height: 200px;
+    overflow-y: auto;
+    z-index: 10;
+    list-style: none;
+    margin: 2px 0 0;
+    padding: 0;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  }
+  .suggestions li {
+    padding: 8px 12px;
+    cursor: pointer;
+    font-size: 0.875rem;
+  }
+  .suggestions li:hover {
+    background: #eff6ff;
+  }
+  .checkbox-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-top: 1rem;
+    padding: 1rem;
+    background: #f9fafb;
+    border-radius: 8px;
+    border: 1px solid #e5e7eb;
+  }
+  .checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.875rem;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .checkbox-label input[type='checkbox'] {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--color-primary, #3b82f6);
+  }
   .result-card {
     text-align: center;
   }
@@ -212,5 +382,33 @@
   .price {
     font-weight: 600;
     color: var(--color-primary);
+  }
+  .features-used {
+    margin-top: 1rem;
+    text-align: left;
+  }
+  .features-used h3 {
+    font-size: 0.875rem;
+    color: #6b7280;
+    margin-bottom: 0.5rem;
+  }
+  .features-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 4px;
+  }
+  .feature-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 8px;
+    font-size: 0.8rem;
+    background: #f3f4f6;
+    border-radius: 4px;
+  }
+  .feature-key {
+    color: #6b7280;
+  }
+  .feature-val {
+    font-weight: 600;
   }
 </style>

@@ -25,6 +25,7 @@
   const navItems = [
     { to: '/', icon: '📊', label: 'nav.dashboard' },
     { to: '/podatki', icon: '📁', label: 'nav.data' },
+    { to: '/priprava', icon: '🔧', label: 'nav.prepare', admin: true },
     { to: '/model', icon: '🧠', label: 'nav.model' },
     { to: '/napoved', icon: '🔮', label: 'nav.prediction' },
     { to: '/zemljevid', icon: '🗺️', label: 'nav.map' },
@@ -57,10 +58,12 @@
       </div>
 
       <nav class="sidebar-nav">
-        <RouterLink v-for="item in navItems" :key="item.to" :to="item.to" class="nav-btn">
-          <span class="nav-icon">{{ item.icon }}</span>
-          {{ t(item.label) }}
-        </RouterLink>
+        <template v-for="item in navItems" :key="item.to">
+          <RouterLink v-if="!item.admin || auth.isAdmin" :to="item.to" class="nav-btn">
+            <span class="nav-icon">{{ item.icon }}</span>
+            {{ t(item.label) }}
+          </RouterLink>
+        </template>
 
         <RouterLink v-if="auth.isAdmin" to="/admin" class="nav-btn">
           <span class="nav-icon">⚙️</span>
