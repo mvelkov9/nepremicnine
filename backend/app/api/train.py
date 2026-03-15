@@ -8,7 +8,7 @@ import uuid
 
 from arq import create_pool
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select, delete, func
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings

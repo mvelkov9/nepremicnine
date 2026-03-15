@@ -149,6 +149,11 @@
     detectedPairs.value[index].selected = !detectedPairs.value[index].selected
   }
 
+  function switchToBulk() {
+    etnMode.value = 'bulk'
+    detectEtnPairs()
+  }
+
   function getDatasetPaths() {
     return datasets.value.map((d) => ({
       label: d.original_name,
@@ -164,13 +169,7 @@
     <!-- Mode tabs -->
     <div class="card" style="margin-bottom: 1.5rem">
       <div class="mode-tabs">
-        <button
-          :class="['tab-btn', { active: etnMode === 'bulk' }]"
-          @click="
-            etnMode = 'bulk'
-            detectEtnPairs()
-          "
-        >
+        <button :class="['tab-btn', { active: etnMode === 'bulk' }]" @click="switchToBulk()">
           {{ t('prepare.autoEtn') }}
         </button>
         <button :class="['tab-btn', { active: etnMode === 'single' }]" @click="etnMode = 'single'">

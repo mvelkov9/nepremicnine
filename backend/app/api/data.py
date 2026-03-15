@@ -62,13 +62,17 @@ async def upload_files(
         # Validate file extension
         ext = os.path.splitext(file.filename or "file.csv")[1].lower()
         if ext not in ALLOWED_EXTENSIONS:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, f"File type '{ext}' not allowed. Only .csv and .zip accepted.")
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, f"File type '{ext}' not allowed. Only .csv and .zip accepted."
+            )
 
         content = await file.read()
 
         # Validate file size
         if len(content) > MAX_UPLOAD_SIZE:
-            raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, f"File exceeds {MAX_UPLOAD_SIZE // (1024*1024)} MB limit")
+            raise HTTPException(
+                status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, f"File exceeds {MAX_UPLOAD_SIZE // (1024 * 1024)} MB limit"
+            )
 
         file_hash = hashlib.sha256(content).hexdigest()
 
