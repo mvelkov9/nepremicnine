@@ -61,10 +61,15 @@ async def overview(
             result["avg_price_per_m2"] = round(float((valid["price_eur"] / valid["size_m2"]).mean()), 2)
 
     if "municipality" in df.columns:
-        top = df["municipality"].value_counts().head(10)
-        result["top_municipalities"] = [
-            {"name": name, "count": int(count)} for name, count in top.items()
-        ]
+        muni_groups = df.groupby("municipality")
+        muni_stats = []
+        for name, group in muni_groups:
+            entry = {"name": name, "count": len(group)}
+            if "price_eur" in group.columns:
+                entry["avg_price"] = round(float(group["price_eur"].mean()), 2)
+            muni_stats.append(entry)
+        muni_stats.sort(key=lambda x: x["count"], reverse=True)
+        result["top_municipalities"] = muni_stats
 
     if "property_type" in df.columns:
         types = df["property_type"].value_counts()

@@ -61,3 +61,4 @@ class ModelInfoResponse(BaseModel):
     global_importance: dict | None = None
     feature_labels: dict | None = None
     per_type_count: int = 0
+    coords_by_municipality: dict[str, dict] | None = None
