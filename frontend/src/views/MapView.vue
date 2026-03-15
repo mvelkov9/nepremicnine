@@ -273,6 +273,13 @@
   })
 
   /* ── lifecycle ─────────────────────────────────────────── */
+  function clearFilters() {
+    selectedType.value = ''
+    selectedRegion.value = ''
+    selectedYear.value = ''
+    selectedMunicipality.value = ''
+  }
+
   onMounted(() => {
     initMap()
     fetchData()
@@ -344,18 +351,7 @@
           <span v-if="selectedType" class="badge-blue">{{ selectedType }}</span>
           <span v-if="selectedRegion" class="badge-green">{{ selectedRegion }}</span>
           <span v-if="selectedYear" class="badge-blue">{{ selectedYear }}</span>
-          <button
-            class="clear-btn"
-            @click="
-              selectedType = ''
-              selectedRegion = ''
-              selectedYear = ''
-              selectedMunicipality = ''
-            "
-            :title="t('map.clearFilter')"
-          >
-            ✕
-          </button>
+          <button class="clear-btn" @click="clearFilters" :title="t('map.clearFilter')">✕</button>
         </div>
 
         <p v-if="loading" class="muted loading-text">{{ t('map.loading') }}</p>
