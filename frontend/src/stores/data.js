@@ -10,7 +10,7 @@ export const useDataStore = defineStore('data', () => {
   async function fetchDatasets() {
     loading.value = true
     try {
-      const { data } = await api.get('/api/data/datasets')
+      const { data } = await api.get('/api/data/datasets', { params: { per_page: 200 } })
       datasets.value = Array.isArray(data) ? data : data.items || []
     } finally {
       loading.value = false

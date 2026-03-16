@@ -6,7 +6,7 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 
 | Item | Value |
 |------|-------|
-| **Version** | 0.8.0 |
+| **Version** | 0.8.3 |
 | **Repo** | [github.com/mvelkov9/nepremicnine](https://github.com/mvelkov9/nepremicnine) |
 | **Backend** | FastAPI + Python 3.13 + PostgreSQL 17 + SQLAlchemy 2.x async |
 | **Frontend** | Vue 3 Composition API + Pinia + pnpm 9, Vite 6 |
@@ -30,6 +30,20 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 | [Phase 7](PHASE_7_V040_V080.md) | Security hardening, feature completeness, test expansion, UX polish | ✅ Complete | (latest commit) |
 
 ## Changelog
+
+### v0.8.3
+- **Fix**: 413 upload error — host nginx `client_max_body_size` increased from 100M to 1G in deployment docs
+- **Fix**: Version display showing stale value — `.env` and `.env.example` `APP_VERSION` now kept in sync with config.py
+- **Fix**: Select-all checkbox in PrepareView — replaced mutating computed with reactive `deselectedYears` Set
+- **Fix**: Dataset store only fetching page 1 (max 50) — now fetches up to 200 datasets per page
+- **Feat**: "Delete all" button on Data page — uses existing bulk delete API endpoint
+- **Feat**: Favicon added (house icon SVG) for browser tab
+- **Security**: Viewer role restricted to Dashboard, Prediction, and Map pages only (Data, Model, Diagnostics, Analysis, Prepare, Admin require admin role)
+- **UX**: File upload input now accepts `.zip` in addition to `.csv`
+- **UX**: Nav sidebar hides admin-only pages from viewers
+- **Infra**: Nginx `proxy_request_buffering off` for streaming uploads
+- **i18n**: Added `data.deleteAll`, `data.confirmDeleteAll` keys to both locales
+- **Version**: 0.8.0 → 0.8.3
 
 ### v0.8.0
 - **Docs**: Comprehensive documentation update — all phases, changelog
