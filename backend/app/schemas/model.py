@@ -65,6 +65,8 @@ class ModelInfoResponse(BaseModel):
     version: str | None = None
     trained_at: str | None = None
     rows: int | None = None
+    train_rows: int | None = None
+    test_rows: int | None = None
     duration_sec: float | None = None
     global_metrics: dict | None = None
     per_type_metrics: dict | None = None
@@ -75,3 +77,6 @@ class ModelInfoResponse(BaseModel):
     coords_by_municipality: dict[str, dict] | None = None
     combined_metrics: dict | None = None
     type_models_trained: list[str] | None = None
+    used_features: list[str] | None = None
+    model_type: str | None = None
+    source_csv_path: str | None = None

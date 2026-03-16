@@ -5,6 +5,7 @@
   import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js'
   import api from '../composables/useApi'
   import { useExport } from '../composables/useExport'
+  import { getApiErrorMessage } from '../utils/apiError'
 
   ChartJS.register(ArcElement, Tooltip, Legend)
 
@@ -55,7 +56,7 @@
       })
       result.value = data
     } catch (e) {
-      error.value = e.response?.data?.detail || e.message
+      error.value = getApiErrorMessage(e, t)
     } finally {
       loading.value = false
     }

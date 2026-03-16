@@ -1,4 +1,4 @@
-# Nepremičnine v0.8.11
+# Nepremičnine v0.8.12
 
 > Slovenian real estate price analysis & prediction platform — powered by machine learning on official ETN transaction data.
 
@@ -9,6 +9,7 @@
 - **Analyze** listings against trained models to identify over/under-priced properties
 - **Export** prediction history and analysis results to CSV
 - **Manage** datasets, model training, and users through a full admin interface
+- **Personalize** user profiles with editable display names and optional avatars
 - **Monitor** platform usage with an admin stats dashboard
 - **Secure** with rate limiting, token blacklist, security headers, and input validation
 - **Accessible** with dark mode, mobile responsive layout, WCAG AA contrast, and keyboard navigation
@@ -56,7 +57,8 @@ The first registered user is automatically assigned the **admin** role.
 
 1. Register an account (first user → admin)
 2. Upload ETN CSV files from [GURS/ETN](https://www.e-prostor.gov.si/) via the Data page
-3. Trigger model training from the Model page
+3. Prepare `raw/train.csv` from the Prepare page
+4. Trigger model training from the Model page using the prepared dataset
 4. Predict property prices from the Prediction page
 5. Explore transactions on the Map and analyze listings
 
@@ -122,7 +124,7 @@ nepremicnine/
 │   │   ├── services/           # Business logic (data processing, ML, regions)
 │   │   └── tasks/              # ARQ async workers (model training)
 │   ├── models/                 # Trained model artifacts (*.joblib)
-│   └── tests/                  # pytest tests (126 tests)
+│   └── tests/                  # pytest tests (129 collected tests)
 │
 └── frontend/
     ├── Dockerfile              # Multi-stage: node build → nginx
@@ -148,9 +150,11 @@ nepremicnine/
 | POST | `/api/auth/login` | — | Login (returns JWT pair) |
 | POST | `/api/auth/refresh` | token | Refresh access token |
 | GET | `/api/auth/me` | token | Current user profile |
+| PATCH | `/api/auth/me` | token | Update name/avatar profile fields |
 | **Data** | | | |
 | POST | `/api/data/upload` | admin | Upload ETN CSV files |
 | GET | `/api/data/datasets` | token | List uploaded datasets |
+| GET | `/api/data/training-dataset` | token | Prepared `train.csv` metadata |
 | DELETE | `/api/data/datasets/{id}` | admin | Delete a dataset |
 | POST | `/api/data/prepare-etn-kpp` | admin | Prepare single ETN pair |
 | POST | `/api/data/prepare-etn-kpp-bulk` | admin | Prepare bulk ETN pairs |
@@ -224,7 +228,7 @@ docker compose exec frontend pnpm build
 - [Phase 5: Production](docs/PHASE_5_PRODUCTION.md)
 - [Phase 6: v0.3.0 Hardening](docs/PHASE_6_V030.md)
 - [Phase 7: v0.4.0–v0.8.0 Security & Features](docs/PHASE_7_V040_V080.md)
-- [Phase 8–14: v0.8.4–v0.8.11 Upgrades](docs/PHASE_8_14_PLAN.md)
+- [Phase 8–16: v0.8.4–v0.8.12 Upgrades](docs/PHASE_8_14_PLAN.md)
 - [Deployment Guide](docs/DEPLOYMENT.md)
 
 ## License

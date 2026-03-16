@@ -59,10 +59,10 @@ async def health_check(request: Request):
     response = HealthResponse(
         status=overall,
         checks=checks,
+        version=settings.app_version,
     )
-    # Only expose version/environment outside production
+    # Keep environment internal in production, but expose the app version everywhere.
     if settings.app_env != "production":
-        response.version = settings.app_version
         response.environment = settings.app_env
 
     return response

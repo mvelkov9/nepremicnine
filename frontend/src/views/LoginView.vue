@@ -1,10 +1,12 @@
 <script setup>
-  import { ref } from 'vue'
+  import { computed, ref } from 'vue'
   import { useRouter } from 'vue-router'
   import { useI18n } from 'vue-i18n'
+  import { setLocale } from '../i18n'
   import { useAuthStore } from '../stores/auth'
+  import { getApiErrorMessage } from '../utils/apiError'
 
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const auth = useAuthStore()
   const router = useRouter()
 
@@ -15,6 +17,12 @@
   const error = ref('')
   const loading = ref(false)
   const formErrors = ref({})
+
+  const highlights = computed(() => [
+    t('auth.highlightPrepared'),
+    t('auth.highlightModel'),
+    t('auth.highlightInsights'),
+  ])
 
   function validateForm() {
     const errors = {}
@@ -43,18 +51,66 @@
       }
       router.push('/')
     } catch (e) {
-      error.value = e.response?.data?.detail || t('common.error')
+      error.value = getApiErrorMessage(e, t)
     } finally {
       loading.value = false
     }
+  }
+
+  function changeLocale(nextLocale) {
+    locale.value = nextLocale
+    setLocale(nextLocale)
   }
 </script>
 
 <template>
   <div class="login-page">
-    <div class="login-card">
-      <h1>{{ t('app.title') }}</h1>
-      <p>{{ t('app.subtitle') }}</p>
+    <section class="login-showcase">
+      <div class="showcase-chip">{{ t('app.subtitle') }}</div>
+      <h1>{{ t('auth.welcomeTitle') }}</h1>
+      <p>{{ t('auth.welcomeBody') }}</p>
+
+      <div class="showcase-grid">
+        <article v-for="item in highlights" :key="item" class="showcase-card">
+          <span class="showcase-dot"></span>
+          <p>{{ item }}</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="login-panel">
+      <div class="login-panel-top">
+        <div>
+          <p class="eyebrow">{{ t('app.title') }}</p>
+          <h2>{{ isLogin ? t('auth.loginButton') : t('auth.registerButton') }}</h2>
+        </div>
+
+        <div class="segmented-control" role="group" :aria-label="t('layout.language')">
+          <button
+            class="segmented-btn"
+            :class="{ active: locale === 'sl' }"
+            @click="changeLocale('sl')"
+          >
+            SI
+          </button>
+          <button
+            class="segmented-btn"
+            :class="{ active: locale === 'en' }"
+            @click="changeLocale('en')"
+          >
+            EN
+          </button>
+        </div>
+      </div>
+
+      <div class="auth-switch">
+        <button class="auth-switch-btn" :class="{ active: isLogin }" @click="isLogin = true">
+          {{ t('auth.loginButton') }}
+        </button>
+        <button class="auth-switch-btn" :class="{ active: !isLogin }" @click="isLogin = false">
+          {{ t('auth.registerButton') }}
+        </button>
+      </div>
 
       <form @submit.prevent="handleSubmit" novalidate>
         <div v-if="!isLogin" class="field">
@@ -107,9 +163,9 @@
           }}</span>
         </div>
 
-        <p v-if="error" class="error" style="margin-bottom: 12px">{{ error }}</p>
+        <p v-if="error" class="error-text" style="margin-bottom: 0.9rem">{{ error }}</p>
 
-        <button type="submit" :disabled="loading">
+        <button type="submit" class="btn btn-primary auth-submit" :disabled="loading">
           {{
             loading
               ? t('common.loading')
@@ -120,16 +176,12 @@
         </button>
       </form>
 
-      <div class="login-footer">
-        <template v-if="isLogin">
-          {{ t('auth.noAccount') }}
-          <a href="#" @click.prevent="isLogin = false">{{ t('auth.registerButton') }}</a>
-        </template>
-        <template v-else>
-          {{ t('auth.hasAccount') }}
-          <a href="#" @click.prevent="isLogin = true">{{ t('auth.loginButton') }}</a>
-        </template>
-      </div>
-    </div>
+      <p class="login-footer">
+        {{ isLogin ? t('auth.noAccount') : t('auth.hasAccount') }}
+        <button class="inline-link" @click="isLogin = !isLogin">
+          {{ isLogin ? t('auth.registerButton') : t('auth.loginButton') }}
+        </button>
+      </p>
+    </section>
   </div>
 </template>

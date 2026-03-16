@@ -156,7 +156,7 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_read_timeout 300s;
-        client_max_body_size 500M;
+        client_max_body_size 1024M;
     }
 }
 ```
@@ -193,3 +193,8 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml restart backend
 ```bash
 curl -I https://napoved-nepremicnin.com/api/health
 ```
+
+If uploads still return `413 Request Entity Too Large`, verify both nginx layers:
+
+- Host nginx on the VPS (`/etc/nginx/sites-available/napoved-nepremicnin`)
+- App nginx inside the frontend container (`frontend/nginx.conf`)

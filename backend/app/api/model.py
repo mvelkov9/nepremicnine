@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import os
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import delete, func, select
@@ -21,6 +22,16 @@ from app.utils.cache import cache_get, cache_set
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/model", tags=["model"])
+DATA_DIR = os.path.realpath(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data"))
+
+
+def _relative_data_path(path: str | None) -> str | None:
+    if not path:
+        return None
+    resolved = os.path.realpath(path)
+    if resolved.startswith(DATA_DIR + os.sep) or resolved == DATA_DIR:
+        return os.path.relpath(resolved, DATA_DIR).replace("\\", "/")
+    return path
 
 
 @router.get("/info", response_model=ModelInfoResponse)
@@ -34,7 +45,7 @@ async def model_info(request: Request, _user: User = Depends(get_current_user)):
     info = get_model_info()
     if info is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No trained model found")
-    response = ModelInfoResponse(**info)
+    response = ModelInfoResponse(**{**info, "source_csv_path": _relative_data_path(info.get("csv_path"))})
     await cache_set(request, cache_key, response.model_dump())
     return response
 

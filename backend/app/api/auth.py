@@ -19,6 +19,7 @@ from app.schemas.auth import (
     RefreshRequest,
     RegisterRequest,
     TokenResponse,
+    UpdateProfileRequest,
     UserResponse,
 )
 from app.services.auth_service import (
@@ -31,6 +32,17 @@ from app.services.auth_service import (
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+def _normalize_avatar_url(raw_value: str | None) -> str | None:
+    if raw_value is None:
+        return None
+    value = raw_value.strip()
+    if not value:
+        return None
+    if not (value.startswith("https://") or value.startswith("data:image/") or value.startswith("/")):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid avatar URL")
+    return value
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
@@ -118,6 +130,29 @@ async def refresh(request: Request, body: RefreshRequest, db: AsyncSession = Dep
 
 @router.get("/me", response_model=UserResponse)
 async def me(user: User = Depends(get_current_user)):
+    return user
+
+
+@router.patch("/me", response_model=UserResponse)
+async def update_profile(
+    body: UpdateProfileRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if body.full_name is None and body.avatar_url is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "No profile changes submitted")
+
+    if body.full_name is not None:
+        full_name = body.full_name.strip()
+        if not full_name:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Full name is required")
+        user.full_name = full_name
+
+    if body.avatar_url is not None:
+        user.avatar_url = _normalize_avatar_url(body.avatar_url)
+
+    await db.commit()
+    await db.refresh(user)
     return user
 
 

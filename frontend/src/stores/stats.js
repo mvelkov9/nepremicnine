@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import api from '../composables/useApi'
+import { i18n } from '../i18n'
+import { getApiErrorMessage } from '../utils/apiError'
 
 export const useStatsStore = defineStore('stats', () => {
   const overview = ref(null)
@@ -36,7 +38,7 @@ export const useStatsStore = defineStore('stats', () => {
     try {
       await Promise.all([fetchOverview(), fetchRegions(), fetchPriceDistribution(), fetchTrend()])
     } catch (e) {
-      error.value = e.response?.data?.detail || e.message
+      error.value = getApiErrorMessage(e, i18n.global.t)
     } finally {
       loading.value = false
     }

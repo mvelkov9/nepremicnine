@@ -28,10 +28,16 @@ class LogoutRequest(BaseModel):
     refresh_token: str | None = None
 
 
+class UpdateProfileRequest(BaseModel):
+    full_name: str | None = Field(default=None, max_length=200)
+    avatar_url: str | None = Field(default=None, max_length=500)
+
+
 class UserResponse(BaseModel):
     id: int
     email: str
     full_name: str
+    avatar_url: str | None = None
     role: str
     is_active: bool
 

@@ -73,6 +73,7 @@ async def test_upload_and_list(client: AsyncClient):
     data = resp.json()
     assert len(data["uploaded"]) == 1
     assert data["uploaded"][0]["original_name"] == "test.csv"
+    assert data["uploaded"][0]["relative_path"].endswith("_test.csv")
     assert data["uploaded"][0]["row_count"] == 2
 
     # List
@@ -82,6 +83,20 @@ async def test_upload_and_list(client: AsyncClient):
     )
     assert resp.status_code == 200
     assert len(resp.json()["items"]) == 1
+    assert resp.json()["items"][0]["relative_path"].startswith("uploads/")
+
+
+@pytest.mark.asyncio
+async def test_training_dataset_endpoint_reports_prepared_csv(client: AsyncClient):
+    token = await _get_admin_token(client)
+    resp = await client.get(
+        "/api/data/training-dataset",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["relative_path"] == "raw/train.csv"
+    assert "exists" in data
 
 
 @pytest.mark.asyncio

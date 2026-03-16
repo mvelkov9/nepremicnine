@@ -131,12 +131,70 @@ async def test_me_authenticated(client: AsyncClient):
     resp = await client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 200
     assert resp.json()["email"] == "me@test.com"
+    assert resp.json()["avatar_url"] is None
 
 
 @pytest.mark.asyncio
 async def test_me_unauthenticated(client: AsyncClient):
     resp = await client.get("/api/auth/me")
     assert resp.status_code == 401  # No bearer token
+
+
+@pytest.mark.asyncio
+async def test_update_profile(client: AsyncClient):
+    await client.post(
+        "/api/auth/register",
+        json={
+            "email": "profile@test.com",
+            "password": "testpass123",
+            "full_name": "Profile User",
+        },
+    )
+    login_resp = await client.post(
+        "/api/auth/login",
+        json={
+            "email": "profile@test.com",
+            "password": "testpass123",
+        },
+    )
+    token = login_resp.json()["access_token"]
+
+    resp = await client.patch(
+        "/api/auth/me",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"full_name": "Updated User", "avatar_url": "https://example.com/avatar.png"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["full_name"] == "Updated User"
+    assert data["avatar_url"] == "https://example.com/avatar.png"
+
+
+@pytest.mark.asyncio
+async def test_update_profile_rejects_invalid_avatar_url(client: AsyncClient):
+    await client.post(
+        "/api/auth/register",
+        json={
+            "email": "profile-invalid@test.com",
+            "password": "testpass123",
+            "full_name": "Profile User",
+        },
+    )
+    login_resp = await client.post(
+        "/api/auth/login",
+        json={
+            "email": "profile-invalid@test.com",
+            "password": "testpass123",
+        },
+    )
+    token = login_resp.json()["access_token"]
+
+    resp = await client.patch(
+        "/api/auth/me",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"avatar_url": "ftp://example.com/avatar.png"},
+    )
+    assert resp.status_code == 400
 
 
 @pytest.mark.asyncio

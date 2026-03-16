@@ -1,11 +1,11 @@
-# Phase 8–14 — v0.8.4–v0.8.11 Upgrade & Improvement Plan
+# Phase 8–16 — v0.8.4–v0.8.12 Upgrade & Improvement Plan
 
 > Comprehensive upgrade from v1 feature parity analysis, powered by [Agency Agents](https://github.com/msitarzewski/agency-agents).
 
 | Item | Value |
 |------|-------|
 | **Current Version** | 0.8.3 |
-| **Target Version** | 0.8.11 |
+| **Target Version** | 0.8.12 |
 | **Scope** | ML bug fixes, feature parity, performance, security, UX, accessibility, testing, documentation |
 | **Method** | Agency agent-driven analysis and implementation across 7 phases |
 
@@ -258,6 +258,32 @@ A thorough comparison of the v1 app (`Nepremicnine v3.5`, Flask/SQLite) with the
 
 ---
 
+## Phase 16 — Workflow & UX Repair (v0.8.12)
+
+**Agents**: Frontend Developer, Backend Architect, DevOps Automator, Technical Writer
+
+### Changes
+
+1. **Prepared dataset visibility** — added `/api/data/training-dataset` and returned relative dataset paths so the frontend can guide users from preparation to training cleanly
+2. **Model workflow clarity** — Model view now recommends the prepared dataset, shows the current model source, and keeps uploaded CSVs as fallback sources
+3. **Profile personalization** — added `PATCH /api/auth/me` with editable name and optional avatar URL, surfaced via the new profile panel in the app shell
+4. **Production fixes** — app version now stays visible in production health checks, nginx upload limit raised to 1024 MB, and `/favicon.ico` falls back to `/favicon.svg`
+5. **UI refresh** — redesigned login, app shell, dashboard, and training flow to make the product feel less barren and more intentional
+6. **i18n completion** — mapped common backend error messages into localized frontend messages for both Slovenian and English
+
+### Verification
+
+- [x] Frontend ESLint completes without errors
+- [x] Frontend Prettier check passes
+- [x] Frontend production build succeeds
+- [x] Backend Ruff lint passes
+- [x] Backend Ruff format check passes
+- [x] Python source compiles successfully (`compile(...)` smoke check)
+- [ ] Full backend pytest suite
+  Note: blocked in this sandbox because the async SQLite layer hangs during connection setup before tests execute
+
+---
+
 ## Phase Progress
 
 | Phase | Description | Version | Status |
@@ -270,3 +296,4 @@ A thorough comparison of the v1 app (`Nepremicnine v3.5`, Flask/SQLite) with the
 | Phase 13 | Testing Expansion | v0.8.9 | ✅ Complete |
 | Phase 14 | Documentation & Final Polish | v0.8.10 | ✅ Complete |
 | Phase 15 | CI/CD & Production Fix | v0.8.11 | ✅ Complete |
+| Phase 16 | Workflow & UX Repair | v0.8.12 | ✅ Complete |

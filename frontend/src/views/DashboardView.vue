@@ -1,23 +1,27 @@
 <script setup>
-  import { ref, onMounted, computed, watch } from 'vue'
+  import { computed, onMounted, ref, watch } from 'vue'
+  import { RouterLink } from 'vue-router'
   import { useI18n } from 'vue-i18n'
   import { Bar, Doughnut, Line } from 'vue-chartjs'
   import {
-    Chart as ChartJS,
-    CategoryScale,
-    LinearScale,
-    BarElement,
-    LineElement,
-    PointElement,
     ArcElement,
+    BarElement,
+    CategoryScale,
+    Chart as ChartJS,
+    Filler,
+    Legend,
+    LineElement,
+    LinearScale,
+    PointElement,
     Title,
     Tooltip,
-    Legend,
-    Filler,
   } from 'chart.js'
-  import { useStatsStore } from '../stores/stats'
   import api from '../composables/useApi'
   import LoadingSpinner from '../components/LoadingSpinner.vue'
+  import { useAuthStore } from '../stores/auth'
+  import { useDataStore } from '../stores/data'
+  import { useStatsStore } from '../stores/stats'
+  import { getApiErrorMessage } from '../utils/apiError'
 
   ChartJS.register(
     CategoryScale,
@@ -33,6 +37,8 @@
   )
 
   const { t } = useI18n()
+  const auth = useAuthStore()
+  const dataStore = useDataStore()
   const stats = useStatsStore()
 
   const selectedType = ref('')
@@ -53,31 +59,100 @@
   ]
 
   onMounted(async () => {
-    stats.fetchAll()
-    try {
-      const [infoRes, impRes] = await Promise.all([
-        api.get('/api/model/info').catch((e) => {
-          modelError.value = e.response?.data?.detail || e.message
-          return { data: {} }
+    await Promise.all([
+      stats.fetchAll(),
+      dataStore.fetchTrainingDataset().catch(() => null),
+      api
+        .get('/api/model/info')
+        .then((response) => {
+          modelInfo.value = response.data
+        })
+        .catch((error) => {
+          modelError.value = getApiErrorMessage(error, t)
         }),
-        api.get('/api/model/importance').catch(() => ({ data: [] })),
-      ])
-      modelInfo.value = infoRes.data
-      featureImportance.value = impRes.data || []
-    } catch {
-      /* ignore */
-    }
+      api
+        .get('/api/model/importance')
+        .then((response) => {
+          featureImportance.value = response.data || []
+        })
+        .catch(() => {
+          featureImportance.value = []
+        }),
+    ])
   })
 
-  watch(selectedType, (val) => {
-    const params = val ? { property_type: val } : {}
+  watch(selectedType, (value) => {
+    const params = value ? { property_type: value } : {}
     stats.fetchOverview(params)
   })
 
-  function fmt(val, decimals = 0) {
-    if (val == null) return '—'
-    return Number(val).toLocaleString('sl-SI', { maximumFractionDigits: decimals })
+  function fmt(value, decimals = 0) {
+    if (value == null) return '—'
+    return Number(value).toLocaleString('sl-SI', { maximumFractionDigits: decimals })
   }
+
+  function formatDate(value) {
+    if (!value) return t('common.noData')
+    return new Date(value).toLocaleString()
+  }
+
+  const quickLinks = computed(() => {
+    const links = [
+      {
+        to: '/napoved',
+        title: t('dashboard.quickPrediction'),
+        description: t('dashboard.quickPredictionDesc'),
+      },
+      {
+        to: '/zemljevid',
+        title: t('dashboard.quickMap'),
+        description: t('dashboard.quickMapDesc'),
+      },
+    ]
+
+    if (auth.isAdmin) {
+      links.unshift(
+        {
+          to: '/priprava',
+          title: t('dashboard.quickPrepare'),
+          description: t('dashboard.quickPrepareDesc'),
+        },
+        {
+          to: '/model',
+          title: t('dashboard.quickTrain'),
+          description: t('dashboard.quickTrainDesc'),
+        },
+      )
+    }
+
+    return links
+  })
+
+  const spotlightCards = computed(() => [
+    {
+      label: t('dashboard.preparedDataset'),
+      title: dataStore.trainingDataset?.exists
+        ? t('dashboard.preparedReady')
+        : t('dashboard.preparedMissing'),
+      detail: dataStore.trainingDataset?.exists
+        ? `${fmt(dataStore.trainingDataset.rows)} ${t('data.rows')} · ${formatDate(dataStore.trainingDataset.updated_at)}`
+        : t('dashboard.preparedMissingDetail'),
+    },
+    {
+      label: t('dashboard.modelStatus'),
+      title: modelInfo.value ? t('dashboard.modelReady') : t('dashboard.modelMissing'),
+      detail: modelInfo.value
+        ? `${fmt(modelInfo.value.rows)} ${t('data.rows')} · ${formatDate(modelInfo.value.trained_at)}`
+        : t('dashboard.modelMissingDetail'),
+    },
+    {
+      label: t('dashboard.workflowTitle'),
+      title: auth.isAdmin ? t('dashboard.workflowAdmin') : t('dashboard.workflowViewer'),
+      detail: auth.isAdmin
+        ? t('dashboard.workflowAdminDetail')
+        : t('dashboard.workflowViewerDetail'),
+    },
+  ])
 
   const regionChartData = computed(() => {
     if (!stats.regions.length) return null
@@ -85,13 +160,13 @@
       (a, b) => (b.avg_price_per_m2 || 0) - (a.avg_price_per_m2 || 0),
     )
     return {
-      labels: sorted.map((r) => r.region),
+      labels: sorted.map((item) => item.region),
       datasets: [
         {
           label: '€/m²',
-          data: sorted.map((r) => r.avg_price_per_m2 || 0),
-          backgroundColor: '#3b82f6',
-          borderRadius: 6,
+          data: sorted.map((item) => item.avg_price_per_m2 || 0),
+          backgroundColor: '#0f766e',
+          borderRadius: 10,
         },
       ],
     }
@@ -113,10 +188,10 @@
         {
           label: t('dashboard.transactions'),
           data: stats.priceDistribution.counts,
-          backgroundColor: '#3b82f680',
-          borderColor: '#3b82f6',
+          backgroundColor: '#0f766e55',
+          borderColor: '#0f766e',
           borderWidth: 1,
-          borderRadius: 4,
+          borderRadius: 8,
         },
       ],
     }
@@ -135,20 +210,20 @@
   const trendChartData = computed(() => {
     if (!stats.trend.length) return null
     return {
-      labels: stats.trend.map((p) => p.year),
+      labels: stats.trend.map((item) => item.year),
       datasets: [
         {
           label: t('dashboard.medianPrice'),
-          data: stats.trend.map((p) => p.median_price),
-          borderColor: '#3b82f6',
-          backgroundColor: '#3b82f620',
+          data: stats.trend.map((item) => item.median_price),
+          borderColor: '#0f766e',
+          backgroundColor: '#0f766e18',
           fill: true,
           tension: 0.3,
         },
         {
           label: t('dashboard.avgPrice'),
-          data: stats.trend.map((p) => p.avg_price),
-          borderColor: '#f59e0b',
+          data: stats.trend.map((item) => item.avg_price),
+          borderColor: '#f97316',
           borderDash: [5, 5],
           fill: false,
           tension: 0.3,
@@ -167,11 +242,11 @@
   const typeChartData = computed(() => {
     if (!stats.overview?.property_types?.length) return null
     return {
-      labels: stats.overview.property_types.map((p) => p.type),
+      labels: stats.overview.property_types.map((item) => item.type),
       datasets: [
         {
-          data: stats.overview.property_types.map((p) => p.count),
-          backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'],
+          data: stats.overview.property_types.map((item) => item.count),
+          backgroundColor: ['#0f766e', '#0f172a', '#f97316', '#dc2626', '#3b82f6', '#f59e0b'],
         },
       ],
     }
@@ -189,13 +264,13 @@
       .sort((a, b) => b.importance - a.importance)
       .slice(0, 15)
     return {
-      labels: sorted.map((f) => f.feature),
+      labels: sorted.map((item) => item.feature),
       datasets: [
         {
           label: t('model.importance'),
-          data: sorted.map((f) => f.importance),
-          backgroundColor: '#10b981',
-          borderRadius: 6,
+          data: sorted.map((item) => item.importance),
+          backgroundColor: '#0f766e',
+          borderRadius: 8,
         },
       ],
     }
@@ -218,21 +293,9 @@
       datasets: [
         {
           label: 'R²',
-          data: types.map((t) => metrics[t].r2 || 0),
-          backgroundColor: types.map(
-            (t) =>
-              ({
-                stanovanje: '#3b82f6',
-                hisa: '#22c55e',
-                poslovni_prostor: '#f59e0b',
-                garaza: '#6b7280',
-                turisticni: '#a855f7',
-                gostinstvo: '#ef4444',
-                industrijski: '#64748b',
-                kmetijsko: '#84cc16',
-              })[t] || '#3b82f6',
-          ),
-          borderRadius: 6,
+          data: types.map((type) => metrics[type].r2 || 0),
+          backgroundColor: ['#0f766e', '#f97316', '#0f172a', '#3b82f6', '#dc2626', '#f59e0b'],
+          borderRadius: 8,
         },
       ],
     }
@@ -251,23 +314,52 @@
 
 <template>
   <div>
-    <h1 class="page-title">{{ t('dashboard.title') }}</h1>
+    <section class="hero-panel">
+      <div class="hero-copy">
+        <span class="hero-kicker">{{ t('dashboard.title') }}</span>
+        <h2>{{ t('dashboard.heroTitle') }}</h2>
+        <p>{{ t('dashboard.heroBody') }}</p>
+      </div>
 
-    <!-- Type filter -->
-    <div class="card" style="padding: 12px 20px; margin-bottom: 1rem">
-      <div style="display: flex; align-items: center; gap: 12px">
-        <label class="form-label" style="margin: 0">{{ t('dashboard.filterByType') }}:</label>
-        <select v-model="selectedType" class="form-input" style="max-width: 220px">
+      <div class="hero-actions-grid">
+        <RouterLink v-for="link in quickLinks" :key="link.to" :to="link.to" class="action-tile">
+          <strong>{{ link.title }}</strong>
+          <p>{{ link.description }}</p>
+        </RouterLink>
+      </div>
+    </section>
+
+    <div class="spotlight-grid">
+      <article v-for="card in spotlightCards" :key="card.label" class="spotlight-card">
+        <span class="eyebrow">{{ card.label }}</span>
+        <strong>{{ card.title }}</strong>
+        <p>{{ card.detail }}</p>
+      </article>
+    </div>
+
+    <div class="card filter-card">
+      <div class="filter-card-head">
+        <div>
+          <p class="eyebrow">{{ t('dashboard.filterByType') }}</p>
+          <h3>{{ t('dashboard.dataLens') }}</h3>
+        </div>
+        <select v-model="selectedType" class="form-input" style="max-width: 240px">
           <option value="">{{ t('map.allTypes') }}</option>
-          <option v-for="pt in propertyTypes.slice(1)" :key="pt" :value="pt">{{ pt }}</option>
+          <option
+            v-for="propertyType in propertyTypes.slice(1)"
+            :key="propertyType"
+            :value="propertyType"
+          >
+            {{ propertyType }}
+          </option>
         </select>
       </div>
     </div>
 
     <LoadingSpinner v-if="stats.loading" :label="t('common.loading')" />
 
-    <p v-if="modelError" class="muted" style="margin-bottom: 0.5rem; font-size: 0.875rem">
-      ⚠️ {{ t('dashboard.modelLoadError') }}: {{ modelError }}
+    <p v-if="modelError" class="error-text" style="margin-bottom: 1rem">
+      {{ t('dashboard.modelLoadError') }}: {{ modelError }}
     </p>
 
     <div class="kpi-grid">
@@ -334,16 +426,15 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="m in stats.overview.top_municipalities" :key="m.municipality">
-              <td>{{ m.municipality }}</td>
-              <td>{{ fmt(m.count) }}</td>
+            <tr v-for="municipality in stats.overview.top_municipalities" :key="municipality.name">
+              <td>{{ municipality.name }}</td>
+              <td>{{ fmt(municipality.count) }}</td>
             </tr>
           </tbody>
         </table>
       </div>
     </div>
 
-    <!-- Feature importance & per-type R² -->
     <div class="charts-grid">
       <div class="card">
         <div class="card-title">{{ t('dashboard.featureImportance') }}</div>

@@ -7,6 +7,7 @@ import os
 import pathlib
 import re
 import uuid
+from datetime import UTC, datetime
 from typing import Literal
 
 import pandas as pd
@@ -15,6 +16,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.database import get_db
 from app.dependencies.auth import get_current_user, require_admin
 from app.models.dataset import DatasetFile
@@ -23,6 +25,7 @@ from app.schemas.dataset import (
     DatasetFileResponse,
     DatasetPreviewResponse,
     DatasetUploadResponse,
+    TrainingDatasetResponse,
 )
 from app.services.data_processing_service import (
     extract_zip_csvs,
@@ -42,16 +45,63 @@ DATA_DIR = os.path.realpath(os.path.join(os.path.dirname(os.path.dirname(os.path
 UPLOAD_DIR = os.path.join(DATA_DIR, "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-MAX_UPLOAD_SIZE = 500 * 1024 * 1024  # 500 MB per file
+MAX_UPLOAD_SIZE = get_settings().max_upload_size_mb * 1024 * 1024
 ALLOWED_EXTENSIONS = {".csv", ".zip"}
+
+
+def _resolve_data_path(raw_path: str) -> str:
+    candidate = raw_path if os.path.isabs(raw_path) else os.path.join(DATA_DIR, raw_path)
+    return os.path.realpath(candidate)
+
+
+def _to_relative_data_path(resolved_path: str) -> str:
+    return os.path.relpath(resolved_path, DATA_DIR).replace("\\", "/")
+
+
+def _serialize_dataset(record: DatasetFile) -> DatasetFileResponse:
+    return DatasetFileResponse(
+        id=record.id,
+        original_name=record.original_name,
+        relative_path=_to_relative_data_path(record.stored_path),
+        source_type=record.source_type,
+        row_count=record.row_count,
+        columns_json=record.columns_json,
+        file_hash=record.file_hash,
+        uploaded_at=record.uploaded_at,
+    )
+
+
+def _get_training_dataset_metadata() -> TrainingDatasetResponse:
+    relative_path = _to_relative_data_path(TRAIN_CSV)
+    if not os.path.exists(TRAIN_CSV):
+        return TrainingDatasetResponse(exists=False, relative_path=relative_path)
+
+    rows = None
+    columns: list[str] = []
+    try:
+        df = read_csv_flexible(TRAIN_CSV)
+        rows = len(df)
+        columns = list(df.columns)
+    except (pd.errors.ParserError, pd.errors.EmptyDataError, ValueError, UnicodeDecodeError, OSError):
+        logger.exception("Failed to inspect prepared training dataset %s", TRAIN_CSV)
+
+    return TrainingDatasetResponse(
+        exists=True,
+        relative_path=relative_path,
+        rows=rows,
+        columns=columns,
+        updated_at=datetime.fromtimestamp(os.path.getmtime(TRAIN_CSV), UTC),
+        size_bytes=os.path.getsize(TRAIN_CSV),
+    )
 
 
 def _validate_path_within_data_dir(raw_path: str) -> str:
     """Resolve a path and ensure it stays within DATA_DIR. Raises 400 on traversal or symlink."""
-    resolved = os.path.realpath(raw_path)
+    resolved = _resolve_data_path(raw_path)
     if not resolved.startswith(DATA_DIR + os.sep) and resolved != DATA_DIR:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Path is outside the allowed data directory")
-    if os.path.islink(raw_path):
+    raw_candidate = raw_path if os.path.isabs(raw_path) else os.path.join(DATA_DIR, raw_path)
+    if os.path.islink(raw_candidate):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Symbolic links are not allowed")
     return resolved
 
@@ -79,7 +129,8 @@ async def upload_files(
         # Validate file size
         if len(content) > MAX_UPLOAD_SIZE:
             raise HTTPException(
-                status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, f"File exceeds {MAX_UPLOAD_SIZE // (1024 * 1024)} MB limit"
+                status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                f"File exceeds {MAX_UPLOAD_SIZE // (1024 * 1024)} MB limit",
             )
 
         file_hash = hashlib.sha256(content).hexdigest()
@@ -167,7 +218,7 @@ async def upload_files(
 
     msg = f"{len(uploaded)} uploaded, {len(skipped)} skipped (duplicate)"
     return DatasetUploadResponse(
-        uploaded=[DatasetFileResponse.model_validate(r) for r in uploaded],
+        uploaded=[_serialize_dataset(r) for r in uploaded],
         skipped=skipped,
         message=msg,
     )
@@ -191,7 +242,7 @@ async def list_datasets(
     result = await db.execute(
         select(DatasetFile).order_by(DatasetFile.uploaded_at.desc()).offset(offset).limit(per_page)
     )
-    items = [DatasetFileResponse.model_validate(r) for r in result.scalars().all()]
+    items = [_serialize_dataset(r) for r in result.scalars().all()]
     return {
         "items": items,
         "total": total,
@@ -199,6 +250,12 @@ async def list_datasets(
         "per_page": per_page,
         "pages": pages,
     }
+
+
+@router.get("/training-dataset", response_model=TrainingDatasetResponse)
+async def training_dataset(_user: User = Depends(get_current_user)):
+    """Expose the prepared train.csv artifact so the frontend can guide users into training."""
+    return _get_training_dataset_metadata()
 
 
 @router.get("/preview/{dataset_id}", response_model=DatasetPreviewResponse)
@@ -294,6 +351,8 @@ async def prepare_etn_kpp(
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY, "Data preparation failed. Check server logs."
         ) from exc
+    result["output_csv_path"] = _to_relative_data_path(TRAIN_CSV)
+    result["training_dataset"] = _get_training_dataset_metadata().model_dump(mode="json")
     return result
 
 
@@ -328,6 +387,8 @@ async def prepare_etn_kpp_bulk(
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY, "Data preparation failed. Check server logs."
         ) from exc
+    result["output_csv_path"] = _to_relative_data_path(TRAIN_CSV)
+    result["training_dataset"] = _get_training_dataset_metadata().model_dump(mode="json")
     return result
 
 
@@ -415,4 +476,6 @@ async def prepare_train(
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY, "Data preparation failed. Check server logs."
         ) from exc
+    result["output_csv_path"] = _to_relative_data_path(TRAIN_CSV)
+    result["training_dataset"] = _get_training_dataset_metadata().model_dump(mode="json")
     return result

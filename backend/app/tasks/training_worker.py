@@ -8,8 +8,12 @@ import time
 
 from arq import create_pool
 from arq.connections import RedisSettings
+from sqlalchemy import select
 
 from app.config import get_settings
+from app.database import async_session
+from app.models.model_run import ModelRun
+from app.models.training_job import JobStatus, TrainingJob
 from app.services.model_service import invalidate_model_cache, train_from_csv
 
 logger = logging.getLogger(__name__)
@@ -29,6 +33,34 @@ def _parse_redis_url(url: str) -> RedisSettings:
     )
 
 
+async def _update_job_record(job_id: str, **fields) -> None:
+    async with async_session() as session:
+        result = await session.execute(select(TrainingJob).where(TrainingJob.job_id == job_id))
+        job = result.scalar_one_or_none()
+        if job is None:
+            return
+        for key, value in fields.items():
+            setattr(job, key, value)
+        await session.commit()
+
+
+async def _record_model_run(csv_path: str, result: dict) -> None:
+    metrics = result.get("global_metrics") or {}
+    async with async_session() as session:
+        session.add(
+            ModelRun(
+                source_csv_path=csv_path,
+                rows=result.get("rows"),
+                mae=metrics.get("mae"),
+                rmse=metrics.get("rmse"),
+                r2=metrics.get("r2"),
+                features_json=json.dumps(result.get("used_features") or []),
+                importance_json=json.dumps(result.get("global_importance") or {}),
+            )
+        )
+        await session.commit()
+
+
 async def run_training(ctx: dict, job_id: str, csv_path: str) -> dict:
     """ARQ task: train model from CSV with progress updates stored in Redis."""
     redis = ctx["redis"]
@@ -39,6 +71,7 @@ async def run_training(ctx: dict, job_id: str, csv_path: str) -> dict:
         await redis.set(key, json.dumps(data), ex=86400)
 
     await _update("running", stage="initializing", progress=0)
+    await _update_job_record(job_id, status=JobStatus.running, stage="initializing", progress=0, error=None)
 
     def progress_callback(label: str, fitted: int, total: int):
         pct = round(fitted / total * 100, 1) if total > 0 else 0
@@ -53,6 +86,16 @@ async def run_training(ctx: dict, job_id: str, csv_path: str) -> dict:
     try:
         result = train_from_csv(csv_path, progress_callback=progress_callback)
         invalidate_model_cache()
+        await _record_model_run(csv_path, result)
+        await _update_job_record(
+            job_id,
+            status=JobStatus.completed,
+            stage="done",
+            progress=100,
+            rows=result.get("rows"),
+            duration_sec=result.get("duration_sec"),
+            error=None,
+        )
         await _update(
             "completed",
             stage="done",
@@ -62,6 +105,7 @@ async def run_training(ctx: dict, job_id: str, csv_path: str) -> dict:
         return result
     except Exception as exc:
         logger.exception("Training failed for job %s", job_id)
+        await _update_job_record(job_id, status=JobStatus.failed, stage="error", error=str(exc))
         await _update("failed", stage="error", error=str(exc))
         raise
 

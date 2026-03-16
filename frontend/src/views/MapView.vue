@@ -5,6 +5,7 @@
   import 'leaflet/dist/leaflet.css'
   import api from '../composables/useApi'
   import LoadingSpinner from '../components/LoadingSpinner.vue'
+  import { getApiErrorMessage } from '../utils/apiError'
 
   const { t } = useI18n()
 
@@ -252,7 +253,7 @@
       await nextTick()
       renderMarkers()
     } catch (e) {
-      error.value = e?.response?.data?.detail || e.message
+      error.value = getApiErrorMessage(e, t)
     } finally {
       loading.value = false
     }

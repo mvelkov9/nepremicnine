@@ -4,6 +4,7 @@
   import api from '../composables/useApi'
   import EmptyState from '../components/EmptyState.vue'
   import { useExport } from '../composables/useExport'
+  import { getApiErrorMessage } from '../utils/apiError'
 
   const { t } = useI18n()
   const { exportToCSV } = useExport()
@@ -121,7 +122,7 @@
       result.value = data
       await fetchHistory()
     } catch (e) {
-      error.value = e.response?.data?.detail || e.message
+      error.value = getApiErrorMessage(e, t)
     } finally {
       loading.value = false
     }

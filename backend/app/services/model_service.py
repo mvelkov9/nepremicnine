@@ -429,6 +429,7 @@ def train_from_csv(
 
     return {
         "model_path": model_path,
+        "csv_path": csv_path,
         "rows": len(df),
         "duration_sec": round(duration, 2),
         "global_metrics": global_result["metrics"],
@@ -437,6 +438,7 @@ def train_from_csv(
         "per_region_metrics": per_region_metrics,
         "combined_metrics": combined_metrics,
         "per_type_count": len(per_type_models),
+        "used_features": global_num + global_cat,
     }
 
 
@@ -653,4 +655,5 @@ def get_model_info() -> dict[str, Any] | None:
         "per_type_count": len(artifact.get("per_type_models", {})),
         "type_models_trained": sorted(artifact.get("per_type_models", {}).keys()),
         "coords_by_municipality": artifact.get("coords_by_municipality"),
+        "csv_path": artifact.get("csv_path"),
     }

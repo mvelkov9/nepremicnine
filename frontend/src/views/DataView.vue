@@ -5,6 +5,7 @@
   import { useDataStore } from '../stores/data'
   import LoadingSpinner from '../components/LoadingSpinner.vue'
   import EmptyState from '../components/EmptyState.vue'
+  import { getApiErrorMessage } from '../utils/apiError'
 
   const { t } = useI18n()
   const auth = useAuthStore()
@@ -13,11 +14,13 @@
   const fileInput = ref(null)
   const previewData = ref(null)
   const previewName = ref('')
-  const previewLoading = ref(false)
   const uploadResult = ref(null)
   const error = ref('')
 
-  onMounted(() => dataStore.fetchDatasets())
+  onMounted(() => {
+    dataStore.fetchDatasets()
+    dataStore.fetchTrainingDataset()
+  })
 
   async function handleUpload() {
     const files = fileInput.value?.files
@@ -28,21 +31,19 @@
       const result = await dataStore.uploadFiles(files)
       uploadResult.value = result
       fileInput.value.value = ''
+      await dataStore.fetchTrainingDataset()
     } catch (e) {
-      error.value = e.response?.data?.detail || t('common.error')
+      error.value = getApiErrorMessage(e, t)
     }
   }
 
   async function showPreview(dataset) {
     previewName.value = dataset.original_name
-    previewLoading.value = true
     error.value = ''
     try {
       previewData.value = await dataStore.fetchPreview(dataset.id)
     } catch (e) {
-      error.value = e.response?.data?.detail || t('common.error')
-    } finally {
-      previewLoading.value = false
+      error.value = getApiErrorMessage(e, t)
     }
   }
 
@@ -51,7 +52,7 @@
     try {
       await dataStore.deleteDataset(id)
     } catch (e) {
-      error.value = e.response?.data?.detail || t('common.error')
+      error.value = getApiErrorMessage(e, t)
     }
   }
 
@@ -61,7 +62,7 @@
     try {
       await dataStore.deleteAllDatasets()
     } catch (e) {
-      error.value = e.response?.data?.detail || t('common.error')
+      error.value = getApiErrorMessage(e, t)
     }
   }
 
@@ -86,7 +87,13 @@
 
     <!-- Upload section - admin only -->
     <div v-if="auth.isAdmin" class="card">
-      <div class="card-title">{{ t('data.upload') }}</div>
+      <div class="section-head">
+        <div>
+          <div class="card-title">{{ t('data.upload') }}</div>
+          <p class="muted">{{ t('data.uploadHint') }}</p>
+        </div>
+        <span class="status-pill muted">{{ t('data.maxUpload') }}</span>
+      </div>
       <div class="actions">
         <input
           ref="fileInput"
@@ -107,6 +114,17 @@
         </p>
         <p v-if="uploadResult.skipped?.length" class="muted">
           ⏩ {{ t('data.skippedCount', { count: uploadResult.skipped.length }) }}
+        </p>
+      </div>
+      <div
+        v-if="dataStore.trainingDataset?.exists"
+        class="selected-source-card"
+        style="margin-top: 1rem"
+      >
+        <span class="eyebrow">{{ t('data.preparedDataset') }}</span>
+        <strong>{{ dataStore.trainingDataset.relative_path }}</strong>
+        <p class="muted">
+          {{ dataStore.trainingDataset.rows?.toLocaleString() || 0 }} {{ t('data.rows') }}
         </p>
       </div>
     </div>
@@ -185,7 +203,7 @@
           <button
             class="secondary"
             style="padding: 4px 10px; font-size: 12px"
-            :aria-label="t('ui.close')"
+            :aria-label="t('common.close')"
             @click="previewData = null"
           >
             ✕

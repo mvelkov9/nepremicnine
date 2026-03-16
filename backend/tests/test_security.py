@@ -1,4 +1,4 @@
-"""Phase 11 security tests: health redaction, generic errors, path traversal."""
+"""Phase 11 security tests: health response, generic errors, path traversal."""
 
 from __future__ import annotations
 
@@ -9,8 +9,8 @@ from httpx import AsyncClient
 
 
 @pytest.mark.asyncio
-async def test_health_redacts_version_in_production(client: AsyncClient):
-    """In production mode, /api/health should NOT expose version or environment."""
+async def test_health_keeps_version_but_redacts_environment_in_production(client: AsyncClient):
+    """In production mode, /api/health should expose the app version but not the environment."""
     with patch("app.api.health.get_settings") as mock_settings:
         s = mock_settings.return_value
         s.app_env = "production"
@@ -19,7 +19,7 @@ async def test_health_redacts_version_in_production(client: AsyncClient):
         resp = await client.get("/api/health")
     assert resp.status_code == 200
     data = resp.json()
-    assert data.get("version") is None
+    assert data.get("version") == "0.8.9"
     assert data.get("environment") is None
 
 

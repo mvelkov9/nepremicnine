@@ -47,5 +47,21 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  return { user, accessToken, isAuthenticated, isAdmin, login, logout, fetchUser, init }
+  async function updateProfile(payload) {
+    const { data } = await api.patch('/api/auth/me', payload)
+    user.value = data
+    return data
+  }
+
+  return {
+    user,
+    accessToken,
+    isAuthenticated,
+    isAdmin,
+    login,
+    logout,
+    fetchUser,
+    init,
+    updateProfile,
+  }
 })

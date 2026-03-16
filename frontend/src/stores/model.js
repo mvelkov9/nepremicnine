@@ -1,6 +1,8 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import api from '../composables/useApi'
+import { i18n } from '../i18n'
+import { getApiErrorMessage } from '../utils/apiError'
 
 export const useModelStore = defineStore('model', () => {
   const info = ref(null)
@@ -18,7 +20,7 @@ export const useModelStore = defineStore('model', () => {
       const { data } = await api.get('/api/model/info')
       info.value = data
     } catch (e) {
-      if (e.response?.status !== 404) error.value = e.message
+      if (e.response?.status !== 404) error.value = getApiErrorMessage(e, i18n.global.t)
       info.value = null
     } finally {
       loading.value = false
@@ -51,7 +53,7 @@ export const useModelStore = defineStore('model', () => {
       trainingStatus.value = data
       return data
     } catch (e) {
-      error.value = e.response?.data?.detail || e.message
+      error.value = getApiErrorMessage(e, i18n.global.t)
       throw e
     }
   }
@@ -65,7 +67,7 @@ export const useModelStore = defineStore('model', () => {
       }
       return data
     } catch (e) {
-      error.value = e.message
+      error.value = getApiErrorMessage(e, i18n.global.t)
       return null
     }
   }

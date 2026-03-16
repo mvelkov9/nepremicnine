@@ -1,11 +1,14 @@
 <script setup>
   import { ref, onMounted, computed, reactive } from 'vue'
+  import { useRouter } from 'vue-router'
   import { useI18n } from 'vue-i18n'
   import { useDataStore } from '../stores/data'
   import api from '../composables/useApi'
+  import { getApiErrorMessage } from '../utils/apiError'
 
   const { t } = useI18n()
   const dataStore = useDataStore()
+  const router = useRouter()
 
   const loading = ref(false)
   const error = ref('')
@@ -32,12 +35,13 @@
 
   onMounted(() => {
     dataStore.fetchDatasets()
+    dataStore.fetchTrainingDataset()
   })
 
   // --- Dataset role & year helpers (mirrors v1 logic) ---
 
   function datasetRole(item) {
-    const text = `${item.original_name || ''} ${item.stored_path || ''}`.toLowerCase()
+    const text = `${item.original_name || ''} ${item.relative_path || ''}`.toLowerCase()
     if (text.includes('posli') || text.includes('posle')) return 'posli'
     if (text.includes('delistavb') || text.includes('deli_stavb')) return 'delistavb'
     if (text.includes('zemljisca') || text.includes('zemljisc')) return 'zemljisca'
@@ -45,7 +49,7 @@
   }
 
   function datasetYear(item) {
-    const match = `${item.original_name || ''} ${item.stored_path || ''}`.match(/(20\d{2})/)
+    const match = `${item.original_name || ''} ${item.relative_path || ''}`.match(/(20\d{2})/)
     return match ? Number(match[1]) : null
   }
 
@@ -95,17 +99,18 @@
       }
 
       const pairs = selected.map((p) => ({
-        posli_csv_path: p.posli.stored_path,
-        delistavb_csv_path: p.delistavb.stored_path,
-        ...(p.zemljisca ? { zemljisca_csv_path: p.zemljisca.stored_path } : {}),
+        posli_csv_path: p.posli.relative_path,
+        delistavb_csv_path: p.delistavb.relative_path,
+        ...(p.zemljisca ? { zemljisca_csv_path: p.zemljisca.relative_path } : {}),
         year: String(p.year),
         label: String(p.year),
       }))
 
       const { data } = await api.post('/api/data/prepare-etn-kpp-bulk', { pairs })
       result.value = data
+      await dataStore.fetchTrainingDataset()
     } catch (e) {
-      error.value = e.response?.data?.detail || e.message
+      error.value = getApiErrorMessage(e, t)
     } finally {
       loading.value = false
     }
@@ -121,8 +126,9 @@
         delistavb_csv_path: singleDelistavb.value,
       })
       result.value = data
+      await dataStore.fetchTrainingDataset()
     } catch (e) {
-      error.value = e.response?.data?.detail || e.message
+      error.value = getApiErrorMessage(e, t)
     } finally {
       loading.value = false
     }
@@ -139,11 +145,12 @@
         column_map: map,
       })
       result.value = data
+      await dataStore.fetchTrainingDataset()
     } catch (e) {
       if (e instanceof SyntaxError) {
         error.value = t('prepare.invalidJson')
       } else {
-        error.value = e.response?.data?.detail || e.message
+        error.value = getApiErrorMessage(e, t)
       }
     } finally {
       loading.value = false
@@ -171,8 +178,12 @@
   function getDatasetPaths() {
     return datasets.value.map((d) => ({
       label: d.original_name,
-      value: d.stored_path,
+      value: d.relative_path,
     }))
+  }
+
+  function openModelView() {
+    router.push('/model')
   }
 </script>
 
@@ -377,6 +388,19 @@
             </tr>
           </tbody>
         </table>
+      </div>
+
+      <div v-if="result.training_dataset" class="selected-source-card" style="margin-top: 1rem">
+        <span class="eyebrow">{{ t('prepare.readyForModel') }}</span>
+        <strong>{{ result.training_dataset.relative_path }}</strong>
+        <p class="muted">
+          {{ result.training_dataset.rows?.toLocaleString() || 0 }} {{ t('data.rows') }}
+        </p>
+        <div class="actions">
+          <button class="btn btn-primary" @click="openModelView">
+            {{ t('prepare.openModel') }}
+          </button>
+        </div>
       </div>
     </div>
   </div>

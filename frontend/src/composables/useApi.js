@@ -1,4 +1,6 @@
 import axios from 'axios'
+import { i18n } from '../i18n'
+import { getApiErrorMessage } from '../utils/apiError'
 import { useToast } from './useToast'
 
 const api = axios.create({
@@ -43,8 +45,8 @@ api.interceptors.response.use(
     const status = error.response?.status
     if (status && status !== 401) {
       const { showToast } = useToast()
-      const detail = error.response?.data?.detail || error.message || 'Request failed'
-      showToast(detail, 'error')
+      const message = getApiErrorMessage(error, i18n.global.t)
+      showToast(message, 'error')
     }
     return Promise.reject(error)
   },

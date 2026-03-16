@@ -3,6 +3,7 @@
   import { useI18n } from 'vue-i18n'
   import api from '../composables/useApi'
   import LoadingSpinner from '../components/LoadingSpinner.vue'
+  import { getApiErrorMessage } from '../utils/apiError'
 
   const { t } = useI18n()
 
@@ -17,7 +18,7 @@
       const { data } = await api.get('/api/admin/users')
       users.value = data.items || []
     } catch (e) {
-      error.value = e.response?.data?.detail || e.message
+      error.value = getApiErrorMessage(e, t)
     } finally {
       loading.value = false
     }
@@ -30,7 +31,7 @@
       const idx = users.value.findIndex((u) => u.id === user.id)
       if (idx !== -1) users.value[idx] = data
     } catch (e) {
-      error.value = e.response?.data?.detail || e.message
+      error.value = getApiErrorMessage(e, t)
     }
   }
 
@@ -42,7 +43,7 @@
       const idx = users.value.findIndex((u) => u.id === user.id)
       if (idx !== -1) users.value[idx] = data
     } catch (e) {
-      error.value = e.response?.data?.detail || e.message
+      error.value = getApiErrorMessage(e, t)
     }
   }
 
@@ -52,7 +53,7 @@
       await api.delete(`/api/admin/users/${user.id}`)
       users.value = users.value.filter((u) => u.id !== user.id)
     } catch (e) {
-      error.value = e.response?.data?.detail || e.message
+      error.value = getApiErrorMessage(e, t)
     }
   }
 
@@ -62,6 +63,14 @@
 
   function activeBadge(active) {
     return active ? 'badge-green' : 'badge-red'
+  }
+
+  function roleActionLabel(user) {
+    return `${user.role === 'admin' ? t('admin.makeViewer') : t('admin.makeAdmin')} - ${user.full_name}`
+  }
+
+  function activeActionLabel(user) {
+    return `${user.is_active ? t('admin.disable') : t('admin.enable')} - ${user.full_name}`
   }
 
   onMounted(fetchUsers)
@@ -117,11 +126,7 @@
                   <button
                     class="secondary"
                     style="padding: 4px 10px; font-size: 12px"
-                    :aria-label="
-                      (user.role === 'admin' ? t('admin.makeViewer') : t('admin.makeAdmin')) +
-                      ' – ' +
-                      user.full_name
-                    "
+                    :aria-label="roleActionLabel(user)"
                     @click="toggleRole(user)"
                   >
                     {{ user.role === 'admin' ? t('admin.makeViewer') : t('admin.makeAdmin') }}
@@ -129,11 +134,7 @@
                   <button
                     :class="user.is_active ? 'danger' : ''"
                     style="padding: 4px 10px; font-size: 12px"
-                    :aria-label="
-                      (user.is_active ? t('admin.disable') : t('admin.enable')) +
-                      ' – ' +
-                      user.full_name
-                    "
+                    :aria-label="activeActionLabel(user)"
                     @click="toggleActive(user)"
                   >
                     {{ user.is_active ? t('admin.disable') : t('admin.enable') }}
