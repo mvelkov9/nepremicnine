@@ -24,7 +24,7 @@ ENV PYTHONPATH=/app \
     PYTHONUNBUFFERED=1
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD python -c "import httpx; httpx.get('http://localhost:8000/api/health').raise_for_status()"
+    CMD python -c "from pathlib import Path; needles=('uvicorn app.main:app', 'arq app.tasks.training_worker.WorkerSettings'); import sys; sys.exit(0 if any(any(needle in (cmdline := (path / 'cmdline').read_bytes().decode('utf-8', 'ignore').replace('\\x00', ' ')) for needle in needles) for path in Path('/proc').iterdir() if path.name.isdigit()) else 1)"
 
 EXPOSE 8000
 
