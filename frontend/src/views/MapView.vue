@@ -100,6 +100,10 @@
     return getPropertyTypeLabel(value, t)
   }
 
+  function formatTransactionSummary(item) {
+    return `${formatType(item.property_type) || '—'} · ${item.year || '—'}`
+  }
+
   const activeChips = computed(() =>
     [
       selectedType.value ? formatType(selectedType.value) : '',
@@ -281,6 +285,7 @@
       }
 
       await nextTick()
+      map?.invalidateSize()
       renderMarkers()
     } catch (err) {
       error.value = getApiErrorMessage(err, t)
@@ -443,146 +448,140 @@
     </div>
     <p v-else-if="error" class="state-card error-text">{{ error }}</p>
 
-    <template v-else>
-      <section class="metric-band">
-        <article class="metric-card">
-          <span>{{ t('map.totalTransactions') }}</span>
-          <strong>{{ fmt(totalCount) }}</strong>
-        </article>
-        <article class="metric-card">
-          <span>{{ t('map.avgPrice') }}</span>
-          <strong>{{ fmtCurrency(avgPrice) }}</strong>
-        </article>
-        <article class="metric-card">
-          <span>{{ t('map.municipalities') }}</span>
-          <strong>{{ fmt(markersData.length) }}</strong>
-        </article>
-        <article class="metric-card">
-          <span>{{ t('map.regions') }}</span>
-          <strong>{{ fmt(regionStats.length) }}</strong>
-        </article>
-      </section>
+    <section class="metric-band">
+      <article class="metric-card">
+        <span>{{ t('map.totalTransactions') }}</span>
+        <strong>{{ fmt(totalCount) }}</strong>
+      </article>
+      <article class="metric-card">
+        <span>{{ t('map.avgPrice') }}</span>
+        <strong>{{ fmtCurrency(avgPrice) }}</strong>
+      </article>
+      <article class="metric-card">
+        <span>{{ t('map.municipalities') }}</span>
+        <strong>{{ fmt(markersData.length) }}</strong>
+      </article>
+      <article class="metric-card">
+        <span>{{ t('map.regions') }}</span>
+        <strong>{{ fmt(regionStats.length) }}</strong>
+      </article>
+    </section>
 
-      <section class="explorer-grid">
-        <article class="panel map-panel">
-          <div ref="mapContainer" class="map-container"></div>
+    <section class="explorer-grid">
+      <article class="panel map-panel">
+        <div ref="mapContainer" class="map-container"></div>
 
-          <div class="map-legend">
-            <span class="legend-title">{{ t('map.legend') }}</span>
-            <span class="legend-item">
-              <span class="legend-dot" style="background: rgb(0, 190, 60)"></span>
-              {{ t('map.cheap') }}
-            </span>
-            <span class="legend-item">
-              <span class="legend-dot" style="background: rgb(255, 190, 60)"></span>
-              {{ t('map.mid') }}
-            </span>
-            <span class="legend-item">
-              <span class="legend-dot" style="background: rgb(255, 0, 60)"></span>
-              {{ t('map.expensive') }}
-            </span>
-            <span class="legend-note">
-              {{ viewMode === 'transactions' ? t('map.priceGradientHint') : t('map.sizeHint') }}
-            </span>
-          </div>
-        </article>
+        <div class="map-legend">
+          <span class="legend-title">{{ t('map.legend') }}</span>
+          <span class="legend-item">
+            <span class="legend-dot" style="background: rgb(0, 190, 60)"></span>
+            {{ t('map.cheap') }}
+          </span>
+          <span class="legend-item">
+            <span class="legend-dot" style="background: rgb(255, 190, 60)"></span>
+            {{ t('map.mid') }}
+          </span>
+          <span class="legend-item">
+            <span class="legend-dot" style="background: rgb(255, 0, 60)"></span>
+            {{ t('map.expensive') }}
+          </span>
+          <span class="legend-note">
+            {{ viewMode === 'transactions' ? t('map.priceGradientHint') : t('map.sizeHint') }}
+          </span>
+        </div>
+      </article>
 
-        <aside class="panel rail-panel">
-          <div class="rail-head">
-            <div>
-              <span class="eyebrow subtle">{{ t('map.transactions') }}</span>
-              <h2>
-                {{
-                  viewMode === 'transactions' ? t('map.activityFeed') : t('map.topMunicipalities')
-                }}
-              </h2>
-            </div>
-          </div>
-
-          <div v-if="activityFeed.length" class="rail-list">
-            <article
-              v-for="item in activityFeed"
-              :key="
-                viewMode === 'transactions'
-                  ? `${item.municipality}-${item.price_eur}-${item.year}`
-                  : item.name
-              "
-              class="rail-card"
-            >
-              <template v-if="viewMode === 'transactions'">
-                <div class="rail-copy">
-                  <strong>{{ item.municipality || '—' }}</strong>
-                  <small
-                    >{{ formatType(item.property_type) || '—' }} · {{ item.year || '—' }}</small
-                  >
-                </div>
-                <div class="rail-metric">
-                  <strong>{{ fmtCurrency(item.price_eur) }}</strong>
-                  <small>{{ fmtCurrency(item.price_per_m2) }}/m²</small>
-                </div>
-                <div class="rail-actions">
-                  <button class="mini-btn" @click="openMunicipality(item.municipality)">
-                    {{ t('map.openMunicipality') }}
-                  </button>
-                  <button class="mini-btn primary" @click="useForPrediction(item)">
-                    {{ t('map.useForPrediction') }}
-                  </button>
-                </div>
-              </template>
-
-              <template v-else>
-                <div class="rail-copy">
-                  <strong>{{ item.name }}</strong>
-                  <small>{{ fmt(item.count) }} {{ t('map.transactions') }}</small>
-                </div>
-                <div class="rail-metric">
-                  <strong>{{ fmtCurrency(item.avg_price) }}</strong>
-                </div>
-                <div class="rail-actions">
-                  <button class="mini-btn" @click="openMunicipality(item.name)">
-                    {{ t('map.openMunicipality') }}
-                  </button>
-                </div>
-              </template>
-            </article>
-          </div>
-          <p v-else class="empty-text">{{ t('common.noData') }}</p>
-        </aside>
-      </section>
-
-      <section class="panel table-panel">
+      <aside class="panel rail-panel">
         <div class="rail-head">
           <div>
-            <span class="eyebrow subtle">{{ t('map.regionStats') }}</span>
-            <h2>{{ t('map.regionSnapshot') }}</h2>
+            <span class="eyebrow subtle">{{ t('map.transactions') }}</span>
+            <h2>
+              {{ viewMode === 'transactions' ? t('map.activityFeed') : t('map.topMunicipalities') }}
+            </h2>
           </div>
         </div>
 
-        <div v-if="regionStats.length" class="table-shell">
-          <table>
-            <thead>
-              <tr>
-                <th>{{ t('map.region') }}</th>
-                <th>{{ t('map.count') }}</th>
-                <th>{{ t('map.avgPrice') }}</th>
-                <th>{{ t('map.medianPrice') }}</th>
-                <th>€/m²</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="item in regionStats" :key="item.region">
-                <td>{{ item.region }}</td>
-                <td>{{ fmt(item.count) }}</td>
-                <td>{{ fmtCurrency(item.avg_price) }}</td>
-                <td>{{ fmtCurrency(item.median_price) }}</td>
-                <td>{{ fmtCurrency(item.avg_price_per_m2) }}</td>
-              </tr>
-            </tbody>
-          </table>
+        <div v-if="activityFeed.length" class="rail-list">
+          <article
+            v-for="item in activityFeed"
+            :key="
+              viewMode === 'transactions'
+                ? `${item.municipality}-${item.price_eur}-${item.year}`
+                : item.name
+            "
+            class="rail-card"
+          >
+            <template v-if="viewMode === 'transactions'">
+              <div class="rail-copy">
+                <strong>{{ item.municipality || '—' }}</strong>
+                <small>{{ formatTransactionSummary(item) }}</small>
+              </div>
+              <div class="rail-metric">
+                <strong>{{ fmtCurrency(item.price_eur) }}</strong>
+                <small>{{ fmtCurrency(item.price_per_m2) }}/m²</small>
+              </div>
+              <div class="rail-actions">
+                <button class="mini-btn" @click="openMunicipality(item.municipality)">
+                  {{ t('map.openMunicipality') }}
+                </button>
+                <button class="mini-btn primary" @click="useForPrediction(item)">
+                  {{ t('map.useForPrediction') }}
+                </button>
+              </div>
+            </template>
+
+            <template v-else>
+              <div class="rail-copy">
+                <strong>{{ item.name }}</strong>
+                <small>{{ fmt(item.count) }} {{ t('map.transactions') }}</small>
+              </div>
+              <div class="rail-metric">
+                <strong>{{ fmtCurrency(item.avg_price) }}</strong>
+              </div>
+              <div class="rail-actions">
+                <button class="mini-btn" @click="openMunicipality(item.name)">
+                  {{ t('map.openMunicipality') }}
+                </button>
+              </div>
+            </template>
+          </article>
         </div>
         <p v-else class="empty-text">{{ t('common.noData') }}</p>
-      </section>
-    </template>
+      </aside>
+    </section>
+
+    <section class="panel table-panel">
+      <div class="rail-head">
+        <div>
+          <span class="eyebrow subtle">{{ t('map.regionStats') }}</span>
+          <h2>{{ t('map.regionSnapshot') }}</h2>
+        </div>
+      </div>
+
+      <div v-if="regionStats.length" class="table-shell">
+        <table>
+          <thead>
+            <tr>
+              <th>{{ t('map.region') }}</th>
+              <th>{{ t('map.count') }}</th>
+              <th>{{ t('map.avgPrice') }}</th>
+              <th>{{ t('map.medianPrice') }}</th>
+              <th>€/m²</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="item in regionStats" :key="item.region">
+              <td>{{ item.region }}</td>
+              <td>{{ fmt(item.count) }}</td>
+              <td>{{ fmtCurrency(item.avg_price) }}</td>
+              <td>{{ fmtCurrency(item.median_price) }}</td>
+              <td>{{ fmtCurrency(item.avg_price_per_m2) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p v-else class="empty-text">{{ t('common.noData') }}</p>
+    </section>
   </div>
 </template>
 
