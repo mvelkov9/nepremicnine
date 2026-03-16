@@ -73,3 +73,10 @@ async def test_municipalities_filter_by_region(client: AsyncClient, admin_header
     resp = await client.get("/api/municipalities?region=Osrednjeslovenska", headers=admin_headers)
     assert resp.status_code == 200
     assert isinstance(resp.json(), list)
+
+
+@pytest.mark.asyncio
+async def test_regions_municipalities_alias_returns_list(client: AsyncClient, admin_headers: dict):
+    resp = await client.get("/api/regions/municipalities", headers=admin_headers)
+    assert resp.status_code == 200
+    assert isinstance(resp.json(), list)

@@ -282,7 +282,7 @@
   .state-card {
     border-radius: 1.6rem;
     border: 1px solid var(--border);
-    background: rgb(255 255 255 / 76%);
+    background: var(--surface-soft);
     box-shadow: var(--shadow-sm);
   }
 
@@ -292,7 +292,7 @@
     gap: 1.1rem;
     padding: 1.35rem;
     background:
-      linear-gradient(135deg, rgb(255 255 255 / 80%), rgb(255 255 255 / 68%)),
+      linear-gradient(135deg, var(--surface-strong), var(--surface-soft)),
       radial-gradient(circle at top left, rgb(37 99 235 / 15%), transparent 32%),
       radial-gradient(circle at right, rgb(245 158 11 / 12%), transparent 26%);
   }
@@ -347,7 +347,7 @@
     padding: 0.8rem 1rem;
     border-radius: 999px;
     border: 1px solid var(--border);
-    background: rgb(255 255 255 / 86%);
+    background: var(--surface-soft-strong);
     color: var(--text);
   }
 
@@ -424,7 +424,7 @@
     padding: 0.9rem;
     border-radius: 1.15rem;
     border: 1px solid var(--border);
-    background: rgb(255 255 255 / 72%);
+    background: var(--surface-soft-muted);
     text-decoration: none;
     color: inherit;
   }

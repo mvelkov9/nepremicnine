@@ -7,6 +7,11 @@
   --surface: rgb(255 255 255 / 86%);
   --surface-strong: #ffffff;
   --surface-muted: #f4f7fb;
+  --surface-soft: rgb(255 255 255 / 78%);
+  --surface-soft-strong: rgb(255 255 255 / 88%);
+  --surface-soft-muted: rgb(255 255 255 / 72%);
+  --surface-soft-subtle: rgb(255 255 255 / 68%);
+  --surface-elevated: rgb(15 23 42 / 4%);
   --surface-dark: #111827;
   --surface-dark-muted: rgb(255 255 255 / 8%);
   --text: #0f172a;
@@ -40,6 +45,11 @@
   --surface: rgb(12 22 40 / 84%);
   --surface-strong: #10192a;
   --surface-muted: rgb(255 255 255 / 4%);
+  --surface-soft: rgb(12 22 40 / 84%);
+  --surface-soft-strong: rgb(15 27 45 / 88%);
+  --surface-soft-muted: rgb(255 255 255 / 6%);
+  --surface-soft-subtle: rgb(255 255 255 / 5%);
+  --surface-elevated: rgb(255 255 255 / 6%);
   --surface-dark: #050c18;
   --surface-dark-muted: rgb(255 255 255 / 8%);
   --text: #eef3ff;
@@ -186,7 +196,7 @@ button {
 }
 
 .nav-link:hover,
-.nav-link.router-link-active {
+.nav-link.active {
   background: linear-gradient(135deg, rgb(96 165 250 / 18%), rgb(255 255 255 / 7%));
   border-color: rgb(96 165 250 / 28%);
   color: #f7fffd;
@@ -220,10 +230,9 @@ button {
 
 .sidebar-footer {
   margin-top: auto;
-  padding: 0.9rem;
-  border-radius: var(--radius-sm);
-  border: 1px solid rgb(255 255 255 / 8%);
-  background: rgb(255 255 255 / 4%);
+  padding: 0.85rem 0 0;
+  border-top: 1px solid rgb(255 255 255 / 10%);
+  background: transparent;
 }
 
 .status-stack {

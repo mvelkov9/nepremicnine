@@ -22,6 +22,7 @@
 
   const loading = ref(false)
   const error = ref('')
+  const mapMetaReason = ref(null)
   const selectedType = ref('')
   const selectedRegion = ref('')
   const selectedYear = ref('')
@@ -29,7 +30,6 @@
   const viewMode = ref('transactions')
   const initialMunicipality = ref('')
 
-  const coords = ref({})
   const municipalities = ref([])
   const propertyTypes = ref([])
   const regionStats = ref([])
@@ -50,15 +50,7 @@
 
   const DEFAULT_COLOR = '#2563eb'
 
-  const markersData = computed(() => {
-    const output = []
-    for (const municipality of municipalities.value) {
-      const coordinate = coords.value[municipality.name]
-      if (!coordinate) continue
-      output.push({ ...municipality, lat: coordinate.lat, lon: coordinate.lon })
-    }
-    return output
-  })
+  const markersData = computed(() => municipalities.value)
 
   const totalCount = computed(() => {
     if (viewMode.value === 'transactions') return transactions.value.length
@@ -118,6 +110,14 @@
       ? transactions.value.slice(0, 12)
       : municipalities.value.slice(0, 12),
   )
+
+  const mapStateMessage = computed(() => {
+    if (!mapMetaReason.value) return ''
+    if (mapMetaReason.value === 'no_train_dataset') return t('map.noPreparedData')
+    if (mapMetaReason.value === 'no_coordinates') return t('map.noCoordinates')
+    if (mapMetaReason.value === 'no_matches') return t('map.noMatches')
+    return t('common.noData')
+  })
 
   function markerRadius(count) {
     if (!totalCount.value) return 6
@@ -200,7 +200,7 @@
 
       marker.bindPopup(
         `<div style="font-size:13px;line-height:1.6;min-width:150px">
-          <strong>${item.name}</strong><br>
+          <strong>${item.municipality}</strong><br>
           ${t('map.transactions')}: <b>${fmt(item.count)}</b><br>
           ${t('map.avgPrice')}: <b>${fmtCurrency(item.avg_price)}</b>
         </div>`,
@@ -226,11 +226,21 @@
     if (selectedMunicipality.value) params.municipality = selectedMunicipality.value
 
     const { data } = await api.get('/api/stats/map-transactions', { params })
+    mapMetaReason.value = data.meta?.reason || null
     transactions.value = [...(data.transactions || [])].sort((left, right) => {
       if ((right.year || '') !== (left.year || ''))
         return String(right.year || '').localeCompare(String(left.year || ''))
       return (right.price_eur || 0) - (left.price_eur || 0)
     })
+  }
+
+  async function fetchOverviewMarkers() {
+    const params = {}
+    if (selectedType.value) params.property_type = selectedType.value
+
+    const { data } = await api.get('/api/stats/map-overview', { params })
+    mapMetaReason.value = data.meta?.reason || null
+    municipalities.value = data.municipalities || []
   }
 
   async function fetchMunicipalitiesByRegion() {
@@ -252,26 +262,23 @@
   async function fetchData() {
     loading.value = true
     error.value = ''
+    mapMetaReason.value = null
 
     try {
       const params = selectedType.value ? { property_type: selectedType.value } : {}
 
-      const requests = [
-        api.get('/api/stats/overview', { params }),
-        api.get('/api/stats/regions'),
-        api.get('/api/model/info').catch(() => ({ data: {} })),
-      ]
+      const requests = [api.get('/api/stats/overview', { params }), api.get('/api/stats/regions')]
 
       if (viewMode.value === 'transactions') {
         requests.push(fetchTransactions())
+      } else {
+        requests.push(fetchOverviewMarkers())
       }
 
-      const [overviewRes, regionsRes, modelRes] = await Promise.all(requests)
+      const [overviewRes, regionsRes] = await Promise.all(requests)
 
-      municipalities.value = overviewRes.data.top_municipalities || []
       propertyTypes.value = overviewRes.data.property_types || []
       regionStats.value = regionsRes.data || []
-      coords.value = modelRes.data.coords_by_municipality || {}
 
       if (!availableYears.value.length) {
         try {
@@ -310,7 +317,7 @@
       name: 'prediction',
       query: {
         municipality:
-          item?.municipality || selectedMunicipality.value || topMunicipality.value?.name || '',
+          item?.municipality || selectedMunicipality.value || topMunicipality.value?.municipality || '',
         property_type: item?.property_type || selectedType.value || 'stanovanje',
         size_m2: item?.size_m2 || '',
         price_eur: item?.price_eur || '',
@@ -372,9 +379,9 @@
           <span>{{ t('map.useFiltersForPrediction') }}</span>
         </button>
         <button
-          v-if="topMunicipality?.name"
+          v-if="topMunicipality?.municipality"
           class="hero-btn"
-          @click="openMunicipality(topMunicipality.name)"
+          @click="openMunicipality(topMunicipality.municipality)"
         >
           <AppIcon name="market" :size="16" />
           <span>{{ t('map.openTopMunicipality') }}</span>
@@ -447,6 +454,7 @@
       <LoadingSpinner :label="t('map.loading')" />
     </div>
     <p v-else-if="error" class="state-card error-text">{{ error }}</p>
+    <p v-else-if="mapStateMessage" class="state-card muted">{{ mapStateMessage }}</p>
 
     <section class="metric-band">
       <article class="metric-card">
@@ -507,7 +515,7 @@
             :key="
               viewMode === 'transactions'
                 ? `${item.municipality}-${item.price_eur}-${item.year}`
-                : item.name
+                : item.slug
             "
             class="rail-card"
           >
@@ -532,14 +540,14 @@
 
             <template v-else>
               <div class="rail-copy">
-                <strong>{{ item.name }}</strong>
+                <strong>{{ item.municipality }}</strong>
                 <small>{{ fmt(item.count) }} {{ t('map.transactions') }}</small>
               </div>
               <div class="rail-metric">
                 <strong>{{ fmtCurrency(item.avg_price) }}</strong>
               </div>
               <div class="rail-actions">
-                <button class="mini-btn" @click="openMunicipality(item.name)">
+                <button class="mini-btn" @click="openMunicipality(item.municipality)">
                   {{ t('map.openMunicipality') }}
                 </button>
               </div>
@@ -601,7 +609,7 @@
   .state-card {
     border-radius: 1.6rem;
     border: 1px solid var(--border);
-    background: rgb(255 255 255 / 78%);
+    background: var(--surface-soft);
     box-shadow: var(--shadow-sm);
   }
 
@@ -615,7 +623,7 @@
     grid-template-columns: minmax(0, 1.2fr) auto;
     align-items: end;
     background:
-      linear-gradient(135deg, rgb(255 255 255 / 82%), rgb(255 255 255 / 70%)),
+      linear-gradient(135deg, var(--surface-strong), var(--surface-soft)),
       radial-gradient(circle at top left, rgb(37 99 235 / 15%), transparent 32%),
       radial-gradient(circle at right, rgb(245 158 11 / 12%), transparent 26%);
   }
@@ -665,7 +673,7 @@
     padding: 0.8rem 1rem;
     border-radius: 999px;
     border: 1px solid var(--border);
-    background: rgb(255 255 255 / 88%);
+    background: var(--surface-soft-strong);
   }
 
   .hero-btn.primary,
@@ -719,7 +727,7 @@
   }
 
   .chip.muted {
-    background: rgb(15 23 42 / 7%);
+    background: var(--surface-muted);
     color: var(--text-soft);
   }
 
@@ -797,7 +805,7 @@
     padding: 0.95rem;
     border-radius: 1.1rem;
     border: 1px solid var(--border);
-    background: rgb(255 255 255 / 74%);
+    background: var(--surface-soft-muted);
   }
 
   .rail-copy,

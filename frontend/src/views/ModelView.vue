@@ -4,6 +4,10 @@
   import { useI18n } from 'vue-i18n'
   import { Bar } from 'vue-chartjs'
   import { BarElement, CategoryScale, Chart as ChartJS, LinearScale, Tooltip } from 'chart.js'
+  import Column from 'primevue/column'
+  import DataTable from 'primevue/datatable'
+  import ProgressBar from 'primevue/progressbar'
+  import Tag from 'primevue/tag'
   import { useAuthStore } from '../stores/auth'
   import { useDataStore } from '../stores/data'
   import { useModelStore } from '../stores/model'
@@ -23,6 +27,7 @@
   const isAdmin = computed(() => auth.user?.role === 'admin')
   const trainingDataset = computed(() => dataStore.trainingDataset)
   const isTerminalStatus = (status) => status === 'completed' || status === 'failed'
+  const recentJobs = computed(() => model.jobHistory.slice(0, 6))
 
   const uploadOptions = computed(() =>
     (Array.isArray(dataStore.datasets) ? dataStore.datasets : []).filter(
@@ -85,6 +90,18 @@
     return `${formatNumber(value, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}s`
   }
 
+  function jobSeverity(status) {
+    if (status === 'completed') return 'success'
+    if (status === 'failed') return 'danger'
+    if (status === 'running') return 'warn'
+    return 'secondary'
+  }
+
+  function jobStatusLabel(status) {
+    if (!status) return '—'
+    return status
+  }
+
   const metricsCards = computed(() => {
     const metrics = model.info?.global_metrics
     if (!metrics) return []
@@ -136,6 +153,7 @@
   async function train() {
     if (!selectedCsv.value) return
     const result = await model.startTraining(selectedCsv.value)
+    await model.fetchJobs()
     if (result?.job_id) {
       startPolling(result.job_id)
     }
@@ -165,7 +183,9 @@
       if (!status || isTerminalStatus(status.status)) {
         stopPolling()
         if (status?.status === 'completed') {
-          await refreshModelArtifacts()
+          await Promise.all([refreshModelArtifacts(), model.fetchJobs()])
+        } else {
+          await model.fetchJobs()
         }
       }
     }, 2000)
@@ -183,6 +203,7 @@
       model.fetchInfo(),
       model.fetchImportance(),
       model.fetchDiagnostics(),
+      model.fetchJobs(),
       dataStore.fetchDatasets(),
       dataStore.fetchTrainingDataset(),
     ])
@@ -300,24 +321,23 @@
         </RouterLink>
       </div>
 
-      <div v-if="model.trainingStatus" style="margin-top: 1rem">
-        <div
-          class="progress-bar"
-          role="progressbar"
-          :aria-valuenow="model.trainingStatus.progress || 0"
-          aria-valuemin="0"
-          aria-valuemax="100"
-        >
-          <div
-            class="progress-bar-fill"
-            :style="{ width: `${model.trainingStatus.progress || 0}%` }"
+      <div v-if="model.trainingStatus" class="training-progress-card">
+        <div class="training-progress-head">
+          <div>
+            <span class="eyebrow">{{ t('model.trainingStatus') }}</span>
+            <strong>{{ jobStatusLabel(model.trainingStatus.status) }}</strong>
+          </div>
+          <Tag
+            :severity="jobSeverity(model.trainingStatus.status)"
+            :value="`${model.trainingStatus.progress || 0}%`"
           />
         </div>
-        <p class="muted" style="margin-top: 0.5rem">
-          {{ model.trainingStatus.status }} ·
-          {{ model.trainingStatus.stage || t('common.loading') }} ({{
-            model.trainingStatus.progress || 0
-          }}%)
+        <ProgressBar :value="model.trainingStatus.progress || 0" :showValue="false" />
+        <p class="muted">
+          {{ model.trainingStatus.stage || t('common.loading') }}
+        </p>
+        <p v-if="model.trainingStatus.error" class="error-text">
+          {{ model.trainingStatus.error }}
         </p>
       </div>
 
@@ -382,6 +402,48 @@
       </div>
     </div>
 
+    <div v-if="isAdmin" class="card" style="margin-top: 1.5rem">
+      <div class="section-head">
+        <div>
+          <h2>{{ t('model.trainingHistory') }}</h2>
+          <p class="muted">{{ t('model.trainingHistoryHint') }}</p>
+        </div>
+      </div>
+
+      <DataTable
+        :value="recentJobs"
+        size="small"
+        stripedRows
+        tableStyle="min-width: 100%"
+        responsiveLayout="scroll"
+      >
+        <Column field="created_at" :header="t('predict.date')">
+          <template #body="{ data }">{{ formatDate(data.created_at) }}</template>
+        </Column>
+        <Column field="status" :header="t('model.trainingStatus')">
+          <template #body="{ data }">
+            <Tag :severity="jobSeverity(data.status)" :value="jobStatusLabel(data.status)" />
+          </template>
+        </Column>
+        <Column field="stage" :header="t('model.trainingStage')">
+          <template #body="{ data }">{{ data.stage || '—' }}</template>
+        </Column>
+        <Column field="progress" :header="t('model.trainingProgress')">
+          <template #body="{ data }">{{ data.progress || 0 }}%</template>
+        </Column>
+        <Column field="rows" :header="t('data.rows')">
+          <template #body="{ data }">{{ fmt(data.rows) }}</template>
+        </Column>
+        <Column field="duration_sec" :header="t('diag.duration')">
+          <template #body="{ data }">{{ formatDuration(data.duration_sec) }}</template>
+        </Column>
+      </DataTable>
+
+      <p v-if="!model.jobsLoading && !recentJobs.length" class="muted" style="margin-top: 1rem">
+        {{ t('model.noTrainingHistory') }}
+      </p>
+    </div>
+
     <div v-if="!model.loading && !model.info" class="card empty-card">
       <p class="muted">{{ t('model.noModel') }}</p>
       <RouterLink v-if="isAdmin" to="/priprava" class="ghost-link">
@@ -390,3 +452,27 @@
     </div>
   </div>
 </template>
+
+<style scoped>
+  .training-progress-card {
+    display: grid;
+    gap: 0.75rem;
+    margin-top: 1rem;
+    padding: 1rem;
+    border-radius: 1rem;
+    background: var(--surface-muted);
+    border: 1px solid var(--border);
+  }
+
+  .training-progress-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+
+  .training-progress-head strong {
+    display: block;
+    margin-top: 0.2rem;
+  }
+</style>

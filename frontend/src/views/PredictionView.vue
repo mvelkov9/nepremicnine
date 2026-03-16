@@ -8,9 +8,10 @@
   import LoadingSpinner from '../components/LoadingSpinner.vue'
   import { useExport } from '../composables/useExport'
   import { useStatsStore } from '../stores/stats'
+  import { buildNepremicnineSearchUrl } from '../utils/externalSearch'
   import { getApiErrorMessage } from '../utils/apiError'
   import { formatCurrency, formatDateTime, formatNumber } from '../utils/format'
-  import { municipalitySlug } from '../utils/municipality'
+  import { municipalitySlug, normalizeMunicipalityName } from '../utils/municipality'
   import { getPropertyTypeLabel } from '../utils/propertyType'
 
   const { t } = useI18n()
@@ -64,8 +65,10 @@
 
   const filteredMunicipalities = computed(() => {
     if (!municipalityQuery.value) return []
-    const query = municipalityQuery.value.toLowerCase()
-    return allMunicipalities.value.filter((item) => item.toLowerCase().includes(query)).slice(0, 10)
+    const query = normalizeMunicipalityName(municipalityQuery.value)
+    return allMunicipalities.value
+      .filter((item) => normalizeMunicipalityName(item).includes(query))
+      .slice(0, 10)
   })
 
   const municipalityContext = computed(() => stats.municipalityDetail)
@@ -75,6 +78,14 @@
     () => `${comparables.value?.summary?.count || 0} ${t('dashboard.transactions')}`,
   )
   const effectiveSize = computed(() => form.value.uporabna_povrsina || form.value.size_m2)
+  const comparisonUrl = computed(() =>
+    buildNepremicnineSearchUrl({
+      municipality: form.value.municipality,
+      propertyType: formatType(form.value.property_type),
+      rooms: form.value.rooms,
+      sizeM2: effectiveSize.value,
+    }),
+  )
 
   function fmt(value, decimals = 0) {
     return formatNumber(value, { maximumFractionDigits: decimals })
@@ -86,7 +97,7 @@
 
   async function fetchMunicipalities() {
     try {
-      const { data } = await api.get('/api/municipalities')
+      const { data } = await api.get('/api/regions/municipalities')
       allMunicipalities.value = data.map((item) => item.municipality)
     } catch {
       allMunicipalities.value = []
@@ -343,7 +354,7 @@
                 <span>{{ t('predict.propertyType') }}</span>
                 <select v-model="form.property_type" class="form-input">
                   <option v-for="item in propertyTypes" :key="item" :value="item">
-                    {{ item }}
+                    {{ formatType(item) }}
                   </option>
                 </select>
               </label>
@@ -506,6 +517,14 @@
             <p>{{ t('predict.modelUsed') }}: {{ result.model_used }}</p>
           </section>
 
+          <div class="story-actions">
+            <a :href="comparisonUrl" target="_blank" rel="noreferrer">
+              <button class="ghost-link action-link" type="button">
+                {{ t('predict.compareOnPortal') }}
+              </button>
+            </a>
+          </div>
+
           <section class="story-block">
             <div class="story-head">
               <h3>{{ t('predict.featuresUsed') }}</h3>
@@ -625,7 +644,7 @@
   .panel {
     border-radius: 1.65rem;
     border: 1px solid var(--border);
-    background: rgb(255 255 255 / 78%);
+    background: var(--surface-soft);
     box-shadow: var(--shadow-sm);
   }
 
@@ -636,6 +655,14 @@
 
   .panel-head {
     margin-bottom: 1.1rem;
+  }
+
+  .story-actions {
+    margin: 0.9rem 0 0.25rem;
+  }
+
+  .action-link {
+    text-decoration: none;
   }
 
   .panel-head h1,
@@ -744,7 +771,7 @@
     padding: 0.85rem 0.95rem;
     border-radius: 1rem;
     border: 1px solid var(--border);
-    background: rgb(255 255 255 / 70%);
+    background: var(--surface-soft-subtle);
     font-weight: 600;
   }
 
@@ -818,7 +845,7 @@
     padding: 0.45rem 0.7rem;
     border-radius: 999px;
     border: 1px solid var(--border);
-    background: rgb(255 255 255 / 68%);
+    background: var(--surface-soft-subtle);
   }
 
   .chip-grid {
@@ -861,7 +888,7 @@
     padding: 0.95rem;
     border-radius: 1.15rem;
     border: 1px solid var(--border);
-    background: rgb(255 255 255 / 72%);
+    background: var(--surface-soft-muted);
   }
 
   .comparable-head,

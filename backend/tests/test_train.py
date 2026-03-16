@@ -99,6 +99,38 @@ async def test_train_active_returns_current_job_status(
 
 
 @pytest.mark.asyncio
+async def test_train_status_returns_redis_progress_without_crashing(
+    client: AsyncClient,
+    admin_headers: dict,
+    db_session,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    job = TrainingJob(job_id="status-job", status=JobStatus.running, csv_path="/tmp/train.csv", progress=12)
+    db_session.add(job)
+    await db_session.commit()
+
+    fake_redis = _FakeRedisPool(
+        {
+            "training_job:status-job": json.dumps(
+                {"status": "running", "stage": "fitting", "progress": 64, "updated_at": 1}
+            )
+        }
+    )
+
+    async def fake_create_pool(*_args, **_kwargs):
+        return fake_redis
+
+    monkeypatch.setattr("app.api.train.create_pool", fake_create_pool)
+
+    resp = await client.get("/api/train/status/status-job", headers=admin_headers)
+
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "running"
+    assert resp.json()["stage"] == "fitting"
+    assert resp.json()["progress"] == 64
+
+
+@pytest.mark.asyncio
 async def test_train_start_conflict_returns_existing_job_context(
     client: AsyncClient,
     admin_headers: dict,

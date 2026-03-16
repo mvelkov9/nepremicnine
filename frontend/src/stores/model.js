@@ -10,6 +10,8 @@ export const useModelStore = defineStore('model', () => {
   const importance = ref([])
   const training = ref(false)
   const trainingStatus = ref(null)
+  const jobHistory = ref([])
+  const jobsLoading = ref(false)
   const loading = ref(false)
   const error = ref(null)
 
@@ -106,6 +108,23 @@ export const useModelStore = defineStore('model', () => {
     }
   }
 
+  async function fetchJobs(params = {}) {
+    jobsLoading.value = true
+    try {
+      const { data } = await api.get('/api/train/jobs', {
+        params: { per_page: 8, ...params },
+      })
+      jobHistory.value = data.items || []
+      return data
+    } catch (e) {
+      jobHistory.value = []
+      error.value = getApiErrorMessage(e, i18n.global.t)
+      return null
+    } finally {
+      jobsLoading.value = false
+    }
+  }
+
   function reset() {
     training.value = false
     trainingStatus.value = null
@@ -118,6 +137,8 @@ export const useModelStore = defineStore('model', () => {
     importance,
     training,
     trainingStatus,
+    jobHistory,
+    jobsLoading,
     loading,
     error,
     fetchInfo,
@@ -126,6 +147,7 @@ export const useModelStore = defineStore('model', () => {
     startTraining,
     fetchActiveTraining,
     pollStatus,
+    fetchJobs,
     reset,
   }
 })

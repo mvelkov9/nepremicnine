@@ -422,7 +422,7 @@
   .focus-chip {
     border: 1px solid var(--border);
     border-radius: 999px;
-    background: rgb(255 255 255 / 78%);
+    background: var(--surface-soft);
     color: var(--text);
     padding: 0.45rem 0.8rem;
     font: inherit;

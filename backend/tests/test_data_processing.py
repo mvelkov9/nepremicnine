@@ -1,6 +1,8 @@
-"""Tests for data_processing_service: CC-SI mapping and group_property_type."""
+"""Tests for data_processing_service: CC-SI mapping and municipality normalization."""
 
-from app.services.data_processing_service import _CC_SI_PREFIX_MAP, group_property_type
+import pandas as pd
+
+from app.services.data_processing_service import _CC_SI_PREFIX_MAP, enrich_training_df, group_property_type
 
 
 def test_cc_si_prefix_map_1110_is_hisa():
@@ -23,3 +25,18 @@ def test_group_property_type_with_ccsi_code():
     assert group_property_type("1122") == "stanovanje"
     assert group_property_type("1110") == "hisa"
     assert group_property_type("1242") == "garaza"
+
+
+def test_enrich_training_df_preserves_display_names_and_adds_normalized_column():
+    df = pd.DataFrame(
+        {
+            "municipality": ["Škofja   Loka", "Ljubljana"],
+            "property_type": ["Stanovanje", "Hiša"],
+            "size_m2": [55, 120],
+        }
+    )
+
+    enriched = enrich_training_df(df)
+
+    assert enriched["municipality"].tolist() == ["Škofja Loka", "Ljubljana"]
+    assert enriched["municipality_normalized"].tolist() == ["skofja loka", "ljubljana"]

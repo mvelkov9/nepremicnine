@@ -16,6 +16,8 @@ import numpy as np
 import pandas as pd
 
 from app.services.regions_service import FALLBACK_REGIONS, lookup_region, lookup_region_by_code, normalize
+from app.utils.municipality import normalize_municipality_name
+from app.utils.slovenian_labels import format_municipality_label
 
 # Property type mapping from VRSTA_DELA_STAVBE codes
 _PROPERTY_TYPE_MAP = {
@@ -123,6 +125,15 @@ def normalize_text(value: Any) -> str:
     return " ".join(text.split()).lower() or "unknown"
 
 
+def clean_display_text(value: Any) -> str:
+    """Normalize whitespace while preserving Slovenian casing and diacritics."""
+    if pd.isna(value):
+        return "unknown"
+
+    text = " ".join(str(value).strip().split())
+    return text or "unknown"
+
+
 def group_property_type(raw_value: Any) -> str:
     if pd.isna(raw_value):
         return "ostalo"
@@ -177,8 +188,14 @@ def enrich_training_df(df: pd.DataFrame) -> pd.DataFrame:
     result = df.copy()
 
     if "municipality" in result.columns:
-        normalized = result["municipality"].apply(normalize_text)
-        result["statistical_region"] = normalized.apply(lookup_region)
+        result["municipality"] = result["municipality"].apply(
+            lambda value: format_municipality_label(clean_display_text(value)) or "unknown"
+        )
+        result["municipality_normalized"] = result["municipality"].apply(normalize_municipality_name)
+        result["statistical_region"] = result["municipality_normalized"].apply(lookup_region)
+
+    if "property_type" in result.columns:
+        result["property_type"] = result["property_type"].apply(normalize_text)
 
     if "year_built" in result.columns:
         current_year = pd.Timestamp.now().year
@@ -505,6 +522,12 @@ def _enrich_with_sifra(df: pd.DataFrame, merged: pd.DataFrame) -> pd.DataFrame:
     """Add statistical_region using RPE_OBCINE_SIFRA (code) first, then name fallback."""
     result = df.copy()
 
+    if "municipality" in result.columns:
+        result["municipality"] = result["municipality"].apply(
+            lambda value: format_municipality_label(clean_display_text(value)) or "unknown"
+        )
+        result["municipality_normalized"] = result["municipality"].apply(normalize_municipality_name)
+
     # 1. Try RPE_OBCINE_SIFRA (municipality code) — most accurate, unambiguous
     sifra_col = None
     for candidate in ["RPE_OBCINE_SIFRA", "RPE_OBCINE_SIFRA_POSLI"]:
@@ -536,8 +559,8 @@ def _enrich_with_sifra(df: pd.DataFrame, merged: pd.DataFrame) -> pd.DataFrame:
 
     # 3. Final fallback: municipality column
     missing_mask = result["statistical_region"].isna() | (result["statistical_region"] == "neznana")
-    if missing_mask.any() and "municipality" in result.columns:
-        norm = result.loc[missing_mask, "municipality"].apply(normalize_text)
+    if missing_mask.any() and "municipality_normalized" in result.columns:
+        norm = result.loc[missing_mask, "municipality_normalized"]
         result.loc[missing_mask, "statistical_region"] = norm.apply(lookup_region)
 
     if "year_built" in result.columns:
@@ -713,7 +736,12 @@ def build_training_df_from_etn_kpp(
                 municipality_source = muni_candidate
                 municipality_series = candidate_series
                 break
-    training_df["municipality"] = municipality_series if municipality_series is not None else "unknown"
+    if municipality_series is not None:
+        training_df["municipality"] = municipality_series.apply(
+            lambda value: format_municipality_label(clean_display_text(value)) or "unknown"
+        )
+    else:
+        training_df["municipality"] = "unknown"
 
     # Property type
     property_type_source = None
@@ -786,7 +814,6 @@ def build_training_df_from_etn_kpp(
         ppm2_ceil = ppm2.quantile(0.999)
         training_df = training_df[ppm2 <= ppm2_ceil].copy()
 
-    training_df["municipality"] = training_df["municipality"].apply(normalize_text)
     training_df["property_type"] = training_df["property_type"].apply(normalize_text)
 
     # Enrich

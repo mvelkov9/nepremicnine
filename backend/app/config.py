@@ -14,7 +14,7 @@ class Settings(BaseSettings):
 
     # App
     app_env: str = "development"
-    app_version: str = "0.8.16"
+    app_version: str = "0.9.0"
     max_upload_size_mb: int = 1024
 
     # Postgres

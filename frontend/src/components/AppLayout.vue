@@ -3,6 +3,7 @@
   import { RouterLink, useRoute, useRouter } from 'vue-router'
   import { useI18n } from 'vue-i18n'
   import { setLocale } from '../i18n'
+  import { adminNavigation, viewerNavigation } from '../constants/navigation'
   import AppIcon from './AppIcon.vue'
   import { useDarkMode } from '../composables/useDarkMode'
   import { useAuthStore } from '../stores/auth'
@@ -20,38 +21,23 @@
   const profileOpen = ref(false)
   const profileSaving = ref(false)
   const appVersion = ref('')
+  const sidebarCollapsed = ref(localStorage.getItem('sidebar_collapsed') === '1')
   const profileForm = ref({
     full_name: '',
     avatar_url: '',
   })
 
-  const navItems = [
-    { to: '/', icon: 'dashboard', label: 'nav.dashboard', shortKey: 'dashboard', admin: false },
-    { to: '/podatki', icon: 'data', label: 'nav.data', shortKey: 'data', admin: true },
-    { to: '/priprava', icon: 'prepare', label: 'nav.prepare', shortKey: 'prepare', admin: true },
-    { to: '/model', icon: 'model', label: 'nav.model', shortKey: 'model', admin: true },
-    {
-      to: '/napoved',
-      icon: 'prediction',
-      label: 'nav.prediction',
-      shortKey: 'prediction',
-      admin: false,
-    },
-    { to: '/zemljevid', icon: 'map', label: 'nav.map', shortKey: 'map', admin: false },
-    {
-      to: '/diagnostika',
-      icon: 'diagnostics',
-      label: 'nav.diagnostics',
-      shortKey: 'diagnostics',
-      admin: true,
-    },
-    { to: '/analiza', icon: 'analysis', label: 'nav.analysis', shortKey: 'analysis', admin: true },
-    { to: '/admin', icon: 'admin', label: 'nav.admin', shortKey: 'admin', admin: true },
-  ]
+  const isAdminArea = computed(() => route.path.startsWith('/admin'))
+  const currentNavItems = computed(() => (isAdminArea.value ? adminNavigation : viewerNavigation))
+  const shellStyle = computed(() => ({
+    '--sidebar-width': sidebarCollapsed.value ? '5.75rem' : '17.5rem',
+  }))
 
   const currentItem = computed(
     () =>
-      navItems.find((item) => item.to === route.path) || navItems.find((item) => item.to === '/'),
+      currentNavItems.value.find((item) => isActiveRoute(item)) ||
+      currentNavItems.value[0] ||
+      viewerNavigation[0],
   )
 
   const currentTitle = computed(() =>
@@ -66,7 +52,29 @@
     route.meta.descriptionKey ? t(route.meta.descriptionKey) : t('layout.page.default'),
   )
 
-  const visibleNavItems = computed(() => navItems.filter((item) => !item.admin || auth.isAdmin))
+  const workspaceLabel = computed(() =>
+    isAdminArea.value ? t('layout.adminWorkbench') : t('layout.marketWorkspace'),
+  )
+
+  const workspaceTag = computed(() =>
+    isAdminArea.value ? t('layout.adminWorkbenchShort') : t('layout.marketWorkspaceShort'),
+  )
+
+  const switchLink = computed(() => {
+    if (!auth.isAdmin) return null
+
+    return isAdminArea.value
+      ? {
+          to: '/',
+          icon: 'dashboard',
+          label: t('layout.backToMarket'),
+        }
+      : {
+          to: '/admin',
+          icon: 'admin',
+          label: t('layout.openAdminWorkbench'),
+        }
+  })
 
   const avatarUrl = computed(() => auth.user?.avatar_url || '')
   const profileAvatarUrl = computed(() => profileForm.value.avatar_url.trim() || avatarUrl.value)
@@ -90,6 +98,10 @@
       .slice(0, 2)
   })
 
+  watch(sidebarCollapsed, (collapsed) => {
+    localStorage.setItem('sidebar_collapsed', collapsed ? '1' : '0')
+  })
+
   watch(
     () => auth.user,
     (user) => {
@@ -99,6 +111,13 @@
       }
     },
     { immediate: true },
+  )
+
+  watch(
+    () => route.fullPath,
+    () => {
+      mobileMenuOpen.value = false
+    },
   )
 
   onMounted(async () => {
@@ -116,6 +135,10 @@
   function changeLocale(nextLocale) {
     locale.value = nextLocale
     setLocale(nextLocale)
+  }
+
+  function toggleSidebar() {
+    sidebarCollapsed.value = !sidebarCollapsed.value
   }
 
   function openProfile() {
@@ -152,13 +175,13 @@
   }
 
   function isActiveRoute(item) {
-    if (item.to === '/') return route.path === '/'
+    if (item.to === '/' || item.to === '/admin') return route.path === item.to
     return route.path === item.to || route.path.startsWith(`${item.to}/`)
   }
 </script>
 
 <template>
-  <div class="app-shell">
+  <div class="app-shell" :style="shellStyle" :class="{ collapsed: sidebarCollapsed }">
     <div class="mobile-topbar">
       <button
         class="icon-btn"
@@ -168,13 +191,15 @@
       >
         {{ mobileMenuOpen ? '×' : '☰' }}
       </button>
+
       <div class="mobile-brand">
         <span class="brand-mark">NN</span>
         <div>
           <strong>{{ t('app.title') }}</strong>
-          <small>{{ t('app.subtitle') }}</small>
+          <small>{{ workspaceTag }}</small>
         </div>
       </div>
+
       <button class="profile-pill compact" @click="openProfile">
         <span class="avatar-frame">
           <img
@@ -189,28 +214,32 @@
 
     <div v-if="mobileMenuOpen" class="mobile-backdrop" @click="mobileMenuOpen = false"></div>
 
-    <aside class="sidebar" :class="{ 'mobile-open': mobileMenuOpen }">
-      <div class="sidebar-brand">
-        <div class="brand-mark">NN</div>
-        <div>
-          <strong>{{ t('app.title') }}</strong>
-          <small>{{ t('app.subtitle') }}</small>
+    <aside class="sidebar" :class="{ 'mobile-open': mobileMenuOpen, collapsed: sidebarCollapsed }">
+      <div class="sidebar-top">
+        <div class="sidebar-brand">
+          <div class="brand-mark">NN</div>
+          <div class="brand-copy">
+            <strong>{{ t('app.title') }}</strong>
+            <small>{{ workspaceTag }}</small>
+          </div>
         </div>
+
+        <button class="icon-btn subtle desktop-only" @click="toggleSidebar">
+          {{ sidebarCollapsed ? '→' : '←' }}
+        </button>
       </div>
 
-      <div class="sidebar-intro">
-        <span class="sidebar-label">{{ t('layout.workspace') }}</span>
-        <p>{{ t('layout.workflowHint') }}</p>
+      <div class="sidebar-rail-label">
+        <span class="sidebar-label">{{ workspaceTag }}</span>
       </div>
 
-      <nav class="sidebar-nav" aria-label="Main navigation">
+      <nav class="sidebar-nav" :aria-label="t('layout.navigation')">
         <RouterLink
-          v-for="item in visibleNavItems"
+          v-for="item in currentNavItems"
           :key="item.to"
           :to="item.to"
           class="nav-link"
           :class="{ active: isActiveRoute(item) }"
-          @click="mobileMenuOpen = false"
         >
           <span class="nav-icon"><AppIcon :name="item.icon" :size="18" /></span>
           <span class="nav-copy">
@@ -220,9 +249,14 @@
       </nav>
 
       <div class="sidebar-footer">
-        <div class="status-stack">
-          <span v-if="versionBadge" class="status-pill">{{ versionBadge }}</span>
-          <span class="status-pill muted">{{ userRoleLabel }}</span>
+        <RouterLink v-if="switchLink" :to="switchLink.to" class="switch-link">
+          <AppIcon :name="switchLink.icon" :size="16" />
+          <span>{{ switchLink.label }}</span>
+        </RouterLink>
+
+        <div class="sidebar-meta">
+          <span v-if="versionBadge" class="sidebar-version">{{ versionBadge }}</span>
+          <small>{{ userRoleLabel }}</small>
         </div>
       </div>
     </aside>
@@ -230,12 +264,17 @@
     <div class="workspace">
       <header class="topbar">
         <div class="page-meta">
-          <span class="page-kicker">{{ t('layout.workspace') }}</span>
+          <span class="page-kicker">{{ workspaceLabel }}</span>
           <h1 class="page-heading">{{ currentTitle }}</h1>
           <p class="page-description">{{ currentDescription }}</p>
         </div>
 
         <div class="topbar-actions">
+          <RouterLink v-if="switchLink" :to="switchLink.to" class="switch-link mobile-switch">
+            <AppIcon :name="switchLink.icon" :size="16" />
+            <span>{{ switchLink.label }}</span>
+          </RouterLink>
+
           <div class="segmented-control" role="group" :aria-label="t('layout.language')">
             <button
               class="segmented-btn"
@@ -343,33 +382,86 @@
 </template>
 
 <style scoped>
-  .sidebar-intro {
-    padding: 0.95rem 0.95rem 1rem;
-    border-radius: 1.1rem;
-    border: 1px solid rgb(255 255 255 / 8%);
-    background: linear-gradient(135deg, rgb(255 255 255 / 8%), rgb(255 255 255 / 3%));
+  .sidebar {
+    overflow-y: auto;
+    transition:
+      width 160ms ease,
+      transform 180ms ease;
   }
 
-  .sidebar-intro p {
-    margin: 0.45rem 0 0;
-    color: rgb(255 255 255 / 68%);
-    font-size: 0.86rem;
-    line-height: 1.55;
+  .sidebar-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
   }
 
-  .brand-mark {
-    width: 3rem;
-    height: 3rem;
-    border-radius: 1.1rem;
-    font-size: 0.9rem;
-    letter-spacing: 0.1em;
+  .sidebar-brand {
+    min-width: 0;
   }
 
-  .nav-link.active,
-  .nav-link.router-link-active {
-    background: linear-gradient(135deg, rgb(96 165 250 / 18%), rgb(255 255 255 / 8%));
-    border-color: rgb(96 165 250 / 28%);
+  .brand-copy {
+    display: grid;
+    gap: 0.15rem;
+  }
+
+  .sidebar-rail-label {
+    min-height: 1rem;
+  }
+
+  .sidebar-label {
+    color: rgb(255 255 255 / 44%);
+  }
+
+  .nav-link.active {
+    background: linear-gradient(135deg, rgb(16 185 129 / 22%), rgb(255 255 255 / 8%));
+    border-color: rgb(16 185 129 / 24%);
     color: #f8fbff;
+  }
+
+  .sidebar-footer {
+    display: grid;
+    gap: 0.6rem;
+    padding-top: 0.15rem;
+  }
+
+  .switch-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.82rem 0.9rem;
+    border-radius: 1rem;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    text-decoration: none;
+    font-weight: 700;
+  }
+
+  .switch-link:hover {
+    border-color: rgb(16 185 129 / 32%);
+  }
+
+  .sidebar-meta {
+    display: grid;
+    gap: 0.18rem;
+    padding: 0 0.15rem;
+    color: rgb(255 255 255 / 60%);
+  }
+
+  .sidebar-meta small {
+    font-size: 0.8rem;
+  }
+
+  .sidebar-version {
+    font-size: 0.76rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .mobile-switch {
+    display: none;
   }
 
   .workspace {
@@ -381,10 +473,10 @@
     content: '';
     position: fixed;
     inset: 0 0 auto var(--sidebar-width);
-    height: 280px;
+    height: 220px;
     background:
-      radial-gradient(circle at top left, rgb(37 99 235 / 12%), transparent 34%),
-      radial-gradient(circle at top right, rgb(245 158 11 / 10%), transparent 24%);
+      radial-gradient(circle at top left, rgb(16 185 129 / 10%), transparent 32%),
+      radial-gradient(circle at top right, rgb(245 158 11 / 8%), transparent 24%);
     pointer-events: none;
     z-index: 0;
   }
@@ -394,8 +486,8 @@
     top: 0;
     z-index: 12;
     margin: 0 1.35rem;
-    padding: 1.1rem 0 1rem;
-    backdrop-filter: blur(20px);
+    padding: 1rem 0 0.95rem;
+    backdrop-filter: blur(18px);
   }
 
   .page-meta,
@@ -406,27 +498,44 @@
 
   .page-kicker {
     color: var(--text-soft);
-    font-size: 0.74rem;
+    font-size: 0.72rem;
     font-weight: 800;
     letter-spacing: 0.18em;
     text-transform: uppercase;
   }
 
-  .page-heading {
-    margin: 0;
-  }
-
   .page-description {
-    max-width: 58ch;
+    max-width: 56ch;
     margin: 0;
     color: var(--text-muted);
-    font-size: 0.94rem;
+    font-size: 0.92rem;
   }
 
   .main {
     position: relative;
     z-index: 1;
-    padding-top: 0.5rem;
+    padding-top: 0.4rem;
+  }
+
+  .desktop-only {
+    display: inline-flex;
+  }
+
+  .collapsed .brand-copy,
+  .collapsed .nav-copy,
+  .collapsed .switch-link span,
+  .collapsed .sidebar-rail-label,
+  .collapsed .sidebar-meta {
+    display: none;
+  }
+
+  .collapsed .sidebar-top {
+    justify-content: center;
+  }
+
+  .collapsed .switch-link {
+    justify-content: center;
+    padding-inline: 0.6rem;
   }
 
   @media (max-width: 960px) {
@@ -440,6 +549,22 @@
 
     .page-description {
       max-width: none;
+    }
+
+    .mobile-switch {
+      display: inline-flex;
+    }
+
+    .desktop-only {
+      display: none;
+    }
+
+    .sidebar.collapsed .brand-copy,
+    .sidebar.collapsed .nav-copy,
+    .sidebar.collapsed .switch-link span,
+    .sidebar.collapsed .sidebar-rail-label,
+    .sidebar.collapsed .sidebar-meta {
+      display: initial;
     }
   }
 </style>

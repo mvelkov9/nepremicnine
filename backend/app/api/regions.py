@@ -10,6 +10,7 @@ from app.models.region import RegionLookup
 from app.models.user import User
 from app.schemas.region import RegionListResponse, RegionLookupResponse
 from app.services.regions_service import FALLBACK_REGIONS
+from app.utils.slovenian_labels import format_municipality_label, format_region_label, labels_match
 
 router = APIRouter(tags=["regions"])
 
@@ -29,8 +30,8 @@ async def get_regions(
             RegionLookupResponse(
                 id=0,
                 obcina_sifra=None,
-                obcina_naziv=municipality,
-                regija_naziv=region,
+                obcina_naziv=format_municipality_label(municipality) or municipality,
+                regija_naziv=format_region_label(region) or region,
                 vir="privzeto",
             )
             for municipality, region in FALLBACK_REGIONS.items()
@@ -38,7 +39,16 @@ async def get_regions(
         return RegionListResponse(regions=fallback, total=len(fallback))
 
     return RegionListResponse(
-        regions=[RegionLookupResponse.model_validate(r) for r in rows],
+        regions=[
+            RegionLookupResponse(
+                id=row.id,
+                obcina_sifra=row.obcina_sifra,
+                obcina_naziv=format_municipality_label(row.obcina_naziv) or row.obcina_naziv,
+                regija_naziv=format_region_label(row.regija_naziv) or row.regija_naziv,
+                vir=row.vir,
+            )
+            for row in rows
+        ],
         total=len(rows),
     )
 
@@ -61,33 +71,55 @@ async def get_region_stats(
         # Return from fallback
         from collections import Counter
 
-        counts = Counter(FALLBACK_REGIONS.values())
+        counts = Counter(format_region_label(region) or region for region in FALLBACK_REGIONS.values())
         return [{"region": r, "municipality_count": c} for r, c in sorted(counts.items())]
-    return [{"region": row.regija_naziv, "municipality_count": row.municipality_count} for row in rows]
+    return [
+        {
+            "region": format_region_label(row.regija_naziv) or row.regija_naziv,
+            "municipality_count": row.municipality_count,
+        }
+        for row in rows
+    ]
 
 
+@router.get("/regions/municipalities")
 @router.get("/municipalities")
 async def get_municipalities(
     region: str | None = None,
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
-    query = select(
-        distinct(RegionLookup.obcina_naziv).label("municipality"),
-        RegionLookup.regija_naziv.label("region"),
-    ).order_by(RegionLookup.obcina_naziv)
-
-    if region:
-        query = query.where(RegionLookup.regija_naziv == region)
+    query = (
+        select(
+            distinct(RegionLookup.obcina_naziv).label("municipality"),
+            RegionLookup.regija_naziv.label("region"),
+        )
+        .order_by(RegionLookup.obcina_naziv)
+    )
 
     result = await db.execute(query)
     rows = result.all()
 
     if not rows:
         # Return from fallback
-        items = [{"municipality": m, "region": r} for m, r in sorted(FALLBACK_REGIONS.items())]
+        items = [
+            {
+                "municipality": format_municipality_label(municipality) or municipality,
+                "region": format_region_label(region_name) or region_name,
+            }
+            for municipality, region_name in sorted(FALLBACK_REGIONS.items())
+        ]
         if region:
-            items = [i for i in items if i["region"] == region]
+            items = [item for item in items if labels_match(item["region"], region)]
         return items
 
-    return [{"municipality": row.municipality, "region": row.region} for row in rows]
+    items = [
+        {
+            "municipality": format_municipality_label(row.municipality) or row.municipality,
+            "region": format_region_label(row.region) or row.region,
+        }
+        for row in rows
+    ]
+    if region:
+        items = [item for item in items if labels_match(item["region"], region)]
+    return items

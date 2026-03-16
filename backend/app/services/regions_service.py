@@ -86,7 +86,7 @@ _FALLBACK_BY_REGION = {
         "zavrc",
         "zetale",
     ],
-    "Koroska": [
+    "Koroška": [
         "crna na koroskem",
         "dravograd",
         "mezica",
@@ -232,7 +232,7 @@ _FALLBACK_BY_REGION = {
         "pivka",
         "postojna",
     ],
-    "Goriska": [
+    "Goriška": [
         "ajdovscina",
         "bovec",
         "brda",
@@ -252,7 +252,7 @@ _FALLBACK_BY_REGION = {
         "tolmin",
         "vipava",
     ],
-    "Obalno-kraska": [
+    "Obalno-kraška": [
         "ankaran",
         "divaca",
         "hrpelje - kozina",

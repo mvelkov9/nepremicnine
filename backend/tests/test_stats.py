@@ -168,6 +168,7 @@ async def test_map_transactions_returns_json(client: AsyncClient, admin_headers:
     data = resp.json()
     assert "transactions" in data
     assert "count" in data
+    assert "meta" in data
 
 
 @pytest.mark.asyncio
@@ -178,6 +179,34 @@ async def test_map_transactions_with_filters(client: AsyncClient, admin_headers:
     )
     assert resp.status_code == 200
     assert "transactions" in resp.json()
+
+
+@pytest.mark.asyncio
+async def test_map_transactions_returns_reason_for_empty_filter_match(client: AsyncClient, admin_headers: dict):
+    fake_df = _build_market_df()
+    with patch("app.api.stats._load_df", return_value=fake_df):
+        resp = await client.get(
+            "/api/stats/map-transactions?municipality=Neobstojeca",
+            headers=admin_headers,
+        )
+    assert resp.status_code == 200
+    assert resp.json()["meta"]["reason"] == "no_matches"
+
+
+# ── GET /api/stats/map-overview ─────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_map_overview_returns_municipality_markers(client: AsyncClient, admin_headers: dict):
+    fake_df = _build_market_df()
+    with patch("app.api.stats._load_df", return_value=fake_df):
+        resp = await client.get("/api/stats/map-overview", headers=admin_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["count"] >= 1
+    assert data["municipalities"][0]["municipality"] == "Ljubljana"
+    assert data["municipalities"][0]["lat"] is not None
+    assert data["meta"]["reason"] is None
 
 
 # ── GET /api/stats/municipalities-by-region ──────────────────────────────────
@@ -228,6 +257,40 @@ async def test_market_home_returns_rankings_and_latest_sales(client: AsyncClient
     assert data["largest_markets"][0]["municipality"] == "Ljubljana"
     assert data["latest_sales"]
     assert any(item["year"] == "2024" for item in data["year_coverage"])
+
+
+@pytest.mark.asyncio
+async def test_market_home_formats_ascii_labels_for_display(client: AsyncClient, admin_headers: dict):
+    fake_df = _build_market_df().copy()
+    fake_df["municipality"] = [
+        "ljubljana",
+        "ljubljana",
+        "ljubljana",
+        "ljubljana",
+        "maribor",
+        "maribor",
+        "skofja loka",
+        "skofja loka",
+        "kranj",
+    ]
+    fake_df["statistical_region"] = [
+        "osrednjeslovenska",
+        "osrednjeslovenska",
+        "osrednjeslovenska",
+        "osrednjeslovenska",
+        "podravska",
+        "podravska",
+        "goriska",
+        "goriska",
+        "obalno-kraska",
+    ]
+    with patch("app.api.stats._load_df", return_value=fake_df):
+        resp = await client.get("/api/stats/market-home", headers=admin_headers)
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["largest_markets"][0]["municipality"] == "Ljubljana"
+    assert {item["region"] for item in data["region_snapshot"]} >= {"Osrednjeslovenska", "Podravska", "Goriška"}
 
 
 @pytest.mark.asyncio

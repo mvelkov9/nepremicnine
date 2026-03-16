@@ -237,7 +237,12 @@ async def get_training_status(
             await db.commit()
         return _serialize_job(job)
 
-    return TrainStatusResponse(**data, job_id=job_id, progress=_coerce_progress(data.get("progress")))
+    payload = {key: value for key, value in data.items() if key != "progress"}
+    return TrainStatusResponse(
+        **payload,
+        job_id=job_id,
+        progress=_coerce_progress(data.get("progress")),
+    )
 
 
 @router.get("/jobs")

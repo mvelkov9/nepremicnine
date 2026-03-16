@@ -13,6 +13,7 @@ from app.models.user import User
 from app.services.regions_service import lookup_region
 from app.utils.cache import cache_get, cache_set
 from app.utils.municipality import municipality_slug, normalize_municipality_name
+from app.utils.slovenian_labels import format_municipality_label, format_region_label, labels_match
 
 logger = logging.getLogger(__name__)
 
@@ -146,8 +147,12 @@ def _prepare_market_df(property_type: str | None = None) -> pd.DataFrame | None:
     frame = _ensure_regions(df.copy())
 
     if "municipality" in frame.columns:
+        frame["municipality"] = frame["municipality"].map(lambda value: format_municipality_label(value) or "unknown")
         frame["_municipality_slug"] = frame["municipality"].map(municipality_slug)
         frame["_municipality_normalized"] = frame["municipality"].map(normalize_municipality_name)
+
+    if "statistical_region" in frame.columns:
+        frame["statistical_region"] = frame["statistical_region"].map(lambda value: format_region_label(value) or "Neznana")
 
     frame["_area"] = _effective_area(frame)
 
@@ -174,6 +179,45 @@ def _prepare_market_df(property_type: str | None = None) -> pd.DataFrame | None:
     return frame
 
 
+def _prepare_map_coordinates(df: pd.DataFrame) -> tuple[pd.DataFrame, str | None]:
+    """Return a map-ready frame with WGS84 coordinates from either WGS84 or D96/TM inputs."""
+    if "latitude" not in df.columns or "longitude" not in df.columns:
+        return df.iloc[0:0].copy(), "no_coordinates"
+
+    lat = pd.to_numeric(df["latitude"], errors="coerce")
+    lon = pd.to_numeric(df["longitude"], errors="coerce")
+
+    wgs_mask = lat.between(45.0, 47.5) & lon.between(13.0, 17.5)
+    d96_mask = lon.between(350000, 650000) & lat.between(20000, 210000)
+    valid_mask = wgs_mask | d96_mask
+
+    if not valid_mask.any():
+        return df.iloc[0:0].copy(), "no_coordinates"
+
+    frame = df.loc[valid_mask].copy()
+    frame["_map_lat"] = np.nan
+    frame["_map_lon"] = np.nan
+
+    valid_lat = lat.loc[frame.index].to_numpy(dtype=float)
+    valid_lon = lon.loc[frame.index].to_numpy(dtype=float)
+    valid_wgs = wgs_mask.loc[frame.index].to_numpy(dtype=bool)
+    valid_d96 = d96_mask.loc[frame.index].to_numpy(dtype=bool)
+
+    frame.loc[frame.index[valid_wgs], "_map_lat"] = valid_lat[valid_wgs]
+    frame.loc[frame.index[valid_wgs], "_map_lon"] = valid_lon[valid_wgs]
+
+    if valid_d96.any():
+        converted_lat, converted_lon = _d96tm_to_wgs84(valid_lat[valid_d96], valid_lon[valid_d96])
+        frame.loc[frame.index[valid_d96], "_map_lat"] = converted_lat
+        frame.loc[frame.index[valid_d96], "_map_lon"] = converted_lon
+
+    frame = frame.dropna(subset=["_map_lat", "_map_lon"])
+    if frame.empty:
+        return frame, "no_coordinates"
+
+    return frame, None
+
+
 def _mode_or_none(values: pd.Series) -> str | None:
     if values.empty:
         return None
@@ -183,9 +227,9 @@ def _mode_or_none(values: pd.Series) -> str | None:
 
 def _serialize_price_row(row: pd.Series) -> dict:
     return {
-        "municipality": row.get("municipality"),
+        "municipality": format_municipality_label(row.get("municipality")) or row.get("municipality"),
         "slug": row.get("_municipality_slug") or municipality_slug(row.get("municipality")),
-        "region": row.get("statistical_region"),
+        "region": format_region_label(row.get("statistical_region")) or row.get("statistical_region"),
         "property_type": row.get("property_type"),
         "price_eur": _round_or_none(row.get("price_eur")),
         "size_m2": _round_or_none(row.get("_area"), 1),
@@ -215,11 +259,13 @@ def _summarize_yearly(grouped: Iterable[tuple[str, pd.DataFrame]]) -> list[dict]
 
 def _municipality_stats(group: pd.DataFrame) -> dict:
     return {
-        "municipality": str(group["municipality"].iloc[0]),
+        "municipality": format_municipality_label(group["municipality"].iloc[0]) or str(group["municipality"].iloc[0]),
         "slug": str(group["_municipality_slug"].iloc[0])
         if "_municipality_slug" in group.columns
         else municipality_slug(group["municipality"].iloc[0]),
-        "region": _mode_or_none(group["statistical_region"]) if "statistical_region" in group.columns else None,
+        "region": (
+            format_region_label(_mode_or_none(group["statistical_region"])) if "statistical_region" in group.columns else None
+        ),
         "count": int(len(group)),
         "avg_price": _round_or_none(group["price_eur"].mean()) if "price_eur" in group.columns else None,
         "median_price": _round_or_none(group["price_eur"].median()) if "price_eur" in group.columns else None,
@@ -337,15 +383,9 @@ async def regions_stats(
     if cached is not None:
         return cached
 
-    df = _load_df(property_type)
+    df = _prepare_market_df(property_type)
     if df is None or df.empty:
         return []
-
-    # Ensure statistical_region column
-    if "statistical_region" not in df.columns and "municipality" in df.columns:
-        df["statistical_region"] = df["municipality"].apply(
-            lambda m: lookup_region(str(m)) if pd.notna(m) else "neznana"
-        )
 
     if "statistical_region" not in df.columns:
         return []
@@ -353,7 +393,7 @@ async def regions_stats(
     results = []
     for region, group in df.groupby("statistical_region"):
         entry = {
-            "region": region,
+            "region": format_region_label(region) or region,
             "count": len(group),
             "avg_price": round(float(group["price_eur"].mean()), 2) if "price_eur" in group.columns else None,
             "median_price": round(float(group["price_eur"].median()), 2) if "price_eur" in group.columns else None,
@@ -541,7 +581,7 @@ async def market_home(
             price_per_m2 = group["_price_per_m2"].dropna()
             region_snapshot.append(
                 {
-                    "region": str(region),
+                    "region": format_region_label(region) or str(region),
                     "count": int(len(group)),
                     "avg_price": _round_or_none(group["price_eur"].mean()) if "price_eur" in group.columns else None,
                     "median_price": _round_or_none(group["price_eur"].median())
@@ -862,13 +902,75 @@ async def municipalities_by_region(
 
     mapping = df[["municipality", "statistical_region"]].dropna().drop_duplicates()
     if region:
-        filtered = mapping[mapping["statistical_region"] == region]
-        return [{"municipality": municipality} for municipality in sorted(filtered["municipality"].unique().tolist())]
+        filtered = mapping[mapping["statistical_region"].map(lambda value: labels_match(value, region))]
+        return [
+            {"municipality": format_municipality_label(municipality) or municipality}
+            for municipality in sorted(filtered["municipality"].unique().tolist())
+        ]
 
     result: dict[str, list[str]] = {}
     for region, group in mapping.groupby("statistical_region"):
-        result[str(region)] = sorted(group["municipality"].unique().tolist())
+        result[format_region_label(region) or str(region)] = sorted(
+            (format_municipality_label(municipality) or municipality) for municipality in group["municipality"].unique().tolist()
+        )
     return result
+
+
+@router.get("/map-overview")
+async def map_overview(
+    property_type: str | None = None,
+    statistical_region: str | None = None,
+    year: str | None = None,
+    _user: User = Depends(get_current_user),
+):
+    """Return municipality markers for the overview map without relying on model artifacts."""
+    df = _prepare_market_df()
+    if df is None or df.empty:
+        return {"municipalities": [], "count": 0, "meta": {"reason": "no_train_dataset"}}
+
+    if property_type and "property_type" in df.columns:
+        df = df[df["property_type"].astype(str).str.casefold() == str(property_type).casefold()]
+
+    if statistical_region and "statistical_region" in df.columns:
+        df = df[df["statistical_region"].map(lambda value: labels_match(value, statistical_region))]
+
+    if year and "_year" in df.columns:
+        df = df[df["_year"].astype(str) == str(year)]
+
+    if df.empty:
+        return {"municipalities": [], "count": 0, "meta": {"reason": "no_matches"}}
+
+    map_df, reason = _prepare_map_coordinates(df)
+    if map_df.empty:
+        return {"municipalities": [], "count": 0, "meta": {"reason": reason or "no_coordinates"}}
+
+    municipalities = []
+    group_key = "_municipality_slug" if "_municipality_slug" in map_df.columns else "municipality"
+    for _, group in map_df.groupby(group_key):
+        municipalities.append(
+            {
+                "municipality": (
+                    format_municipality_label(group["municipality"].iloc[0]) if "municipality" in group.columns else "unknown"
+                ),
+                "slug": str(group["_municipality_slug"].iloc[0])
+                if "_municipality_slug" in group.columns
+                else municipality_slug(group["municipality"].iloc[0]),
+                "region": (
+                    format_region_label(_mode_or_none(group["statistical_region"]))
+                    if "statistical_region" in group.columns
+                    else None
+                ),
+                "count": int(len(group)),
+                "lat": _round_or_none(group["_map_lat"].median(), 6),
+                "lon": _round_or_none(group["_map_lon"].median(), 6),
+                "avg_price": _round_or_none(group["price_eur"].mean()) if "price_eur" in group.columns else None,
+                "median_price": _round_or_none(group["price_eur"].median()) if "price_eur" in group.columns else None,
+                "avg_price_per_m2": _round_or_none(group["_price_per_m2"].dropna().mean()),
+            }
+        )
+
+    municipalities.sort(key=lambda item: item["count"], reverse=True)
+    return {"municipalities": municipalities, "count": len(municipalities), "meta": {"reason": None}}
 
 
 @router.get("/map-transactions")
@@ -881,80 +983,62 @@ async def map_transactions(
     _user: User = Depends(get_current_user),
 ):
     """Return transaction points for map visualization (WGS84 coords)."""
-    df = _load_df()
+    df = _prepare_market_df()
     if df is None or df.empty:
-        return {"transactions": [], "count": 0}
+        return {"transactions": [], "count": 0, "meta": {"reason": "no_train_dataset"}}
 
-    # Ensure statistical_region
-    if "statistical_region" not in df.columns and "municipality" in df.columns:
-        df["statistical_region"] = df["municipality"].apply(
-            lambda m: lookup_region(str(m)) if pd.notna(m) else "neznana"
-        )
+    if property_type and "property_type" in df.columns:
+        df = df[df["property_type"].astype(str).str.casefold() == str(property_type).casefold()]
 
     # Apply filters
-    if property_type and "property_type" in df.columns:
-        df = df[df["property_type"] == property_type]
     if statistical_region and "statistical_region" in df.columns:
-        df = df[df["statistical_region"] == statistical_region]
+        df = df[df["statistical_region"].map(lambda value: labels_match(value, statistical_region))]
     if municipality and "municipality" in df.columns:
-        df = df[df["municipality"] == municipality]
+        df = df[df["municipality"].map(lambda value: labels_match(value, municipality))]
 
-    # Year filter
-    if year:
-        year_col = None
-        for col in ["source_label", "year", "sale_year", "transaction_year"]:
-            if col in df.columns:
-                year_col = col
-                break
-        if year_col:
-            df = df[df[year_col].astype(str).str[:4] == year]
+    if year and "_year" in df.columns:
+        df = df[df["_year"].astype(str) == str(year)]
 
-    # Require lat/lon
-    if "latitude" not in df.columns or "longitude" not in df.columns:
-        return {"transactions": [], "count": 0}
+    if df.empty:
+        return {"transactions": [], "count": 0, "meta": {"reason": "no_matches"}}
 
-    df = df.dropna(subset=["latitude", "longitude"])
-
-    # Validate D96/TM coordinate range (latitude=northing, longitude=easting)
-    # Easting: 350000-650000, Northing: 20000-210000
-    df = df[
-        (df["longitude"] > 350000) & (df["longitude"] < 650000) & (df["latitude"] > 20000) & (df["latitude"] < 210000)
-    ]
-
-    # Convert D96/TM (ETRS89/TM) → WGS84
-    if len(df) > 0:
-        wgs_lat, wgs_lon = _d96tm_to_wgs84(df["latitude"].values, df["longitude"].values)
-        df = df.copy()
-        df["latitude"] = wgs_lat
-        df["longitude"] = wgs_lon
+    map_df, reason = _prepare_map_coordinates(df)
+    if map_df.empty:
+        return {"transactions": [], "count": 0, "meta": {"reason": reason or "no_coordinates"}}
 
     # Sample if too many
-    if len(df) > limit:
-        df = df.sample(n=limit, random_state=42)
+    if len(map_df) > limit:
+        map_df = map_df.sample(n=limit, random_state=42)
 
-    area = _effective_area(df)
+    area = _effective_area(map_df)
 
     # Build result DataFrame vectorized (no iterrows)
     result_df = pd.DataFrame(
         {
-            "lat": df["latitude"].values,
-            "lon": df["longitude"].values,
+            "lat": map_df["_map_lat"].values,
+            "lon": map_df["_map_lon"].values,
         }
     )
 
-    result_df["price_eur"] = df["price_eur"].values if "price_eur" in df.columns else np.nan
-    result_df["size_m2"] = df["size_m2"].values if "size_m2" in df.columns else np.nan
-    result_df["municipality"] = df["municipality"].astype(str).values if "municipality" in df.columns else ""
-    result_df["property_type"] = df["property_type"].astype(str).values if "property_type" in df.columns else ""
-    result_df["rooms"] = df["rooms"].values if "rooms" in df.columns else np.nan
+    result_df["price_eur"] = map_df["price_eur"].values if "price_eur" in map_df.columns else np.nan
+    result_df["size_m2"] = map_df["size_m2"].values if "size_m2" in map_df.columns else np.nan
+    result_df["municipality"] = (
+        map_df["municipality"].map(lambda value: format_municipality_label(value) or "").astype(str).values
+        if "municipality" in map_df.columns
+        else ""
+    )
+    result_df["property_type"] = (
+        map_df["property_type"].astype(str).values if "property_type" in map_df.columns else ""
+    )
+    result_df["rooms"] = map_df["rooms"].values if "rooms" in map_df.columns else np.nan
 
     # Year column — pick first available
     year_src = None
-    for col in ["transaction_year", "source_label"]:
-        if col in df.columns:
+    for col in ["_year", "transaction_year", "source_label"]:
+        if col in map_df.columns:
             year_src = col
             break
-    result_df["year"] = df[year_src].astype(str).str[:4].values if year_src else ""
+    result_df["year"] = map_df[year_src].astype(str).str[:4].values if year_src else ""
 
     # Price per m2
     area_arr = area.values
@@ -972,4 +1056,4 @@ async def map_transactions(
 
     transactions = result_df.to_dict(orient="records")
 
-    return {"transactions": transactions, "count": len(transactions)}
+    return {"transactions": transactions, "count": len(transactions), "meta": {"reason": None}}

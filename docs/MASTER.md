@@ -6,7 +6,7 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 
 | Item | Value |
 |------|-------|
-| **Version** | 0.8.16 |
+| **Version** | 0.9.0 |
 | **Repo** | [github.com/mvelkov9/nepremicnine](https://github.com/mvelkov9/nepremicnine) |
 | **Backend** | FastAPI + Python 3.13 + PostgreSQL 17 + SQLAlchemy 2.x async |
 | **Frontend** | Vue 3 Composition API + Pinia + pnpm 9, Vite 6 |
@@ -32,8 +32,18 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 | [Phase 18](PHASE_8_14_PLAN.md#phase-18--cache-coherency--phase-tracking-v0814) | Agency re-audit, cache coherency fixes, tracked execution plan | ✅ Complete | `3cf6248` |
 | [Phase 19](PHASE_8_14_PLAN.md#phase-19--dashboard-property-type-parity-v0815) | Dashboard property-type parity and analytical lens controls | ✅ Complete | `fb4a786` |
 | [Phase 20](PHASE_8_14_PLAN.md#phase-20--diagnostics-focus--locale-formatting-v0816) | Diagnostics focus workflow and locale-aware formatting polish | ✅ Complete | `4c58881` |
+| Phase 21 | Consumer valuation companion reset: viewer/admin split, map overhaul, municipality canonicalization, PrimeVue UI system | ✅ Complete | working tree |
 
 ## Changelog
+
+### v0.9.0
+
+- **Viewer/admin split**: Viewers now stay in a market-first app with dashboard, prediction, map, analysis, and municipality pages, while admins get a separate `/admin` workbench for data, preparation, training, diagnostics, and users
+- **UX reset**: Rebuilt the shell into a collapsible, scrollable navigation rail and refreshed dashboard/analysis flows around valuation and market comparison instead of training-first copy
+- **Map/data reset**: Added `GET /api/stats/map-overview`, improved `map-transactions` empty-state reasons, and switched the map to work from prepared ETN data instead of depending on trained-model municipality artifacts
+- **Canonical municipality handling**: ETN preparation now preserves display names with šumniki while also creating normalized matching fields/slugs for routing and model features
+- **Frontend system**: Standardized the newer viewer/admin surfaces on PrimeVue with a custom theme preset and cleaned up missing locale keys such as `diag.allTypes`
+- **Version**: 0.8.16 → 0.9.0
 
 ### v0.8.16
 

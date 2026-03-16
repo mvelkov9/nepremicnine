@@ -25,6 +25,7 @@ from app.services.data_processing_service import (
     enrich_training_df,
     read_csv_flexible,
 )
+from app.utils.municipality import normalize_municipality_name
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +53,7 @@ NUMERIC_FEATURES = [
 ]
 
 CATEGORICAL_FEATURES = [
-    "municipality",
+    "municipality_normalized",
     "property_type",
     "statistical_region",
     "lega_v_stavbi",
@@ -76,7 +77,7 @@ ALWAYS_INCLUDE_NUMERIC = {
 }
 
 ALWAYS_INCLUDE_CATEGORICAL = {
-    "municipality",
+    "municipality_normalized",
     "lega_v_stavbi",
 }
 
@@ -87,7 +88,7 @@ FEATURE_LABELS_SL: dict[str, str] = {
     "floor": "Nadstropje",
     "latitude": "GPS širina",
     "longitude": "GPS dolžina",
-    "municipality": "Občina",
+    "municipality_normalized": "Občina",
     "property_type": "Vrsta nepremičnine",
     "statistical_region": "Statistična regija",
     "building_age": "Starost stavbe",
@@ -380,7 +381,8 @@ def train_from_csv(
 
     # Municipality coordinates
     coords_by_municipality: dict[str, dict] = {}
-    for col_pair in [("municipality", "latitude", "longitude")]:
+    coord_key = "municipality_normalized" if "municipality_normalized" in df.columns else "municipality"
+    for col_pair in [(coord_key, "latitude", "longitude")]:
         if all(c in df.columns for c in col_pair):
             for mun, grp in df.groupby(col_pair[0]):
                 lat = grp[col_pair[1]].median()
@@ -511,8 +513,11 @@ def _build_normalized_payload(
 
     # Categorical features
     for col in categorical_features:
+        if col == "municipality_normalized":
+            row[col] = normalize_municipality_name(payload.get("municipality"))
+            continue
         if col == "statistical_region" and col not in payload:
-            muni = normalize(str(payload.get("municipality", "unknown")))
+            muni = normalize_municipality_name(payload.get("municipality"))
             row[col] = lookup_region(muni)
         else:
             val = payload.get(col, "unknown")
@@ -562,7 +567,7 @@ def _build_normalized_payload(
         row["transaction_year"] = float(pd.Timestamp.now().year)
 
     # Lat/lon imputation from municipality coords
-    municipality_norm = normalize(str(payload.get("municipality", "unknown")))
+    municipality_norm = normalize_municipality_name(payload.get("municipality"))
     for coord_key in ("latitude", "longitude"):
         val = row.get(coord_key)
         if val is None or (isinstance(val, float) and np.isnan(val)):
