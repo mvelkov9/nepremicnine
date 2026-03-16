@@ -6,7 +6,7 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 
 | Item | Value |
 |------|-------|
-| **Version** | 0.8.6 |
+| **Version** | 0.8.7 |
 | **Repo** | [github.com/mvelkov9/nepremicnine](https://github.com/mvelkov9/nepremicnine) |
 | **Backend** | FastAPI + Python 3.13 + PostgreSQL 17 + SQLAlchemy 2.x async |
 | **Frontend** | Vue 3 Composition API + Pinia + pnpm 9, Vite 6 |
@@ -31,6 +31,21 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 | [Phase 8–14](PHASE_8_14_PLAN.md) | v1→v2 gap fixes, feature parity, performance, security, UX, tests, docs | 🔄 In Progress | — |
 
 ## Changelog
+
+### v0.8.7
+- **Security**: Content-Security-Policy header added to FastAPI middleware and nginx (default-src 'self', script/style/img/font/connect restrictions, frame-ancestors 'none')
+- **Security**: Permissions-Policy header added (geolocation, microphone, camera, payment disabled)
+- **Security**: HSTS upgraded with `preload` directive
+- **Security**: Nginx X-Frame-Options aligned to DENY, X-XSS-Protection set to 0 (modern standard)
+- **Security**: Nginx body size reduced from 1G to 500M
+- **Security**: Docs/OpenAPI proxy routes blocked in nginx (defense in depth — backend also disables in prod)
+- **Security**: Symlink check added to file path validation (data.py, train.py)
+- **Security**: Bulk request size limits added (EtnBulkRequest max 50 pairs, BulkDeleteRequest max 500 IDs)
+- **Security**: Account enumeration fix — registration no longer confirms email existence
+- **Security**: Admin role update error no longer leaks valid role enum values
+- **Security**: Health endpoint redacts version/environment in production
+- **Security**: JWT secret length validation (min 32 chars) enforced in production
+- **Version**: 0.8.6 → 0.8.7
 
 ### v0.8.6
 - **Refactor**: DRY up Redis cache helpers — extracted shared `cache_get`/`cache_set` into `app/utils/cache.py`, removed duplicated code from stats.py and model.py

@@ -59,6 +59,8 @@ async def start_training(
     csv_path = os.path.realpath(csv_path)
     if not csv_path.startswith(DATA_DIR + os.sep) and csv_path != DATA_DIR:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "CSV path is outside the allowed data directory")
+    if os.path.islink(req.csv_path if os.path.isabs(req.csv_path) else os.path.join(DATA_DIR, req.csv_path)):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Symbolic links are not allowed")
     if not os.path.exists(csv_path):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "CSV not found")
 

@@ -39,7 +39,7 @@ async def register(request: Request, body: RegisterRequest, db: AsyncSession = D
     # Check duplicate email
     existing = await db.execute(select(User).where(User.email == body.email))
     if existing.scalar_one_or_none():
-        raise HTTPException(status_code=409, detail="Email already registered")
+        raise HTTPException(status_code=409, detail="Registration failed")
 
     # First user → admin, rest → viewer (serialised to avoid TOCTOU race)
     async with db.begin_nested():

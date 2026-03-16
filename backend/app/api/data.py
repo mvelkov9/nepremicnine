@@ -11,7 +11,7 @@ from typing import Literal
 
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -47,10 +47,12 @@ ALLOWED_EXTENSIONS = {".csv", ".zip"}
 
 
 def _validate_path_within_data_dir(raw_path: str) -> str:
-    """Resolve a path and ensure it stays within DATA_DIR. Raises 400 on traversal."""
+    """Resolve a path and ensure it stays within DATA_DIR. Raises 400 on traversal or symlink."""
     resolved = os.path.realpath(raw_path)
     if not resolved.startswith(DATA_DIR + os.sep) and resolved != DATA_DIR:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Path is outside the allowed data directory")
+    if os.path.islink(raw_path):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Symbolic links are not allowed")
     return resolved
 
 
@@ -246,7 +248,7 @@ async def delete_dataset(
 
 
 class BulkDeleteRequest(BaseModel):
-    dataset_ids: list[int]
+    dataset_ids: list[int] = Field(..., max_length=500)
 
 
 @router.post("/datasets/delete-bulk", status_code=status.HTTP_200_OK)
@@ -304,7 +306,7 @@ class EtnBulkPair(BaseModel):
 
 
 class EtnBulkRequest(BaseModel):
-    pairs: list[EtnBulkPair]
+    pairs: list[EtnBulkPair] = Field(..., max_length=50)
 
 
 @router.post("/prepare-etn-kpp-bulk")

@@ -14,7 +14,7 @@ class Settings(BaseSettings):
 
     # App
     app_env: str = "development"
-    app_version: str = "0.8.6"
+    app_version: str = "0.8.7"
 
     # Postgres
     database_url: str = "postgresql+asyncpg://nepremicnine:changeme_in_production@postgres:5432/nepremicnine"
@@ -39,8 +39,11 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     s = Settings()
-    if s.app_env == "production" and ("changeme" in s.jwt_secret_key or "changeme" in s.database_url):
-        raise RuntimeError(
-            "Placeholder credentials detected in production. Set JWT_SECRET_KEY and DATABASE_URL to real values."
-        )
+    if s.app_env == "production":
+        if "changeme" in s.jwt_secret_key or "changeme" in s.database_url:
+            raise RuntimeError(
+                "Placeholder credentials detected in production. Set JWT_SECRET_KEY and DATABASE_URL to real values."
+            )
+        if len(s.jwt_secret_key) < 32:
+            raise RuntimeError("JWT_SECRET_KEY must be at least 32 characters in production.")
     return s

@@ -56,9 +56,13 @@ async def health_check(request: Request):
 
     overall = "healthy" if all(v in ("ok", "loaded") for v in checks.values()) else "degraded"
 
-    return HealthResponse(
+    response = HealthResponse(
         status=overall,
-        version=settings.app_version,
-        environment=settings.app_env,
         checks=checks,
     )
+    # Only expose version/environment outside production
+    if settings.app_env != "production":
+        response.version = settings.app_version
+        response.environment = settings.app_env
+
+    return response
