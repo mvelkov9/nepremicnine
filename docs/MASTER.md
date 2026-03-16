@@ -6,7 +6,7 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 
 | Item | Value |
 |------|-------|
-| **Version** | 0.8.14 |
+| **Version** | 0.8.15 |
 | **Repo** | [github.com/mvelkov9/nepremicnine](https://github.com/mvelkov9/nepremicnine) |
 | **Backend** | FastAPI + Python 3.13 + PostgreSQL 17 + SQLAlchemy 2.x async |
 | **Frontend** | Vue 3 Composition API + Pinia + pnpm 9, Vite 6 |
@@ -29,11 +29,19 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 | [Phase 6](PHASE_6_V030.md) | Security hardening, backend robustness, frontend accessibility, expanded tests | ✅ Complete | `(v0.3.1)` |
 | [Phase 7](PHASE_7_V040_V080.md) | Security hardening, feature completeness, test expansion, UX polish | ✅ Complete | (latest commit) |
 | [Phase 8–17](PHASE_8_14_PLAN.md) | v1→v2 gap fixes, feature parity, performance, security, UX, tests, docs | ✅ Complete | — |
-| [Phase 18](PHASE_8_14_PLAN.md#phase-18--cache-coherency--phase-tracking-v0814) | Agency re-audit, cache coherency fixes, tracked execution plan | ✅ Complete | `(current)` |
-| [Phase 19](PHASE_8_14_PLAN.md#phase-19--dashboard-property-type-parity-v0815) | Dashboard property-type parity and analytical lens controls | 🚧 Planned | — |
+| [Phase 18](PHASE_8_14_PLAN.md#phase-18--cache-coherency--phase-tracking-v0814) | Agency re-audit, cache coherency fixes, tracked execution plan | ✅ Complete | `3cf6248` |
+| [Phase 19](PHASE_8_14_PLAN.md#phase-19--dashboard-property-type-parity-v0815) | Dashboard property-type parity and analytical lens controls | ✅ Complete | `(current)` |
 | [Phase 20](PHASE_8_14_PLAN.md#phase-20--diagnostics-focus--locale-formatting-v0816) | Diagnostics focus workflow and locale-aware formatting polish | 🚧 Planned | — |
 
 ## Changelog
+
+### v0.8.15
+
+- **Dashboard parity**: Restored a v1-style property-type market lens so the analytical dashboard can pivot between the whole ETN market and a selected property segment
+- **Backend filtering**: Added property-type-aware filtering and cache keys for dashboard-facing stats endpoints (`market-home`, `regions`, and `trend`)
+- **Frontend UX**: Added persistent property-type chips, translated property-type labels, and type-aware rendering for dashboard mix and recent-sales panels
+- **Testing**: Added direct unit coverage for filtered stats routes without relying on the flaky HTTP-client test harness
+- **Version**: 0.8.14 → 0.8.15
 
 ### v0.8.14
 

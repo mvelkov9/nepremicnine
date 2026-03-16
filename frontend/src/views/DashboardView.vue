@@ -9,6 +9,7 @@
   import { useDataStore } from '../stores/data'
   import { useStatsStore } from '../stores/stats'
   import { getApiErrorMessage } from '../utils/apiError'
+  import { getPropertyTypeLabel } from '../utils/propertyType'
 
   const { t } = useI18n()
   const auth = useAuthStore()
@@ -19,6 +20,8 @@
   const modelInfo = ref(null)
   const modelError = ref('')
   const pageError = ref('')
+  const selectedPropertyType = ref('')
+  const availablePropertyTypes = ref([])
 
   function fmt(value, decimals = 0) {
     if (value == null) return '—'
@@ -30,15 +33,19 @@
     return `${(Number(value) * 100).toFixed(1)}%`
   }
 
+  function propertyTypeLabel(value) {
+    return getPropertyTypeLabel(value, t)
+  }
+
   async function loadDashboard() {
     loading.value = true
     pageError.value = ''
     modelError.value = ''
 
     try {
+      const params = selectedPropertyType.value ? { property_type: selectedPropertyType.value } : {}
       const requests = [
-        stats.fetchMarketHome(),
-        stats.fetchTrend(),
+        stats.fetchMarketHome(params),
         dataStore.fetchTrainingDataset().catch(() => null),
         api
           .get('/api/model/info')
@@ -51,7 +58,12 @@
           }),
       ]
 
-      await Promise.all(requests)
+      const [marketHomeData] = await Promise.all(requests)
+      if (!selectedPropertyType.value || !availablePropertyTypes.value.length) {
+        availablePropertyTypes.value = (marketHomeData?.property_type_mix || []).map(
+          (item) => item.property_type,
+        )
+      }
     } catch (error) {
       pageError.value = getApiErrorMessage(error, t)
     } finally {
@@ -65,6 +77,7 @@
     () =>
       stats.marketHome || {
         headline: {},
+        active_property_type: null,
         largest_markets: [],
         price_leaders: [],
         region_snapshot: [],
@@ -72,6 +85,25 @@
         year_coverage: [],
         property_type_mix: [],
       },
+  )
+
+  const propertyTypeOptions = computed(() =>
+    availablePropertyTypes.value.map((value) => ({
+      value,
+      label: propertyTypeLabel(value),
+    })),
+  )
+
+  const activeFilterLabel = computed(() =>
+    selectedPropertyType.value
+      ? propertyTypeLabel(selectedPropertyType.value)
+      : t('dashboard.filterAllTypes'),
+  )
+
+  const filterSummary = computed(() =>
+    selectedPropertyType.value
+      ? t('dashboard.filterActive', { type: activeFilterLabel.value })
+      : t('dashboard.filterAllHint'),
   )
 
   const coverageEndYear = computed(() => {
@@ -191,6 +223,12 @@
   function shareStyle(share) {
     return { width: `${Math.max(8, Math.round((share || 0) * 100))}%` }
   }
+
+  function applyPropertyTypeFilter(nextType) {
+    if (selectedPropertyType.value === nextType) return
+    selectedPropertyType.value = nextType
+    loadDashboard()
+  }
 </script>
 
 <template>
@@ -241,6 +279,35 @@
     <p v-else-if="pageError" class="page-error">{{ pageError }}</p>
 
     <template v-else>
+      <section class="lens-shell">
+        <div>
+          <span class="panel-kicker">{{ t('dashboard.filterByType') }}</span>
+          <h2>{{ activeFilterLabel }}</h2>
+          <p>{{ filterSummary }}</p>
+        </div>
+
+        <div class="lens-actions">
+          <button
+            type="button"
+            class="lens-chip"
+            :class="{ active: !selectedPropertyType }"
+            @click="applyPropertyTypeFilter('')"
+          >
+            {{ t('dashboard.filterAllTypes') }}
+          </button>
+          <button
+            v-for="option in propertyTypeOptions"
+            :key="option.value"
+            type="button"
+            class="lens-chip"
+            :class="{ active: selectedPropertyType === option.value }"
+            @click="applyPropertyTypeFilter(option.value)"
+          >
+            {{ option.label }}
+          </button>
+        </div>
+      </section>
+
       <section class="metric-band">
         <article v-for="card in heroCards" :key="card.label" class="metric-card">
           <span class="metric-label">{{ card.label }}</span>
@@ -378,7 +445,7 @@
               class="mix-row"
             >
               <div class="mix-copy">
-                <strong>{{ item.property_type }}</strong>
+                <strong>{{ propertyTypeLabel(item.property_type) }}</strong>
                 <small>{{ fmtPercent(item.share) }}</small>
               </div>
               <div class="mix-bar">
@@ -411,7 +478,9 @@
               <span>{{ sale.year || '—' }}</span>
             </div>
             <strong>{{ fmt(sale.price_eur) }} €</strong>
-            <p>{{ sale.property_type || '—' }} · {{ fmt(sale.size_m2, 1) }} m²</p>
+            <p>
+              {{ propertyTypeLabel(sale.property_type) || '—' }} · {{ fmt(sale.size_m2, 1) }} m²
+            </p>
             <small>{{ fmt(sale.price_per_m2) }} €/m²</small>
           </article>
         </div>
@@ -425,6 +494,62 @@
   .dashboard-page {
     display: grid;
     gap: 1.4rem;
+  }
+
+  .lens-shell {
+    display: grid;
+    gap: 0.9rem;
+    padding: 1rem 1.15rem;
+    border: 1px solid var(--border);
+    border-radius: 1.5rem;
+    background:
+      linear-gradient(135deg, rgb(255 255 255 / 84%), rgb(255 255 255 / 72%)),
+      radial-gradient(circle at top right, rgb(37 99 235 / 10%), transparent 30%);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .lens-shell h2 {
+    margin: 0;
+    font-family: var(--font-display);
+  }
+
+  .lens-shell p {
+    margin: 0.45rem 0 0;
+    color: var(--text-muted);
+  }
+
+  .lens-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+  }
+
+  .lens-chip {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: rgb(255 255 255 / 78%);
+    color: var(--text);
+    padding: 0.55rem 0.9rem;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+    transition:
+      transform 140ms ease,
+      border-color 140ms ease,
+      box-shadow 140ms ease,
+      background-color 140ms ease;
+  }
+
+  .lens-chip:hover {
+    transform: translateY(-1px);
+    border-color: rgb(37 99 235 / 24%);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .lens-chip.active {
+    border-color: rgb(37 99 235 / 34%);
+    background: linear-gradient(135deg, rgb(37 99 235 / 14%), rgb(245 158 11 / 14%));
+    color: var(--primary-strong);
   }
 
   .hero-shell {
@@ -755,6 +880,7 @@
   }
 
   @media (max-width: 1100px) {
+    .lens-shell,
     .hero-shell,
     .grid-shell {
       grid-template-columns: 1fr;
@@ -770,6 +896,7 @@
   }
 
   @media (max-width: 720px) {
+    .lens-shell,
     .hero-shell,
     .panel,
     .metric-card {

@@ -103,6 +103,9 @@
     "municipality": "Občina",
     "transactions": "Transakcije",
     "filterByType": "Filter po tipu",
+    "filterAllTypes": "Vsi tipi nepremičnin",
+    "filterAllHint": "Preklapljajte med celotnim trgom in istim pogledom, omejenim na posamezni tip nepremičnine.",
+    "filterActive": "Analitični pogled je trenutno omejen na: {type}.",
     "dataLens": "Analitika",
     "featureImportance": "Pomembnost značilk",
     "perTypeR2": "R² po tipu nepremičnine",
@@ -140,6 +143,16 @@
     "workflowAdminDetail": "Pred ogledom vpogledov uskladite pripravljeni nabor in vir trenutnega modela.",
     "workflowViewer": "Napoved -> Raziskovanje -> Deljenje vpogledov",
     "workflowViewerDetail": "Uporabljajte napovedi, zemljevid in analizo brez poseganja v učni pipeline."
+  },
+  "propertyTypes": {
+    "stanovanje": "Stanovanje",
+    "hisa": "Hiša",
+    "poslovni_prostor": "Poslovni prostor",
+    "garaza": "Garaža",
+    "turisticni": "Turistični",
+    "gostinstvo": "Gostinstvo",
+    "industrijski": "Industrijski",
+    "kmetijsko": "Kmetijsko"
   },
   "data": {
     "upload": "Nalaganje datotek",

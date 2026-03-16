@@ -103,6 +103,9 @@
     "municipality": "Municipality",
     "transactions": "Transactions",
     "filterByType": "Filter by Type",
+    "filterAllTypes": "All property types",
+    "filterAllHint": "Switch between the whole market and the same dashboard constrained to a single property type.",
+    "filterActive": "This analytical view is currently scoped to: {type}.",
     "dataLens": "Analytics",
     "featureImportance": "Feature Importance",
     "perTypeR2": "R² by Property Type",
@@ -140,6 +143,16 @@
     "workflowAdminDetail": "Keep the prepared dataset and current model source aligned before reviewing insights.",
     "workflowViewer": "Predict -> Explore -> Share insight",
     "workflowViewerDetail": "Use predictions, map views, and analysis without touching the training pipeline."
+  },
+  "propertyTypes": {
+    "stanovanje": "Apartment",
+    "hisa": "House",
+    "poslovni_prostor": "Commercial space",
+    "garaza": "Garage",
+    "turisticni": "Tourism",
+    "gostinstvo": "Hospitality",
+    "industrijski": "Industrial",
+    "kmetijsko": "Agricultural"
   },
   "data": {
     "upload": "File Upload",

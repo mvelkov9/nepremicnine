@@ -20,23 +20,26 @@ export const useStatsStore = defineStore('stats', () => {
     overview.value = data
   }
 
-  async function fetchRegions() {
-    const { data } = await api.get('/api/stats/regions')
+  async function fetchRegions(params = {}) {
+    const { data } = await api.get('/api/stats/regions', { params })
     regions.value = data
+    return data
   }
 
-  async function fetchPriceDistribution() {
-    const { data } = await api.get('/api/stats/price-distribution')
+  async function fetchPriceDistribution(params = {}) {
+    const { data } = await api.get('/api/stats/price-distribution', { params })
     priceDistribution.value = data
+    return data
   }
 
-  async function fetchTrend() {
-    const { data } = await api.get('/api/stats/trend')
+  async function fetchTrend(params = {}) {
+    const { data } = await api.get('/api/stats/trend', { params })
     trend.value = data
+    return data
   }
 
-  async function fetchMarketHome() {
-    const { data } = await api.get('/api/stats/market-home')
+  async function fetchMarketHome(params = {}) {
+    const { data } = await api.get('/api/stats/market-home', { params })
     marketHome.value = data
     return data
   }

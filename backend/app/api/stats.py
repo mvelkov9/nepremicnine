@@ -83,7 +83,8 @@ def _load_df(property_type: str | None = None) -> pd.DataFrame | None:
         return None
     df = pd.read_csv(TRAIN_CSV)
     if property_type and "property_type" in df.columns:
-        df = df[df["property_type"] == property_type]
+        normalized = str(property_type).strip().casefold()
+        df = df[df["property_type"].astype(str).str.casefold() == normalized]
     return df
 
 
@@ -328,14 +329,15 @@ async def overview(
 @router.get("/regions")
 async def regions_stats(
     request: Request,
+    property_type: str | None = None,
     _user: User = Depends(get_current_user),
 ):
-    cache_key = "cache:stats:regions"
+    cache_key = f"cache:stats:regions:{property_type or 'all'}"
     cached = await cache_get(request, cache_key)
     if cached is not None:
         return cached
 
-    df = _load_df()
+    df = _load_df(property_type)
     if df is None or df.empty:
         return []
 
@@ -410,14 +412,15 @@ async def price_distribution(
 @router.get("/trend")
 async def trend(
     request: Request,
+    property_type: str | None = None,
     _user: User = Depends(get_current_user),
 ):
-    cache_key = "cache:stats:trend"
+    cache_key = f"cache:stats:trend:{property_type or 'all'}"
     cached = await cache_get(request, cache_key)
     if cached is not None:
         return cached
 
-    df = _load_df()
+    df = _load_df(property_type)
     if df is None or df.empty:
         return []
 
@@ -482,14 +485,15 @@ async def trend(
 @router.get("/market-home")
 async def market_home(
     request: Request,
+    property_type: str | None = None,
     _user: User = Depends(get_current_user),
 ):
-    cache_key = "cache:stats:market-home"
+    cache_key = f"cache:stats:market-home:{property_type or 'all'}"
     cached = await cache_get(request, cache_key)
     if cached is not None:
         return cached
 
-    df = _prepare_market_df()
+    df = _prepare_market_df(property_type=property_type)
     if df is None or df.empty:
         return {
             "headline": {
@@ -501,6 +505,7 @@ async def market_home(
                 "avg_price_per_m2": None,
                 "latest_year": None,
             },
+            "active_property_type": property_type,
             "largest_markets": [],
             "price_leaders": [],
             "region_snapshot": [],
@@ -586,6 +591,7 @@ async def market_home(
             if "_year" in df.columns and df["_year"].notna().any()
             else None,
         },
+        "active_property_type": property_type,
         "largest_markets": municipality_groups[:10],
         "price_leaders": price_leaders,
         "region_snapshot": region_snapshot[:8],
