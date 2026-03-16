@@ -31,6 +31,7 @@ services:
       retries: 5
 
   backend:
+    image: nepremicnine-v2-backend-dev
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -57,9 +58,9 @@ services:
         condition: service_healthy
 
   worker:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    # Reuse the backend image instead of building a second identical Python image.
+    image: nepremicnine-v2-backend-dev
+    pull_policy: never
     restart: unless-stopped
     user: root
     command: ["arq", "app.tasks.training_worker.WorkerSettings"]

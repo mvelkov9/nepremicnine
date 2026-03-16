@@ -5,7 +5,7 @@
   import Button from 'primevue/button'
   import Column from 'primevue/column'
   import DataTable from 'primevue/datatable'
-  import Drawer from 'primevue/drawer'
+  import Dialog from 'primevue/dialog'
   import Select from 'primevue/select'
   import Tag from 'primevue/tag'
   import L from 'leaflet'
@@ -29,7 +29,9 @@
   let map = null
   let markersLayer = null
 
+  const initialized = ref(false)
   const loading = ref(false)
+  const detailLoading = ref(false)
   const error = ref('')
   const mapMetaReason = ref(null)
   const mapLegend = ref(null)
@@ -39,17 +41,18 @@
   const selectedMunicipality = ref('')
   const selectedPriceBand = ref('')
   const viewMode = ref('transactions')
-  const initialMunicipality = ref('')
+  const mapZoom = ref(8)
 
   const municipalities = ref([])
+  const allMunicipalities = ref([])
   const propertyTypes = ref([])
   const regionStats = ref([])
   const transactions = ref([])
   const availableYears = ref([])
-  const regionMunicipalities = ref([])
+  const detailComparables = ref([])
 
-  const drawerVisible = ref(false)
-  const drawerMode = ref('transaction')
+  const detailVisible = ref(false)
+  const detailMode = ref('transaction')
   const selectedRecord = ref(null)
 
   const bandColors = {
@@ -60,9 +63,24 @@
 
   const overviewColor = '#3b82f6'
 
-  const markersData = computed(() =>
-    viewMode.value === 'transactions' ? transactions.value : municipalities.value,
-  )
+  const defaultYear = computed(() => {
+    if (!availableYears.value.length) return ''
+    const currentYear = new Date().getFullYear()
+    return (
+      availableYears.value.find((year) => Number(year) < currentYear) ||
+      availableYears.value[0] ||
+      ''
+    )
+  })
+
+  const municipalityOptions = computed(() => {
+    const rows = selectedRegion.value
+      ? allMunicipalities.value.filter((item) => item.region === selectedRegion.value)
+      : allMunicipalities.value
+    return [{ label: t('map.allMunicipalities'), value: '' }].concat(
+      rows.map((item) => ({ label: item.municipality, value: item.municipality })),
+    )
+  })
 
   const totalCount = computed(() =>
     viewMode.value === 'transactions'
@@ -83,8 +101,12 @@
 
   const activityFeed = computed(() =>
     viewMode.value === 'transactions'
-      ? transactions.value.slice(0, 10)
-      : municipalities.value.slice(0, 10),
+      ? transactions.value.slice(0, 12)
+      : municipalities.value.slice(0, 12),
+  )
+
+  const clusteredTransactions = computed(() =>
+    clusterTransactions(transactions.value, mapZoom.value),
   )
 
   const bandOptions = computed(() => [
@@ -117,21 +139,15 @@
     ...availableYears.value.map((year) => ({ label: String(year), value: String(year) })),
   ])
 
-  const municipalityOptions = computed(() => [
-    { label: t('map.allMunicipalities'), value: '' },
-    ...regionMunicipalities.value.map((item) => ({ label: item, value: item })),
-  ])
-
   const comparisonUrl = computed(() => {
-    if (!selectedRecord.value) return '#'
+    if (!selectedRecord.value) return 'https://www.nepremicnine.net/oglasi-prodaja/'
     return buildNepremicnineSearchUrl({
       municipality: selectedRecord.value.municipality,
+      statisticalRegion: selectedRecord.value.region,
       propertyType:
-        drawerMode.value === 'transaction'
-          ? formatType(selectedRecord.value.property_type)
-          : formatType(selectedType.value || 'stanovanje'),
-      rooms: selectedRecord.value.rooms,
-      sizeM2: selectedRecord.value.uporabna_povrsina || selectedRecord.value.size_m2,
+        detailMode.value === 'transaction'
+          ? selectedRecord.value.property_type
+          : selectedType.value || 'stanovanje',
     })
   })
 
@@ -166,15 +182,78 @@
     const thresholds = mapLegend.value?.thresholds
     if (!thresholds) return ''
     if (key === 'low') return `≤ ${fmtCurrency(thresholds.low_max)}`
-    if (key === 'mid')
+    if (key === 'mid') {
       return `${fmtCurrency(thresholds.low_max)} - ${fmtCurrency(thresholds.mid_max)}`
+    }
     return `≥ ${fmtCurrency(thresholds.mid_max)}`
   }
 
   function markerRadius(count) {
-    if (!totalCount.value) return 8
-    const ratio = count / totalCount.value
-    return Math.max(7, Math.min(28, 8 + ratio * 280))
+    if (!count) return 8
+    return Math.max(8, Math.min(26, 7 + Math.log10(count + 1) * 10))
+  }
+
+  function dominantBand(counts = {}) {
+    return Object.entries(counts).sort((left, right) => right[1] - left[1])[0]?.[0] || 'mid'
+  }
+
+  function clusterTransactions(items, zoom) {
+    if (zoom >= 12 || items.length <= 1200) return items
+
+    const cellSize = zoom <= 7 ? 0.25 : zoom <= 9 ? 0.12 : 0.05
+    const buckets = new Map()
+
+    for (const item of items) {
+      const key = `${Math.round(item.lat / cellSize)}:${Math.round(item.lon / cellSize)}`
+      const bucket = buckets.get(key) || {
+        id: `cluster-${key}`,
+        lat: 0,
+        lon: 0,
+        count: 0,
+        clusterCount: 0,
+        sample: item,
+        priceSum: 0,
+        pricePerM2Sum: 0,
+        pricePerM2Count: 0,
+        municipality: item.municipality,
+        region: item.region,
+        price_band_counts: {},
+      }
+
+      bucket.lat += item.lat
+      bucket.lon += item.lon
+      bucket.clusterCount += 1
+      bucket.count += 1
+      bucket.priceSum += Number(item.price_eur || 0)
+      if (item.price_per_m2 != null) {
+        bucket.pricePerM2Sum += Number(item.price_per_m2)
+        bucket.pricePerM2Count += 1
+      }
+      if (item.price_band) {
+        bucket.price_band_counts[item.price_band] =
+          (bucket.price_band_counts[item.price_band] || 0) + 1
+      }
+      buckets.set(key, bucket)
+    }
+
+    return Array.from(buckets.values()).map((bucket) => {
+      if (bucket.clusterCount === 1) {
+        return bucket.sample
+      }
+      return {
+        id: bucket.id,
+        lat: Number((bucket.lat / bucket.clusterCount).toFixed(6)),
+        lon: Number((bucket.lon / bucket.clusterCount).toFixed(6)),
+        municipality: bucket.municipality,
+        region: bucket.region,
+        clusterCount: bucket.clusterCount,
+        avg_price: bucket.clusterCount ? bucket.priceSum / bucket.clusterCount : null,
+        avg_price_per_m2: bucket.pricePerM2Count
+          ? bucket.pricePerM2Sum / bucket.pricePerM2Count
+          : null,
+        price_band: dominantBand(bucket.price_band_counts),
+      }
+    })
   }
 
   function initMap() {
@@ -191,37 +270,74 @@
     }).addTo(map)
 
     markersLayer = L.layerGroup().addTo(map)
+    mapZoom.value = map.getZoom()
+    map.on('zoomend', () => {
+      mapZoom.value = map?.getZoom() || 8
+      renderMarkers()
+    })
   }
 
-  function focusMapItem(item) {
+  function focusMapItem(item, zoomOverride = null) {
     if (!map || !item?.lat || !item?.lon) return
-    map.flyTo([item.lat, item.lon], viewMode.value === 'transactions' ? 11 : 9, {
+    map.flyTo([item.lat, item.lon], zoomOverride || (viewMode.value === 'transactions' ? 11 : 9), {
       duration: 0.45,
     })
   }
 
-  function openDrawer(item, mode = 'transaction') {
+  async function openDetails(item, mode = 'transaction') {
+    if (mode === 'transaction' && item.clusterCount > 1) {
+      focusMapItem(item, Math.min((map?.getZoom() || 8) + 2, 12))
+      return
+    }
+
     selectedRecord.value = item
-    drawerMode.value = mode
-    drawerVisible.value = true
+    detailMode.value = mode
+    detailVisible.value = true
+    detailComparables.value = []
     focusMapItem(item)
+
+    if (mode === 'transaction' && item?.municipality && item?.property_type && item?.size_m2) {
+      detailLoading.value = true
+      try {
+        const { data } = await api.get('/api/stats/comparables', {
+          params: {
+            municipality: item.municipality,
+            property_type: item.property_type,
+            size_m2: item.size_m2,
+            year_built: item.year_built || undefined,
+            price_eur: item.price_eur || undefined,
+            limit: 4,
+          },
+        })
+        detailComparables.value = data.items || []
+      } catch {
+        detailComparables.value = []
+      } finally {
+        detailLoading.value = false
+      }
+    }
   }
 
   function renderTransactionMarkers() {
     if (!markersLayer) return
     markersLayer.clearLayers()
 
-    for (const item of transactions.value) {
+    for (const item of clusteredTransactions.value) {
+      const radius = markerRadius(item.clusterCount || 1)
       const marker = L.circleMarker([item.lat, item.lon], {
-        radius: 5,
+        radius,
         fillColor: bandColor(item.price_band),
         color: '#0f172a',
-        weight: 0.9,
+        weight: item.clusterCount > 1 ? 1.2 : 0.9,
         opacity: 0.95,
-        fillOpacity: 0.82,
+        fillOpacity: item.clusterCount > 1 ? 0.68 : 0.82,
       })
 
-      marker.on('click', () => openDrawer(item, 'transaction'))
+      if (item.clusterCount > 1) {
+        marker.bindTooltip(`${fmt(item.clusterCount)} ${t('map.transactions')}`)
+      }
+
+      marker.on('click', () => openDetails(item, 'transaction'))
       markersLayer.addLayer(marker)
     }
   }
@@ -240,7 +356,7 @@
         fillOpacity: 0.58,
       })
 
-      marker.on('click', () => openDrawer(item, 'overview'))
+      marker.on('click', () => openDetails(item, 'overview'))
       markersLayer.addLayer(marker)
     }
   }
@@ -255,7 +371,7 @@
   }
 
   async function fetchTransactions() {
-    const params = { limit: 5000 }
+    const params = {}
     if (selectedType.value) params.property_type = selectedType.value
     if (selectedRegion.value) params.statistical_region = selectedRegion.value
     if (selectedYear.value) params.year = selectedYear.value
@@ -273,6 +389,7 @@
     if (selectedType.value) params.property_type = selectedType.value
     if (selectedRegion.value) params.statistical_region = selectedRegion.value
     if (selectedYear.value) params.year = selectedYear.value
+    if (selectedMunicipality.value) params.municipality = selectedMunicipality.value
     if (selectedPriceBand.value) params.price_band = selectedPriceBand.value
 
     const { data } = await api.get('/api/stats/map-overview', { params })
@@ -281,19 +398,23 @@
     municipalities.value = data.municipalities || []
   }
 
-  async function fetchMunicipalitiesByRegion() {
-    if (!selectedRegion.value) {
-      regionMunicipalities.value = []
-      return
-    }
+  async function loadReferenceData() {
+    const [overviewRes, regionsRes, municipalitiesRes, trendRes] = await Promise.all([
+      api.get('/api/stats/overview'),
+      api.get('/api/stats/regions'),
+      api.get('/api/regions/municipalities'),
+      api.get('/api/stats/trend'),
+    ])
 
-    try {
-      const { data } = await api.get('/api/stats/municipalities-by-region', {
-        params: { region: selectedRegion.value },
-      })
-      regionMunicipalities.value = (data || []).map((item) => item.municipality)
-    } catch {
-      regionMunicipalities.value = []
+    propertyTypes.value = overviewRes.data.property_types || []
+    regionStats.value = regionsRes.data || []
+    allMunicipalities.value = municipalitiesRes.data || []
+    availableYears.value = (trendRes.data || [])
+      .map((item) => item.year)
+      .sort((left, right) => Number(right) - Number(left))
+
+    if (!selectedYear.value && defaultYear.value) {
+      selectedYear.value = String(defaultYear.value)
     }
   }
 
@@ -303,28 +424,10 @@
     mapMetaReason.value = null
 
     try {
-      const params = selectedType.value ? { property_type: selectedType.value } : {}
-      const requests = [api.get('/api/stats/overview', { params }), api.get('/api/stats/regions')]
-
       if (viewMode.value === 'transactions') {
-        requests.push(fetchTransactions())
+        await fetchTransactions()
       } else {
-        requests.push(fetchOverviewMarkers())
-      }
-
-      const [overviewRes, regionsRes] = await Promise.all(requests)
-      propertyTypes.value = overviewRes.data.property_types || []
-      regionStats.value = regionsRes.data || []
-
-      if (!availableYears.value.length) {
-        try {
-          const { data } = await api.get('/api/stats/trend')
-          availableYears.value = (data || [])
-            .map((item) => item.year)
-            .sort((left, right) => Number(right) - Number(left))
-        } catch {
-          availableYears.value = []
-        }
+        await fetchOverviewMarkers()
       }
 
       await nextTick()
@@ -340,9 +443,9 @@
   function clearFilters() {
     selectedType.value = ''
     selectedRegion.value = ''
-    selectedYear.value = ''
     selectedMunicipality.value = ''
     selectedPriceBand.value = ''
+    selectedYear.value = defaultYear.value ? String(defaultYear.value) : ''
   }
 
   function openMunicipality(name = selectedRecord.value?.municipality) {
@@ -372,29 +475,27 @@
     selectedRegion.value = route.query.region ? String(route.query.region) : ''
     selectedYear.value = route.query.year ? String(route.query.year) : ''
     selectedPriceBand.value = route.query.price_band ? String(route.query.price_band) : ''
-    initialMunicipality.value = route.query.municipality ? String(route.query.municipality) : ''
-    selectedMunicipality.value = initialMunicipality.value
+    selectedMunicipality.value = route.query.municipality ? String(route.query.municipality) : ''
     viewMode.value = route.query.view === 'overview' ? 'overview' : 'transactions'
   }
 
-  watch([selectedType, selectedYear, selectedPriceBand, viewMode], () => fetchData())
-
-  watch(selectedRegion, async () => {
-    selectedMunicipality.value = initialMunicipality.value
-    initialMunicipality.value = ''
-    await fetchMunicipalitiesByRegion()
-    fetchData()
-  })
-
-  watch(selectedMunicipality, () => {
-    if (viewMode.value === 'transactions') fetchData()
-  })
+  watch(
+    [selectedType, selectedRegion, selectedYear, selectedMunicipality, selectedPriceBand, viewMode],
+    () => {
+      if (initialized.value) fetchData()
+    },
+  )
 
   onMounted(async () => {
     applyRouteQuery()
-    await fetchMunicipalitiesByRegion()
     initMap()
-    fetchData()
+    try {
+      await loadReferenceData()
+      initialized.value = true
+      await fetchData()
+    } catch (err) {
+      error.value = getApiErrorMessage(err, t)
+    }
   })
 
   onBeforeUnmount(() => {
@@ -490,7 +591,7 @@
           />
         </label>
 
-        <label v-if="viewMode === 'transactions' && regionMunicipalities.length" class="field">
+        <label class="field">
           <span>{{ t('map.municipalityFilter') }}</span>
           <Select
             v-model="selectedMunicipality"
@@ -516,7 +617,7 @@
           ></span>
           <span class="legend-copy">
             <strong>{{ band.label }}</strong>
-            <small> {{ band.range || t('map.allBandsHint') }} · {{ fmt(band.count) }} </small>
+            <small>{{ band.range || t('map.allBandsHint') }} · {{ fmt(band.count) }}</small>
           </span>
         </button>
 
@@ -560,7 +661,7 @@
             v-for="item in activityFeed"
             :key="item.id || item.slug"
             class="rail-card"
-            @click="openDrawer(item, viewMode === 'transactions' ? 'transaction' : 'overview')"
+            @click="openDetails(item, viewMode === 'transactions' ? 'transaction' : 'overview')"
           >
             <div class="rail-card-top">
               <strong>{{ item.municipality }}</strong>
@@ -614,38 +715,49 @@
       />
 
       <DataTable
-        :value="regionStats.slice(0, 10)"
+        :value="regionStats"
+        paginator
+        :rows="8"
         size="small"
         striped-rows
+        responsive-layout="scroll"
         table-style="min-width: 100%"
       >
-        <Column field="region" :header="t('map.region')" />
-        <Column field="count" :header="t('map.count')">
+        <Column field="region" :header="t('map.region')" sortable />
+        <Column field="count" :header="t('map.count')" sortable>
           <template #body="{ data }">{{ fmt(data.count) }}</template>
         </Column>
-        <Column field="avg_price" :header="t('map.avgPrice')">
+        <Column field="avg_price" :header="t('map.avgPrice')" sortable>
           <template #body="{ data }">{{ fmtCurrency(data.avg_price) }}</template>
         </Column>
-        <Column field="median_price" :header="t('map.medianPrice')">
+        <Column field="median_price" :header="t('map.medianPrice')" sortable>
           <template #body="{ data }">{{ fmtCurrency(data.median_price) }}</template>
         </Column>
-        <Column field="avg_price_per_m2" header="€/m²">
+        <Column field="avg_price_per_m2" header="€/m²" sortable>
           <template #body="{ data }">{{ fmtCurrency(data.avg_price_per_m2) }}</template>
         </Column>
       </DataTable>
     </section>
 
-    <Drawer v-model:visible="drawerVisible" position="right" class="map-drawer">
-      <template #header>
-        <div class="drawer-header">
+    <Dialog
+      v-model:visible="detailVisible"
+      modal
+      maximizable
+      class="map-detail-dialog"
+      :header="selectedRecord?.municipality || t('common.noData')"
+      :style="{ width: 'min(96vw, 1120px)' }"
+    >
+      <div v-if="selectedRecord" class="detail-dialog">
+        <div class="detail-summary">
           <div>
             <span class="eyebrow">{{
-              drawerMode === 'transaction' ? t('map.transactions') : t('map.topMunicipalities')
+              detailMode === 'transaction' ? t('map.transactions') : t('map.topMunicipalities')
             }}</span>
-            <h2>{{ selectedRecord?.municipality || t('common.noData') }}</h2>
+            <h2>{{ selectedRecord.municipality }}</h2>
+            <p class="muted">{{ selectedRecord.region || '—' }}</p>
           </div>
           <Tag
-            v-if="selectedRecord?.price_band"
+            v-if="selectedRecord.price_band"
             :value="t(`map.${selectedRecord.price_band}`)"
             :severity="
               selectedRecord.price_band === 'high'
@@ -656,15 +768,13 @@
             "
           />
         </div>
-      </template>
 
-      <div v-if="selectedRecord" class="drawer-body">
-        <div class="drawer-metrics">
+        <div class="detail-metrics">
           <MetricCard
             :label="t('map.price')"
             :value="
               fmtCurrency(
-                drawerMode === 'transaction' ? selectedRecord.price_eur : selectedRecord.avg_price,
+                detailMode === 'transaction' ? selectedRecord.price_eur : selectedRecord.avg_price,
               )
             "
           />
@@ -672,27 +782,35 @@
             :label="t('dashboard.pricePerM2')"
             :value="
               fmtCurrency(
-                drawerMode === 'transaction'
+                detailMode === 'transaction'
                   ? selectedRecord.price_per_m2
                   : selectedRecord.avg_price_per_m2,
               )
             "
           />
           <MetricCard
-            :label="drawerMode === 'transaction' ? t('predict.size') : t('map.transactions')"
+            :label="detailMode === 'transaction' ? t('predict.size') : t('map.transactions')"
             :value="
-              drawerMode === 'transaction'
+              detailMode === 'transaction'
                 ? `${fmt(selectedRecord.size_m2, 1)} m²`
                 : fmt(selectedRecord.count)
             "
           />
+          <MetricCard
+            :label="t('map.year')"
+            :value="
+              detailMode === 'transaction'
+                ? selectedRecord.year || selectedRecord.source_label || '—'
+                : selectedRecord.latest_year || defaultYear || '—'
+            "
+          />
         </div>
 
-        <section class="drawer-section">
-          <h3>{{ t('map.detailTitle') }}</h3>
-          <dl class="detail-grid">
-            <template v-if="drawerMode === 'transaction'">
-              <div>
+        <div class="detail-grid">
+          <section class="detail-section">
+            <h3>{{ t('map.detailTitle') }}</h3>
+            <dl class="detail-list">
+              <div v-if="detailMode === 'transaction'">
                 <dt>{{ t('predict.propertyType') }}</dt>
                 <dd>{{ formatType(selectedRecord.property_type) }}</dd>
               </div>
@@ -700,90 +818,114 @@
                 <dt>{{ t('map.region') }}</dt>
                 <dd>{{ selectedRecord.region || '—' }}</dd>
               </div>
-              <div>
-                <dt>{{ t('map.year') }}</dt>
-                <dd>{{ selectedRecord.year || '—' }}</dd>
-              </div>
-              <div>
+              <div v-if="detailMode === 'transaction'">
                 <dt>{{ t('predict.yearBuilt') }}</dt>
                 <dd>{{ selectedRecord.year_built || '—' }}</dd>
               </div>
-              <div>
+              <div v-if="detailMode === 'transaction'">
                 <dt>{{ t('predict.rooms') }}</dt>
                 <dd>{{ selectedRecord.rooms || '—' }}</dd>
               </div>
-              <div>
+              <div v-if="detailMode === 'transaction'">
+                <dt>{{ t('predict.floor') }}</dt>
+                <dd>{{ selectedRecord.floor ?? '—' }}</dd>
+              </div>
+              <div v-if="detailMode === 'transaction'">
                 <dt>{{ t('predict.legaVStavbi') }}</dt>
                 <dd>{{ selectedRecord.lega_v_stavbi || '—' }}</dd>
               </div>
-            </template>
-            <template v-else>
-              <div>
-                <dt>{{ t('map.region') }}</dt>
-                <dd>{{ selectedRecord.region || '—' }}</dd>
+              <div v-if="detailMode === 'transaction'">
+                <dt>{{ t('map.sourceYear') }}</dt>
+                <dd>{{ selectedRecord.source_label || selectedRecord.year || '—' }}</dd>
               </div>
-              <div>
-                <dt>{{ t('map.transactions') }}</dt>
-                <dd>{{ fmt(selectedRecord.count) }}</dd>
-              </div>
-              <div>
+              <div v-if="detailMode === 'overview'">
                 <dt>{{ t('map.medianPrice') }}</dt>
                 <dd>{{ fmtCurrency(selectedRecord.median_price) }}</dd>
               </div>
-              <div>
-                <dt>{{ t('dashboard.pricePerM2') }}</dt>
-                <dd>{{ fmtCurrency(selectedRecord.avg_price_per_m2) }}</dd>
-              </div>
-            </template>
-          </dl>
-        </section>
+            </dl>
+          </section>
 
-        <section v-if="drawerMode === 'transaction'" class="drawer-section">
-          <h3>{{ t('predict.buildingFlags') }}</h3>
-          <div class="flag-grid">
-            <span
-              v-for="flag in [
-                ['novogradnja', t('predict.novogradnja')],
-                ['has_garaza', t('predict.hasGaraza')],
-                ['has_klet', t('predict.hasKlet')],
-                ['has_shramba', t('predict.hasShramba')],
-                ['has_terasa', t('predict.hasTerasa')],
-                ['stavba_je_dokoncana', t('predict.stavbaDokoncana')],
-                ['ddv_vkljucen', t('predict.ddvVkljucen')],
-              ]"
-              :key="flag[0]"
-              class="flag-chip"
-              :class="{ active: selectedRecord[flag[0]] }"
-            >
-              {{ flag[1] }}
-            </span>
-          </div>
-        </section>
+          <section v-if="detailMode === 'transaction'" class="detail-section">
+            <h3>{{ t('predict.buildingFlags') }}</h3>
+            <div class="flag-grid">
+              <span
+                v-for="flag in [
+                  ['novogradnja', t('predict.novogradnja')],
+                  ['has_garaza', t('predict.hasGaraza')],
+                  ['has_klet', t('predict.hasKlet')],
+                  ['has_shramba', t('predict.hasShramba')],
+                  ['has_terasa', t('predict.hasTerasa')],
+                  ['stavba_je_dokoncana', t('predict.stavbaDokoncana')],
+                  ['ddv_vkljucen', t('predict.ddvVkljucen')],
+                ]"
+                :key="flag[0]"
+                class="flag-chip"
+                :class="{ active: selectedRecord[flag[0]] }"
+              >
+                {{ flag[1] }}
+              </span>
+            </div>
 
-        <div class="drawer-actions">
-          <Button
-            icon="pi pi-building"
-            :label="t('map.openMunicipality')"
-            @click="openMunicipality()"
-          />
-          <Button
-            severity="secondary"
-            outlined
-            icon="pi pi-chart-line"
-            :label="t('map.useForPrediction')"
-            @click="useForPrediction()"
-          />
-          <a :href="comparisonUrl" target="_blank" rel="noreferrer" class="drawer-link">
-            <Button
-              severity="contrast"
-              outlined
-              icon="pi pi-external-link"
-              :label="t('predict.compareOnPortal')"
+            <div class="detail-actions">
+              <Button
+                icon="pi pi-building"
+                :label="t('map.openMunicipality')"
+                @click="openMunicipality()"
+              />
+              <Button
+                severity="secondary"
+                outlined
+                icon="pi pi-chart-line"
+                :label="t('map.useForPrediction')"
+                @click="useForPrediction()"
+              />
+              <a :href="comparisonUrl" target="_blank" rel="noreferrer" class="detail-link">
+                <Button
+                  severity="contrast"
+                  outlined
+                  icon="pi pi-external-link"
+                  :label="t('predict.compareOnPortal')"
+                />
+              </a>
+            </div>
+          </section>
+
+          <section class="detail-section">
+            <h3>{{ t('predict.comparablesTitle') }}</h3>
+            <LoadingSpinner v-if="detailLoading" :label="t('common.loading')" />
+            <div v-else-if="detailComparables.length" class="comparables-list">
+              <article
+                v-for="item in detailComparables"
+                :key="`${item.slug}-${item.price_eur}-${item.size_m2}`"
+                class="comparable-card"
+              >
+                <div class="comparable-top">
+                  <strong>{{ item.municipality }}</strong>
+                  <span>{{ item.year || '—' }}</span>
+                </div>
+                <p>
+                  {{ formatType(item.property_type) }} · {{ fmt(item.size_m2, 1) }} m² ·
+                  {{ fmtCurrency(item.price_per_m2) }}/m²
+                </p>
+                <div class="comparable-bottom">
+                  <strong>{{ fmtCurrency(item.price_eur) }}</strong>
+                  <small>{{ t('predict.similarityLabel') }} {{ item.similarity_score }}</small>
+                </div>
+              </article>
+            </div>
+            <EmptyState
+              v-else
+              icon="📊"
+              :message="
+                detailMode === 'transaction'
+                  ? t('predict.noComparables')
+                  : t('map.municipalitySummaryHint')
+              "
             />
-          </a>
+          </section>
         </div>
       </div>
-    </Drawer>
+    </Dialog>
   </div>
 </template>
 
@@ -791,8 +933,8 @@
   .map-page,
   .metric-band,
   .rail-list,
-  .drawer-body,
-  .drawer-metrics {
+  .detail-dialog,
+  .detail-metrics {
     display: grid;
     gap: 1rem;
   }
@@ -812,7 +954,7 @@
 
   .filters-grid {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 0.9rem;
   }
 
@@ -862,145 +1004,142 @@
 
   .explorer-grid {
     display: grid;
-    grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.75fr);
+    grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.6fr);
     gap: 1rem;
   }
 
   .map-container {
-    width: 100%;
-    height: 640px;
-    border-radius: 1.25rem;
+    min-height: 620px;
+    border-radius: 1.5rem;
     overflow: hidden;
   }
 
   .rail-card {
     display: grid;
-    gap: 0.6rem;
-    padding: 1rem;
-    border-radius: 1.1rem;
+    gap: 0.4rem;
+    padding: 0.9rem;
+    border-radius: 1rem;
     border: 1px solid var(--border);
     background: var(--surface-soft);
     text-align: left;
-  }
-
-  .rail-card p,
-  .rail-card small {
-    margin: 0;
-    color: var(--text-muted);
+    color: inherit;
   }
 
   .rail-card-top,
   .rail-card-foot,
-  .drawer-header,
-  .drawer-actions {
+  .detail-summary,
+  .detail-actions,
+  .comparable-top,
+  .comparable-bottom {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 0.75rem;
   }
 
-  .drawer-header h2,
-  .drawer-section h3 {
-    margin: 0.3rem 0 0;
-    font-family: var(--font-display);
+  .detail-summary {
+    align-items: flex-start;
   }
 
-  .drawer-metrics {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .drawer-section {
-    display: grid;
-    gap: 0.8rem;
+  .detail-metrics {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
   .detail-grid {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.85rem;
-    margin: 0;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1rem;
   }
 
-  .detail-grid div {
-    padding: 0.85rem 0.95rem;
-    border-radius: 1rem;
+  .detail-section {
+    display: grid;
+    gap: 0.9rem;
+    padding: 1rem;
     border: 1px solid var(--border);
+    border-radius: 1.25rem;
     background: var(--surface-soft);
   }
 
-  .detail-grid dt {
-    margin: 0 0 0.25rem;
-    color: var(--text-soft);
-    font-size: 0.74rem;
-    font-weight: 800;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
+  .detail-section h3 {
+    margin: 0;
   }
 
-  .detail-grid dd {
+  .detail-list {
+    display: grid;
+    gap: 0.75rem;
     margin: 0;
+  }
+
+  .detail-list div {
+    display: grid;
+    gap: 0.2rem;
+  }
+
+  .detail-list dt {
+    color: var(--text-muted);
+    font-size: 0.82rem;
     font-weight: 700;
   }
 
+  .detail-list dd {
+    margin: 0;
+    font-weight: 600;
+  }
+
   .flag-grid {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
     gap: 0.65rem;
   }
 
   .flag-chip {
-    padding: 0.55rem 0.8rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 2.6rem;
     border-radius: 999px;
     border: 1px solid var(--border);
-    background: var(--surface-soft);
+    background: var(--surface-muted);
     color: var(--text-muted);
     font-weight: 700;
   }
 
   .flag-chip.active {
-    border-color: rgb(37 99 235 / 30%);
-    background: rgb(37 99 235 / 10%);
     color: var(--text);
+    border-color: rgb(34 197 94 / 28%);
+    background: rgb(34 197 94 / 10%);
   }
 
-  .drawer-actions {
-    justify-content: flex-start;
-    flex-wrap: wrap;
+  .comparables-list {
+    display: grid;
+    gap: 0.75rem;
   }
 
-  .drawer-link {
+  .comparable-card {
+    display: grid;
+    gap: 0.45rem;
+    padding: 0.9rem;
+    border-radius: 1rem;
+    border: 1px solid var(--border);
+    background: var(--surface-muted);
+  }
+
+  .detail-link {
     text-decoration: none;
   }
 
-  :deep(.p-drawer) {
-    width: min(34rem, 100vw);
-    background: var(--surface-strong);
-    color: var(--text);
-  }
-
-  :deep(.leaflet-popup-content-wrapper),
-  :deep(.leaflet-popup-tip) {
-    background: var(--surface-strong);
-    color: var(--text);
-  }
-
-  @media (max-width: 1120px) {
-    .explorer-grid,
-    .filters-grid,
-    .metric-band,
+  @media (max-width: 1100px) {
     .legend-strip,
-    .drawer-metrics {
+    .filters-grid,
+    .explorer-grid,
+    .detail-grid,
+    .detail-metrics,
+    .metric-band {
       grid-template-columns: 1fr;
     }
-  }
 
-  @media (max-width: 720px) {
     .map-container {
-      height: 460px;
-    }
-
-    .detail-grid {
-      grid-template-columns: 1fr;
+      min-height: 460px;
     }
   }
 </style>

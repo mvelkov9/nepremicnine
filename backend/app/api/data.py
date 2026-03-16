@@ -7,6 +7,7 @@ import os
 import pathlib
 import re
 import uuid
+from collections import Counter
 from datetime import UTC, datetime
 from typing import Literal
 
@@ -36,7 +37,10 @@ from app.services.data_processing_service import (
     prepare_training_csv_from_etn_kpp_bulk,
     read_csv_flexible,
 )
+from app.services.regions_service import CANONICAL_REGION_ROWS
 from app.utils.cache import invalidate_request_caches
+from app.utils.municipality import normalize_municipality_name
+from app.utils.slovenian_labels import format_municipality_label, is_unknown_label
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +109,62 @@ def _validate_path_within_data_dir(raw_path: str) -> str:
     if os.path.islink(raw_candidate):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Symbolic links are not allowed")
     return resolved
+
+
+def _build_quality_summary() -> dict:
+    reference_total = len(CANONICAL_REGION_ROWS)
+    if not os.path.exists(TRAIN_CSV):
+        return {
+            "training_dataset_exists": False,
+            "canonical_reference_total": reference_total,
+            "covered_municipalities": 0,
+            "unresolved_rows": 0,
+            "unresolved_labels": [],
+            "alias_collisions": [],
+        }
+
+    df = read_csv_flexible(TRAIN_CSV)
+    if "municipality" not in df.columns:
+        return {
+            "training_dataset_exists": True,
+            "canonical_reference_total": reference_total,
+            "covered_municipalities": 0,
+            "unresolved_rows": 0,
+            "unresolved_labels": [],
+            "alias_collisions": [],
+        }
+
+    raw_values = df["municipality"].fillna("").astype(str)
+    canonical_labels = raw_values.map(format_municipality_label)
+    normalized = canonical_labels.map(normalize_municipality_name)
+    known_mask = canonical_labels.map(lambda value: value is not None and not is_unknown_label(value))
+
+    unresolved_labels = Counter(raw_values[~known_mask])
+    collision_map: dict[str, set[str]] = {}
+    for raw, canonical in zip(raw_values, canonical_labels, strict=False):
+        if canonical is None:
+            continue
+        collision_map.setdefault(str(canonical), set()).add(str(raw).strip())
+
+    alias_collisions = [
+        {"canonical": canonical, "variants": sorted(variants), "variant_count": len(variants)}
+        for canonical, variants in collision_map.items()
+        if len(variants) > 1
+    ]
+    alias_collisions.sort(key=lambda item: item["variant_count"], reverse=True)
+
+    covered = int(normalized[known_mask].nunique())
+    return {
+        "training_dataset_exists": True,
+        "canonical_reference_total": reference_total,
+        "covered_municipalities": covered,
+        "coverage_ratio": round(covered / max(reference_total, 1), 4),
+        "unresolved_rows": int((~known_mask).sum()),
+        "unresolved_labels": [
+            {"label": label or "unknown", "count": int(count)} for label, count in unresolved_labels.most_common(12)
+        ],
+        "alias_collisions": alias_collisions[:12],
+    }
 
 
 @router.post("/upload", response_model=DatasetUploadResponse)
@@ -257,6 +317,12 @@ async def list_datasets(
 async def training_dataset(_user: User = Depends(get_current_user)):
     """Expose the prepared train.csv artifact so the frontend can guide users into training."""
     return _get_training_dataset_metadata()
+
+
+@router.get("/quality-summary")
+async def quality_summary(_user: User = Depends(require_admin)):
+    """Expose training-data quality signals for municipality/reference debugging."""
+    return _build_quality_summary()
 
 
 @router.get("/preview/{dataset_id}", response_model=DatasetPreviewResponse)

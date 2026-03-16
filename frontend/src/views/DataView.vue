@@ -1,12 +1,20 @@
 <script setup>
-  import { onMounted, ref } from 'vue'
+  import { computed, onMounted, ref } from 'vue'
   import { useI18n } from 'vue-i18n'
+  import Button from 'primevue/button'
+  import Column from 'primevue/column'
+  import DataTable from 'primevue/datatable'
+  import Dialog from 'primevue/dialog'
+  import InputText from 'primevue/inputtext'
+  import Tag from 'primevue/tag'
+  import EmptyState from '../components/EmptyState.vue'
+  import LoadingSpinner from '../components/LoadingSpinner.vue'
+  import MetricCard from '../components/MetricCard.vue'
+  import PageHeader from '../components/PageHeader.vue'
   import { useAuthStore } from '../stores/auth'
   import { useDataStore } from '../stores/data'
-  import LoadingSpinner from '../components/LoadingSpinner.vue'
-  import EmptyState from '../components/EmptyState.vue'
   import { getApiErrorMessage } from '../utils/apiError'
-  import { formatDate as formatDateValue, formatNumber } from '../utils/format'
+  import { formatDate as formatDateValue, formatNumber, formatPercent } from '../utils/format'
 
   const { t } = useI18n()
   const auth = useAuthStore()
@@ -15,12 +23,71 @@
   const fileInput = ref(null)
   const previewData = ref(null)
   const previewName = ref('')
+  const previewVisible = ref(false)
   const uploadResult = ref(null)
   const error = ref('')
+  const datasetFilter = ref('')
 
-  onMounted(() => {
-    dataStore.fetchDatasets()
-    dataStore.fetchTrainingDataset()
+  const qualitySummary = computed(() => dataStore.qualitySummary)
+  const filteredDatasets = computed(() => {
+    const query = datasetFilter.value.trim().toLowerCase()
+    if (!query) return dataStore.datasets
+    return dataStore.datasets.filter((item) =>
+      [item.original_name, item.relative_path, item.source_type].some((value) =>
+        String(value || '')
+          .toLowerCase()
+          .includes(query),
+      ),
+    )
+  })
+
+  const summaryCards = computed(() => [
+    {
+      label: t('data.preparedDataset'),
+      value: dataStore.trainingDataset?.exists
+        ? formatNumber(dataStore.trainingDataset.rows || 0)
+        : t('common.noData'),
+      meta: dataStore.trainingDataset?.exists
+        ? dataStore.trainingDataset.relative_path
+        : t('data.noPreparedDataset'),
+    },
+    {
+      label: t('data.coveredMunicipalities'),
+      value: formatNumber(qualitySummary.value?.covered_municipalities || 0),
+      meta:
+        qualitySummary.value?.canonical_reference_total != null
+          ? `${formatNumber(qualitySummary.value.covered_municipalities || 0)} / ${formatNumber(qualitySummary.value.canonical_reference_total || 0)}`
+          : t('common.noData'),
+    },
+    {
+      label: t('data.coverageRatio'),
+      value:
+        qualitySummary.value?.coverage_ratio != null
+          ? formatPercent(qualitySummary.value.coverage_ratio)
+          : '—',
+      meta: t('data.referenceCoverageHint'),
+    },
+    {
+      label: t('data.unresolvedRows'),
+      value: formatNumber(qualitySummary.value?.unresolved_rows || 0),
+      meta: t('data.qualityHint'),
+    },
+  ])
+
+  async function loadDataView() {
+    await Promise.all([
+      dataStore.fetchDatasets(),
+      dataStore.fetchTrainingDataset(),
+      auth.isAdmin ? dataStore.fetchQualitySummary() : Promise.resolve(),
+    ])
+  }
+
+  onMounted(async () => {
+    try {
+      await loadDataView()
+    } catch (e) {
+      error.value = getApiErrorMessage(e, t)
+    }
   })
 
   async function handleUpload() {
@@ -32,7 +99,7 @@
       const result = await dataStore.uploadFiles(files)
       uploadResult.value = result
       fileInput.value.value = ''
-      await dataStore.fetchTrainingDataset()
+      await Promise.all([dataStore.fetchTrainingDataset(), dataStore.fetchQualitySummary()])
     } catch (e) {
       error.value = getApiErrorMessage(e, t)
     }
@@ -43,6 +110,7 @@
     error.value = ''
     try {
       previewData.value = await dataStore.fetchPreview(dataset.id)
+      previewVisible.value = true
     } catch (e) {
       error.value = getApiErrorMessage(e, t)
     }
@@ -52,6 +120,7 @@
     if (!confirm(t('data.confirmDelete'))) return
     try {
       await dataStore.deleteDataset(id)
+      await Promise.all([dataStore.fetchTrainingDataset(), dataStore.fetchQualitySummary()])
     } catch (e) {
       error.value = getApiErrorMessage(e, t)
     }
@@ -62,6 +131,7 @@
     if (!confirm(t('data.confirmDeleteAll'))) return
     try {
       await dataStore.deleteAllDatasets()
+      await Promise.all([dataStore.fetchTrainingDataset(), dataStore.fetchQualitySummary()])
     } catch (e) {
       error.value = getApiErrorMessage(e, t)
     }
@@ -77,149 +147,263 @@
 </script>
 
 <template>
-  <div>
-    <h1 class="page-title">{{ t('nav.data') }}</h1>
+  <div class="data-page">
+    <section class="card">
+      <PageHeader
+        :eyebrow="t('nav.data')"
+        :title="t('data.workspaceTitle')"
+        :description="t('data.workspaceBody')"
+      />
+    </section>
 
-    <!-- Upload section - admin only -->
-    <div v-if="auth.isAdmin" class="card">
-      <div class="section-head">
-        <div>
-          <div class="card-title">{{ t('data.upload') }}</div>
-          <p class="muted">{{ t('data.uploadHint') }}</p>
-        </div>
-        <span class="status-pill muted">{{ t('data.maxUpload') }}</span>
-      </div>
-      <div class="actions">
+    <section v-if="auth.isAdmin" class="card admin-upload">
+      <PageHeader
+        compact
+        :eyebrow="t('data.upload')"
+        :title="t('data.uploadTitle')"
+        :description="t('data.uploadHint')"
+      >
+        <template #actions>
+          <Tag severity="secondary" :value="t('data.maxUpload')" />
+        </template>
+      </PageHeader>
+
+      <div class="upload-shell">
         <input
           ref="fileInput"
           type="file"
           multiple
           accept=".csv,.zip"
-          style="flex: 1"
           :aria-label="t('data.upload')"
         />
-        <button :disabled="dataStore.uploading" @click="handleUpload">
-          {{ dataStore.uploading ? t('common.loading') : t('data.uploadButton') }}
-        </button>
+        <Button
+          icon="pi pi-upload"
+          :loading="dataStore.uploading"
+          :label="dataStore.uploading ? t('common.loading') : t('data.uploadButton')"
+          @click="handleUpload"
+        />
       </div>
-      <p v-if="error" class="error" style="margin-top: 8px">{{ error }}</p>
-      <div v-if="uploadResult" style="margin-top: 8px">
-        <p v-if="uploadResult.uploaded?.length" class="muted">
-          ✅ {{ t('data.uploadedCount', { count: uploadResult.uploaded.length }) }}
-        </p>
-        <p v-if="uploadResult.skipped?.length" class="muted">
-          ⏩ {{ t('data.skippedCount', { count: uploadResult.skipped.length }) }}
-        </p>
-      </div>
-      <div
-        v-if="dataStore.trainingDataset?.exists"
-        class="selected-source-card"
-        style="margin-top: 1rem"
-      >
-        <span class="eyebrow">{{ t('data.preparedDataset') }}</span>
-        <strong>{{ dataStore.trainingDataset.relative_path }}</strong>
-        <p class="muted">{{ formatSize(dataStore.trainingDataset.rows) }} {{ t('data.rows') }}</p>
-      </div>
-    </div>
 
-    <!-- Dataset table -->
-    <div class="card">
-      <div style="display: flex; justify-content: space-between; align-items: center">
-        <div class="card-title" style="margin-bottom: 0">{{ t('data.datasets') }}</div>
-        <button
-          v-if="auth.isAdmin && dataStore.datasets.length"
-          class="danger"
-          style="padding: 4px 10px; font-size: 12px"
-          @click="handleDeleteAll"
-        >
-          {{ t('data.deleteAll') }}
-        </button>
+      <div v-if="uploadResult" class="upload-result">
+        <Tag
+          v-if="uploadResult.uploaded?.length"
+          severity="success"
+          :value="t('data.uploadedCount', { count: uploadResult.uploaded.length })"
+        />
+        <Tag
+          v-if="uploadResult.skipped?.length"
+          severity="warn"
+          :value="t('data.skippedCount', { count: uploadResult.skipped.length })"
+        />
       </div>
+    </section>
+
+    <section v-if="auth.isAdmin" class="metrics-grid">
+      <MetricCard
+        v-for="card in summaryCards"
+        :key="card.label"
+        :label="card.label"
+        :value="card.value"
+        :meta="card.meta"
+      />
+    </section>
+
+    <section v-if="auth.isAdmin" class="quality-grid">
+      <article class="card">
+        <PageHeader
+          compact
+          :eyebrow="t('data.qualitySummary')"
+          :title="t('data.unresolvedMunicipalities')"
+          :description="t('data.unresolvedHint')"
+        />
+
+        <DataTable
+          :value="qualitySummary?.unresolved_labels || []"
+          paginator
+          :rows="6"
+          size="small"
+          striped-rows
+          responsive-layout="scroll"
+        >
+          <Column field="label" :header="t('dashboard.municipality')" sortable />
+          <Column field="count" :header="t('dashboard.transactions')" sortable />
+        </DataTable>
+      </article>
+
+      <article class="card">
+        <PageHeader
+          compact
+          :eyebrow="t('data.qualitySummary')"
+          :title="t('data.aliasCollisions')"
+          :description="t('data.aliasHint')"
+        />
+
+        <DataTable
+          :value="qualitySummary?.alias_collisions || []"
+          paginator
+          :rows="6"
+          size="small"
+          striped-rows
+          responsive-layout="scroll"
+        >
+          <Column field="canonical" :header="t('data.canonicalLabel')" sortable />
+          <Column field="variant_count" :header="t('data.variantCount')" sortable />
+          <Column :header="t('data.variants')">
+            <template #body="{ data }">
+              {{ data.variants?.join(', ') || '—' }}
+            </template>
+          </Column>
+        </DataTable>
+      </article>
+    </section>
+
+    <section class="card">
+      <PageHeader
+        compact
+        :eyebrow="t('data.datasets')"
+        :title="t('data.datasetLibrary')"
+        :description="t('data.datasetLibraryHint')"
+      >
+        <template #actions>
+          <div class="table-actions">
+            <span class="p-input-icon-left">
+              <i class="pi pi-search"></i>
+              <InputText v-model="datasetFilter" :placeholder="t('common.search')" />
+            </span>
+            <Button
+              v-if="auth.isAdmin && dataStore.datasets.length"
+              severity="danger"
+              outlined
+              icon="pi pi-trash"
+              :label="t('data.deleteAll')"
+              @click="handleDeleteAll"
+            />
+          </div>
+        </template>
+      </PageHeader>
+
       <LoadingSpinner v-if="dataStore.loading" :label="t('common.loading')" />
       <EmptyState
         v-else-if="!dataStore.datasets.length"
         icon="📁"
         :message="t('empty.noDatasets')"
       />
-      <div v-else class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>{{ t('data.fileName') }}</th>
-              <th>{{ t('data.rows') }}</th>
-              <th>{{ t('data.uploaded') }}</th>
-              <th>{{ t('data.actions') }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="ds in dataStore.datasets" :key="ds.id">
-              <td>{{ ds.original_name }}</td>
-              <td>{{ formatSize(ds.row_count) }}</td>
-              <td>{{ formatDate(ds.uploaded_at) }}</td>
-              <td>
-                <div class="actions" style="margin-top: 0">
-                  <button
-                    class="secondary"
-                    style="padding: 4px 10px; font-size: 12px"
-                    @click="showPreview(ds)"
-                  >
-                    {{ t('data.preview') }}
-                  </button>
-                  <button
-                    v-if="auth.isAdmin"
-                    class="danger"
-                    style="padding: 4px 10px; font-size: 12px"
-                    @click="handleDelete(ds.id)"
-                  >
-                    {{ t('common.delete') }}
-                  </button>
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
+      <DataTable
+        v-else
+        :value="filteredDatasets"
+        paginator
+        :rows="10"
+        size="small"
+        striped-rows
+        responsive-layout="scroll"
+      >
+        <Column field="original_name" :header="t('data.fileName')" sortable />
+        <Column field="relative_path" :header="t('data.relativePath')" sortable />
+        <Column field="row_count" :header="t('data.rows')" sortable>
+          <template #body="{ data }">{{ formatSize(data.row_count) }}</template>
+        </Column>
+        <Column field="uploaded_at" :header="t('data.uploaded')" sortable>
+          <template #body="{ data }">{{ formatDate(data.uploaded_at) }}</template>
+        </Column>
+        <Column :header="t('data.actions')">
+          <template #body="{ data }">
+            <div class="row-actions">
+              <Button
+                size="small"
+                severity="secondary"
+                outlined
+                icon="pi pi-eye"
+                :label="t('data.preview')"
+                @click="showPreview(data)"
+              />
+              <Button
+                v-if="auth.isAdmin"
+                size="small"
+                severity="danger"
+                outlined
+                icon="pi pi-trash"
+                :label="t('common.delete')"
+                @click="handleDelete(data.id)"
+              />
+            </div>
+          </template>
+        </Column>
+      </DataTable>
+    </section>
 
-    <!-- Preview modal -->
-    <div v-if="previewData" class="modal-overlay" @click.self="previewData = null">
-      <div class="modal-content">
-        <div
-          style="
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 12px;
-          "
+    <p v-if="error" class="error-text">{{ error }}</p>
+
+    <Dialog
+      v-model:visible="previewVisible"
+      modal
+      maximizable
+      :header="previewName || t('data.preview')"
+      class="dataset-preview-dialog"
+      :style="{ width: 'min(96vw, 1200px)' }"
+    >
+      <div v-if="previewData" class="preview-dialog">
+        <p class="muted">{{ t('data.columns') }}: {{ previewData.columns?.join(', ') }}</p>
+        <DataTable
+          :value="previewData.rows || []"
+          scrollable
+          scroll-height="420px"
+          size="small"
+          striped-rows
+          responsive-layout="scroll"
         >
-          <div class="card-title" style="margin-bottom: 0">{{ previewName }}</div>
-          <button
-            class="secondary"
-            style="padding: 4px 10px; font-size: 12px"
-            :aria-label="t('common.close')"
-            @click="previewData = null"
-          >
-            ✕
-          </button>
-        </div>
-        <p class="muted" style="margin-bottom: 8px">
-          {{ t('data.columns') }}: {{ previewData.columns?.join(', ') }}
-        </p>
-        <div class="table-wrap" style="max-height: 400px; overflow-y: auto">
-          <table>
-            <thead>
-              <tr>
-                <th v-for="col in previewData.columns" :key="col">{{ col }}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="(row, i) in previewData.rows" :key="i">
-                <td v-for="col in previewData.columns" :key="col">{{ row[col] ?? '—' }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+          <Column v-for="col in previewData.columns" :key="col" :field="col" :header="col">
+            <template #body="{ data }">{{ data[col] ?? '—' }}</template>
+          </Column>
+        </DataTable>
       </div>
-    </div>
+    </Dialog>
   </div>
 </template>
+
+<style scoped>
+  .data-page,
+  .metrics-grid,
+  .quality-grid {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .metrics-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .quality-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-upload {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .upload-shell,
+  .table-actions,
+  .row-actions,
+  .upload-result {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .upload-shell input[type='file'] {
+    min-width: min(100%, 28rem);
+  }
+
+  .preview-dialog {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  @media (max-width: 960px) {
+    .metrics-grid,
+    .quality-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

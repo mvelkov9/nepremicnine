@@ -5,6 +5,13 @@ from __future__ import annotations
 import pytest
 from httpx import AsyncClient
 
+from app.services.regions_service import CANONICAL_REGION_ROWS
+
+
+def test_canonical_region_seed_rows_match_expected_reference_size():
+    assert len(CANONICAL_REGION_ROWS) == 212
+
+
 # ── GET /api/regions ─────────────────────────────────────────────────────────
 
 

@@ -6,7 +6,7 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 
 | Item | Value |
 |------|-------|
-| **Version** | 0.10.0 |
+| **Version** | 0.11.0 |
 | **Repo** | [github.com/mvelkov9/nepremicnine](https://github.com/mvelkov9/nepremicnine) |
 | **Backend** | FastAPI + Python 3.13 + PostgreSQL 17 + SQLAlchemy 2.x async |
 | **Frontend** | Vue 3 Composition API + Pinia + pnpm 9, Vite 6 |
@@ -32,9 +32,19 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 | [Phase 18](PHASE_8_14_PLAN.md#phase-18--cache-coherency--phase-tracking-v0814) | Agency re-audit, cache coherency fixes, tracked execution plan | ✅ Complete | `3cf6248` |
 | [Phase 19](PHASE_8_14_PLAN.md#phase-19--dashboard-property-type-parity-v0815) | Dashboard property-type parity and analytical lens controls | ✅ Complete | `fb4a786` |
 | [Phase 20](PHASE_8_14_PLAN.md#phase-20--diagnostics-focus--locale-formatting-v0816) | Diagnostics focus workflow and locale-aware formatting polish | ✅ Complete | `4c58881` |
-| Phase 21 | Market UX and training reliability reset: structured progress, map legend/drawer, PrimeVue admin/viewer polish | ✅ Complete | working tree |
+| Phase 21 | Market UX and training reliability reset: structured progress, map legend/drawer, PrimeVue admin/viewer polish | ✅ Complete | `22c90cf` |
+| Phase 22 | Data quality, map UX, and PrimeVue modernization: canonical municipality coverage, direct portal links, centered map modal, cached analytics, admin quality summary | ✅ Complete | working tree |
 
 ## Changelog
+
+### v0.11.0
+
+- **Data truth**: Dashboard year coverage now comes from explicit earliest/latest metadata, viewer municipality metrics use canonical known municipalities only, and unresolved values like `Unknown` are moved out of consumer rankings into an admin quality summary
+- **Reference seeding**: `region_lookup` is now seeded from a canonical municipality/region reference when empty, `/api/regions/municipalities` prefers that canonical source, and fallback data is demoted to an emergency backend safety net
+- **Map UX**: The map now defaults to the latest complete year, keeps a persistent clickable low/mid/high price legend, supports municipality filtering, renders all filtered transactions without a silent default cap, and opens a large centered modal with richer property or municipality context
+- **Prediction & analysis UX**: GPS latitude/longitude are moved behind an advanced location section, guided analysis now matches the model-backed listing profile more closely, and portal comparison uses direct `nepremicnine.net` location/type URLs instead of dead Google site-search links
+- **Performance & UI system**: Dashboard/map analytics now use in-process prepared-data caching, shared PrimeVue styling was tightened across buttons, tables, dialogs, and controls, and the admin Data page now includes a searchable quality-focused workbench
+- **Version**: 0.10.0 → 0.11.0
 
 ### v0.10.0
 

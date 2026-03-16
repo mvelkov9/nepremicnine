@@ -37,17 +37,46 @@ REGION_OVERRIDES = {
 }
 
 PHRASE_OVERRIDES = {
+    "kanal": "Kanal ob Soči",
+    "kanal ob soci": "Kanal ob Soči",
+    "crna na koroskem": "Črna na Koroškem",
     "dobrova polhov gradec": "Dobrova - Polhov Gradec",
+    "domzale": "Domžale",
     "gorenja vas poljane": "Gorenja vas - Poljane",
     "hoce slivnica": "Hoče - Slivnica",
     "hrpelje kozina": "Hrpelje - Kozina",
+    "kocevje": "Kočevje",
+    "koroskem": "Koroškem",
+    "luce": "Luče",
     "log dragomer": "Log - Dragomer",
+    "menges": "Mengeš",
     "miren kostanjevica": "Miren - Kostanjevica",
     "mokronog trebelno": "Mokronog - Trebelno",
+    "moravce": "Moravče",
+    "novo mesto": "Novo mesto",
+    "poljcane": "Poljčane",
+    "radece": "Radeče",
+    "ravne na koroskem": "Ravne na Koroškem",
     "race fram": "Rače - Fram",
+    "recica ob savinji": "Rečica ob Savinji",
     "rence vogrsko": "Renče - Vogrsko",
     "renece vogrsko": "Renče - Vogrsko",
+    "ruse": "Ruše",
     "sempeter vrtojba": "Šempeter - Vrtojba",
+    "sol": "Solčava",
+    "sol pri savinji": "Solčava",
+    "solcava pri savinji": "Solčava",
+    "sredisce ob dravi": "Središče ob Dravi",
+    "sv trojica v slov goricah": "Sveta Trojica v Slovenskih goricah",
+    "sveta trojica v slovenskih goricah": "Sveta Trojica v Slovenskih goricah",
+    "sveti andraz v slov goricah": "Sveti Andraž v Slovenskih goricah",
+    "sveti andraz v slovenskih goricah": "Sveti Andraž v Slovenskih goricah",
+    "sveti jurij v slov goricah": "Sveti Jurij v Slovenskih goricah",
+    "sveti jurij v slovenskih goricah": "Sveti Jurij v Slovenskih goricah",
+    "sveti tomaz": "Sveti Tomaž",
+    "tisina": "Tišina",
+    "trzic": "Tržič",
+    "velike lasce": "Velike Lašče",
 }
 
 WORD_OVERRIDES = {
@@ -66,6 +95,7 @@ WORD_OVERRIDES = {
     "ivancna": "Ivančna",
     "kidricevo": "Kidričevo",
     "koroska": "Koroška",
+    "koroskem": "Koroškem",
     "kraska": "Kraška",
     "krizevci": "Križevci",
     "lasko": "Laško",
@@ -73,13 +103,18 @@ WORD_OVERRIDES = {
     "loski": "Loški",
     "mezica": "Mežica",
     "miklavz": "Miklavž",
+    "menges": "Mengeš",
     "ormoz": "Ormož",
     "pec": "Peč",
     "podcetrtek": "Podčetrtek",
+    "poljcane": "Poljčane",
     "race": "Rače",
+    "radece": "Radeče",
     "razkrizje": "Razkrižje",
+    "recica": "Rečica",
     "renece": "Renče",
     "rogaska": "Rogaška",
+    "ruse": "Ruše",
     "scavnici": "Ščavnici",
     "sezana": "Sežana",
     "semic": "Semič",
@@ -99,11 +134,14 @@ WORD_OVERRIDES = {
     "sol": "Solčava",
     "solcava": "Solčava",
     "sostanj": "Šoštanj",
+    "sredisce": "Središče",
     "starse": "Starše",
     "store": "Štore",
+    "tisina": "Tišina",
     "sv": "Sv.",
     "sveta": "Sveta",
     "sveti": "Sveti",
+    "tomaz": "Tomaž",
     "turnisce": "Turnišče",
     "zalec": "Žalec",
     "zavrc": "Zavrč",
@@ -113,6 +151,18 @@ WORD_OVERRIDES = {
     "zirovnica": "Žirovnica",
     "zrece": "Zreče",
     "zuzemberk": "Žužemberk",
+}
+
+UNKNOWN_LABELS = {
+    "",
+    "unknown",
+    "neznana",
+    "none",
+    "null",
+    "nan",
+    "n a",
+    "na",
+    "sucna vas",
 }
 
 
@@ -137,6 +187,10 @@ def labels_match(left: object | None, right: object | None) -> bool:
     return bool(left_normalized and right_normalized and left_normalized == right_normalized)
 
 
+def is_unknown_label(value: object | None) -> bool:
+    return normalize_label(value) in UNKNOWN_LABELS
+
+
 def format_region_label(value: object | None) -> str | None:
     normalized = normalize_label(value)
     if not normalized:
@@ -150,7 +204,7 @@ def format_municipality_label(value: object | None) -> str | None:
 
     text = " ".join(str(value).strip().split())
     normalized = normalize_label(text)
-    if not normalized:
+    if not normalized or normalized in UNKNOWN_LABELS:
         return None
 
     if normalized in PHRASE_OVERRIDES:

@@ -4,9 +4,9 @@
   import { useI18n } from 'vue-i18n'
   import AutoComplete from 'primevue/autocomplete'
   import Button from 'primevue/button'
-  import Checkbox from 'primevue/checkbox'
   import InputNumber from 'primevue/inputnumber'
   import Select from 'primevue/select'
+  import ToggleSwitch from 'primevue/toggleswitch'
   import api from '../composables/useApi'
   import EmptyState from '../components/EmptyState.vue'
   import LoadingSpinner from '../components/LoadingSpinner.vue'
@@ -59,6 +59,7 @@
   const legaOptions = ['pritlicje', 'nadstropje', 'klet', 'unknown']
   const allMunicipalities = ref([])
   const municipalitySuggestions = ref([])
+  const showAdvancedLocation = ref(false)
   const result = ref(null)
   const history = ref([])
   const loading = ref(false)
@@ -69,16 +70,24 @@
   const municipalityContext = computed(() => stats.municipalityDetail)
   const comparables = computed(() => stats.comparables)
   const comparableRows = computed(() => comparables.value?.items || [])
+  const municipalityIndex = computed(
+    () =>
+      new Map(
+        allMunicipalities.value.map((item) => [normalizeMunicipalityName(item.municipality), item]),
+      ),
+  )
   const comparablesCountLabel = computed(
     () => `${comparables.value?.summary?.count || 0} ${t('dashboard.transactions')}`,
   )
   const effectiveSize = computed(() => form.value.uporabna_povrsina || form.value.size_m2)
+  const selectedMunicipalityMeta = computed(() =>
+    municipalityIndex.value.get(normalizeMunicipalityName(form.value.municipality)),
+  )
   const comparisonUrl = computed(() =>
     buildNepremicnineSearchUrl({
       municipality: form.value.municipality,
-      propertyType: formatType(form.value.property_type),
-      rooms: form.value.rooms,
-      sizeM2: effectiveSize.value,
+      statisticalRegion: selectedMunicipalityMeta.value?.region,
+      propertyType: form.value.property_type,
     }),
   )
 
@@ -93,7 +102,7 @@
   async function fetchMunicipalities() {
     try {
       const { data } = await api.get('/api/regions/municipalities')
-      allMunicipalities.value = data.map((item) => item.municipality)
+      allMunicipalities.value = data || []
     } catch {
       allMunicipalities.value = []
     }
@@ -112,9 +121,10 @@
     const query = normalizeMunicipalityName(event.query || '')
     municipalitySuggestions.value = query
       ? allMunicipalities.value
-          .filter((item) => normalizeMunicipalityName(item).includes(query))
+          .filter((item) => normalizeMunicipalityName(item.municipality).includes(query))
+          .map((item) => item.municipality)
           .slice(0, 12)
-      : allMunicipalities.value.slice(0, 12)
+      : allMunicipalities.value.map((item) => item.municipality).slice(0, 12)
   }
 
   function validateForm() {
@@ -359,6 +369,52 @@
               </label>
 
               <label class="field">
+                <span>{{ t('predict.legaVStavbi') }}</span>
+                <Select
+                  v-model="form.lega_v_stavbi"
+                  :options="[
+                    { label: t('common.noData'), value: '' },
+                    ...legaOptions.map((option) => ({
+                      label: t(`predict.lega.${option}`),
+                      value: option,
+                    })),
+                  ]"
+                  option-label="label"
+                  option-value="value"
+                />
+              </label>
+
+              <div class="field municipality-chip">
+                <span>{{ t('predict.marketContext') }}</span>
+                <strong>{{
+                  selectedMunicipalityMeta?.region || t('predict.coordsAutoHint')
+                }}</strong>
+                <small class="muted">
+                  {{
+                    selectedMunicipalityMeta?.region
+                      ? t('predict.coordsAutoHint')
+                      : t('predict.pickMunicipalityHint')
+                  }}
+                </small>
+              </div>
+            </div>
+
+            <div class="advanced-toggle">
+              <Button
+                severity="secondary"
+                outlined
+                icon="pi pi-map-marker"
+                :label="
+                  showAdvancedLocation
+                    ? t('predict.hideAdvancedLocation')
+                    : t('predict.showAdvancedLocation')
+                "
+                @click="showAdvancedLocation = !showAdvancedLocation"
+              />
+            </div>
+
+            <div v-if="showAdvancedLocation" class="form-grid advanced-grid">
+              <label class="field">
                 <span>{{ t('predict.latitude') }}</span>
                 <InputNumber
                   v-model="form.latitude"
@@ -379,22 +435,6 @@
                   fluid
                 />
               </label>
-
-              <label class="field">
-                <span>{{ t('predict.legaVStavbi') }}</span>
-                <Select
-                  v-model="form.lega_v_stavbi"
-                  :options="[
-                    { label: t('common.noData'), value: '' },
-                    ...legaOptions.map((option) => ({
-                      label: t(`predict.lega.${option}`),
-                      value: option,
-                    })),
-                  ]"
-                  option-label="label"
-                  option-value="value"
-                />
-              </label>
             </div>
           </div>
 
@@ -402,36 +442,31 @@
             <h2>{{ t('predict.buildingFlags') }}</h2>
             <div class="toggle-grid">
               <label class="toggle-chip">
-                <Checkbox v-model="form.novogradnja" binary :true-value="1" :false-value="0" />
+                <ToggleSwitch v-model="form.novogradnja" :true-value="1" :false-value="0" />
                 <span>{{ t('predict.novogradnja') }}</span>
               </label>
               <label class="toggle-chip">
-                <Checkbox v-model="form.has_garaza" binary :true-value="1" :false-value="0" />
+                <ToggleSwitch v-model="form.has_garaza" :true-value="1" :false-value="0" />
                 <span>{{ t('predict.hasGaraza') }}</span>
               </label>
               <label class="toggle-chip">
-                <Checkbox v-model="form.has_klet" binary :true-value="1" :false-value="0" />
+                <ToggleSwitch v-model="form.has_klet" :true-value="1" :false-value="0" />
                 <span>{{ t('predict.hasKlet') }}</span>
               </label>
               <label class="toggle-chip">
-                <Checkbox v-model="form.has_shramba" binary :true-value="1" :false-value="0" />
+                <ToggleSwitch v-model="form.has_shramba" :true-value="1" :false-value="0" />
                 <span>{{ t('predict.hasShramba') }}</span>
               </label>
               <label class="toggle-chip">
-                <Checkbox v-model="form.has_terasa" binary :true-value="1" :false-value="0" />
+                <ToggleSwitch v-model="form.has_terasa" :true-value="1" :false-value="0" />
                 <span>{{ t('predict.hasTerasa') }}</span>
               </label>
               <label class="toggle-chip">
-                <Checkbox
-                  v-model="form.stavba_je_dokoncana"
-                  binary
-                  :true-value="1"
-                  :false-value="0"
-                />
+                <ToggleSwitch v-model="form.stavba_je_dokoncana" :true-value="1" :false-value="0" />
                 <span>{{ t('predict.stavbaDokoncana') }}</span>
               </label>
               <label class="toggle-chip">
-                <Checkbox v-model="form.ddv_vkljucen" binary :true-value="1" :false-value="0" />
+                <ToggleSwitch v-model="form.ddv_vkljucen" :true-value="1" :false-value="0" />
                 <span>{{ t('predict.ddvVkljucen') }}</span>
               </label>
             </div>
@@ -674,10 +709,32 @@
     gap: 0.38rem;
   }
 
+  .municipality-chip {
+    align-content: flex-start;
+    min-height: 100%;
+    padding: 0.9rem 1rem;
+    border: 1px solid var(--border);
+    border-radius: 1rem;
+    background: var(--surface-soft-subtle);
+  }
+
+  .municipality-chip strong {
+    font-size: 1rem;
+  }
+
   .field span {
     font-size: 0.84rem;
     font-weight: 700;
     color: var(--text-muted);
+  }
+
+  .advanced-toggle {
+    display: flex;
+    justify-content: flex-start;
+  }
+
+  .advanced-grid {
+    margin-top: 0.85rem;
   }
 
   .toggle-grid {
@@ -687,7 +744,8 @@
   }
 
   .toggle-chip {
-    display: flex;
+    display: grid;
+    grid-template-columns: auto 1fr;
     align-items: center;
     gap: 0.65rem;
     min-height: 3.4rem;
@@ -700,12 +758,12 @@
     cursor: pointer;
   }
 
-  .toggle-chip :deep(.p-checkbox) {
+  .toggle-chip :deep(.p-toggleswitch) {
     flex: 0 0 auto;
   }
 
-  .toggle-chip :deep(.p-checkbox-box) {
-    border-radius: 0.55rem;
+  .toggle-chip :deep(.p-toggleswitch-slider) {
+    border-radius: 999px;
   }
 
   .form-actions {

@@ -2,8 +2,12 @@
 
 import logging
 import unicodedata
+from collections.abc import Iterable
 
 from sqlalchemy import create_engine, text
+
+from app.utils.municipality import normalize_municipality_name
+from app.utils.slovenian_labels import format_municipality_label, format_region_label
 
 logger = logging.getLogger(__name__)
 
@@ -274,6 +278,33 @@ for region, municipalities in _FALLBACK_BY_REGION.items():
 STATISTICAL_REGIONS = list(_FALLBACK_BY_REGION.keys())
 
 
+def iter_canonical_region_rows() -> Iterable[dict[str, str | None]]:
+    """Yield canonical municipality → region rows derived from fallback aliases."""
+    canonical: dict[str, dict[str, str | None]] = {}
+    for municipality, region in FALLBACK_REGIONS.items():
+        municipality_label = format_municipality_label(municipality)
+        region_label = format_region_label(region)
+        if not municipality_label or not region_label:
+            continue
+        key = normalize_municipality_name(municipality_label)
+        canonical.setdefault(
+            key,
+            {
+                "obcina_sifra": None,
+                "obcina_naziv": municipality_label,
+                "regija_naziv": region_label,
+                "vir": "seed:v0.11.0",
+            },
+        )
+    return [canonical[key] for key in sorted(canonical)]
+
+
+CANONICAL_REGION_ROWS = list(iter_canonical_region_rows())
+CANONICAL_REGION_LOOKUP = {
+    normalize_municipality_name(str(row["obcina_naziv"])): str(row["regija_naziv"]) for row in CANONICAL_REGION_ROWS
+}
+
+
 def normalize(text: str) -> str:
     """Lowercase, strip diacritics (č→c, š→s, ž→z), strip whitespace."""
     text = text.lower().strip()
@@ -283,6 +314,11 @@ def normalize(text: str) -> str:
 
 def lookup_region(municipality: str) -> str:
     """Look up the statistical region for a municipality (fallback only)."""
+    canonical_label = format_municipality_label(municipality)
+    canonical_key = normalize_municipality_name(canonical_label)
+    if canonical_key in CANONICAL_REGION_LOOKUP:
+        return CANONICAL_REGION_LOOKUP[canonical_key]
+
     key = normalize(municipality)
     if key in FALLBACK_REGIONS:
         return FALLBACK_REGIONS[key]

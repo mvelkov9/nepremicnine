@@ -9,8 +9,13 @@ from app.dependencies.auth import get_current_user
 from app.models.region import RegionLookup
 from app.models.user import User
 from app.schemas.region import RegionListResponse, RegionLookupResponse
-from app.services.regions_service import FALLBACK_REGIONS
-from app.utils.slovenian_labels import format_municipality_label, format_region_label, labels_match
+from app.services.regions_service import CANONICAL_REGION_ROWS
+from app.utils.slovenian_labels import (
+    format_municipality_label,
+    format_region_label,
+    is_unknown_label,
+    labels_match,
+)
 
 router = APIRouter(tags=["regions"])
 
@@ -29,12 +34,12 @@ async def get_regions(
         fallback = [
             RegionLookupResponse(
                 id=0,
-                obcina_sifra=None,
-                obcina_naziv=format_municipality_label(municipality) or municipality,
-                regija_naziv=format_region_label(region) or region,
-                vir="privzeto",
+                obcina_sifra=row["obcina_sifra"],
+                obcina_naziv=str(row["obcina_naziv"]),
+                regija_naziv=str(row["regija_naziv"]),
+                vir=str(row["vir"]),
             )
-            for municipality, region in FALLBACK_REGIONS.items()
+            for row in CANONICAL_REGION_ROWS
         ]
         return RegionListResponse(regions=fallback, total=len(fallback))
 
@@ -71,7 +76,7 @@ async def get_region_stats(
         # Return from fallback
         from collections import Counter
 
-        counts = Counter(format_region_label(region) or region for region in FALLBACK_REGIONS.values())
+        counts = Counter(str(row["regija_naziv"]) for row in CANONICAL_REGION_ROWS)
         return [{"region": r, "municipality_count": c} for r, c in sorted(counts.items())]
     return [
         {
@@ -101,10 +106,10 @@ async def get_municipalities(
         # Return from fallback
         items = [
             {
-                "municipality": format_municipality_label(municipality) or municipality,
-                "region": format_region_label(region_name) or region_name,
+                "municipality": str(row["obcina_naziv"]),
+                "region": str(row["regija_naziv"]),
             }
-            for municipality, region_name in sorted(FALLBACK_REGIONS.items())
+            for row in CANONICAL_REGION_ROWS
         ]
         if region:
             items = [item for item in items if labels_match(item["region"], region)]
@@ -116,6 +121,7 @@ async def get_municipalities(
             "region": format_region_label(row.region) or row.region,
         }
         for row in rows
+        if not is_unknown_label(row.municipality)
     ]
     if region:
         items = [item for item in items if labels_match(item["region"], region)]

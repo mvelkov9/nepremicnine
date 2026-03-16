@@ -31,6 +31,15 @@ class ListingItem(BaseModel):
     longitude: float | None = None
     municipality: str | None = None
     property_type: str = "stanovanje"
+    uporabna_povrsina: float | None = None
+    lega_v_stavbi: str | None = None
+    novogradnja: int | None = None
+    has_garaza: int | None = None
+    has_klet: int | None = None
+    has_shramba: int | None = None
+    has_terasa: int | None = None
+    stavba_je_dokoncana: int | None = None
+    ddv_vkljucen: int | None = None
     asking_price: float = Field(..., ge=0)
 
 
@@ -51,6 +60,15 @@ class ScoredListing(BaseModel):
     floor: int | None = None
     municipality: str | None = None
     property_type: str | None = None
+    uporabna_povrsina: float | None = None
+    lega_v_stavbi: str | None = None
+    novogradnja: int | None = None
+    has_garaza: int | None = None
+    has_klet: int | None = None
+    has_shramba: int | None = None
+    has_terasa: int | None = None
+    stavba_je_dokoncana: int | None = None
+    ddv_vkljucen: int | None = None
 
 
 class ScoreResponse(BaseModel):
@@ -110,6 +128,15 @@ async def score_listings(
                 floor=listing.floor,
                 municipality=listing.municipality,
                 property_type=listing.property_type,
+                uporabna_povrsina=listing.uporabna_povrsina,
+                lega_v_stavbi=listing.lega_v_stavbi,
+                novogradnja=listing.novogradnja,
+                has_garaza=listing.has_garaza,
+                has_klet=listing.has_klet,
+                has_shramba=listing.has_shramba,
+                has_terasa=listing.has_terasa,
+                stavba_je_dokoncana=listing.stavba_je_dokoncana,
+                ddv_vkljucen=listing.ddv_vkljucen,
             )
         )
 

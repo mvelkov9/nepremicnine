@@ -69,6 +69,33 @@ async def test_market_home_property_type_filter_is_case_insensitive(monkeypatch:
 
 
 @pytest.mark.asyncio
+async def test_market_home_uses_canonical_municipality_coverage(monkeypatch: pytest.MonkeyPatch):
+    df = _build_market_df().copy()
+    df.loc[len(df)] = {
+        "price_eur": 99_000,
+        "size_m2": 44,
+        "uporabna_povrsina": 42,
+        "municipality": "unknown",
+        "property_type": "stanovanje",
+        "source_label": "2026",
+        "statistical_region": "osrednjeslovenska",
+        "latitude": 100_000.0,
+        "longitude": 460_000.0,
+    }
+
+    monkeypatch.setattr("app.api.stats._load_df", lambda property_type=None: df.copy())
+    monkeypatch.setattr("app.api.stats._RAW_DF_CACHE", {"mtime": None, "df": None})
+    monkeypatch.setattr("app.api.stats._PREPARED_DF_CACHE", {"mtime": None, "df": None})
+
+    result = await market_home(_fake_request(), _user=object())
+
+    assert result["headline"]["latest_year"] == "2026"
+    assert result["headline"]["municipalities_count"] == 3
+    assert result["market_coverage"]["unresolved_rows"] == 1
+    assert all(item["municipality"] != "unknown" for item in result["largest_markets"])
+
+
+@pytest.mark.asyncio
 async def test_regions_stats_property_type_filter_scopes_region_counts(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(
         "app.api.stats._load_df",
@@ -120,3 +147,19 @@ async def test_map_transactions_exposes_price_band_legend_and_filter(monkeypatch
     assert {item["price_band"] for item in result["transactions"]} == {"low", "mid", "high"}
     assert filtered["count"] >= 1
     assert all(item["price_band"] == "high" for item in filtered["transactions"])
+
+
+@pytest.mark.asyncio
+async def test_map_transactions_returns_all_filtered_points_when_limit_is_omitted(monkeypatch: pytest.MonkeyPatch):
+    df = _build_market_df().copy()
+    df["_price_per_m2"] = df["price_eur"] / df["uporabna_povrsina"]
+    df["_year"] = df["source_label"].astype(str)
+    df["_municipality_slug"] = df["municipality"].map(municipality_slug)
+    df["_municipality_known"] = True
+
+    monkeypatch.setattr("app.api.stats._prepare_market_df", lambda: df.copy())
+
+    result = await map_transactions(_user=object())
+
+    assert result["count"] == len(df)
+    assert result["meta"]["truncated"] is False

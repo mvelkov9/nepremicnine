@@ -1,4 +1,4 @@
-# Nepremičnine v0.10.0
+# Nepremičnine v0.11.0
 
 > Slovenian real estate valuation platform for buyers, sellers, investors, and companies — powered by machine learning on official ETN transaction data.
 
@@ -8,13 +8,15 @@
 - **Keep admins separate** in a dedicated workbench for uploads, ETN preparation, model training, diagnostics, and user management
 - **Track training live** with stage-aware progress, current model progress, elapsed time, ETA, job history, and completed model run history
 - **Predict** residential property prices using per-type gradient boosting models trained on Slovenian ETN transaction data
-- **Visualize** municipality leaders, recent sales, regional statistics, and transaction dots on a market map with clickable price-band legend chips and a right-side detail drawer
+- **Visualize** municipality leaders, recent sales, regional statistics, and transaction dots on a market map with a persistent clickable low/mid/high legend, municipality filters, and a large centered detail modal
 - **Compare** model estimates with ranked comparable ETN transactions, municipality context, and external listing portals
 - **Analyze** listings against trained models to identify over-, under-, or market-aligned pricing
 - **Export** prediction history and analysis results to CSV
 - **Preserve canonical names** for municipalities and regions, including Slovenian šumniki, while still supporting normalized matching/slugs
+- **Keep consumer metrics clean** by excluding unresolved municipality labels such as `Unknown` from viewer-facing rankings while surfacing them in an admin data quality panel
 - **Manage** datasets, model training, and users through a full admin interface
 - **Refresh** model/statistical caches immediately after training completion, train.csv preparation, and region imports
+- **Cache analytics in-process** so dashboard and map routes stop rereading and renormalizing the prepared CSV on every request
 - **Personalize** user profiles with editable display names and optional avatars
 - **Monitor** platform usage with an admin stats dashboard
 - **Secure** with rate limiting, token blacklist, security headers, and input validation
@@ -70,7 +72,7 @@ The first registered user is automatically assigned the **admin** role.
 5. Watch structured live progress during training, then review job history and completed model runs from the same admin page
 6. As a viewer or admin, predict property prices from the Prediction page
 7. Explore the dashboard, municipality detail pages, and map explorer
-8. Analyze listings and compare them with portal searches
+8. Analyze listings and compare them with direct `nepremicnine.net` location/type links
 
 ## Production Deployment
 
@@ -169,6 +171,7 @@ nepremicnine/
 | POST | `/api/data/upload` | admin | Upload ETN CSV files |
 | GET | `/api/data/datasets` | token | List uploaded datasets |
 | GET | `/api/data/training-dataset` | token | Prepared `train.csv` metadata |
+| GET | `/api/data/quality-summary` | admin | Data quality summary for unresolved municipalities, alias collisions, and reference coverage |
 | DELETE | `/api/data/datasets/{id}` | admin | Delete a dataset |
 | POST | `/api/data/prepare-etn-kpp` | admin | Prepare single ETN pair |
 | POST | `/api/data/prepare-etn-kpp-bulk` | admin | Prepare bulk ETN pairs |
@@ -182,14 +185,14 @@ nepremicnine/
 | GET | `/api/stats/regions` | token | Per-region statistics |
 | GET | `/api/stats/price-distribution` | token | Price distribution data |
 | GET | `/api/stats/trend` | token | Price trend over time |
-| GET | `/api/stats/market-home` | token | Analytical dashboard KPIs, municipality leaders, latest sales |
+| GET | `/api/stats/market-home` | token | Analytical dashboard KPIs, canonical municipality coverage, earliest/latest year metadata, municipality leaders, latest sales |
 | GET | `/api/stats/municipality/{slug}` | token | Municipality spotlight with trend, type mix, recent transactions |
 | GET | `/api/stats/comparables` | token | Ranked comparable transactions for valuation context |
 | GET | `/api/stats/map-overview` | token | Municipality centroids, activity counts, and backend-generated price-band legend metadata |
-| GET | `/api/stats/map-transactions` | token | Individual transactions with map-ready coordinates, price bands, detail-drawer fields, and `meta.reason` empty-state hints |
+| GET | `/api/stats/map-transactions` | token | Individual transactions with map-ready coordinates, backend price bands, centered-detail-modal fields, municipality filter support, and `meta.reason` empty-state hints |
 | GET | `/api/stats/municipalities-by-region` | token | Municipalities in a region (mapping or filtered list) |
 | **Regions** | | | |
-| GET | `/api/regions/municipalities` | token | Municipality list |
+| GET | `/api/regions/municipalities` | token | Canonical municipality list sourced from `region_lookup` (fallback only if the reference table is empty) |
 | GET | `/api/regions/regions` | token | Statistical regions |
 | GET | `/api/regions/regions/stats` | token | Region-aggregated stats |
 | **Training** | | | |
@@ -259,6 +262,11 @@ docker system prune -af --volumes
 
 Only run the last command if you are comfortable deleting stopped containers, unused images, build cache, and unused volumes.
 
+For this repo specifically:
+
+- The development `worker` now reuses the same backend image as the API service, which avoids creating a second full-size Python image on every rebuild.
+- The biggest remaining source of growth is stale superseded images after repeated `docker compose up --build` runs, so `docker image prune -af` is the primary cleanup command when disk pressure returns.
+
 ## Documentation
 
 - [Master Tracking](docs/MASTER.md) — project overview and phase progress
@@ -272,6 +280,7 @@ Only run the last command if you are comfortable deleting stopped containers, un
 - [Phase 7: v0.4.0–v0.8.0 Security & Features](docs/PHASE_7_V040_V080.md)
 - [Phase 8–20: v0.8.4–v0.8.16 Upgrades](docs/PHASE_8_14_PLAN.md)
 - [Phase 21: v0.10.0 Market UX & Training Reliability Reset](docs/MASTER.md#v0100)
+- [Phase 22: v0.11.0 Data Quality, Map UX, and PrimeVue Modernization](docs/MASTER.md#v0110)
 - [Deployment Guide](docs/DEPLOYMENT.md)
 
 ## License

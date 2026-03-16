@@ -106,6 +106,123 @@ button {
   cursor: pointer;
 }
 
+.muted {
+  color: var(--text-muted);
+}
+
+.error-text {
+  color: var(--danger);
+}
+
+.p-button {
+  border-radius: 999px;
+  font-weight: 700;
+  box-shadow: none;
+}
+
+.p-button:not(.p-button-text):not(.p-button-link) {
+  min-height: 2.85rem;
+}
+
+.p-button.p-button-secondary,
+.p-button.p-button-outlined {
+  background: var(--surface-soft);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.p-inputtext,
+.p-inputnumber-input,
+.p-select-label,
+.p-autocomplete-input,
+.p-textarea {
+  border-radius: 1rem !important;
+  background: var(--surface-soft) !important;
+  border-color: var(--border) !important;
+  color: var(--text) !important;
+  min-height: 2.85rem;
+}
+
+.p-inputtext::placeholder,
+.p-inputnumber-input::placeholder,
+.p-autocomplete-input::placeholder,
+.p-textarea::placeholder {
+  color: var(--text-soft);
+}
+
+.p-dialog {
+  border-radius: 1.6rem;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--surface-strong);
+  box-shadow: var(--shadow-lg);
+}
+
+.p-dialog .p-dialog-header,
+.p-dialog .p-dialog-content {
+  background: var(--surface-strong);
+  color: var(--text);
+}
+
+.p-dialog .p-dialog-header {
+  border-bottom: 1px solid var(--border);
+}
+
+.p-datatable {
+  border-radius: 1.25rem;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.p-datatable .p-datatable-header,
+.p-datatable .p-datatable-footer,
+.p-datatable .p-paginator {
+  background: var(--surface-soft);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.p-datatable .p-datatable-thead > tr > th {
+  background: var(--surface-soft);
+  color: var(--text-muted);
+  border-color: var(--border);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.p-datatable .p-datatable-tbody > tr {
+  background: transparent;
+  color: var(--text);
+}
+
+.p-datatable .p-datatable-tbody > tr > td {
+  border-color: var(--border);
+}
+
+.p-tag {
+  border-radius: 999px;
+  font-weight: 700;
+}
+
+.p-toggleswitch {
+  flex-shrink: 0;
+}
+
+.p-toggleswitch .p-toggleswitch-slider {
+  background: var(--surface-dark-muted);
+  border: 1px solid var(--border-strong);
+}
+
+.p-toggleswitch.p-toggleswitch-checked .p-toggleswitch-slider {
+  background: color-mix(in srgb, var(--primary) 72%, white 10%);
+}
+
+.p-selectbutton .p-togglebutton {
+  border-radius: 999px;
+}
+
 .app-shell {
   min-height: 100vh;
   display: grid;

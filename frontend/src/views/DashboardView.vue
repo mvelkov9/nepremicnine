@@ -5,6 +5,7 @@
   import Button from 'primevue/button'
   import DataTable from 'primevue/datatable'
   import Column from 'primevue/column'
+  import InputText from 'primevue/inputtext'
   import SelectButton from 'primevue/selectbutton'
   import Tag from 'primevue/tag'
   import MetricCard from '../components/MetricCard.vue'
@@ -22,6 +23,7 @@
   const loading = ref(true)
   const pageError = ref('')
   const selectedPropertyType = ref('')
+  const dashboardSearch = ref('')
   const segmentLoading = ref(false)
   const segmentHome = ref(null)
   const availablePropertyTypes = ref([])
@@ -99,16 +101,15 @@
       label: t('dashboard.totalRecords'),
       value: fmt(marketHome.value.headline?.total_records),
       meta: t('dashboard.marketCoverageYears', {
-        from: marketHome.value.year_coverage?.[0]?.year || '—',
-        to:
-          marketHome.value.year_coverage?.[marketHome.value.year_coverage.length - 1]?.year || '—',
+        from: marketHome.value.headline?.earliest_year || '—',
+        to: marketHome.value.headline?.latest_year || '—',
       }),
     },
     {
       label: t('dashboard.medianPrice'),
       value: fmtCurrency(marketHome.value.headline?.median_price),
-      meta: t('dashboard.marketMunicipalities', {
-        count: fmt(marketHome.value.headline?.municipalities_count),
+      meta: t('dashboard.latestYearLabel', {
+        year: marketHome.value.headline?.latest_year || '—',
       }),
     },
     {
@@ -117,10 +118,10 @@
       meta: spotlight.value?.municipality || t('common.noData'),
     },
     {
-      label: t('dashboard.marketMunicipalitiesLabel'),
-      value: fmt(marketHome.value.headline?.municipalities_count),
-      meta: t('dashboard.latestYearLabel', {
-        year: marketHome.value.year_coverage?.[0]?.year || '—',
+      label: t('dashboard.marketCoverageLabel'),
+      value: `${fmt(marketHome.value.market_coverage?.present)} / ${fmt(marketHome.value.market_coverage?.official_total)}`,
+      meta: t('dashboard.marketMunicipalities', {
+        count: fmt(marketHome.value.market_coverage?.present),
       }),
     },
   ])
@@ -177,6 +178,32 @@
     if (share >= 0.15) return 'warn'
     return 'secondary'
   }
+
+  function matchesSearch(...values) {
+    const query = dashboardSearch.value.trim().toLowerCase()
+    if (!query) return true
+    return values.some((value) =>
+      String(value || '')
+        .toLowerCase()
+        .includes(query),
+    )
+  }
+
+  const largestMarketsRows = computed(() =>
+    (marketHome.value.largest_markets || []).filter((item) =>
+      matchesSearch(item.municipality, item.region),
+    ),
+  )
+
+  const regionSnapshotRows = computed(() =>
+    (marketHome.value.region_snapshot || []).filter((item) => matchesSearch(item.region)),
+  )
+
+  const latestSalesRows = computed(() =>
+    (marketHome.value.latest_sales || []).filter((item) =>
+      matchesSearch(item.municipality, propertyTypeLabel(item.property_type), item.year),
+    ),
+  )
 </script>
 
 <template>
@@ -234,13 +261,19 @@
         <p class="muted">{{ t('dashboard.filterCompareHint') }}</p>
       </div>
 
-      <SelectButton
-        v-model="selectedPropertyType"
-        :options="propertyTypeOptions"
-        option-label="label"
-        option-value="value"
-        :allow-empty="false"
-      />
+      <div class="filter-actions">
+        <span class="p-input-icon-left search-box">
+          <i class="pi pi-search"></i>
+          <InputText v-model="dashboardSearch" :placeholder="t('common.search')" />
+        </span>
+        <SelectButton
+          v-model="selectedPropertyType"
+          :options="propertyTypeOptions"
+          option-label="label"
+          option-value="value"
+          :allow-empty="false"
+        />
+      </div>
     </section>
 
     <div v-if="loading" class="state-card">
@@ -305,25 +338,28 @@
           </div>
 
           <DataTable
-            :value="marketHome.largest_markets.slice(0, 8)"
+            :value="largestMarketsRows"
+            paginator
+            :rows="8"
             size="small"
             striped-rows
+            responsive-layout="scroll"
             table-style="min-width: 100%"
           >
-            <Column :header="t('dashboard.municipality')">
+            <Column field="municipality" :header="t('dashboard.municipality')" sortable>
               <template #body="{ data }">
                 <RouterLink :to="`/obcine/${data.slug}`" class="table-link">
                   {{ data.municipality }}
                 </RouterLink>
               </template>
             </Column>
-            <Column field="count" :header="t('dashboard.transactions')">
+            <Column field="count" :header="t('dashboard.transactions')" sortable>
               <template #body="{ data }">{{ fmt(data.count) }}</template>
             </Column>
-            <Column :header="t('dashboard.medianPrice')">
+            <Column field="median_price" :header="t('dashboard.medianPrice')" sortable>
               <template #body="{ data }">{{ fmtCurrency(data.median_price) }}</template>
             </Column>
-            <Column header="€/m²">
+            <Column field="median_price_per_m2" header="€/m²" sortable>
               <template #body="{ data }">{{ fmtCurrency(data.median_price_per_m2) }}</template>
             </Column>
           </DataTable>
@@ -338,16 +374,19 @@
           </div>
 
           <DataTable
-            :value="marketHome.region_snapshot.slice(0, 8)"
+            :value="regionSnapshotRows"
+            paginator
+            :rows="8"
             size="small"
             striped-rows
+            responsive-layout="scroll"
             table-style="min-width: 100%"
           >
-            <Column field="region" :header="t('map.region')" />
-            <Column field="count" :header="t('dashboard.transactions')">
+            <Column field="region" :header="t('map.region')" sortable />
+            <Column field="count" :header="t('dashboard.transactions')" sortable>
               <template #body="{ data }">{{ fmt(data.count) }}</template>
             </Column>
-            <Column :header="t('dashboard.pricePerM2')">
+            <Column field="median_price_per_m2" :header="t('dashboard.pricePerM2')" sortable>
               <template #body="{ data }">{{ fmtCurrency(data.median_price_per_m2) }}</template>
             </Column>
           </DataTable>
@@ -414,31 +453,34 @@
         </div>
 
         <DataTable
-          :value="marketHome.latest_sales"
+          :value="latestSalesRows"
+          paginator
+          :rows="10"
           size="small"
           striped-rows
+          responsive-layout="scroll"
           table-style="min-width: 100%"
         >
-          <Column :header="t('dashboard.municipality')">
+          <Column field="municipality" :header="t('dashboard.municipality')" sortable>
             <template #body="{ data }">
               <RouterLink :to="`/obcine/${data.slug}`" class="table-link">
                 {{ data.municipality }}
               </RouterLink>
             </template>
           </Column>
-          <Column :header="t('predict.propertyType')">
+          <Column field="property_type" :header="t('predict.propertyType')" sortable>
             <template #body="{ data }">{{ propertyTypeLabel(data.property_type) }}</template>
           </Column>
-          <Column :header="t('predict.size')">
+          <Column field="size_m2" :header="t('predict.size')" sortable>
             <template #body="{ data }">{{ fmt(data.size_m2, 1) }} m²</template>
           </Column>
-          <Column :header="t('dashboard.medianPrice')">
+          <Column field="price_eur" :header="t('dashboard.medianPrice')" sortable>
             <template #body="{ data }">{{ fmtCurrency(data.price_eur) }}</template>
           </Column>
-          <Column header="€/m²">
+          <Column field="price_per_m2" header="€/m²" sortable>
             <template #body="{ data }">{{ fmtCurrency(data.price_per_m2) }}</template>
           </Column>
-          <Column :header="t('map.year')">
+          <Column field="year" :header="t('map.year')" sortable>
             <template #body="{ data }">{{ data.year || '—' }}</template>
           </Column>
         </DataTable>
@@ -530,6 +572,15 @@
   .filter-shell {
     display: grid;
     gap: 0.8rem;
+  }
+
+  .filter-actions {
+    display: grid;
+    gap: 0.85rem;
+  }
+
+  .search-box {
+    width: min(100%, 22rem);
   }
 
   .filter-shell h2 {

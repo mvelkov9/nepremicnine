@@ -5,6 +5,7 @@ import api from '../composables/useApi'
 export const useDataStore = defineStore('data', () => {
   const datasets = ref([])
   const trainingDataset = ref(null)
+  const qualitySummary = ref(null)
   const loading = ref(false)
   const uploading = ref(false)
 
@@ -75,9 +76,16 @@ export const useDataStore = defineStore('data', () => {
     return data
   }
 
+  async function fetchQualitySummary() {
+    const { data } = await api.get('/api/data/quality-summary')
+    qualitySummary.value = data
+    return data
+  }
+
   return {
     datasets,
     trainingDataset,
+    qualitySummary,
     loading,
     uploading,
     fetchDatasets,
@@ -86,5 +94,6 @@ export const useDataStore = defineStore('data', () => {
     deleteAllDatasets,
     fetchPreview,
     fetchTrainingDataset,
+    fetchQualitySummary,
   }
 })

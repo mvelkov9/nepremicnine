@@ -10,10 +10,15 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from app.dependencies.auth import get_current_user
 from app.models.user import User
-from app.services.regions_service import lookup_region
+from app.services.regions_service import CANONICAL_REGION_ROWS, lookup_region
 from app.utils.cache import cache_get, cache_set
 from app.utils.municipality import municipality_slug, normalize_municipality_name
-from app.utils.slovenian_labels import format_municipality_label, format_region_label, labels_match
+from app.utils.slovenian_labels import (
+    format_municipality_label,
+    format_region_label,
+    is_unknown_label,
+    labels_match,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +30,10 @@ TRAIN_CSV = os.path.join(
     "raw",
     "train.csv",
 )
+
+_RAW_DF_CACHE: dict[str, object] = {"mtime": None, "df": None}
+_PREPARED_DF_CACHE: dict[str, object] = {"mtime": None, "df": None}
+_CANONICAL_REGION_TOTAL = len(CANONICAL_REGION_ROWS)
 
 
 def _d96tm_to_wgs84(n: np.ndarray, e: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -81,12 +90,21 @@ def _d96tm_to_wgs84(n: np.ndarray, e: np.ndarray) -> tuple[np.ndarray, np.ndarra
 
 def _load_df(property_type: str | None = None) -> pd.DataFrame | None:
     if not os.path.exists(TRAIN_CSV):
+        _RAW_DF_CACHE["mtime"] = None
+        _RAW_DF_CACHE["df"] = None
         return None
-    df = pd.read_csv(TRAIN_CSV)
+    mtime = os.path.getmtime(TRAIN_CSV)
+    if _RAW_DF_CACHE["mtime"] != mtime or _RAW_DF_CACHE["df"] is None:
+        _RAW_DF_CACHE["mtime"] = mtime
+        _RAW_DF_CACHE["df"] = pd.read_csv(TRAIN_CSV)
+    df = _RAW_DF_CACHE["df"]
+    if not isinstance(df, pd.DataFrame):
+        return None
+    frame = df.copy()
     if property_type and "property_type" in df.columns:
         normalized = str(property_type).strip().casefold()
-        df = df[df["property_type"].astype(str).str.casefold() == normalized]
-    return df
+        frame = frame[frame["property_type"].astype(str).str.casefold() == normalized]
+    return frame
 
 
 def _effective_area(df: pd.DataFrame) -> pd.Series:
@@ -191,45 +209,95 @@ def _ensure_regions(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _prepare_market_df(property_type: str | None = None) -> pd.DataFrame | None:
-    df = _load_df(property_type)
+    df = _load_df()
     if df is None or df.empty:
         return None
+    mtime = _RAW_DF_CACHE["mtime"]
+    if _PREPARED_DF_CACHE["mtime"] != mtime or _PREPARED_DF_CACHE["df"] is None:
+        frame = _ensure_regions(df.copy())
 
-    frame = _ensure_regions(df.copy())
+        if "municipality" in frame.columns:
+            frame["municipality"] = frame["municipality"].map(
+                lambda value: format_municipality_label(value) or "unknown"
+            )
+            frame["_municipality_slug"] = frame["municipality"].map(municipality_slug)
+            frame["_municipality_normalized"] = frame["municipality"].map(normalize_municipality_name)
+            frame["_municipality_known"] = frame["municipality"].map(lambda value: not is_unknown_label(value))
 
-    if "municipality" in frame.columns:
-        frame["municipality"] = frame["municipality"].map(lambda value: format_municipality_label(value) or "unknown")
-        frame["_municipality_slug"] = frame["municipality"].map(municipality_slug)
-        frame["_municipality_normalized"] = frame["municipality"].map(normalize_municipality_name)
+        if "statistical_region" in frame.columns:
+            frame["statistical_region"] = frame["statistical_region"].map(
+                lambda value: format_region_label(value) or "Neznana"
+            )
 
-    if "statistical_region" in frame.columns:
-        frame["statistical_region"] = frame["statistical_region"].map(
-            lambda value: format_region_label(value) or "Neznana"
+        frame["_area"] = _effective_area(frame)
+
+        if "price_eur" in frame.columns:
+            price = pd.to_numeric(frame["price_eur"], errors="coerce")
+            valid_area = frame["_area"].notna() & (frame["_area"] > 0)
+            frame["_price_per_m2"] = np.where(valid_area, np.round(price / frame["_area"], 2), np.nan)
+        else:
+            frame["_price_per_m2"] = np.nan
+
+        year_col = _detect_year_column(frame)
+        frame["_year"] = (
+            frame[year_col].astype(str).str.extract(r"(\d{4})", expand=False)
+            if year_col
+            else pd.Series(pd.NA, index=frame.index)
         )
 
-    frame["_area"] = _effective_area(frame)
+        date_col = next(
+            (col for col in ["transaction_date", "sale_date", "datum_sklenitve"] if col in frame.columns),
+            None,
+        )
+        if date_col:
+            frame["_sale_date"] = pd.to_datetime(frame[date_col], errors="coerce")
+        else:
+            frame["_sale_date"] = pd.NaT
 
-    if "price_eur" in frame.columns:
-        price = pd.to_numeric(frame["price_eur"], errors="coerce")
-        valid_area = frame["_area"].notna() & (frame["_area"] > 0)
-        frame["_price_per_m2"] = np.where(valid_area, np.round(price / frame["_area"], 2), np.nan)
-    else:
-        frame["_price_per_m2"] = np.nan
+        _PREPARED_DF_CACHE["mtime"] = mtime
+        _PREPARED_DF_CACHE["df"] = frame
 
-    year_col = _detect_year_column(frame)
-    frame["_year"] = (
-        frame[year_col].astype(str).str.extract(r"(\d{4})", expand=False)
-        if year_col
-        else pd.Series(pd.NA, index=frame.index)
-    )
+    cached = _PREPARED_DF_CACHE["df"]
+    if not isinstance(cached, pd.DataFrame):
+        return None
 
-    date_col = next((col for col in ["transaction_date", "sale_date", "datum_sklenitve"] if col in frame.columns), None)
-    if date_col:
-        frame["_sale_date"] = pd.to_datetime(frame[date_col], errors="coerce")
-    else:
-        frame["_sale_date"] = pd.NaT
-
+    frame = cached.copy()
+    if property_type and "property_type" in frame.columns:
+        normalized = str(property_type).strip().casefold()
+        frame = frame[frame["property_type"].astype(str).str.casefold() == normalized]
     return frame
+
+
+def _known_municipality_mask(df: pd.DataFrame) -> pd.Series:
+    if "_municipality_known" in df.columns:
+        return df["_municipality_known"].fillna(False).astype(bool)
+    if "municipality" in df.columns:
+        return ~df["municipality"].map(is_unknown_label)
+    return pd.Series(False, index=df.index, dtype=bool)
+
+
+def _viewer_frame(df: pd.DataFrame) -> pd.DataFrame:
+    if "municipality" not in df.columns:
+        return df.copy()
+    return df[_known_municipality_mask(df)].copy()
+
+
+def _canonical_municipality_coverage(df: pd.DataFrame) -> dict[str, int]:
+    if "municipality" not in df.columns:
+        return {
+            "present": 0,
+            "official_total": _CANONICAL_REGION_TOTAL,
+            "unresolved_rows": 0,
+        }
+
+    known = df[_known_municipality_mask(df)]
+    present = int(known["_municipality_slug"].nunique()) if "_municipality_slug" in known.columns else 0
+    unresolved_rows = int((~_known_municipality_mask(df)).sum())
+    return {
+        "present": present,
+        "official_total": _CANONICAL_REGION_TOTAL,
+        "unresolved_rows": unresolved_rows,
+    }
 
 
 def _prepare_map_coordinates(df: pd.DataFrame) -> tuple[pd.DataFrame, str | None]:
@@ -290,6 +358,7 @@ def _serialize_price_row(row: pd.Series) -> dict:
         "uporabna_povrsina": _round_or_none(row.get("uporabna_povrsina"), 1),
         "price_per_m2": _round_or_none(row.get("_price_per_m2")),
         "year": str(row.get("_year")) if pd.notna(row.get("_year")) else None,
+        "source_label": row.get("source_label"),
         "year_built": int(row["year_built"]) if "year_built" in row.index and pd.notna(row["year_built"]) else None,
         "rooms": _round_or_none(row.get("rooms"), 1),
         "floor": _round_or_none(row.get("floor"), 0),
@@ -611,11 +680,14 @@ async def market_home(
             "headline": {
                 "total_records": 0,
                 "municipalities_count": 0,
+                "known_municipalities_count": 0,
+                "unresolved_municipality_rows": 0,
                 "regions_count": 0,
                 "avg_price": None,
                 "median_price": None,
                 "avg_price_per_m2": None,
                 "latest_year": None,
+                "earliest_year": None,
             },
             "active_property_type": property_type,
             "largest_markets": [],
@@ -624,11 +696,19 @@ async def market_home(
             "latest_sales": [],
             "year_coverage": [],
             "property_type_mix": [],
+            "market_coverage": {
+                "present": 0,
+                "official_total": _CANONICAL_REGION_TOTAL,
+                "unresolved_rows": 0,
+            },
         }
 
+    viewer_df = _viewer_frame(df)
+    coverage = _canonical_municipality_coverage(df)
+
     municipality_groups = (
-        [_municipality_stats(group) for _, group in df.groupby("_municipality_slug")]
-        if "municipality" in df.columns
+        [_municipality_stats(group) for _, group in viewer_df.groupby("_municipality_slug")]
+        if "municipality" in viewer_df.columns
         else []
     )
     municipality_groups.sort(key=lambda item: item["count"], reverse=True)
@@ -648,8 +728,8 @@ async def market_home(
     ][:8]
 
     region_snapshot = []
-    if "statistical_region" in df.columns:
-        for region, group in df.groupby("statistical_region"):
+    if "statistical_region" in viewer_df.columns:
+        for region, group in viewer_df.groupby("statistical_region"):
             price_per_m2 = group["_price_per_m2"].dropna()
             region_snapshot.append(
                 {
@@ -664,7 +744,9 @@ async def market_home(
             )
         region_snapshot.sort(key=lambda item: item["count"], reverse=True)
 
-    latest_frame = df.dropna(subset=["price_eur"]).copy() if "price_eur" in df.columns else df.copy()
+    latest_frame = (
+        viewer_df.dropna(subset=["price_eur"]).copy() if "price_eur" in viewer_df.columns else viewer_df.copy()
+    )
     if "_sale_date" in latest_frame.columns and latest_frame["_sale_date"].notna().any():
         latest_frame = latest_frame.sort_values(["_sale_date", "price_eur"], ascending=[False, False])
     elif "_year" in latest_frame.columns and latest_frame["_year"].notna().any():
@@ -694,12 +776,19 @@ async def market_home(
     result = {
         "headline": {
             "total_records": int(len(df)),
-            "municipalities_count": int(df["municipality"].nunique()) if "municipality" in df.columns else 0,
-            "regions_count": int(df["statistical_region"].nunique()) if "statistical_region" in df.columns else 0,
+            "municipalities_count": int(coverage["present"]),
+            "known_municipalities_count": int(coverage["present"]),
+            "unresolved_municipality_rows": int(coverage["unresolved_rows"]),
+            "regions_count": int(viewer_df["statistical_region"].nunique())
+            if "statistical_region" in viewer_df.columns
+            else 0,
             "avg_price": _round_or_none(df["price_eur"].mean()) if "price_eur" in df.columns else None,
             "median_price": _round_or_none(df["price_eur"].median()) if "price_eur" in df.columns else None,
             "avg_price_per_m2": _round_or_none(df["_price_per_m2"].dropna().mean()),
             "latest_year": str(df["_year"].dropna().max())
+            if "_year" in df.columns and df["_year"].notna().any()
+            else None,
+            "earliest_year": str(df["_year"].dropna().min())
             if "_year" in df.columns and df["_year"].notna().any()
             else None,
         },
@@ -710,6 +799,7 @@ async def market_home(
         "latest_sales": latest_sales,
         "year_coverage": year_coverage,
         "property_type_mix": property_type_mix,
+        "market_coverage": coverage,
     }
     await cache_set(request, cache_key, result)
     return result
@@ -730,7 +820,8 @@ async def municipality_detail(
     if df is None or df.empty or "municipality" not in df.columns:
         raise HTTPException(status_code=404, detail="Municipality not found")
 
-    municipality_df = _find_municipality_frame(df, slug)
+    viewer_df = _viewer_frame(df)
+    municipality_df = _find_municipality_frame(viewer_df, slug)
     if municipality_df.empty:
         raise HTTPException(status_code=404, detail="Municipality not found")
 
@@ -775,7 +866,7 @@ async def municipality_detail(
     region_rank_by_activity = None
     region_rank_by_price = None
     if region:
-        region_df = df[df["statistical_region"] == region]
+        region_df = viewer_df[viewer_df["statistical_region"] == region]
         region_stats = [_municipality_stats(group) for _, group in region_df.groupby("_municipality_slug")]
         region_stats.sort(key=lambda item: item["count"], reverse=True)
         related_municipalities = [item for item in region_stats if item["slug"] != municipality_slug_value][:6]
@@ -882,7 +973,8 @@ async def comparables(
         {"municipality": canonical_municipality, "slug": municipality_slug(canonical_municipality), "region": region}
     )
 
-    candidates = df[df["_area"].notna() & (df["_area"] > 0)].copy()
+    candidates = _viewer_frame(df)
+    candidates = candidates[candidates["_area"].notna() & (candidates["_area"] > 0)].copy()
     if region:
         regional_candidates = candidates[candidates["statistical_region"] == region].copy()
         if len(regional_candidates) >= limit:
@@ -967,12 +1059,17 @@ async def municipalities_by_region(
     if df is None or "municipality" not in df.columns:
         return [] if region else {}
 
-    if "statistical_region" not in df.columns:
-        df["statistical_region"] = df["municipality"].apply(
+    prepared = _prepare_market_df()
+    if prepared is None or prepared.empty:
+        return [] if region else {}
+    frame = _viewer_frame(prepared)
+
+    if "statistical_region" not in frame.columns:
+        frame["statistical_region"] = frame["municipality"].apply(
             lambda m: lookup_region(str(m)) if pd.notna(m) else "neznana"
         )
 
-    mapping = df[["municipality", "statistical_region"]].dropna().drop_duplicates()
+    mapping = frame[["municipality", "statistical_region"]].dropna().drop_duplicates()
     if region:
         filtered = mapping[mapping["statistical_region"].map(lambda value: labels_match(value, region))]
         return [
@@ -994,6 +1091,7 @@ async def map_overview(
     property_type: str | None = None,
     statistical_region: str | None = None,
     year: str | None = None,
+    municipality: str | None = None,
     price_band: str | None = None,
     _user: User = Depends(get_current_user),
 ):
@@ -1002,11 +1100,16 @@ async def map_overview(
     if df is None or df.empty:
         return {"municipalities": [], "count": 0, "meta": {"reason": "no_train_dataset"}}
 
+    df = _viewer_frame(df)
+
     if property_type and "property_type" in df.columns:
         df = df[df["property_type"].astype(str).str.casefold() == str(property_type).casefold()]
 
     if statistical_region and "statistical_region" in df.columns:
         df = df[df["statistical_region"].map(lambda value: labels_match(value, statistical_region))]
+
+    if municipality and "municipality" in df.columns:
+        df = df[df["municipality"].map(lambda value: labels_match(value, municipality))]
 
     if year and "_year" in df.columns:
         df = df[df["_year"].astype(str) == str(year)]
@@ -1080,13 +1183,18 @@ async def map_transactions(
     year: str | None = None,
     municipality: str | None = None,
     price_band: str | None = None,
-    limit: int = Query(5000, ge=100, le=50000),
+    limit: int | None = Query(None, ge=100, le=100000),
     _user: User = Depends(get_current_user),
 ):
     """Return transaction points for map visualization (WGS84 coords)."""
+    if not isinstance(limit, int):
+        limit = None
+
     df = _prepare_market_df()
     if df is None or df.empty:
         return {"transactions": [], "count": 0, "meta": {"reason": "no_train_dataset"}}
+
+    df = _viewer_frame(df)
 
     if property_type and "property_type" in df.columns:
         df = df[df["property_type"].astype(str).str.casefold() == str(property_type).casefold()]
@@ -1127,7 +1235,7 @@ async def map_transactions(
 
     # Sample if too many
     truncated = False
-    if len(map_df) > limit:
+    if limit is not None and len(map_df) > limit:
         map_df = map_df.sample(n=limit, random_state=42)
         truncated = True
 

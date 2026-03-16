@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from sqlalchemy import func, select
 from starlette.middleware.gzip import GZipMiddleware
 
 from app.api.admin import router as admin_router
@@ -25,8 +26,10 @@ from app.api.regions import router as regions_router
 from app.api.stats import router as stats_router
 from app.api.train import router as train_router
 from app.config import get_settings
-from app.database import Base, engine
+from app.database import Base, async_session, engine
+from app.models.region import RegionLookup
 from app.rate_limit import limiter
+from app.services.regions_service import CANONICAL_REGION_ROWS
 from app.tasks.training_worker import _parse_redis_url
 
 logger = logging.getLogger(__name__)
@@ -54,6 +57,24 @@ def configure_logging():
 configure_logging()
 
 
+async def _seed_region_lookup_if_empty() -> None:
+    async with async_session() as session:
+        existing = await session.execute(select(func.count(RegionLookup.id)))
+        if (existing.scalar() or 0) > 0:
+            return
+
+        for row in CANONICAL_REGION_ROWS:
+            session.add(
+                RegionLookup(
+                    obcina_sifra=row["obcina_sifra"],
+                    obcina_naziv=str(row["obcina_naziv"]),
+                    regija_naziv=str(row["regija_naziv"]),
+                    vir=str(row["vir"]),
+                )
+            )
+        await session.commit()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: create tables (dev only — production uses Alembic)
@@ -61,6 +82,7 @@ async def lifespan(app: FastAPI):
     if settings.app_env == "development":
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+    await _seed_region_lookup_if_empty()
     # Redis pool for token blacklist
     app.state.redis = await create_pool(_parse_redis_url(settings.redis_url))
     yield
