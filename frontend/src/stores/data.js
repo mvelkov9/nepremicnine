@@ -11,8 +11,22 @@ export const useDataStore = defineStore('data', () => {
   async function fetchDatasets() {
     loading.value = true
     try {
-      const { data } = await api.get('/api/data/datasets', { params: { per_page: 200 } })
-      datasets.value = Array.isArray(data) ? data : data.items || []
+      const perPage = 200
+      let page = 1
+      let totalPages = 1
+      const allItems = []
+
+      do {
+        const { data } = await api.get('/api/data/datasets', {
+          params: { page, per_page: perPage },
+        })
+        const items = Array.isArray(data) ? data : data.items || []
+        allItems.push(...items)
+        totalPages = Array.isArray(data) ? 1 : data.pages || 1
+        page += 1
+      } while (page <= totalPages)
+
+      datasets.value = allItems
     } finally {
       loading.value = false
     }

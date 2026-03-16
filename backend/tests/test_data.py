@@ -3,8 +3,11 @@
 import io
 from pathlib import Path
 
+import pandas as pd
 import pytest
 from httpx import AsyncClient
+
+from app.services.data_processing_service import prepare_training_csv_from_etn_kpp_bulk
 
 
 async def _get_admin_token(client: AsyncClient) -> str:
@@ -224,3 +227,71 @@ async def test_prepare_etn_bulk_resolves_relative_paths(client: AsyncClient, mon
     assert resp.status_code == 200
     assert recorded["pairs"][0]["posli_csv_path"].endswith("/backend/data/uploads/posli.csv")
     assert recorded["pairs"][0]["delistavb_csv_path"].endswith("/backend/data/uploads/deli.csv")
+
+
+def test_prepare_etn_bulk_uses_stable_source_keys_for_dedup_and_reports_per_year(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    frames = [
+        pd.DataFrame(
+            [
+                {
+                    "source_row_key": "deal-1:part-1",
+                    "size_m2": 50,
+                    "year_built": 2001,
+                    "municipality": "ljubljana",
+                    "property_type": "stanovanje",
+                    "price_eur": 200000,
+                },
+                {
+                    "source_row_key": "deal-2:part-1",
+                    "size_m2": 65,
+                    "year_built": 2008,
+                    "municipality": "koper",
+                    "property_type": "stanovanje",
+                    "price_eur": 230000,
+                },
+            ]
+        ),
+        pd.DataFrame(
+            [
+                {
+                    "source_row_key": "deal-1:part-1",
+                    "size_m2": 50,
+                    "year_built": 2001,
+                    "municipality": "ljubljana",
+                    "property_type": "stanovanje",
+                    "price_eur": 200000,
+                },
+                {
+                    "source_row_key": "deal-3:part-1",
+                    "size_m2": 74,
+                    "year_built": 2014,
+                    "municipality": "maribor",
+                    "property_type": "hisa",
+                    "price_eur": 310000,
+                },
+            ]
+        ),
+    ]
+
+    monkeypatch.setattr("app.services.data_processing_service.read_csv_flexible", lambda _path: pd.DataFrame())
+
+    def fake_build(*_args, **_kwargs):
+        return frames.pop(0), {"used_size_column": "PRODANA_POVRSINA"}
+
+    monkeypatch.setattr("app.services.data_processing_service.build_training_df_from_etn_kpp", fake_build)
+
+    output_csv = tmp_path / "train.csv"
+    result = prepare_training_csv_from_etn_kpp_bulk(
+        [
+            {"posli_csv_path": "2024_posli.csv", "delistavb_csv_path": "2024_deli.csv", "label": "2024"},
+            {"posli_csv_path": "2024_posli_copy.csv", "delistavb_csv_path": "2024_deli_copy.csv", "label": "2024"},
+        ],
+        str(output_csv),
+    )
+
+    saved_df = pd.read_csv(output_csv)
+    assert len(saved_df) == 3
+    assert result["deduplicated_rows"] == 1
+    assert result["per_year"] == {"2024": 3}

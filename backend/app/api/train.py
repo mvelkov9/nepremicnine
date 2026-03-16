@@ -7,9 +7,11 @@ import logging
 import math
 import os
 import uuid
+from datetime import UTC, datetime, timedelta
 
 from arq import create_pool
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import JSONResponse
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,6 +30,9 @@ router = APIRouter(prefix="/train", tags=["training"])
 DATA_DIR = os.path.realpath(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data"))
 
 CACHE_PREFIXES = ["cache:stats:", "cache:model:"]
+ACTIVE_JOB_STATUSES = (JobStatus.queued, JobStatus.running)
+QUEUED_JOB_STALE_AFTER = timedelta(minutes=15)
+RUNNING_JOB_STALE_AFTER = timedelta(hours=2)
 
 
 async def _invalidate_caches(request: Request) -> None:
@@ -44,6 +49,106 @@ async def _invalidate_caches(request: Request) -> None:
                     await redis.delete(*keys)
     except Exception:
         logger.debug("Failed to invalidate caches")
+
+
+def _to_utc(value: datetime | None) -> datetime:
+    if value is None:
+        return datetime.now(UTC)
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
+def _coerce_progress(value: object, fallback: int = 0) -> int:
+    try:
+        return max(0, min(100, int(round(float(value)))))
+    except (TypeError, ValueError):
+        return fallback
+
+
+async def _read_redis_job_state(redis, job_id: str) -> dict | None:
+    raw = await redis.get(f"{JOB_PREFIX}{job_id}")
+    if raw is None:
+        return None
+    if isinstance(raw, bytes):
+        raw = raw.decode("utf-8", errors="ignore")
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        logger.warning("Ignoring invalid Redis training payload for job %s", job_id)
+        return None
+
+
+def _serialize_job(job: TrainingJob, state: dict | None = None) -> TrainStatusResponse:
+    status_value = state.get("status") if state else None
+    progress_value = state.get("progress") if state else None
+    return TrainStatusResponse(
+        job_id=job.job_id,
+        status=status_value or (job.status.value if isinstance(job.status, JobStatus) else str(job.status)),
+        stage=(state or {}).get("stage") or job.stage,
+        progress=_coerce_progress(progress_value, fallback=job.progress or 0),
+        result=(state or {}).get("result"),
+        error=(state or {}).get("error") or job.error,
+    )
+
+
+def _job_is_stale(job: TrainingJob, now: datetime) -> bool:
+    threshold = RUNNING_JOB_STALE_AFTER if job.status == JobStatus.running else QUEUED_JOB_STALE_AFTER
+    reference_time = _to_utc(job.updated_at or job.created_at)
+    return now - reference_time > threshold
+
+
+async def _reconcile_active_job(db: AsyncSession, redis) -> tuple[TrainingJob | None, dict | None]:
+    """Return the most recent live training job and mark expired ones as failed."""
+    result = await db.execute(
+        select(TrainingJob).where(TrainingJob.status.in_(ACTIVE_JOB_STATUSES)).order_by(TrainingJob.created_at.desc())
+    )
+    jobs = result.scalars().all()
+    if not jobs:
+        return None, None
+
+    now = datetime.now(UTC)
+    dirty = False
+
+    for job in jobs:
+        state = await _read_redis_job_state(redis, job.job_id)
+        if state is not None:
+            redis_status = state.get("status")
+            job.stage = state.get("stage") or job.stage
+            job.progress = _coerce_progress(state.get("progress"), fallback=job.progress or 0)
+            job.error = state.get("error") or job.error
+
+            if redis_status == "completed":
+                job.status = JobStatus.completed
+                result_payload = state.get("result") or {}
+                job.rows = result_payload.get("rows") or job.rows
+                job.duration_sec = result_payload.get("duration_sec") or job.duration_sec
+                dirty = True
+                continue
+
+            if redis_status == "failed":
+                job.status = JobStatus.failed
+                dirty = True
+                continue
+
+            if dirty:
+                await db.commit()
+            return job, state
+
+        if _job_is_stale(job, now):
+            job.status = JobStatus.failed
+            job.stage = "stale"
+            job.error = "Training job state expired before completion."
+            dirty = True
+            continue
+
+        if dirty:
+            await db.commit()
+        return job, None
+
+    if dirty:
+        await db.commit()
+    return None, None
 
 
 @router.post("/start", response_model=TrainStatusResponse)
@@ -64,24 +169,27 @@ async def start_training(
     if not os.path.exists(csv_path):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "CSV not found")
 
-    # Guard: reject if a job is already queued or running
-    active_check = await db.execute(
-        select(func.count(TrainingJob.id)).where(TrainingJob.status.in_([JobStatus.queued, JobStatus.running]))
-    )
-    if (active_check.scalar() or 0) > 0:
-        raise HTTPException(status.HTTP_409_CONFLICT, "A training job is already queued or running")
-
-    job_id = uuid.uuid4().hex[:16]
-
-    # Record in DB
-    job = TrainingJob(job_id=job_id, status=JobStatus.queued, csv_path=csv_path)
-    db.add(job)
-    await db.commit()
-
-    # Enqueue ARQ task
     settings = get_settings()
     redis = await create_pool(_parse_redis_url(settings.redis_url))
     try:
+        active_job, active_state = await _reconcile_active_job(db, redis)
+        if active_job is not None:
+            return JSONResponse(
+                status_code=status.HTTP_409_CONFLICT,
+                content={
+                    "detail": "A training job is already queued or running",
+                    **_serialize_job(active_job, active_state).model_dump(),
+                },
+            )
+
+        job_id = uuid.uuid4().hex[:16]
+
+        # Record in DB
+        job = TrainingJob(job_id=job_id, status=JobStatus.queued, csv_path=csv_path)
+        db.add(job)
+        await db.commit()
+
+        # Enqueue ARQ task
         await redis.enqueue_job("run_training", job_id, csv_path)
     finally:
         await redis.close()
@@ -89,38 +197,63 @@ async def start_training(
     return TrainStatusResponse(job_id=job_id, status="queued", progress=0)
 
 
+@router.get("/active", response_model=TrainStatusResponse)
+async def get_active_training(
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    """Return the currently active queued/running training job, if any."""
+    settings = get_settings()
+    redis = await create_pool(_parse_redis_url(settings.redis_url))
+    try:
+        active_job, active_state = await _reconcile_active_job(db, redis)
+    finally:
+        await redis.close()
+
+    if active_job is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No active training job")
+
+    return _serialize_job(active_job, active_state)
+
+
 @router.get("/status/{job_id}", response_model=TrainStatusResponse)
 async def get_training_status(
     job_id: str,
     request: Request,
+    db: AsyncSession = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
     """Get training job status from Redis."""
     settings = get_settings()
     redis = await create_pool(_parse_redis_url(settings.redis_url))
     try:
-        raw = await redis.get(f"{JOB_PREFIX}{job_id}")
+        data = await _read_redis_job_state(redis, job_id)
     finally:
         await redis.close()
 
-    if raw is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Job not found")
-
-    data = json.loads(raw)
-    job_status = data.get("status", "unknown")
+    job_status = data.get("status", "unknown") if data else None
 
     # Invalidate caches when training completes
     if job_status == "completed":
         await _invalidate_caches(request)
+        result = await db.execute(select(TrainingJob).where(TrainingJob.job_id == job_id))
+        job = result.scalar_one_or_none()
+        if job is not None:
+            return _serialize_job(job, data)
 
-    return TrainStatusResponse(
-        job_id=job_id,
-        status=job_status,
-        stage=data.get("stage"),
-        progress=data.get("progress", 0),
-        result=data.get("result"),
-        error=data.get("error"),
-    )
+    if data is None:
+        result = await db.execute(select(TrainingJob).where(TrainingJob.job_id == job_id))
+        job = result.scalar_one_or_none()
+        if job is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Job not found")
+        if job.status in ACTIVE_JOB_STATUSES and _job_is_stale(job, datetime.now(UTC)):
+            job.status = JobStatus.failed
+            job.stage = "stale"
+            job.error = "Training job state expired before completion."
+            await db.commit()
+        return _serialize_job(job)
+
+    return TrainStatusResponse(**data, job_id=job_id, progress=_coerce_progress(data.get("progress")))
 
 
 @router.get("/jobs")

@@ -1,11 +1,11 @@
-# Phase 8–16 — v0.8.4–v0.8.12 Upgrade & Improvement Plan
+# Phase 8–17 — v0.8.4–v0.8.13 Upgrade & Improvement Plan
 
 > Comprehensive upgrade from v1 feature parity analysis, powered by [Agency Agents](https://github.com/msitarzewski/agency-agents).
 
 | Item | Value |
 |------|-------|
 | **Current Version** | 0.8.3 |
-| **Target Version** | 0.8.12 |
+| **Target Version** | 0.8.13 |
 | **Scope** | ML bug fixes, feature parity, performance, security, UX, accessibility, testing, documentation |
 | **Method** | Agency agent-driven analysis and implementation across 7 phases |
 
@@ -269,6 +269,17 @@ A thorough comparison of the v1 app (`Nepremicnine v3.5`, Flask/SQLite) with the
 3. **Profile personalization** — added `PATCH /api/auth/me` with editable name and optional avatar URL, surfaced via the new profile panel in the app shell
 4. **Production fixes** — app version now stays visible in production health checks, nginx upload limit raised to 1024 MB, and `/favicon.ico` falls back to `/favicon.svg`
 5. **UI refresh** — redesigned login, app shell, dashboard, and training flow to make the product feel less barren and more intentional
+
+## Phase 17 — Training Recovery & Data Visibility (v0.8.13)
+
+### Changes
+
+1. **Training recovery** — added `/api/train/active`, surfaced active job context in 409 responses, and taught the frontend to resume polling queued/running jobs after refresh instead of appearing broken
+2. **Stale training cleanup** — queued/running jobs that lose their Redis state are now marked failed once stale, so they do not block future training attempts indefinitely
+3. **Dataset visibility** — frontend dataset loading now fetches every paginated page, which prevents older ETN year pairs such as 2024 from disappearing from bulk preparation
+4. **Safer ETN bulk combine** — multi-year preparation now returns `per_year` counts and deduplicates using stable source row keys instead of coarse feature columns that could remove valid rows
+5. **Production favicon bundle** — added real `favicon.ico`, `favicon-32x32.png`, and `apple-touch-icon.png` assets and updated nginx/icon links for better browser compatibility
+6. **Version bump** — app/config/docs updated to 0.8.13
 6. **i18n completion** — mapped common backend error messages into localized frontend messages for both Slovenian and English
 
 ### Verification
@@ -297,3 +308,4 @@ A thorough comparison of the v1 app (`Nepremicnine v3.5`, Flask/SQLite) with the
 | Phase 14 | Documentation & Final Polish | v0.8.10 | ✅ Complete |
 | Phase 15 | CI/CD & Production Fix | v0.8.11 | ✅ Complete |
 | Phase 16 | Workflow & UX Repair | v0.8.12 | ✅ Complete |
+| Phase 17 | Training Recovery & Data Visibility | v0.8.13 | ✅ Complete |

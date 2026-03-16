@@ -589,6 +589,17 @@ def build_training_df_from_etn_kpp(
         raise ValueError("Merging posli.csv and delistavb.csv returned 0 rows.")
 
     training_df = pd.DataFrame()
+    merged_index = merged.index.to_series(index=merged.index).astype(str)
+    part_id_col = next(
+        (c for c in ["ID_DELA_STAVBE", "ID_DEL_STAVBE", "ID_STAVBE_DEL", "ID_NEPREMICNINE", "ID_DELA"] if c in merged),
+        None,
+    )
+    training_df["deal_id"] = merged["ID_POSLA"].astype(str)
+    if part_id_col is not None:
+        training_df["source_row_key"] = merged["ID_POSLA"].astype(str) + ":" + merged[part_id_col].astype(str)
+    else:
+        training_df["source_row_key"] = merged["ID_POSLA"].astype(str) + ":" + merged_index
+
     training_df["size_m2"] = pd.to_numeric(merged[size_col], errors="coerce")
 
     # Rooms
@@ -865,9 +876,15 @@ def prepare_training_csv_from_etn_kpp_bulk(
         raise ValueError("No valid ETN pairs produced training data.")
 
     combined = pd.concat(training_frames, ignore_index=True)
-    combined = combined.drop_duplicates(
-        subset=["size_m2", "year_built", "municipality", "property_type", "price_eur", "source_label"]
-    )
+    rows_before_dedup = len(combined)
+    dedupe_columns = [col for col in ["source_label", "source_row_key"] if col in combined.columns]
+    if dedupe_columns:
+        combined = combined.drop_duplicates(subset=dedupe_columns)
+    deduplicated_rows = rows_before_dedup - len(combined)
+    per_year = {
+        str(label): int(rows)
+        for label, rows in combined.groupby("source_label", dropna=False).size().sort_index().items()
+    }
 
     os.makedirs(os.path.dirname(output_csv_path), exist_ok=True)
     combined.to_csv(output_csv_path, index=False)
@@ -879,5 +896,7 @@ def prepare_training_csv_from_etn_kpp_bulk(
         "source": "etn_kpp_bulk",
         "pairs_received": len(pairs),
         "pairs_used": len(training_frames),
+        "deduplicated_rows": deduplicated_rows,
+        "per_year": per_year,
         "reports": reports,
     }

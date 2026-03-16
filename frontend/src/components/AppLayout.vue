@@ -198,9 +198,9 @@
           @click="mobileMenuOpen = false"
         >
           <span class="nav-icon"><AppIcon :name="item.icon" :size="18" /></span>
-          <span class="nav-copy"
-            ><strong>{{ t(item.label) }}</strong></span
-          >
+          <span class="nav-copy">
+            <strong>{{ t(item.label) }}</strong>
+          </span>
         </RouterLink>
       </nav>
 

@@ -20,6 +20,7 @@
 
   const isAdmin = computed(() => auth.user?.role === 'admin')
   const trainingDataset = computed(() => dataStore.trainingDataset)
+  const isTerminalStatus = (status) => status === 'completed' || status === 'failed'
 
   const uploadOptions = computed(() =>
     (Array.isArray(dataStore.datasets) ? dataStore.datasets : []).filter(
@@ -104,21 +105,44 @@
     if (!selectedCsv.value) return
     const result = await model.startTraining(selectedCsv.value)
     if (result?.job_id) {
-      pollTimer.value = setInterval(async () => {
-        const status = await model.pollStatus(result.job_id)
-        if (!status || status.status === 'completed' || status.status === 'failed') {
-          clearInterval(pollTimer.value)
-          pollTimer.value = null
-          if (status?.status === 'completed') {
-            await Promise.all([
-              model.fetchInfo(),
-              model.fetchImportance(),
-              model.fetchDiagnostics(),
-              dataStore.fetchTrainingDataset(),
-            ])
-          }
+      startPolling(result.job_id)
+    }
+  }
+
+  async function refreshModelArtifacts() {
+    await Promise.all([
+      model.fetchInfo(),
+      model.fetchImportance(),
+      model.fetchDiagnostics(),
+      dataStore.fetchTrainingDataset(),
+    ])
+  }
+
+  function stopPolling() {
+    if (pollTimer.value) {
+      clearInterval(pollTimer.value)
+      pollTimer.value = null
+    }
+  }
+
+  function startPolling(jobId) {
+    stopPolling()
+
+    pollTimer.value = setInterval(async () => {
+      const status = await model.pollStatus(jobId)
+      if (!status || isTerminalStatus(status.status)) {
+        stopPolling()
+        if (status?.status === 'completed') {
+          await refreshModelArtifacts()
         }
-      }, 2000)
+      }
+    }, 2000)
+  }
+
+  async function syncExistingTraining() {
+    const activeJob = await model.fetchActiveTraining()
+    if (activeJob?.job_id && !isTerminalStatus(activeJob.status)) {
+      startPolling(activeJob.job_id)
     }
   }
 
@@ -135,13 +159,11 @@
       dataStore.fetchDatasets(),
       dataStore.fetchTrainingDataset(),
     ])
+    await syncExistingTraining()
   })
 
   onUnmounted(() => {
-    if (pollTimer.value) {
-      clearInterval(pollTimer.value)
-      pollTimer.value = null
-    }
+    stopPolling()
   })
 </script>
 

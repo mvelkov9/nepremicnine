@@ -53,8 +53,43 @@ export const useModelStore = defineStore('model', () => {
       trainingStatus.value = data
       return data
     } catch (e) {
+      const activeJob =
+        e.response?.status === 409 && e.response?.data?.job_id
+          ? {
+              job_id: e.response.data.job_id,
+              status: e.response.data.status || 'queued',
+              stage: e.response.data.stage || null,
+              progress: e.response.data.progress || 0,
+              result: e.response.data.result || null,
+              error: e.response.data.error || null,
+            }
+          : null
+
+      if (activeJob) {
+        training.value = activeJob.status === 'queued' || activeJob.status === 'running'
+        trainingStatus.value = activeJob
+        return activeJob
+      }
+
+      training.value = false
       error.value = getApiErrorMessage(e, i18n.global.t)
       throw e
+    }
+  }
+
+  async function fetchActiveTraining() {
+    try {
+      const { data } = await api.get('/api/train/active')
+      trainingStatus.value = data
+      training.value = data.status === 'queued' || data.status === 'running'
+      return data
+    } catch (e) {
+      if (e.response?.status === 404) {
+        training.value = false
+        return null
+      }
+      error.value = getApiErrorMessage(e, i18n.global.t)
+      return null
     }
   }
 
@@ -62,11 +97,10 @@ export const useModelStore = defineStore('model', () => {
     try {
       const { data } = await api.get(`/api/train/status/${jobId}`)
       trainingStatus.value = data
-      if (data.status === 'completed' || data.status === 'failed') {
-        training.value = false
-      }
+      training.value = data.status === 'queued' || data.status === 'running'
       return data
     } catch (e) {
+      training.value = false
       error.value = getApiErrorMessage(e, i18n.global.t)
       return null
     }
@@ -90,6 +124,7 @@ export const useModelStore = defineStore('model', () => {
     fetchImportance,
     fetchDiagnostics,
     startTraining,
+    fetchActiveTraining,
     pollStatus,
     reset,
   }

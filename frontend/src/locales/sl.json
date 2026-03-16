@@ -304,7 +304,9 @@
     "cannotReadCsv": "Datoteke `{file}` ni bilo mogoče prebrati. Preverite format in kodiranje.",
     "invalidJson": "Neveljaven JSON format.",
     "readyForModel": "Pripravljeno za model",
-    "openModel": "Odpri pogled Model"
+    "openModel": "Odpri pogled Model",
+    "reportStatus": "Status",
+    "reportDetail": "Podrobnost"
   },
   "diag": {
     "noModel": "Model še ni naučen. Naložite podatke in začnite urjenje.",

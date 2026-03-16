@@ -304,7 +304,9 @@
     "cannotReadCsv": "Could not read `{file}`. Check the file format and encoding.",
     "invalidJson": "Invalid JSON format.",
     "readyForModel": "Ready for model training",
-    "openModel": "Open model view"
+    "openModel": "Open model view",
+    "reportStatus": "Status",
+    "reportDetail": "Detail"
   },
   "diag": {
     "noModel": "No model trained yet. Upload data and start training.",

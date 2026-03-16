@@ -201,6 +201,15 @@
     }))
   }
 
+  function getReportDetail(report) {
+    return (
+      report.reason ||
+      report.used_size_column ||
+      report.used_property_type_column ||
+      t('common.noData')
+    )
+  }
+
   function openModelView() {
     router.push('/model')
   }
@@ -404,6 +413,33 @@
                 <span class="badge-blue">{{ year }}</span>
               </td>
               <td>{{ rows.toLocaleString() }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div v-if="result.reports?.length" class="table-wrap" style="margin-top: 1rem">
+        <table>
+          <thead>
+            <tr>
+              <th>{{ t('prepare.year') }}</th>
+              <th>{{ t('prepare.reportStatus') }}</th>
+              <th>{{ t('data.rows') }}</th>
+              <th>{{ t('prepare.reportDetail') }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="report in result.reports" :key="report.label">
+              <td>
+                <span class="badge-blue">{{ report.label }}</span>
+              </td>
+              <td>
+                <span :class="report.status === 'ok' ? 'badge badge-green' : 'badge badge-red'">
+                  {{ report.status }}
+                </span>
+              </td>
+              <td>{{ (report.rows || 0).toLocaleString() }}</td>
+              <td class="muted">{{ getReportDetail(report) }}</td>
             </tr>
           </tbody>
         </table>

@@ -6,7 +6,7 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 
 | Item | Value |
 |------|-------|
-| **Version** | 0.8.12 |
+| **Version** | 0.8.13 |
 | **Repo** | [github.com/mvelkov9/nepremicnine](https://github.com/mvelkov9/nepremicnine) |
 | **Backend** | FastAPI + Python 3.13 + PostgreSQL 17 + SQLAlchemy 2.x async |
 | **Frontend** | Vue 3 Composition API + Pinia + pnpm 9, Vite 6 |
@@ -31,6 +31,13 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 | [Phase 8–14](PHASE_8_14_PLAN.md) | v1→v2 gap fixes, feature parity, performance, security, UX, tests, docs | ✅ Complete | — |
 
 ## Changelog
+
+### v0.8.13
+
+- **Training UX**: Added active-job recovery so the Model view can resume queued/running training jobs after refresh, and stale jobs are now marked failed instead of blocking new training forever
+- **Data prep**: Dataset loading now walks every pagination page, bulk ETN preparation returns per-year row counts, and deduplication keys off stable source row IDs to avoid dropping legitimate transactions
+- **Production UI**: Added real `favicon.ico`/PNG assets and updated nginx/icon links so browser tab icons render reliably in production
+- **Version**: 0.8.12 → 0.8.13
 
 ### v0.8.12
 - **UX**: Rebuilt the authenticated shell with a real top header, better navigation context, cleaner landing/auth screen, and a stronger dashboard first impression
