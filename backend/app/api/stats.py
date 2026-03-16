@@ -1,6 +1,5 @@
 """Statistics routes: overview, regions, distribution, trend."""
 
-import json
 import logging
 import os
 
@@ -11,6 +10,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from app.dependencies.auth import get_current_user
 from app.models.user import User
 from app.services.regions_service import lookup_region
+from app.utils.cache import cache_get, cache_set
 
 logger = logging.getLogger(__name__)
 
@@ -22,33 +22,6 @@ TRAIN_CSV = os.path.join(
     "raw",
     "train.csv",
 )
-
-CACHE_TTL = 300  # 5 minutes
-
-
-async def _cache_get(request: Request, key: str) -> dict | list | None:
-    """Try to get cached value from Redis. Returns None on miss or error."""
-    try:
-        redis = getattr(request.app.state, "redis", None)
-        if redis is None:
-            return None
-        raw = await redis.get(key)
-        if raw is not None:
-            return json.loads(raw)
-    except Exception:
-        logger.debug("Redis cache miss/error for key=%s", key)
-    return None
-
-
-async def _cache_set(request: Request, key: str, value) -> None:
-    """Store value in Redis cache with TTL. Silently ignores errors."""
-    try:
-        redis = getattr(request.app.state, "redis", None)
-        if redis is None:
-            return
-        await redis.set(key, json.dumps(value, default=str), ex=CACHE_TTL)
-    except Exception:
-        logger.debug("Redis cache set error for key=%s", key)
 
 
 def _d96tm_to_wgs84(n: np.ndarray, e: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -138,7 +111,7 @@ async def overview(
     _user: User = Depends(get_current_user),
 ):
     cache_key = f"cache:stats:overview:{property_type or 'all'}"
-    cached = await _cache_get(request, cache_key)
+    cached = await cache_get(request, cache_key)
     if cached is not None:
         return cached
 
@@ -206,7 +179,7 @@ async def overview(
         types = df["property_type"].value_counts()
         result["property_types"] = [{"type": t, "count": int(c)} for t, c in types.items()]
 
-    await _cache_set(request, cache_key, result)
+    await cache_set(request, cache_key, result)
     return result
 
 
@@ -216,7 +189,7 @@ async def regions_stats(
     _user: User = Depends(get_current_user),
 ):
     cache_key = "cache:stats:regions"
-    cached = await _cache_get(request, cache_key)
+    cached = await cache_get(request, cache_key)
     if cached is not None:
         return cached
 
@@ -255,7 +228,7 @@ async def regions_stats(
         results.append(entry)
 
     result = sorted(results, key=lambda x: x["count"], reverse=True)
-    await _cache_set(request, cache_key, result)
+    await cache_set(request, cache_key, result)
     return result
 
 
@@ -267,7 +240,7 @@ async def price_distribution(
     _user: User = Depends(get_current_user),
 ):
     cache_key = f"cache:stats:price-distribution:{bins}:{property_type or 'all'}"
-    cached = await _cache_get(request, cache_key)
+    cached = await cache_get(request, cache_key)
     if cached is not None:
         return cached
 
@@ -288,7 +261,7 @@ async def price_distribution(
         "counts": [int(c) for c in counts_arr],
         "bin_labels": bin_labels,
     }
-    await _cache_set(request, cache_key, result)
+    await cache_set(request, cache_key, result)
     return result
 
 
@@ -298,7 +271,7 @@ async def trend(
     _user: User = Depends(get_current_user),
 ):
     cache_key = "cache:stats:trend"
-    cached = await _cache_get(request, cache_key)
+    cached = await cache_get(request, cache_key)
     if cached is not None:
         return cached
 
@@ -360,7 +333,7 @@ async def trend(
                 entry["by_type"][pt] = pt_entry
         results.append(entry)
 
-    await _cache_set(request, cache_key, results)
+    await cache_set(request, cache_key, results)
     return results
 
 

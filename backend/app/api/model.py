@@ -16,44 +16,18 @@ from app.models.model_run import ModelRun
 from app.models.user import User
 from app.schemas.model import ModelInfoResponse
 from app.services.model_service import get_model_info
+from app.utils.cache import cache_get, cache_set
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/model", tags=["model"])
-
-CACHE_TTL = 300  # 5 minutes
-
-
-async def _cache_get(request: Request, key: str):
-    """Try to get cached value from Redis."""
-    try:
-        redis = getattr(request.app.state, "redis", None)
-        if redis is None:
-            return None
-        raw = await redis.get(key)
-        if raw is not None:
-            return json.loads(raw)
-    except Exception:
-        logger.debug("Redis cache miss/error for key=%s", key)
-    return None
-
-
-async def _cache_set(request: Request, key: str, value) -> None:
-    """Store value in Redis cache with TTL."""
-    try:
-        redis = getattr(request.app.state, "redis", None)
-        if redis is None:
-            return
-        await redis.set(key, json.dumps(value, default=str), ex=CACHE_TTL)
-    except Exception:
-        logger.debug("Redis cache set error for key=%s", key)
 
 
 @router.get("/info", response_model=ModelInfoResponse)
 async def model_info(request: Request, _user: User = Depends(get_current_user)):
     """Get current trained model metadata."""
     cache_key = "cache:model:info"
-    cached = await _cache_get(request, cache_key)
+    cached = await cache_get(request, cache_key)
     if cached is not None:
         return ModelInfoResponse(**cached)
 
@@ -61,7 +35,7 @@ async def model_info(request: Request, _user: User = Depends(get_current_user)):
     if info is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No trained model found")
     response = ModelInfoResponse(**info)
-    await _cache_set(request, cache_key, response.model_dump())
+    await cache_set(request, cache_key, response.model_dump())
     return response
 
 
