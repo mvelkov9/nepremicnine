@@ -1,13 +1,13 @@
-# Phase 8–17 — v0.8.4–v0.8.13 Upgrade & Improvement Plan
+# Phase 8–20 — v0.8.4–v0.8.16 Upgrade & Improvement Plan
 
 > Comprehensive upgrade from v1 feature parity analysis, powered by [Agency Agents](https://github.com/msitarzewski/agency-agents).
 
 | Item | Value |
 |------|-------|
-| **Current Version** | 0.8.13 |
-| **Target Version** | 0.8.13 |
-| **Scope** | ML bug fixes, feature parity, performance, security, UX, accessibility, testing, documentation |
-| **Method** | Agency agent-driven analysis and implementation across 7 phases |
+| **Current Version** | 0.8.14 |
+| **Target Version** | 0.8.16 |
+| **Scope** | ML bug fixes, feature parity, cache coherency, analytics UX, accessibility, testing, documentation |
+| **Method** | Agency agent-driven analysis, implementation, and verification across historical + active phases |
 
 ---
 
@@ -39,6 +39,41 @@ After shipping the original `v0.8.13` bugfix/docs/favicon/training/data-prep wor
 - frontend `prettier --check` passes on touched files
 - `vite build` passes
 - targeted backend `pytest` still times out inside the existing harness, so endpoint coverage for this addendum is documented but not fully executable in the current local test setup
+
+---
+
+## Phase 18–20 Execution Tracker (March 16, 2026)
+
+The app was re-audited with the Agency roster before continuing beyond `v0.8.13`.
+
+### Agents in Play
+
+- **Agents Orchestrator** — keeps the multi-phase flow explicit and evidence-driven
+- **Project Shepherd** — maintains phase sequencing, version bumps, and doc hygiene
+- **Code Reviewer** — identifies correctness/performance regressions over style-only feedback
+- **Backend Architect** — implements cache/data consistency fixes and endpoint parity work
+- **Frontend Developer** — restores v1 analytical affordances and improves operator workflows
+- **Technical Writer** — keeps README/MASTER/phase tracking aligned with each shipped phase
+- **Git Workflow Master** — enforces atomic commits, version bumps, and per-phase delivery
+- **Reality Checker** — validates each phase with actual commands and documented evidence
+
+### Fresh Findings
+
+| # | Finding | Impact | Planned Phase |
+|---|---------|--------|---------------|
+| 1 | Redis-backed stats/model caches were only invalidated when `/api/train/status/{job_id}` was polled after completion | Users could see stale model/stats data for up to 5 minutes | 18 |
+| 2 | Preparing `train.csv` and importing region mappings did not clear cached analytical responses | Dashboard and municipality views could lag behind source data | 18 |
+| 3 | v1 dashboard property-type filtering was lost in the v2 analytical portal | Analysts lost a useful market-lens workflow during migration | 19 |
+| 4 | Several high-visibility analytical views still hardcode Slovenian locale formatting | English mode remains partially untranslated in numbers/dates | 20 |
+| 5 | v1 diagnostics had a more focused type-by-type review flow than the current v2 diagnostics page | Model review is less scannable than the original app | 20 |
+
+### Active Phase Plan
+
+| Phase | Description | Version | Status |
+|-------|-------------|---------|--------|
+| Phase 18 | Cache Coherency & Phase Tracking | v0.8.14 | ✅ Complete |
+| Phase 19 | Dashboard Property-Type Parity | v0.8.15 | 🚧 Planned |
+| Phase 20 | Diagnostics Focus & Locale Formatting | v0.8.16 | 🚧 Planned |
 
 ---
 
@@ -326,6 +361,88 @@ A thorough comparison of the v1 app (`Nepremicnine v3.5`, Flask/SQLite) with the
 
 ---
 
+## Phase 18 — Cache Coherency & Phase Tracking (v0.8.14)
+
+**Agents**: Agents Orchestrator, Project Shepherd, Code Reviewer, Backend Architect, Technical Writer
+
+### Changes
+
+1. **Shared cache invalidation utility** — extracted Redis cache invalidation into `app/utils/cache.py` so the same behavior can be reused from HTTP handlers and background workers
+2. **Worker-side cache clearing** — training completion now clears `cache:stats:*` and `cache:model:*` directly from the ARQ worker, removing the stale-data window when nobody polls `/api/train/status/{job_id}`
+3. **Mutation-side cache clearing** — `prepare-train`, `prepare-etn-kpp`, `prepare-etn-kpp-bulk`, and `regions/import-rpe-rn` now invalidate analytical caches immediately after successful writes
+4. **Safer Redis scan loop** — cache invalidation now exits cleanly on integer, string, or byte cursor zero values instead of depending on a single cursor type
+5. **Tracked execution plan** — extended this phase document with a fresh Agency-led audit plus explicit Phase 19 and Phase 20 follow-up milestones
+6. **Version bump** — app/config/docs updated to `0.8.14`
+
+### Files Modified
+
+- `backend/app/utils/cache.py`
+- `backend/app/api/train.py`
+- `backend/app/api/data.py`
+- `backend/app/tasks/training_worker.py`
+- `backend/tests/conftest.py`
+- `backend/tests/test_cache.py`
+- `README.md`
+- `docs/MASTER.md`
+- `docs/PHASE_8_14_PLAN.md`
+- `backend/app/config.py`
+- `backend/pyproject.toml`
+- `frontend/package.json`
+- `.env.example`
+
+### Verification
+
+- [x] Backend Ruff lint passes on touched files
+- [x] Backend Ruff format check passes on touched files
+- [x] Unit tests covering cache invalidation pass (`pytest -q tests/test_cache.py`)
+- [x] Frontend ESLint passes
+- [x] Frontend Prettier check passes
+- [x] Frontend production build succeeds
+- [ ] Full backend HTTP-client pytest harness
+  Note: still blocked in this sandbox because the async client/SQLite test harness hangs before endpoint execution
+
+---
+
+## Phase 19 — Dashboard Property-Type Parity (v0.8.15)
+
+**Agents**: Frontend Developer, Backend Architect, Code Reviewer
+
+### Planned Changes
+
+1. Restore a v1-style property-type selector on the dashboard
+2. Extend analytical endpoints used by the dashboard with property-type filtering where needed
+3. Keep an unfiltered option set available so the dashboard can pivot without losing context
+4. Add focused tests for the new filtered endpoint behavior
+5. Update README/MASTER/phase tracking and version references to `0.8.15`
+
+### Verification Targets
+
+- [ ] Filtered dashboard endpoints return type-scoped results
+- [ ] Dashboard selector works in authenticated UI flows
+- [ ] Backend/frontend lint, tests, and build pass
+
+---
+
+## Phase 20 — Diagnostics Focus & Locale Formatting (v0.8.16)
+
+**Agents**: Frontend Developer, UX Architect, Technical Writer
+
+### Planned Changes
+
+1. Reintroduce a more focused per-type review workflow in diagnostics, inspired by the v1 model review experience
+2. Add shared locale-aware formatting helpers for numbers, currency, percentages, and dates
+3. Apply the new formatting layer to the highest-traffic analytical views so English mode stops leaking Slovenian number/date formatting
+4. Add targeted frontend verification for the new diagnostics/formatting behavior
+5. Update README/MASTER/phase tracking and version references to `0.8.16`
+
+### Verification Targets
+
+- [ ] Diagnostics exposes clearer per-type drill-down and summary states
+- [ ] Analytical views format numbers/dates according to the active locale
+- [ ] Frontend/backend lint, tests, and build pass
+
+---
+
 ## Phase Progress
 
 | Phase | Description | Version | Status |
@@ -340,3 +457,6 @@ A thorough comparison of the v1 app (`Nepremicnine v3.5`, Flask/SQLite) with the
 | Phase 15 | CI/CD & Production Fix | v0.8.11 | ✅ Complete |
 | Phase 16 | Workflow & UX Repair | v0.8.12 | ✅ Complete |
 | Phase 17 | Training Recovery & Data Visibility | v0.8.13 | ✅ Complete |
+| Phase 18 | Cache Coherency & Phase Tracking | v0.8.14 | ✅ Complete |
+| Phase 19 | Dashboard Property-Type Parity | v0.8.15 | 🚧 Planned |
+| Phase 20 | Diagnostics Focus & Locale Formatting | v0.8.16 | 🚧 Planned |

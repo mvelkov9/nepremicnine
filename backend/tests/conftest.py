@@ -40,6 +40,19 @@ class _FakeRedis:
     async def set(self, key: str, value: str, ex: int | None = None) -> None:
         self._store[key] = value
 
+    async def scan(self, cursor=0, match: str | None = None, count: int | None = None):
+        prefix = (match or "").rstrip("*")
+        keys = [key for key in self._store if key.startswith(prefix)] if prefix else list(self._store)
+        return 0, keys
+
+    async def delete(self, *keys: str) -> int:
+        deleted = 0
+        for key in keys:
+            if key in self._store:
+                deleted += 1
+                self._store.pop(key, None)
+        return deleted
+
     async def close(self) -> None:
         pass
 

@@ -6,7 +6,7 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 
 | Item | Value |
 |------|-------|
-| **Version** | 0.8.13 |
+| **Version** | 0.8.14 |
 | **Repo** | [github.com/mvelkov9/nepremicnine](https://github.com/mvelkov9/nepremicnine) |
 | **Backend** | FastAPI + Python 3.13 + PostgreSQL 17 + SQLAlchemy 2.x async |
 | **Frontend** | Vue 3 Composition API + Pinia + pnpm 9, Vite 6 |
@@ -28,9 +28,20 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 | [Phase 5](PHASE_5_PRODUCTION.md) | Production — Docker, CI/CD, deploy | ✅ Complete | `153f140` |
 | [Phase 6](PHASE_6_V030.md) | Security hardening, backend robustness, frontend accessibility, expanded tests | ✅ Complete | `(v0.3.1)` |
 | [Phase 7](PHASE_7_V040_V080.md) | Security hardening, feature completeness, test expansion, UX polish | ✅ Complete | (latest commit) |
-| [Phase 8–14](PHASE_8_14_PLAN.md) | v1→v2 gap fixes, feature parity, performance, security, UX, tests, docs | ✅ Complete | — |
+| [Phase 8–17](PHASE_8_14_PLAN.md) | v1→v2 gap fixes, feature parity, performance, security, UX, tests, docs | ✅ Complete | — |
+| [Phase 18](PHASE_8_14_PLAN.md#phase-18--cache-coherency--phase-tracking-v0814) | Agency re-audit, cache coherency fixes, tracked execution plan | ✅ Complete | `(current)` |
+| [Phase 19](PHASE_8_14_PLAN.md#phase-19--dashboard-property-type-parity-v0815) | Dashboard property-type parity and analytical lens controls | 🚧 Planned | — |
+| [Phase 20](PHASE_8_14_PLAN.md#phase-20--diagnostics-focus--locale-formatting-v0816) | Diagnostics focus workflow and locale-aware formatting polish | 🚧 Planned | — |
 
 ## Changelog
+
+### v0.8.14
+
+- **Cache coherency**: Training workers now invalidate Redis-backed model/stats caches as soon as a job completes instead of waiting for a later `/api/train/status/{job_id}` poll
+- **Data freshness**: Preparing `train.csv` or importing RPE/RN region mappings now clears cached analytical responses so the dashboard reflects the newest source data immediately
+- **Testing**: Added unit coverage for shared cache invalidation, worker cache clearing, and data/region mutation invalidation hooks
+- **Planning**: Extended the agency-driven tracker with Phase 18–20 execution milestones for the remaining parity and UX work
+- **Version**: 0.8.13 → 0.8.14
 
 ### v0.8.13
 

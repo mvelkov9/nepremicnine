@@ -15,6 +15,7 @@ from app.database import async_session
 from app.models.model_run import ModelRun
 from app.models.training_job import JobStatus, TrainingJob
 from app.services.model_service import invalidate_model_cache, train_from_csv
+from app.utils.cache import invalidate_cache_prefixes
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +103,7 @@ async def run_training(ctx: dict, job_id: str, csv_path: str) -> dict:
             progress=100,
             result=result,
         )
+        await invalidate_cache_prefixes(redis)
         return result
     except Exception as exc:
         logger.exception("Training failed for job %s", job_id)

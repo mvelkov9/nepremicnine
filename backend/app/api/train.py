@@ -22,6 +22,7 @@ from app.models.training_job import JobStatus, TrainingJob
 from app.models.user import User
 from app.schemas.model import TrainJobResponse, TrainRequest, TrainStatusResponse
 from app.tasks.training_worker import JOB_PREFIX, _parse_redis_url
+from app.utils.cache import invalidate_request_caches
 
 logger = logging.getLogger(__name__)
 
@@ -29,26 +30,9 @@ router = APIRouter(prefix="/train", tags=["training"])
 
 DATA_DIR = os.path.realpath(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data"))
 
-CACHE_PREFIXES = ["cache:stats:", "cache:model:"]
 ACTIVE_JOB_STATUSES = (JobStatus.queued, JobStatus.running)
 QUEUED_JOB_STALE_AFTER = timedelta(minutes=15)
 RUNNING_JOB_STALE_AFTER = timedelta(hours=2)
-
-
-async def _invalidate_caches(request: Request) -> None:
-    """Delete all stats and model cache keys after training completes."""
-    try:
-        redis = getattr(request.app.state, "redis", None)
-        if redis is None:
-            return
-        for prefix in CACHE_PREFIXES:
-            cursor = b"0"
-            while cursor:
-                cursor, keys = await redis.scan(cursor=cursor, match=f"{prefix}*", count=100)
-                if keys:
-                    await redis.delete(*keys)
-    except Exception:
-        logger.debug("Failed to invalidate caches")
 
 
 def _to_utc(value: datetime | None) -> datetime:
@@ -235,7 +219,7 @@ async def get_training_status(
 
     # Invalidate caches when training completes
     if job_status == "completed":
-        await _invalidate_caches(request)
+        await invalidate_request_caches(request)
         result = await db.execute(select(TrainingJob).where(TrainingJob.job_id == job_id))
         job = result.scalar_one_or_none()
         if job is not None:

@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from typing import Literal
 
 import pandas as pd
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -36,6 +36,7 @@ from app.services.data_processing_service import (
     prepare_training_csv_from_etn_kpp_bulk,
     read_csv_flexible,
 )
+from app.utils.cache import invalidate_request_caches
 
 logger = logging.getLogger(__name__)
 
@@ -339,6 +340,7 @@ class EtnPrepareRequest(BaseModel):
 @router.post("/prepare-etn-kpp")
 async def prepare_etn_kpp(
     req: EtnPrepareRequest,
+    request: Request,
     _user: User = Depends(require_admin),
 ):
     """Prepare training CSV from a single ETN KPP posli+delistavb pair."""
@@ -356,6 +358,7 @@ async def prepare_etn_kpp(
         ) from exc
     result["output_csv_path"] = _to_relative_data_path(TRAIN_CSV)
     result["training_dataset"] = _get_training_dataset_metadata().model_dump(mode="json")
+    await invalidate_request_caches(request)
     return result
 
 
@@ -374,6 +377,7 @@ class EtnBulkRequest(BaseModel):
 @router.post("/prepare-etn-kpp-bulk")
 async def prepare_etn_kpp_bulk(
     req: EtnBulkRequest,
+    request: Request,
     _user: User = Depends(require_admin),
 ):
     """Prepare training CSV from multiple ETN KPP pairs (multi-year)."""
@@ -397,6 +401,7 @@ async def prepare_etn_kpp_bulk(
         ) from exc
     result["output_csv_path"] = _to_relative_data_path(TRAIN_CSV)
     result["training_dataset"] = _get_training_dataset_metadata().model_dump(mode="json")
+    await invalidate_request_caches(request)
     return result
 
 
@@ -408,6 +413,7 @@ class RpeRnImportRequest(BaseModel):
 @router.post("/regions/import-rpe-rn")
 async def import_rpe_rn_endpoint(
     req: RpeRnImportRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_admin),
 ):
@@ -442,6 +448,7 @@ async def import_rpe_rn_endpoint(
         db.add(record)
     await db.commit()
 
+    await invalidate_request_caches(request)
     return {"imported": result["count"], "regije": result["regije"]}
 
 
@@ -473,6 +480,7 @@ class PrepareTrainRequest(BaseModel):
 @router.post("/prepare-train")
 async def prepare_train(
     req: PrepareTrainRequest,
+    request: Request,
     _user: User = Depends(require_admin),
 ):
     """Prepare training CSV from a source CSV with custom column mapping."""
@@ -489,4 +497,5 @@ async def prepare_train(
         ) from exc
     result["output_csv_path"] = _to_relative_data_path(TRAIN_CSV)
     result["training_dataset"] = _get_training_dataset_metadata().model_dump(mode="json")
+    await invalidate_request_caches(request)
     return result
