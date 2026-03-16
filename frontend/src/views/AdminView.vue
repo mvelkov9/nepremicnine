@@ -117,6 +117,7 @@
                   <button
                     class="secondary"
                     style="padding: 4px 10px; font-size: 12px"
+                    :aria-label="(user.role === 'admin' ? t('admin.makeViewer') : t('admin.makeAdmin')) + ' – ' + user.full_name"
                     @click="toggleRole(user)"
                   >
                     {{ user.role === 'admin' ? t('admin.makeViewer') : t('admin.makeAdmin') }}
@@ -124,6 +125,7 @@
                   <button
                     :class="user.is_active ? 'danger' : ''"
                     style="padding: 4px 10px; font-size: 12px"
+                    :aria-label="(user.is_active ? t('admin.disable') : t('admin.enable')) + ' – ' + user.full_name"
                     @click="toggleActive(user)"
                   >
                     {{ user.is_active ? t('admin.disable') : t('admin.enable') }}
@@ -131,6 +133,7 @@
                   <button
                     class="danger"
                     style="padding: 4px 10px; font-size: 12px"
+                    :aria-label="t('common.delete') + ' – ' + user.full_name"
                     @click="deleteUser(user)"
                   >
                     {{ t('common.delete') }}

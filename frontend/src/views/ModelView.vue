@@ -114,7 +114,13 @@
 
       <!-- Progress -->
       <div v-if="model.trainingStatus" style="margin-top: 1rem">
-        <div class="progress-bar">
+        <div
+          class="progress-bar"
+          role="progressbar"
+          :aria-valuenow="model.trainingStatus.progress || 0"
+          aria-valuemin="0"
+          aria-valuemax="100"
+        >
           <div
             class="progress-bar-fill"
             :style="{ width: (model.trainingStatus.progress || 0) + '%' }"

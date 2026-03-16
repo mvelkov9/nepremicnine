@@ -67,9 +67,27 @@
     showSuggestions.value = false
   }
 
+  const highlightedIndex = ref(-1)
+
   function onMunicipalityInput() {
     form.value.municipality = municipalityQuery.value
     showSuggestions.value = true
+    highlightedIndex.value = -1
+  }
+
+  function onMunicipalityKeydown(e) {
+    const list = filteredMunicipalities.value
+    if (!showSuggestions.value || !list.length) return
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      highlightedIndex.value = (highlightedIndex.value + 1) % list.length
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      highlightedIndex.value = (highlightedIndex.value - 1 + list.length) % list.length
+    } else if (e.key === 'Enter' && highlightedIndex.value >= 0) {
+      e.preventDefault()
+      selectMunicipality(list[highlightedIndex.value])
+    }
   }
 
   const result = ref(null)
@@ -196,15 +214,23 @@
               v-model="municipalityQuery"
               type="text"
               class="form-input"
+              role="combobox"
+              :aria-expanded="showSuggestions && filteredMunicipalities.length > 0"
+              aria-autocomplete="list"
+              aria-controls="municipality-listbox"
               :placeholder="t('predict.municipalityPlaceholder')"
               @input="onMunicipalityInput"
+              @keydown="onMunicipalityKeydown"
               @focus="showSuggestions = true"
               @blur="setTimeout(() => (showSuggestions = false), 200)"
             />
-            <ul v-if="showSuggestions && filteredMunicipalities.length" class="suggestions">
+            <ul v-if="showSuggestions && filteredMunicipalities.length" id="municipality-listbox" role="listbox" class="suggestions">
               <li
-                v-for="m in filteredMunicipalities"
+                v-for="(m, idx) in filteredMunicipalities"
                 :key="m"
+                role="option"
+                :aria-selected="idx === highlightedIndex"
+                :class="{ highlighted: idx === highlightedIndex }"
                 @mousedown.prevent="selectMunicipality(m)"
               >
                 {{ m }}
@@ -418,7 +444,8 @@
     cursor: pointer;
     font-size: 0.875rem;
   }
-  .suggestions li:hover {
+  .suggestions li:hover,
+  .suggestions li.highlighted {
     background: var(--card-bg-muted, #eff6ff);
   }
   .checkbox-grid {

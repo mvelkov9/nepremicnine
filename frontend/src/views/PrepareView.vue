@@ -182,21 +182,21 @@
 
     <!-- Mode tabs -->
     <div class="card" style="margin-bottom: 1.5rem">
-      <div class="mode-tabs">
-        <button :class="['tab-btn', { active: etnMode === 'bulk' }]" @click="etnMode = 'bulk'">
+      <div class="mode-tabs" role="tablist">
+        <button :class="['tab-btn', { active: etnMode === 'bulk' }]" role="tab" :aria-selected="etnMode === 'bulk'" @click="etnMode = 'bulk'">
           {{ t('prepare.autoEtn') }}
         </button>
-        <button :class="['tab-btn', { active: etnMode === 'single' }]" @click="etnMode = 'single'">
+        <button :class="['tab-btn', { active: etnMode === 'single' }]" role="tab" :aria-selected="etnMode === 'single'" @click="etnMode = 'single'">
           {{ t('prepare.singleEtn') }}
         </button>
-        <button :class="['tab-btn', { active: etnMode === 'manual' }]" @click="etnMode = 'manual'">
+        <button :class="['tab-btn', { active: etnMode === 'manual' }]" role="tab" :aria-selected="etnMode === 'manual'" @click="etnMode = 'manual'">
           {{ t('prepare.manualMapping') }}
         </button>
       </div>
     </div>
 
     <!-- Bulk ETN -->
-    <div v-if="etnMode === 'bulk'" class="card">
+    <div v-if="etnMode === 'bulk'" class="card" role="tabpanel">
       <div class="card-title">{{ t('prepare.autoEtn') }}</div>
       <p class="muted" style="margin-bottom: 1rem">{{ t('prepare.autoEtnDesc') }}</p>
 
@@ -252,7 +252,7 @@
     </div>
 
     <!-- Single ETN -->
-    <div v-if="etnMode === 'single'" class="card">
+    <div v-if="etnMode === 'single'" class="card" role="tabpanel">
       <div class="card-title">{{ t('prepare.singleEtn') }}</div>
       <p class="muted" style="margin-bottom: 1rem">{{ t('prepare.singleEtnDesc') }}</p>
 
@@ -288,7 +288,7 @@
     </div>
 
     <!-- Manual mapping -->
-    <div v-if="etnMode === 'manual'" class="card">
+    <div v-if="etnMode === 'manual'" class="card" role="tabpanel">
       <div class="card-title">{{ t('prepare.manualMapping') }}</div>
       <p class="muted" style="margin-bottom: 1rem">{{ t('prepare.manualDesc') }}</p>
 
