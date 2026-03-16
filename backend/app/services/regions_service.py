@@ -1,6 +1,11 @@
 """Region lookup service: municipality → statistical region, with fallback data."""
 
+import logging
 import unicodedata
+
+from sqlalchemy import create_engine, text
+
+logger = logging.getLogger(__name__)
 
 # ── Fallback: municipality → region mapping (lowercase, no diacritics) ────────
 _FALLBACK_BY_REGION = {
@@ -286,3 +291,79 @@ def lookup_region(municipality: str) -> str:
         if key in m or m in key:
             return r
     return "neznana"
+
+
+def lookup_region_by_code(code: int | str) -> str | None:
+    """Look up statistical region by municipality code (sifra).
+
+    1. First checks the database ``region_lookup`` table for a matching ``obcina_sifra``.
+    2. Falls back to the hardcoded ``FALLBACK_REGIONS`` dictionary (name-based)
+       if the DB has no matching code.
+
+    Returns the region name, or ``None`` when no match is found in either source.
+    """
+    if code is None:
+        return None
+    try:
+        sifra = int(code)
+    except (ValueError, TypeError):
+        return None
+
+    # 1. Check DB (cached after first load)
+    sifra_map = _load_sifra_from_db()
+    result = sifra_map.get(sifra)
+    if result and result != "neznana":
+        return result
+
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers for DB-backed sifra → region cache
+# ---------------------------------------------------------------------------
+
+_sifra_cache: dict[int, str] | None = None
+
+
+def _get_sync_database_url() -> str:
+    """Convert the async database URL to a synchronous one for batch operations."""
+    from app.config import get_settings
+
+    url = get_settings().database_url
+    url = url.replace("postgresql+asyncpg://", "postgresql+psycopg2://")
+    url = url.replace("sqlite+aiosqlite://", "sqlite://")
+    return url
+
+
+def _load_sifra_from_db() -> dict[int, str]:
+    """Load all municipality code → region mappings from the ``region_lookup`` table.
+
+    Results are cached at module level so the DB is queried at most once per process.
+    """
+    global _sifra_cache  # noqa: PLW0603
+    if _sifra_cache is not None:
+        return _sifra_cache
+
+    _sifra_cache = {}
+    try:
+        sync_url = _get_sync_database_url()
+        engine = create_engine(sync_url)
+        try:
+            with engine.connect() as conn:
+                rows = conn.execute(
+                    text("SELECT obcina_sifra, regija_naziv FROM region_lookup WHERE obcina_sifra IS NOT NULL")
+                ).fetchall()
+                for row in rows:
+                    try:
+                        sifra = int(row[0])
+                        regija = str(row[1]).strip()
+                        if regija and regija != "neznana":
+                            _sifra_cache[sifra] = regija
+                    except (ValueError, TypeError):
+                        continue
+        finally:
+            engine.dispose()
+    except Exception:
+        logger.debug("Could not load sifra -> region mappings from DB", exc_info=True)
+
+    return _sifra_cache

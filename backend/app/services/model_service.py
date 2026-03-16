@@ -203,35 +203,38 @@ def _train_single_model(
     label: str,
     progress_callback: Callable | None = None,
 ) -> dict:
+    preprocessor = pipeline.named_steps["preprocessor"]
     regressor = pipeline.named_steps["regressor"]
     total_trees = regressor.max_iter
     chunk_size = max(50, total_trees // 20)
     fitted_trees = 0
 
+    # Fit preprocessor ONCE and transform data
+    X_train_t = preprocessor.fit_transform(X_train, y_train)
+    X_test_t = preprocessor.transform(X_test)
+
+    # Warm-start loop: only re-fit the regressor on transformed data
     while fitted_trees < total_trees:
         next_target = min(fitted_trees + chunk_size, total_trees)
         regressor.max_iter = next_target
-        pipeline.fit(X_train, y_train)
+        regressor.fit(X_train_t, y_train)
         fitted_trees = next_target
 
         if progress_callback:
             progress_callback(label, fitted_trees, total_trees)
 
-    y_pred = pipeline.predict(X_test)
+    y_pred = regressor.predict(X_test_t)
     metrics = _compute_metrics(y_test, y_pred)
     metrics["n_train"] = len(X_train)
     metrics["n_test"] = len(X_test)
 
     importance = {}
     try:
-        feat_names = pipeline.named_steps["preprocessor"].get_feature_names_out()
+        feat_names = preprocessor.get_feature_names_out()
         try:
-            # Permutation importance on the test set is more reliable than
-            # built-in feature_importances_ because it reflects actual
-            # out-of-sample predictive contribution.
             perm = permutation_importance(
-                pipeline,
-                X_test,
+                regressor,
+                X_test_t,
                 y_test,
                 n_repeats=3,
                 random_state=42,
@@ -265,19 +268,8 @@ def train_from_csv(
     if "property_type" in df.columns:
         df = df[~df["property_type"].isin(EXCLUDED_PROPERTY_TYPES)]
 
-    # Group medians for price_per_m2
+    # Ensure size_m2 is numeric before split
     df["size_m2"] = pd.to_numeric(df.get("size_m2"), errors="coerce")
-    valid = df[df["size_m2"] > 0].copy()
-    valid["ppm2"] = valid["price_eur"] / valid["size_m2"]
-
-    region_medians = (
-        valid.groupby("statistical_region")["ppm2"].median().to_dict() if "statistical_region" in valid.columns else {}
-    )
-    type_medians = valid.groupby("property_type")["ppm2"].median().to_dict() if "property_type" in valid.columns else {}
-
-    global_median_ppm2 = float(valid["ppm2"].median()) if len(valid) > 0 else 2000.0
-    df["price_per_m2_region"] = df.get("statistical_region", pd.Series()).map(region_medians).fillna(global_median_ppm2)
-    df["price_per_m2_type"] = df.get("property_type", pd.Series()).map(type_medians).fillna(global_median_ppm2)
 
     y = df["price_eur"].values
     X = df.drop(columns=["price_eur"], errors="ignore")
@@ -286,6 +278,30 @@ def train_from_csv(
     global_num, global_cat = _filter_features(X, NUMERIC_FEATURES, CATEGORICAL_FEATURES)
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+    # Compute group medians from TRAINING SET ONLY (prevent data leakage)
+    train_with_price = X_train.copy()
+    train_with_price["price_eur"] = y_train
+    valid = train_with_price[train_with_price["size_m2"] > 0].copy()
+    valid["ppm2"] = valid["price_eur"] / valid["size_m2"]
+
+    region_medians = (
+        valid.groupby("statistical_region")["ppm2"].median().to_dict() if "statistical_region" in valid.columns else {}
+    )
+    type_medians = valid.groupby("property_type")["ppm2"].median().to_dict() if "property_type" in valid.columns else {}
+    global_median_ppm2 = float(valid["ppm2"].median()) if len(valid) > 0 else 2000.0
+
+    # Apply to train and test sets separately
+    X_train["price_per_m2_region"] = (
+        X_train.get("statistical_region", pd.Series()).map(region_medians).fillna(global_median_ppm2)
+    )
+    X_train["price_per_m2_type"] = (
+        X_train.get("property_type", pd.Series()).map(type_medians).fillna(global_median_ppm2)
+    )
+    X_test["price_per_m2_region"] = (
+        X_test.get("statistical_region", pd.Series()).map(region_medians).fillna(global_median_ppm2)
+    )
+    X_test["price_per_m2_type"] = X_test.get("property_type", pd.Series()).map(type_medians).fillna(global_median_ppm2)
 
     # Global model
     global_pipeline = _build_pipeline(global_num, global_cat, len(X_train))
@@ -345,6 +361,23 @@ def train_from_csv(
             if mask.sum() >= 10:
                 per_region_metrics[str(region)] = _compute_metrics(y_test[mask], y_pred_all[mask])
 
+    # Combined routing metrics: use per-type model when available, else global
+    if per_type_models:
+        y_pred_combined = np.zeros(len(y_test))
+        for idx in range(len(X_test)):
+            row = X_test.iloc[idx : idx + 1]
+            ptype = str(row.get("property_type", pd.Series(["unknown"])).iloc[0])
+            if ptype in per_type_models:
+                tm = per_type_models[ptype]
+                pt_pipe = tm["pipeline"]
+                # Use preprocessor + regressor from the per-type pipeline
+                y_pred_combined[idx] = pt_pipe.predict(row)[0]
+            else:
+                y_pred_combined[idx] = global_pipeline.predict(row)[0]
+        combined_metrics = _compute_metrics(y_test, y_pred_combined)
+    else:
+        combined_metrics = global_result["metrics"]
+
     # Municipality coordinates
     coords_by_municipality: dict[str, dict] = {}
     for col_pair in [("municipality", "latitude", "longitude")]:
@@ -379,6 +412,7 @@ def train_from_csv(
         "global_importance": global_result["importance"],
         "per_type_metrics": per_type_metrics,
         "per_region_metrics": per_region_metrics,
+        "combined_metrics": combined_metrics,
         "coords_by_municipality": coords_by_municipality,
         "feature_labels": FEATURE_LABELS_SL,
         "trained_at": pd.Timestamp.now().isoformat(),
@@ -397,6 +431,7 @@ def train_from_csv(
         "global_importance": global_result["importance"],
         "per_type_metrics": per_type_metrics,
         "per_region_metrics": per_region_metrics,
+        "combined_metrics": combined_metrics,
         "per_type_count": len(per_type_models),
     }
 
@@ -604,6 +639,7 @@ def get_model_info() -> dict[str, Any] | None:
         "global_metrics": artifact.get("global_metrics"),
         "per_type_metrics": artifact.get("per_type_metrics"),
         "per_region_metrics": artifact.get("per_region_metrics"),
+        "combined_metrics": artifact.get("combined_metrics"),
         "global_importance": artifact.get("global_importance"),
         "feature_labels": artifact.get("feature_labels"),
         "per_type_count": len(artifact.get("per_type_models", {})),

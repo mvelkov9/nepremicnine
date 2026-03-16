@@ -15,7 +15,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from app.services.regions_service import FALLBACK_REGIONS, lookup_region, normalize
+from app.services.regions_service import FALLBACK_REGIONS, lookup_region, lookup_region_by_code, normalize
 
 # Property type mapping from VRSTA_DELA_STAVBE codes
 _PROPERTY_TYPE_MAP = {
@@ -88,16 +88,25 @@ _CC_SI_PREFIX_MAP = {
     "1121": "hisa",
     "1122": "stanovanje",
     "1130": "stanovanje",
+    "1200": "ostalo",
     "1211": "gostinstvo",
     "1212": "turisticni",
     "1220": "poslovni_prostor",
     "1230": "poslovni_prostor",
+    "1241": "poslovni_prostor",
     "1242": "garaza",
     "1251": "industrijski",
     "1252": "industrijski",
     "1261": "poslovni_prostor",
+    "1262": "poslovni_prostor",
+    "1263": "poslovni_prostor",
+    "1264": "poslovni_prostor",
+    "1265": "poslovni_prostor",
     "1271": "kmetijsko",
+    "1272": "poslovni_prostor",
     "1274": "klet_shramba",
+    "1280": "ostalo",
+    "1290": "ostalo",
 }
 
 EXCLUDED_PROPERTY_TYPES = {"ostalo", "klet_shramba"}
@@ -493,12 +502,43 @@ def import_rpe_rn(
 
 
 def _enrich_with_sifra(df: pd.DataFrame, merged: pd.DataFrame) -> pd.DataFrame:
-    """Add statistical_region using RPE_OBCINE_SIFRA when available, fallback to name."""
+    """Add statistical_region using RPE_OBCINE_SIFRA (code) first, then name fallback."""
     result = df.copy()
 
-    if "municipality" in result.columns:
-        norm = result["municipality"].apply(normalize_text)
-        result["statistical_region"] = norm.apply(lookup_region)
+    # 1. Try RPE_OBCINE_SIFRA (municipality code) — most accurate, unambiguous
+    sifra_col = None
+    for candidate in ["RPE_OBCINE_SIFRA", "RPE_OBCINE_SIFRA_POSLI"]:
+        if candidate in merged.columns:
+            sifra_col = candidate
+            break
+
+    if sifra_col is not None:
+        sifra_vals = merged[sifra_col].reindex(result.index)
+        result["statistical_region"] = sifra_vals.apply(lambda v: lookup_region_by_code(v) if pd.notna(v) else None)
+    else:
+        result["statistical_region"] = None
+
+    # 2. Fallback: RPE_OBCINE_IME (name-based) for rows still missing region
+    missing_mask = result["statistical_region"].isna() | (result["statistical_region"] == "neznana")
+    if missing_mask.any():
+        rpe_ime_col = None
+        for candidate in ["RPE_OBCINE_IME", "RPE_OBCINE_IME_POSLI", "IME_OBCINE", "IME_OBCINE_POSLI"]:
+            if candidate in merged.columns:
+                rpe_ime_col = candidate
+                break
+
+        if rpe_ime_col is not None:
+            rpe_names = merged[rpe_ime_col].reindex(result.index)
+            name_regions = rpe_names.apply(
+                lambda v: lookup_region(normalize(str(v))) if pd.notna(v) and str(v).strip() else "neznana"
+            )
+            result.loc[missing_mask, "statistical_region"] = name_regions[missing_mask]
+
+    # 3. Final fallback: municipality column
+    missing_mask = result["statistical_region"].isna() | (result["statistical_region"] == "neznana")
+    if missing_mask.any() and "municipality" in result.columns:
+        norm = result.loc[missing_mask, "municipality"].apply(normalize_text)
+        result.loc[missing_mask, "statistical_region"] = norm.apply(lookup_region)
 
     if "year_built" in result.columns:
         current_year = pd.Timestamp.now().year

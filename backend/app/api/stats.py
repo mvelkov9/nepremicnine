@@ -51,6 +51,58 @@ async def _cache_set(request: Request, key: str, value) -> None:
         logger.debug("Redis cache set error for key=%s", key)
 
 
+def _d96tm_to_wgs84(n: np.ndarray, e: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Convert D96/TM (ETRS89/TM) coordinates to WGS84 (lat, lon). Vectorized."""
+    # GRS80 ellipsoid
+    a = 6378137.0
+    f = 1 / 298.257222101
+    e2 = 2 * f - f * f
+    e_prime2 = e2 / (1 - e2)
+
+    # TM parameters for D96/TM
+    k0 = 0.9999
+    lon0 = np.radians(15.0)
+    FE = 500000.0
+    FN = -5000000.0
+
+    x = e - FE
+    y = n - FN
+    M = y / k0
+
+    mu = M / (a * (1 - e2 / 4 - 3 * e2**2 / 64 - 5 * e2**3 / 256))
+    e1 = (1 - np.sqrt(1 - e2)) / (1 + np.sqrt(1 - e2))
+
+    phi1 = (
+        mu
+        + (3 * e1 / 2 - 27 * e1**3 / 32) * np.sin(2 * mu)
+        + (21 * e1**2 / 16 - 55 * e1**4 / 32) * np.sin(4 * mu)
+        + (151 * e1**3 / 96) * np.sin(6 * mu)
+        + (1097 * e1**4 / 512) * np.sin(8 * mu)
+    )
+
+    sin_phi1 = np.sin(phi1)
+    cos_phi1 = np.cos(phi1)
+    tan_phi1 = np.tan(phi1)
+
+    N1 = a / np.sqrt(1 - e2 * sin_phi1**2)
+    T1 = tan_phi1**2
+    C1 = e_prime2 * cos_phi1**2
+    R1 = a * (1 - e2) / (1 - e2 * sin_phi1**2) ** 1.5
+    D = x / (N1 * k0)
+
+    lat = phi1 - (N1 * tan_phi1 / R1) * (
+        D**2 / 2
+        - (5 + 3 * T1 + 10 * C1 - 4 * C1**2 - 9 * e_prime2) * D**4 / 24
+        + (61 + 90 * T1 + 298 * C1 + 45 * T1**2 - 252 * e_prime2 - 3 * C1**2) * D**6 / 720
+    )
+
+    lon = lon0 + (1 / cos_phi1) * (
+        D - (1 + 2 * T1 + C1) * D**3 / 6 + (5 - 2 * C1 + 28 * T1 - 3 * C1**2 + 8 * e_prime2 + 24 * T1**2) * D**5 / 120
+    )
+
+    return np.degrees(lat), np.degrees(lon)
+
+
 def _load_df(property_type: str | None = None) -> pd.DataFrame | None:
     if not os.path.exists(TRAIN_CSV):
         return None
@@ -357,7 +409,19 @@ async def map_transactions(
         return {"transactions": [], "count": 0}
 
     df = df.dropna(subset=["latitude", "longitude"])
-    df = df[(df["latitude"] > 0) & (df["longitude"] > 0)]
+
+    # Validate D96/TM coordinate range (latitude=northing, longitude=easting)
+    # Easting: 350000-650000, Northing: 20000-210000
+    df = df[
+        (df["longitude"] > 350000) & (df["longitude"] < 650000) & (df["latitude"] > 20000) & (df["latitude"] < 210000)
+    ]
+
+    # Convert D96/TM (ETRS89/TM) → WGS84
+    if len(df) > 0:
+        wgs_lat, wgs_lon = _d96tm_to_wgs84(df["latitude"].values, df["longitude"].values)
+        df = df.copy()
+        df["latitude"] = wgs_lat
+        df["longitude"] = wgs_lon
 
     # Sample if too many
     if len(df) > limit:
@@ -365,24 +429,42 @@ async def map_transactions(
 
     area = _effective_area(df)
 
-    transactions = []
-    for _, row in df.iterrows():
-        price = row.get("price_eur")
-        size = float(area.loc[row.name]) if row.name in area.index else None
-        price_per_m2 = float(price / size) if price and size and size > 0 else None
+    # Build result DataFrame vectorized (no iterrows)
+    result_df = pd.DataFrame(
+        {
+            "lat": df["latitude"].values,
+            "lon": df["longitude"].values,
+        }
+    )
 
-        transactions.append(
-            {
-                "lat": float(row["latitude"]),
-                "lon": float(row["longitude"]),
-                "price_eur": float(price) if pd.notna(price) else None,
-                "size_m2": float(row.get("size_m2", 0)) if pd.notna(row.get("size_m2")) else None,
-                "price_per_m2": round(price_per_m2, 2) if price_per_m2 else None,
-                "municipality": str(row.get("municipality", "")),
-                "property_type": str(row.get("property_type", "")),
-                "year": str(row.get("transaction_year", row.get("source_label", "")))[:4],
-                "rooms": float(row.get("rooms", 0)) if pd.notna(row.get("rooms")) else None,
-            }
-        )
+    result_df["price_eur"] = df["price_eur"].values if "price_eur" in df.columns else np.nan
+    result_df["size_m2"] = df["size_m2"].values if "size_m2" in df.columns else np.nan
+    result_df["municipality"] = df["municipality"].astype(str).values if "municipality" in df.columns else ""
+    result_df["property_type"] = df["property_type"].astype(str).values if "property_type" in df.columns else ""
+    result_df["rooms"] = df["rooms"].values if "rooms" in df.columns else np.nan
+
+    # Year column — pick first available
+    year_src = None
+    for col in ["transaction_year", "source_label"]:
+        if col in df.columns:
+            year_src = col
+            break
+    result_df["year"] = df[year_src].astype(str).str[:4].values if year_src else ""
+
+    # Price per m2
+    area_arr = area.values
+    valid_area = (area_arr > 0) & np.isfinite(area_arr)
+    valid_price = result_df["price_eur"].notna().values & np.isfinite(result_df["price_eur"].values)
+    price_per_m2 = np.where(
+        valid_area & valid_price,
+        np.round(result_df["price_eur"].values / np.where(area_arr > 0, area_arr, 1), 2),
+        np.nan,
+    )
+    result_df["price_per_m2"] = price_per_m2
+
+    # Replace NaN with None for valid JSON
+    result_df = result_df.where(result_df.notna(), None)
+
+    transactions = result_df.to_dict(orient="records")
 
     return {"transactions": transactions, "count": len(transactions)}

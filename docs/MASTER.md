@@ -6,7 +6,7 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 
 | Item | Value |
 |------|-------|
-| **Version** | 0.8.3 |
+| **Version** | 0.8.4 |
 | **Repo** | [github.com/mvelkov9/nepremicnine](https://github.com/mvelkov9/nepremicnine) |
 | **Backend** | FastAPI + Python 3.13 + PostgreSQL 17 + SQLAlchemy 2.x async |
 | **Frontend** | Vue 3 Composition API + Pinia + pnpm 9, Vite 6 |
@@ -28,8 +28,18 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 | [Phase 5](PHASE_5_PRODUCTION.md) | Production — Docker, CI/CD, deploy | ✅ Complete | `153f140` |
 | [Phase 6](PHASE_6_V030.md) | Security hardening, backend robustness, frontend accessibility, expanded tests | ✅ Complete | `(v0.3.1)` |
 | [Phase 7](PHASE_7_V040_V080.md) | Security hardening, feature completeness, test expansion, UX polish | ✅ Complete | (latest commit) |
+| [Phase 8–14](PHASE_8_14_PLAN.md) | v1→v2 gap fixes, feature parity, performance, security, UX, tests, docs | 🔄 In Progress | — |
 
 ## Changelog
+
+### v0.8.4
+- **Fix (CRIT)**: Data leakage — group medians (price_per_m2_region, price_per_m2_type) now computed from training set only, after train/test split
+- **Fix (CRIT)**: Warm-start loop — preprocessor (incl. TargetEncoder) now fitted once; warm-start loop only re-fits the regressor on transformed data
+- **Fix (CRIT)**: D96/TM → WGS84 coordinate conversion — map-transactions now validates D96/TM ranges and vectorizes conversion (was showing raw D96/TM values)
+- **Feat**: Combined routing metrics — training results now include end-to-end metrics for the per-type + global fallback routing system
+- **Feat**: Region lookup by municipality code (sifra) — ETN enrichment now tries RPE_OBCINE_SIFRA first (unambiguous), then name-based fallback
+- **Perf**: Map transactions response building vectorized — replaced iterrows() with df.to_dict(orient="records")
+- **Version**: 0.8.3 → 0.8.4
 
 ### v0.8.3
 - **Fix**: 413 upload error — host nginx `client_max_body_size` increased from 100M to 1G in deployment docs
