@@ -1,6 +1,6 @@
 [project]
 name = "nepremicnine-backend"
-version = "0.8.0"
+version = "0.8.1"
 description = "Slovenian real estate price analysis & prediction API"
 requires-python = ">=3.13"
 

@@ -15,7 +15,7 @@
     error.value = null
     try {
       const { data } = await api.get('/api/admin/users')
-      users.value = data
+      users.value = data.items || []
     } catch (e) {
       error.value = e.response?.data?.detail || e.message
     } finally {

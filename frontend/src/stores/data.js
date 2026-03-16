@@ -11,7 +11,7 @@ export const useDataStore = defineStore('data', () => {
     loading.value = true
     try {
       const { data } = await api.get('/api/data/datasets')
-      datasets.value = Array.isArray(data) ? data : []
+      datasets.value = Array.isArray(data) ? data : data.items || []
     } finally {
       loading.value = false
     }
@@ -26,6 +26,9 @@ export const useDataStore = defineStore('data', () => {
       }
       const { data } = await api.post('/api/data/upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 600000,
+        maxBodyLength: Infinity,
+        maxContentLength: Infinity,
       })
       await fetchDatasets()
       return data
