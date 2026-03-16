@@ -87,6 +87,25 @@
     return detectedPairs.value.filter((p) => isSelected(p.year))
   }
 
+  function getPrepareErrorMessage(apiError) {
+    const detail = apiError?.response?.data?.detail
+
+    if (typeof detail === 'string' && detail.startsWith('Cannot read CSV:')) {
+      const file = detail.split('/').pop() || detail
+      return t('prepare.cannotReadCsv', { file })
+    }
+
+    if (detail === 'No valid ETN pairs produced training data.') {
+      return t('prepare.noValidPairs')
+    }
+
+    if (detail === 'No valid rows after filtering ETN data.') {
+      return t('prepare.noRowsAfterFiltering')
+    }
+
+    return getApiErrorMessage(apiError, t)
+  }
+
   async function prepareEtnBulk() {
     loading.value = true
     error.value = ''
@@ -110,7 +129,7 @@
       result.value = data
       await dataStore.fetchTrainingDataset()
     } catch (e) {
-      error.value = getApiErrorMessage(e, t)
+      error.value = getPrepareErrorMessage(e)
     } finally {
       loading.value = false
     }
@@ -128,7 +147,7 @@
       result.value = data
       await dataStore.fetchTrainingDataset()
     } catch (e) {
-      error.value = getApiErrorMessage(e, t)
+      error.value = getPrepareErrorMessage(e)
     } finally {
       loading.value = false
     }
@@ -150,7 +169,7 @@
       if (e instanceof SyntaxError) {
         error.value = t('prepare.invalidJson')
       } else {
-        error.value = getApiErrorMessage(e, t)
+        error.value = getPrepareErrorMessage(e)
       }
     } finally {
       loading.value = false

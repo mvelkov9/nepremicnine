@@ -17,6 +17,7 @@
     Tooltip,
   } from 'chart.js'
   import api from '../composables/useApi'
+  import AppIcon from '../components/AppIcon.vue'
   import LoadingSpinner from '../components/LoadingSpinner.vue'
   import { useAuthStore } from '../stores/auth'
   import { useDataStore } from '../stores/data'
@@ -45,6 +46,17 @@
   const modelInfo = ref(null)
   const featureImportance = ref([])
   const modelError = ref(null)
+  const chartPalette = {
+    primary: '#2563eb',
+    primarySoft: '#93c5fd',
+    primaryFill: '#2563eb22',
+    slate: '#334155',
+    amber: '#f59e0b',
+    amberFill: '#f59e0b22',
+    cyan: '#0891b2',
+    emerald: '#059669',
+    red: '#dc2626',
+  }
 
   const propertyTypes = [
     '',
@@ -91,22 +103,17 @@
     return Number(value).toLocaleString('sl-SI', { maximumFractionDigits: decimals })
   }
 
-  function formatDate(value) {
-    if (!value) return t('common.noData')
-    return new Date(value).toLocaleString()
-  }
-
   const quickLinks = computed(() => {
     const links = [
       {
         to: '/napoved',
+        icon: 'prediction',
         title: t('dashboard.quickPrediction'),
-        description: t('dashboard.quickPredictionDesc'),
       },
       {
         to: '/zemljevid',
+        icon: 'map',
         title: t('dashboard.quickMap'),
-        description: t('dashboard.quickMapDesc'),
       },
     ]
 
@@ -114,13 +121,13 @@
       links.unshift(
         {
           to: '/priprava',
+          icon: 'prepare',
           title: t('dashboard.quickPrepare'),
-          description: t('dashboard.quickPrepareDesc'),
         },
         {
           to: '/model',
+          icon: 'model',
           title: t('dashboard.quickTrain'),
-          description: t('dashboard.quickTrainDesc'),
         },
       )
     }
@@ -128,31 +135,30 @@
     return links
   })
 
-  const spotlightCards = computed(() => [
-    {
-      label: t('dashboard.preparedDataset'),
-      title: dataStore.trainingDataset?.exists
-        ? t('dashboard.preparedReady')
-        : t('dashboard.preparedMissing'),
-      detail: dataStore.trainingDataset?.exists
-        ? `${fmt(dataStore.trainingDataset.rows)} ${t('data.rows')} · ${formatDate(dataStore.trainingDataset.updated_at)}`
-        : t('dashboard.preparedMissingDetail'),
-    },
-    {
-      label: t('dashboard.modelStatus'),
-      title: modelInfo.value ? t('dashboard.modelReady') : t('dashboard.modelMissing'),
-      detail: modelInfo.value
-        ? `${fmt(modelInfo.value.rows)} ${t('data.rows')} · ${formatDate(modelInfo.value.trained_at)}`
-        : t('dashboard.modelMissingDetail'),
-    },
-    {
-      label: t('dashboard.workflowTitle'),
-      title: auth.isAdmin ? t('dashboard.workflowAdmin') : t('dashboard.workflowViewer'),
-      detail: auth.isAdmin
-        ? t('dashboard.workflowAdminDetail')
-        : t('dashboard.workflowViewerDetail'),
-    },
-  ])
+  const statusCards = computed(() => {
+    if (!auth.isAdmin) return []
+
+    return [
+      {
+        icon: 'prepare',
+        label: t('dashboard.preparedDataset'),
+        title: dataStore.trainingDataset?.exists
+          ? t('dashboard.preparedReady')
+          : t('dashboard.preparedMissing'),
+        detail: dataStore.trainingDataset?.exists
+          ? `${fmt(dataStore.trainingDataset.rows)} ${t('data.rows')}`
+          : t('dashboard.preparedMissingDetail'),
+      },
+      {
+        icon: 'model',
+        label: t('dashboard.modelStatus'),
+        title: modelInfo.value ? t('dashboard.modelReady') : t('dashboard.modelMissing'),
+        detail: modelInfo.value
+          ? `${fmt(modelInfo.value.rows)} ${t('data.rows')}`
+          : t('dashboard.modelMissingDetail'),
+      },
+    ]
+  })
 
   const regionChartData = computed(() => {
     if (!stats.regions.length) return null
@@ -165,7 +171,7 @@
         {
           label: '€/m²',
           data: sorted.map((item) => item.avg_price_per_m2 || 0),
-          backgroundColor: '#0f766e',
+          backgroundColor: chartPalette.primary,
           borderRadius: 10,
         },
       ],
@@ -188,8 +194,8 @@
         {
           label: t('dashboard.transactions'),
           data: stats.priceDistribution.counts,
-          backgroundColor: '#0f766e55',
-          borderColor: '#0f766e',
+          backgroundColor: chartPalette.primaryFill,
+          borderColor: chartPalette.primary,
           borderWidth: 1,
           borderRadius: 8,
         },
@@ -215,15 +221,15 @@
         {
           label: t('dashboard.medianPrice'),
           data: stats.trend.map((item) => item.median_price),
-          borderColor: '#0f766e',
-          backgroundColor: '#0f766e18',
+          borderColor: chartPalette.primary,
+          backgroundColor: chartPalette.primaryFill,
           fill: true,
           tension: 0.3,
         },
         {
           label: t('dashboard.avgPrice'),
           data: stats.trend.map((item) => item.avg_price),
-          borderColor: '#f97316',
+          borderColor: chartPalette.amber,
           borderDash: [5, 5],
           fill: false,
           tension: 0.3,
@@ -246,7 +252,14 @@
       datasets: [
         {
           data: stats.overview.property_types.map((item) => item.count),
-          backgroundColor: ['#0f766e', '#0f172a', '#f97316', '#dc2626', '#3b82f6', '#f59e0b'],
+          backgroundColor: [
+            chartPalette.primary,
+            chartPalette.slate,
+            chartPalette.amber,
+            chartPalette.cyan,
+            chartPalette.emerald,
+            chartPalette.red,
+          ],
         },
       ],
     }
@@ -269,7 +282,7 @@
         {
           label: t('model.importance'),
           data: sorted.map((item) => item.importance),
-          backgroundColor: '#0f766e',
+          backgroundColor: chartPalette.primary,
           borderRadius: 8,
         },
       ],
@@ -294,7 +307,14 @@
         {
           label: 'R²',
           data: types.map((type) => metrics[type].r2 || 0),
-          backgroundColor: ['#0f766e', '#f97316', '#0f172a', '#3b82f6', '#dc2626', '#f59e0b'],
+          backgroundColor: [
+            chartPalette.primary,
+            chartPalette.amber,
+            chartPalette.slate,
+            chartPalette.cyan,
+            chartPalette.red,
+            chartPalette.emerald,
+          ],
           borderRadius: 8,
         },
       ],
@@ -322,16 +342,28 @@
       </div>
 
       <div class="hero-actions-grid">
-        <RouterLink v-for="link in quickLinks" :key="link.to" :to="link.to" class="action-tile">
+        <RouterLink
+          v-for="link in quickLinks"
+          :key="link.to"
+          :to="link.to"
+          class="action-tile compact"
+        >
+          <span class="tile-icon">
+            <AppIcon :name="link.icon" :size="18" />
+          </span>
           <strong>{{ link.title }}</strong>
-          <p>{{ link.description }}</p>
         </RouterLink>
       </div>
     </section>
 
-    <div class="spotlight-grid">
-      <article v-for="card in spotlightCards" :key="card.label" class="spotlight-card">
-        <span class="eyebrow">{{ card.label }}</span>
+    <div v-if="statusCards.length" class="spotlight-grid compact">
+      <article v-for="card in statusCards" :key="card.label" class="spotlight-card compact">
+        <div class="status-card-head">
+          <span class="tile-icon subtle">
+            <AppIcon :name="card.icon" :size="16" />
+          </span>
+          <span class="eyebrow">{{ card.label }}</span>
+        </div>
         <strong>{{ card.title }}</strong>
         <p>{{ card.detail }}</p>
       </article>

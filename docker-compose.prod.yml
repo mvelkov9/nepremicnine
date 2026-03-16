@@ -27,6 +27,8 @@ services:
 
   worker:
     user: appuser
+    healthcheck:
+      disable: true
     volumes:
       - backend-data:/app/data
       - backend-models:/app/models

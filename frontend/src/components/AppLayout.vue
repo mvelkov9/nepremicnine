@@ -3,6 +3,7 @@
   import { RouterLink, useRoute, useRouter } from 'vue-router'
   import { useI18n } from 'vue-i18n'
   import { setLocale } from '../i18n'
+  import AppIcon from './AppIcon.vue'
   import { useDarkMode } from '../composables/useDarkMode'
   import { useAuthStore } from '../stores/auth'
   import { useToast } from '../composables/useToast'
@@ -25,27 +26,27 @@
   })
 
   const navItems = [
-    { to: '/', icon: 'Pulse', label: 'nav.dashboard', shortKey: 'dashboard', admin: false },
-    { to: '/podatki', icon: 'Vault', label: 'nav.data', shortKey: 'data', admin: true },
-    { to: '/priprava', icon: 'Flow', label: 'nav.prepare', shortKey: 'prepare', admin: true },
-    { to: '/model', icon: 'Model', label: 'nav.model', shortKey: 'model', admin: true },
+    { to: '/', icon: 'dashboard', label: 'nav.dashboard', shortKey: 'dashboard', admin: false },
+    { to: '/podatki', icon: 'data', label: 'nav.data', shortKey: 'data', admin: true },
+    { to: '/priprava', icon: 'prepare', label: 'nav.prepare', shortKey: 'prepare', admin: true },
+    { to: '/model', icon: 'model', label: 'nav.model', shortKey: 'model', admin: true },
     {
       to: '/napoved',
-      icon: 'Predict',
+      icon: 'prediction',
       label: 'nav.prediction',
       shortKey: 'prediction',
       admin: false,
     },
-    { to: '/zemljevid', icon: 'Map', label: 'nav.map', shortKey: 'map', admin: false },
+    { to: '/zemljevid', icon: 'map', label: 'nav.map', shortKey: 'map', admin: false },
     {
       to: '/diagnostika',
-      icon: 'QA',
+      icon: 'diagnostics',
       label: 'nav.diagnostics',
       shortKey: 'diagnostics',
       admin: true,
     },
-    { to: '/analiza', icon: 'Deep', label: 'nav.analysis', shortKey: 'analysis', admin: true },
-    { to: '/admin', icon: 'Control', label: 'nav.admin', shortKey: 'admin', admin: true },
+    { to: '/analiza', icon: 'analysis', label: 'nav.analysis', shortKey: 'analysis', admin: true },
+    { to: '/admin', icon: 'admin', label: 'nav.admin', shortKey: 'admin', admin: true },
   ]
 
   const currentItem = computed(
@@ -59,10 +60,6 @@
       : currentItem.value
         ? t(currentItem.value.label)
         : t('app.title'),
-  )
-
-  const currentDescription = computed(() =>
-    route.meta.descriptionKey ? t(route.meta.descriptionKey) : t('layout.page.default'),
   )
 
   const visibleNavItems = computed(() => navItems.filter((item) => !item.admin || auth.isAdmin))
@@ -166,7 +163,7 @@
         <span class="brand-mark">N</span>
         <div>
           <strong>{{ t('app.title') }}</strong>
-          <small>{{ currentTitle }}</small>
+          <small>{{ t('app.subtitle') }}</small>
         </div>
       </div>
       <button class="profile-pill compact" @click="openProfile">
@@ -192,8 +189,6 @@
         </div>
       </div>
 
-      <div class="sidebar-label">{{ t('layout.navigation') }}</div>
-
       <nav class="sidebar-nav" aria-label="Main navigation">
         <RouterLink
           v-for="item in visibleNavItems"
@@ -202,11 +197,10 @@
           class="nav-link"
           @click="mobileMenuOpen = false"
         >
-          <span class="nav-icon">{{ item.icon }}</span>
-          <span class="nav-copy">
-            <strong>{{ t(item.label) }}</strong>
-            <small>{{ t(`layout.short.${item.shortKey}`) }}</small>
-          </span>
+          <span class="nav-icon"><AppIcon :name="item.icon" :size="18" /></span>
+          <span class="nav-copy"
+            ><strong>{{ t(item.label) }}</strong></span
+          >
         </RouterLink>
       </nav>
 
@@ -215,16 +209,13 @@
           <span v-if="versionBadge" class="status-pill">{{ versionBadge }}</span>
           <span class="status-pill muted">{{ userRoleLabel }}</span>
         </div>
-        <p class="sidebar-note">{{ t('layout.workflowHint') }}</p>
       </div>
     </aside>
 
     <div class="workspace">
       <header class="topbar">
         <div class="page-meta">
-          <span class="eyebrow">{{ t('layout.workspace') }}</span>
           <h1 class="page-heading">{{ currentTitle }}</h1>
-          <p class="page-subtitle">{{ currentDescription }}</p>
         </div>
 
         <div class="topbar-actions">
@@ -245,8 +236,9 @@
             </button>
           </div>
 
-          <button class="ghost-btn" @click="toggleDark">
-            {{ isDark ? t('ui.lightMode') : t('ui.darkMode') }}
+          <button class="ghost-btn icon-label-btn" @click="toggleDark">
+            <AppIcon :name="isDark ? 'sun' : 'moon'" :size="16" />
+            <span>{{ isDark ? t('ui.lightMode') : t('ui.darkMode') }}</span>
           </button>
 
           <button class="profile-pill" @click="openProfile">
@@ -264,8 +256,9 @@
             </span>
           </button>
 
-          <button class="danger-soft" @click="handleLogout">
-            {{ t('nav.logout') }}
+          <button class="danger-soft icon-label-btn" @click="handleLogout">
+            <AppIcon name="logout" :size="16" />
+            <span>{{ t('nav.logout') }}</span>
           </button>
         </div>
       </header>

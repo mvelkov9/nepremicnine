@@ -59,6 +59,8 @@ services:
     user: root
     command: ["arq", "app.tasks.training_worker.WorkerSettings"]
     env_file: .env
+    healthcheck:
+      disable: true
     volumes:
       - ./backend:/app
       - backend-data:/app/data

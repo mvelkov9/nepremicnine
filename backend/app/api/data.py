@@ -346,6 +346,9 @@ async def prepare_etn_kpp(
     delistavb = _validate_path_within_data_dir(req.delistavb_csv_path)
     try:
         result = prepare_training_csv_from_etn_kpp(posli, delistavb, TRAIN_CSV)
+    except ValueError as exc:
+        logger.warning("ETN KPP preparation rejected: %s", exc)
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
     except Exception as exc:
         logger.error("ETN KPP preparation failed: %s", exc, exc_info=True)
         raise HTTPException(
@@ -374,14 +377,19 @@ async def prepare_etn_kpp_bulk(
     _user: User = Depends(require_admin),
 ):
     """Prepare training CSV from multiple ETN KPP pairs (multi-year)."""
-    for p in req.pairs:
-        _validate_path_within_data_dir(p.posli_csv_path)
-        _validate_path_within_data_dir(p.delistavb_csv_path)
-        if p.zemljisca_csv_path:
-            _validate_path_within_data_dir(p.zemljisca_csv_path)
+    pairs_dicts = []
+    for pair in req.pairs:
+        resolved_pair = pair.model_dump()
+        resolved_pair["posli_csv_path"] = _validate_path_within_data_dir(pair.posli_csv_path)
+        resolved_pair["delistavb_csv_path"] = _validate_path_within_data_dir(pair.delistavb_csv_path)
+        if pair.zemljisca_csv_path:
+            resolved_pair["zemljisca_csv_path"] = _validate_path_within_data_dir(pair.zemljisca_csv_path)
+        pairs_dicts.append(resolved_pair)
     try:
-        pairs_dicts = [p.model_dump() for p in req.pairs]
         result = prepare_training_csv_from_etn_kpp_bulk(pairs_dicts, TRAIN_CSV)
+    except ValueError as exc:
+        logger.warning("ETN KPP bulk preparation rejected: %s", exc)
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
     except Exception as exc:
         logger.error("ETN KPP bulk preparation failed: %s", exc, exc_info=True)
         raise HTTPException(
@@ -471,6 +479,9 @@ async def prepare_train(
     source = _validate_path_within_data_dir(req.source_csv_path)
     try:
         result = prepare_training_csv(source, req.column_map, TRAIN_CSV)
+    except ValueError as exc:
+        logger.warning("Training CSV preparation rejected: %s", exc)
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
     except Exception as exc:
         logger.error("Training CSV preparation failed: %s", exc, exc_info=True)
         raise HTTPException(

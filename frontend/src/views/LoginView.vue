@@ -2,6 +2,7 @@
   import { computed, ref } from 'vue'
   import { useRouter } from 'vue-router'
   import { useI18n } from 'vue-i18n'
+  import AppIcon from '../components/AppIcon.vue'
   import { setLocale } from '../i18n'
   import { useAuthStore } from '../stores/auth'
   import { getApiErrorMessage } from '../utils/apiError'
@@ -18,10 +19,10 @@
   const loading = ref(false)
   const formErrors = ref({})
 
-  const highlights = computed(() => [
-    t('auth.highlightPrepared'),
-    t('auth.highlightModel'),
-    t('auth.highlightInsights'),
+  const marketCards = computed(() => [
+    { icon: 'map', title: t('auth.marketMap'), value: t('auth.marketMapValue') },
+    { icon: 'trend', title: t('auth.marketTrend'), value: t('auth.marketTrendValue') },
+    { icon: 'prediction', title: t('auth.marketEstimate'), value: t('auth.marketEstimateValue') },
   ])
 
   function validateForm() {
@@ -67,13 +68,27 @@
   <div class="login-page">
     <section class="login-showcase">
       <div class="showcase-chip">{{ t('app.subtitle') }}</div>
-      <h1>{{ t('auth.welcomeTitle') }}</h1>
-      <p>{{ t('auth.welcomeBody') }}</p>
 
-      <div class="showcase-grid">
-        <article v-for="item in highlights" :key="item" class="showcase-card">
-          <span class="showcase-dot"></span>
-          <p>{{ item }}</p>
+      <div class="showcase-head">
+        <h1>{{ t('auth.welcomeTitle') }}</h1>
+        <p>{{ t('auth.welcomeBody') }}</p>
+      </div>
+
+      <div class="showcase-band">
+        <span>{{ t('auth.marketBandMap') }}</span>
+        <span>{{ t('auth.marketBandTrend') }}</span>
+        <span>{{ t('auth.marketBandEstimate') }}</span>
+      </div>
+
+      <div class="market-grid">
+        <article v-for="card in marketCards" :key="card.title" class="market-card">
+          <div class="market-card-head">
+            <span class="market-icon">
+              <AppIcon :name="card.icon" :size="18" />
+            </span>
+            <strong>{{ card.title }}</strong>
+          </div>
+          <p>{{ card.value }}</p>
         </article>
       </div>
     </section>

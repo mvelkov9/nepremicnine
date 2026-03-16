@@ -75,7 +75,7 @@
         {
           label: t('model.importance'),
           data: items.map((item) => item.importance),
-          backgroundColor: '#0f766e',
+          backgroundColor: '#2563eb',
           borderRadius: 8,
         },
       ],

@@ -1,6 +1,7 @@
 """Data endpoint tests."""
 
 import io
+from pathlib import Path
 
 import pytest
 from httpx import AsyncClient
@@ -170,3 +171,56 @@ async def test_etn_bulk_limit(client: AsyncClient):
         json={"pairs": pairs},
     )
     assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_prepare_etn_bulk_resolves_relative_paths(client: AsyncClient, monkeypatch: pytest.MonkeyPatch):
+    token = await _get_admin_token(client)
+
+    recorded = {}
+
+    def fake_prepare(pairs, output_csv_path):
+        recorded["pairs"] = pairs
+        recorded["output_csv_path"] = output_csv_path
+        return {
+            "rows": 12,
+            "columns": ["price_eur"],
+            "source": "etn_kpp_bulk",
+            "pairs_received": len(pairs),
+            "pairs_used": len(pairs),
+            "reports": [],
+        }
+
+    monkeypatch.setattr("app.api.data.prepare_training_csv_from_etn_kpp_bulk", fake_prepare)
+    monkeypatch.setattr(
+        "app.api.data._get_training_dataset_metadata",
+        lambda: type(
+            "Meta", (), {"model_dump": lambda self, mode="json": {"exists": False, "relative_path": "raw/train.csv"}}
+        )(),
+    )
+    monkeypatch.setattr("app.api.data.TRAIN_CSV", "/tmp/train.csv")
+
+    posli = Path("/home/michel/nepremicnine-v2/backend/data/uploads/posli.csv")
+    deli = Path("/home/michel/nepremicnine-v2/backend/data/uploads/deli.csv")
+    posli.parent.mkdir(parents=True, exist_ok=True)
+    posli.write_text("id\n1\n", encoding="utf-8")
+    deli.write_text("id\n1\n", encoding="utf-8")
+
+    resp = await client.post(
+        "/api/data/prepare-etn-kpp-bulk",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "pairs": [
+                {
+                    "posli_csv_path": "uploads/posli.csv",
+                    "delistavb_csv_path": "uploads/deli.csv",
+                    "year": "2020",
+                    "label": "2020",
+                }
+            ]
+        },
+    )
+
+    assert resp.status_code == 200
+    assert recorded["pairs"][0]["posli_csv_path"].endswith("/backend/data/uploads/posli.csv")
+    assert recorded["pairs"][0]["delistavb_csv_path"].endswith("/backend/data/uploads/deli.csv")
