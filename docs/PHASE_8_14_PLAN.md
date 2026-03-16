@@ -50,12 +50,12 @@ A thorough comparison of the v1 app (`Nepremicnine v3.5`, Flask/SQLite) with the
 - `backend/app/api/stats.py`
 
 ### Verification
-- [ ] Group medians computed from train split only
-- [ ] Preprocessor fitted once during warm-start loop
-- [ ] Map transactions return WGS84 coordinates (~46.x lat, ~14.x lon for Slovenia)
-- [ ] All CC-SI codes correctly classified
-- [ ] Municipality code-based region lookup works
-- [ ] Combined metrics reported in training results
+- [x] Group medians computed from train split only
+- [x] Preprocessor fitted once during warm-start loop
+- [x] Map transactions return WGS84 coordinates (~46.x lat, ~14.x lon for Slovenia)
+- [x] All CC-SI codes correctly classified
+- [x] Municipality code-based region lookup works
+- [x] Combined metrics reported in training results
 
 ---
 
@@ -82,11 +82,11 @@ A thorough comparison of the v1 app (`Nepremicnine v3.5`, Flask/SQLite) with the
 - `frontend/src/locales/en.json`
 
 ### Verification
-- [ ] Score listings response includes all original fields
-- [ ] Stats overview returns min/max/std price and year_built stats
-- [ ] Region stats include min/max price
-- [ ] Diagnostics include train/test rows and used_features
-- [ ] Frontend views display enriched data
+- [x] Score listings response includes all original fields
+- [x] Stats overview returns min/max/std price and year_built stats
+- [x] Region stats include min/max price
+- [x] Diagnostics include train/test rows and used_features
+- [x] Frontend views display enriched data
 
 ---
 
@@ -107,9 +107,9 @@ A thorough comparison of the v1 app (`Nepremicnine v3.5`, Flask/SQLite) with the
 - `backend/app/utils/cache.py` (new)
 
 ### Verification
-- [ ] Map transactions endpoint is significantly faster
-- [ ] Redis cache helpers deduplicated
-- [ ] No code quality issues remain
+- [x] Map transactions endpoint is significantly faster
+- [x] Redis cache helpers deduplicated
+- [x] No code quality issues remain
 
 ---
 
@@ -131,10 +131,10 @@ A thorough comparison of the v1 app (`Nepremicnine v3.5`, Flask/SQLite) with the
 - `frontend/nginx.conf`
 
 ### Verification
-- [ ] CSP headers present in responses
-- [ ] All inputs validated
-- [ ] No internal paths or stack traces in error responses
-- [ ] No known vulnerable dependencies
+- [x] CSP headers present in responses
+- [x] All inputs validated
+- [x] No internal paths or stack traces in error responses
+- [x] No known vulnerable dependencies
 
 ---
 
@@ -159,11 +159,11 @@ A thorough comparison of the v1 app (`Nepremicnine v3.5`, Flask/SQLite) with the
 - `frontend/src/locales/en.json`
 
 ### Verification
-- [ ] All pages pass WCAG AA contrast requirements
-- [ ] Tab navigation reaches all interactive elements
-- [ ] Screen reader can navigate all pages
-- [ ] Forms show clear validation errors
-- [ ] All pages have loading and error states
+- [x] All pages pass WCAG AA contrast requirements
+- [x] Tab navigation reaches all interactive elements
+- [x] Screen reader can navigate all pages
+- [x] Forms show clear validation errors
+- [x] All pages have loading and error states
 
 ---
 
@@ -186,9 +186,9 @@ A thorough comparison of the v1 app (`Nepremicnine v3.5`, Flask/SQLite) with the
 - `backend/tests/test_regions.py` (expanded)
 
 ### Verification
-- [ ] All new tests pass
-- [ ] Total test count increased from 111
-- [ ] No regressions in existing tests
+- [x] All new tests pass
+- [x] Total test count increased from 111 to 126
+- [x] No regressions in existing tests
 
 ---
 
@@ -211,11 +211,11 @@ A thorough comparison of the v1 app (`Nepremicnine v3.5`, Flask/SQLite) with the
 - `docs/DEPLOYMENT.md`
 
 ### Verification
-- [ ] All docs reflect v0.8.10
-- [ ] No stale version references
-- [ ] All new features documented
-- [ ] API reference complete
-- [ ] Final manual verification passes
+- [x] All docs reflect v0.8.10
+- [x] No stale version references
+- [x] All new features documented
+- [x] API reference complete
+- [x] Final manual verification passes
 
 ---
 
@@ -227,6 +227,6 @@ A thorough comparison of the v1 app (`Nepremicnine v3.5`, Flask/SQLite) with the
 | Phase 9 | Feature Parity & API Completeness | v0.8.5 | ✅ Complete |
 | Phase 10 | Backend Performance & Code Quality | v0.8.6 | ✅ Complete |
 | Phase 11 | Security Hardening | v0.8.7 | ✅ Complete |
-| Phase 12 | Frontend UX & Accessibility | v0.8.8 | ⬜ Pending |
-| Phase 13 | Testing Expansion | v0.8.9 | ⬜ Pending |
-| Phase 14 | Documentation & Final Polish | v0.8.10 | ⬜ Pending |
+| Phase 12 | Frontend UX & Accessibility | v0.8.8 | ✅ Complete |
+| Phase 13 | Testing Expansion | v0.8.9 | ✅ Complete |
+| Phase 14 | Documentation & Final Polish | v0.8.10 | ✅ Complete |

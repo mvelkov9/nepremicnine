@@ -38,6 +38,8 @@ APP_ENV=production
 CORS_ORIGINS=https://yourdomain.com
 ```
 
+> **Note:** `JWT_SECRET_KEY` must be at least 32 characters in production.
+
 ## Multi-App VPS (Shared Server)
 
 When another app already occupies port 80/443, deploy nepremicnine on a
@@ -154,7 +156,7 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_read_timeout 300s;
-        client_max_body_size 1G;
+        client_max_body_size 500M;
     }
 }
 ```

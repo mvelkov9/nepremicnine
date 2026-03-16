@@ -6,7 +6,7 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 
 | Item | Value |
 |------|-------|
-| **Version** | 0.8.7 |
+| **Version** | 0.8.10 |
 | **Repo** | [github.com/mvelkov9/nepremicnine](https://github.com/mvelkov9/nepremicnine) |
 | **Backend** | FastAPI + Python 3.13 + PostgreSQL 17 + SQLAlchemy 2.x async |
 | **Frontend** | Vue 3 Composition API + Pinia + pnpm 9, Vite 6 |
@@ -28,9 +28,34 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 | [Phase 5](PHASE_5_PRODUCTION.md) | Production — Docker, CI/CD, deploy | ✅ Complete | `153f140` |
 | [Phase 6](PHASE_6_V030.md) | Security hardening, backend robustness, frontend accessibility, expanded tests | ✅ Complete | `(v0.3.1)` |
 | [Phase 7](PHASE_7_V040_V080.md) | Security hardening, feature completeness, test expansion, UX polish | ✅ Complete | (latest commit) |
-| [Phase 8–14](PHASE_8_14_PLAN.md) | v1→v2 gap fixes, feature parity, performance, security, UX, tests, docs | 🔄 In Progress | — |
+| [Phase 8–14](PHASE_8_14_PLAN.md) | v1→v2 gap fixes, feature parity, performance, security, UX, tests, docs | ✅ Complete | — |
 
 ## Changelog
+
+### v0.8.10
+- **Docs**: Comprehensive documentation update — README, MASTER.md, PHASE_8_14_PLAN.md, DEPLOYMENT.md all updated to v0.8.10
+- **Docs**: All Phase 8–14 verification checkboxes completed in plan doc
+- **Docs**: Test count updated to 126 (from 111)
+- **Version**: 0.8.9 → 0.8.10
+
+### v0.8.9
+- **Test**: 15 new tests added (111 → 126 total)
+- **Test**: Phase 8 coverage — CC-SI prefix map validation, group property type classification
+- **Test**: Phase 9 coverage — enriched score listing response fields, enhanced diagnostics fields
+- **Test**: Phase 11 coverage — path traversal blocking, health endpoint redaction, generic error messages
+- **Test**: Security tests — upload extension validation, bulk request limits, account enumeration prevention
+- **Test**: New test files: test_data_processing.py, test_security.py
+- **Version**: 0.8.8 → 0.8.9
+
+### v0.8.8
+- **A11y**: ARIA labels on all icon-only buttons (AdminView, DataView)
+- **A11y**: Municipality autocomplete — role="combobox", aria-expanded, keyboard navigation (arrow keys + enter)
+- **A11y**: Progress bar — role="progressbar" with aria-valuenow/min/max
+- **A11y**: Tab pattern — role="tablist"/"tab"/"tabpanel" with aria-selected (PrepareView)
+- **A11y**: Form accessibility — id/for on inputs/labels, novalidate, aria-describedby (LoginView)
+- **A11y**: Global :focus-visible outline styles for buttons, inputs, selects, links
+- **UX**: Page titles set via router meta + afterEach navigation guard
+- **Version**: 0.8.7 → 0.8.8
 
 ### v0.8.7
 - **Security**: Content-Security-Policy header added to FastAPI middleware and nginx (default-src 'self', script/style/img/font/connect restrictions, frame-ancestors 'none')
