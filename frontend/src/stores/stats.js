@@ -9,6 +9,9 @@ export const useStatsStore = defineStore('stats', () => {
   const regions = ref([])
   const priceDistribution = ref(null)
   const trend = ref([])
+  const marketHome = ref(null)
+  const municipalityDetail = ref(null)
+  const comparables = ref(null)
   const loading = ref(false)
   const error = ref(null)
 
@@ -32,11 +35,43 @@ export const useStatsStore = defineStore('stats', () => {
     trend.value = data
   }
 
+  async function fetchMarketHome() {
+    const { data } = await api.get('/api/stats/market-home')
+    marketHome.value = data
+    return data
+  }
+
+  async function fetchMunicipalityDetail(slug) {
+    const { data } = await api.get(`/api/stats/municipality/${slug}`)
+    municipalityDetail.value = data
+    return data
+  }
+
+  async function fetchComparables(params) {
+    const { data } = await api.get('/api/stats/comparables', { params })
+    comparables.value = data
+    return data
+  }
+
+  function resetMunicipalityDetail() {
+    municipalityDetail.value = null
+  }
+
+  function resetComparables() {
+    comparables.value = null
+  }
+
   async function fetchAll() {
     loading.value = true
     error.value = null
     try {
-      await Promise.all([fetchOverview(), fetchRegions(), fetchPriceDistribution(), fetchTrend()])
+      await Promise.all([
+        fetchOverview(),
+        fetchRegions(),
+        fetchPriceDistribution(),
+        fetchTrend(),
+        fetchMarketHome(),
+      ])
     } catch (e) {
       error.value = getApiErrorMessage(e, i18n.global.t)
     } finally {
@@ -49,6 +84,9 @@ export const useStatsStore = defineStore('stats', () => {
     regions,
     priceDistribution,
     trend,
+    marketHome,
+    municipalityDetail,
+    comparables,
     loading,
     error,
     fetchAll,
@@ -56,5 +94,10 @@ export const useStatsStore = defineStore('stats', () => {
     fetchRegions,
     fetchPriceDistribution,
     fetchTrend,
+    fetchMarketHome,
+    fetchMunicipalityDetail,
+    fetchComparables,
+    resetMunicipalityDetail,
+    resetComparables,
   }
 })

@@ -6,11 +6,69 @@ handlers return safe empty / zero-value responses — which is what we assert he
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pandas as pd
 import pytest
 from httpx import AsyncClient
+
+
+def _build_market_df() -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "price_eur": [
+                210_000,
+                245_000,
+                265_000,
+                590_000,
+                150_000,
+                165_000,
+                180_000,
+                172_000,
+                205_000,
+            ],
+            "size_m2": [62, 71, 74, 180, 58, 63, 67, 59, 86],
+            "uporabna_povrsina": [60, 69, 72, 170, 55, 60, 64, 56, 82],
+            "municipality": [
+                "Ljubljana",
+                "Ljubljana",
+                "Ljubljana",
+                "Ljubljana",
+                "Maribor",
+                "Maribor",
+                "Škofja Loka",
+                "Škofja Loka",
+                "Kranj",
+            ],
+            "property_type": [
+                "stanovanje",
+                "stanovanje",
+                "stanovanje",
+                "hisa",
+                "stanovanje",
+                "stanovanje",
+                "stanovanje",
+                "stanovanje",
+                "stanovanje",
+            ],
+            "year_built": [1998, 2004, 2011, 1987, 1979, 1982, 2006, 2008, 1995],
+            "source_label": ["2022", "2023", "2024", "2024", "2023", "2024", "2023", "2024", "2024"],
+            "statistical_region": [
+                "osrednjeslovenska",
+                "osrednjeslovenska",
+                "osrednjeslovenska",
+                "osrednjeslovenska",
+                "podravska",
+                "podravska",
+                "gorenjska",
+                "gorenjska",
+                "gorenjska",
+            ],
+            "latitude": [100_000.0] * 9,
+            "longitude": [460_000.0] * 9,
+        }
+    )
+
 
 # ── GET /api/stats/overview ──────────────────────────────────────────────────
 
@@ -136,6 +194,104 @@ async def test_municipalities_by_region_returns_json(client: AsyncClient, admin_
     resp = await client.get("/api/stats/municipalities-by-region", headers=admin_headers)
     assert resp.status_code == 200
     assert isinstance(resp.json(), dict)
+
+
+@pytest.mark.asyncio
+async def test_municipalities_by_region_filters_single_region(client: AsyncClient, admin_headers: dict):
+    fake_df = _build_market_df()
+    with patch("app.api.stats._load_df", return_value=fake_df):
+        resp = await client.get(
+            "/api/stats/municipalities-by-region?region=gorenjska",
+            headers=admin_headers,
+        )
+    assert resp.status_code == 200
+    assert resp.json() == [{"municipality": "Kranj"}, {"municipality": "Škofja Loka"}]
+
+
+# ── GET /api/stats/market-home ──────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_market_home_unauthenticated(client: AsyncClient):
+    resp = await client.get("/api/stats/market-home")
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_market_home_returns_rankings_and_latest_sales(client: AsyncClient, admin_headers: dict):
+    fake_df = _build_market_df()
+    with patch("app.api.stats._load_df", return_value=fake_df):
+        resp = await client.get("/api/stats/market-home", headers=admin_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["headline"]["total_records"] == len(fake_df)
+    assert data["largest_markets"][0]["municipality"] == "Ljubljana"
+    assert data["latest_sales"]
+    assert any(item["year"] == "2024" for item in data["year_coverage"])
+
+
+@pytest.mark.asyncio
+async def test_market_home_uses_cache_when_available(client: AsyncClient, admin_headers: dict):
+    cached = {
+        "headline": {"total_records": 7},
+        "largest_markets": [],
+        "price_leaders": [],
+        "region_snapshot": [],
+        "latest_sales": [],
+        "year_coverage": [],
+        "property_type_mix": [],
+    }
+    with (
+        patch("app.api.stats.cache_get", new=AsyncMock(return_value=cached)),
+        patch("app.api.stats._load_df") as mocked_load_df,
+    ):
+        resp = await client.get("/api/stats/market-home", headers=admin_headers)
+    assert resp.status_code == 200
+    assert resp.json() == cached
+    mocked_load_df.assert_not_called()
+
+
+# ── GET /api/stats/municipality/{slug} ──────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_municipality_detail_normalizes_slug(client: AsyncClient, admin_headers: dict):
+    fake_df = _build_market_df()
+    with patch("app.api.stats._load_df", return_value=fake_df):
+        resp = await client.get("/api/stats/municipality/skofja-loka", headers=admin_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["municipality"] == "Škofja Loka"
+    assert data["slug"] == "skofja-loka"
+    assert data["overview"]["count"] == 2
+    assert data["recent_transactions"]
+
+
+@pytest.mark.asyncio
+async def test_municipality_detail_returns_404_for_unknown_slug(client: AsyncClient, admin_headers: dict):
+    fake_df = _build_market_df()
+    with patch("app.api.stats._load_df", return_value=fake_df):
+        resp = await client.get("/api/stats/municipality/not-real", headers=admin_headers)
+    assert resp.status_code == 404
+
+
+# ── GET /api/stats/comparables ──────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_comparables_rank_same_municipality_first(client: AsyncClient, admin_headers: dict):
+    fake_df = _build_market_df()
+    with patch("app.api.stats._load_df", return_value=fake_df):
+        resp = await client.get(
+            "/api/stats/comparables?municipality=Ljubljana&property_type=stanovanje&size_m2=70&year_built=2006&price_eur=250000&limit=5",
+            headers=admin_headers,
+        )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["target"]["municipality"] == "Ljubljana"
+    assert data["summary"]["count"] > 0
+    assert data["items"][0]["municipality"] == "Ljubljana"
+    assert data["items"][0]["similarity_score"] is not None
 
 
 # ── Enhanced stats & coordinate conversion ───────────────────────────────────

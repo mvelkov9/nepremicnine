@@ -37,6 +37,8 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 - **Training UX**: Added active-job recovery so the Model view can resume queued/running training jobs after refresh, and stale jobs are now marked failed instead of blocking new training forever
 - **Data prep**: Dataset loading now walks every pagination page, bulk ETN preparation returns per-year row counts, and deduplication keys off stable source row IDs to avoid dropping legitimate transactions
 - **Production UI**: Added real `favicon.ico`/PNG assets and updated nginx/icon links so browser tab icons render reliably in production
+- **Analytical portal**: Added `GET /api/stats/market-home`, `GET /api/stats/municipality/{slug}`, and `GET /api/stats/comparables` for dashboard, municipality spotlight, and AVM comparable sales workflows
+- **Frontend UX**: Rebuilt Dashboard, Prediction, and Map into a denser analytical portal and added a new authenticated municipality drill-down route at `/obcine/:slug`
 - **Version**: 0.8.12 → 0.8.13
 
 ### v0.8.12

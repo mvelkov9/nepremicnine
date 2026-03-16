@@ -58,6 +58,16 @@ const routes = [
     meta: { requiresAuth: true, titleKey: 'nav.map', descriptionKey: 'layout.page.map' },
   },
   {
+    path: '/obcine/:slug',
+    name: 'municipality',
+    component: () => import('../views/MunicipalityView.vue'),
+    meta: {
+      requiresAuth: true,
+      titleKey: 'municipality.pageTitle',
+      descriptionKey: 'municipality.pageDescription',
+    },
+  },
+  {
     path: '/diagnostika',
     name: 'diagnostics',
     component: () => import('../views/DiagnosticsView.vue'),

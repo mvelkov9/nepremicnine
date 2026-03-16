@@ -5,7 +5,8 @@
 ## What It Does
 
 - **Predict** residential property prices using per-type gradient boosting models trained on real Slovenian transaction data (GURS ETN)
-- **Visualize** market trends, regional statistics, and price distributions on interactive dashboards and maps
+- **Visualize** market trends, municipality leaders, recent sales, and regional statistics on an analytical dashboard and map explorer
+- **Compare** predictions against ranked comparable ETN transactions and municipality-level market context
 - **Analyze** listings against trained models to identify over/under-priced properties
 - **Export** prediction history and analysis results to CSV
 - **Manage** datasets, model training, and users through a full admin interface
@@ -61,8 +62,9 @@ The first registered user is automatically assigned the **admin** role.
 2. Upload ETN CSV files from [GURS/ETN](https://www.e-prostor.gov.si/) via the Data page
 3. Prepare `raw/train.csv` from the Prepare page
 4. Trigger model training from the Model page using the prepared dataset
-4. Predict property prices from the Prediction page
-5. Explore transactions on the Map and analyze listings
+5. Predict property prices from the Prediction page
+6. Explore the analytical dashboard, municipality detail pages, and map explorer
+7. Analyze listings
 
 ## Production Deployment
 
@@ -92,6 +94,8 @@ See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for detailed deployment instruction
 On every push to `main`: lint → test → build → push Docker images to GHCR.
 
 On git tag (`v*`): all of the above + SSH deploy to VPS.
+
+Production deployment is handled through git-based CI/CD; normal releases no longer require manual SSH update steps on the VPS.
 
 Required GitHub Actions secrets:
 
@@ -126,14 +130,14 @@ nepremicnine/
 │   │   ├── services/           # Business logic (data processing, ML, regions)
 │   │   └── tasks/              # ARQ async workers (model training)
 │   ├── models/                 # Trained model artifacts (*.joblib)
-│   └── tests/                  # pytest tests (129 collected tests)
+│   └── tests/                  # pytest suites for API, ML, security, and stats
 │
 └── frontend/
     ├── Dockerfile              # Multi-stage: node build → nginx
     ├── nginx.conf              # Reverse proxy + SPA + security headers
     ├── eslint.config.js        # ESLint flat config
     ├── src/
-    │   ├── views/              # 10 page components
+    │   ├── views/              # 11 page components incl. municipality detail
     │   ├── components/         # AppLayout (sidebar + nav)
     │   ├── stores/             # Pinia (auth, data, model, stats)
     │   ├── composables/        # useApi (axios + JWT refresh)
@@ -170,8 +174,11 @@ nepremicnine/
 | GET | `/api/stats/regions` | token | Per-region statistics |
 | GET | `/api/stats/price-distribution` | token | Price distribution data |
 | GET | `/api/stats/trend` | token | Price trend over time |
+| GET | `/api/stats/market-home` | token | Analytical dashboard KPIs, municipality leaders, latest sales |
+| GET | `/api/stats/municipality/{slug}` | token | Municipality spotlight with trend, type mix, recent transactions |
+| GET | `/api/stats/comparables` | token | Ranked comparable transactions for valuation context |
 | GET | `/api/stats/map-transactions` | token | Individual transactions with location |
-| GET | `/api/stats/municipalities-by-region` | token | Municipalities in a region |
+| GET | `/api/stats/municipalities-by-region` | token | Municipalities in a region (mapping or filtered list) |
 | **Regions** | | | |
 | GET | `/api/regions/municipalities` | token | Municipality list |
 | GET | `/api/regions/regions` | token | Statistical regions |

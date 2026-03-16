@@ -4,10 +4,41 @@
 
 | Item | Value |
 |------|-------|
-| **Current Version** | 0.8.3 |
+| **Current Version** | 0.8.13 |
 | **Target Version** | 0.8.13 |
 | **Scope** | ML bug fixes, feature parity, performance, security, UX, accessibility, testing, documentation |
 | **Method** | Agency agent-driven analysis and implementation across 7 phases |
+
+---
+
+## Post-Plan Addendum — Analytical Portal Expansion
+
+After shipping the original `v0.8.13` bugfix/docs/favicon/training/data-prep work, the authenticated product layer was expanded with a second wave focused on analytical discovery and AVM context.
+
+### Delivered
+
+1. **Backend stats expansion**
+   - Added `GET /api/stats/market-home`
+   - Added `GET /api/stats/municipality/{slug}`
+   - Added `GET /api/stats/comparables`
+   - Added shared municipality slug normalization helper
+   - Extended `GET /api/stats/municipalities-by-region` with optional `region=` filtering for map workflows
+2. **Frontend product expansion**
+   - Added new authenticated route `/obcine/:slug`
+   - Extended stats store with `marketHome`, `municipalityDetail`, and `comparables`
+   - Rebuilt Dashboard into a market-intelligence landing page
+   - Rebuilt Prediction into a two-column AVM flow with municipality context and comparable transactions
+   - Rebuilt Map into a denser explorer with municipality drill-down and valuation handoff
+3. **Shell consistency**
+   - Refined the authenticated shell to better frame analytical workflows without changing the auth or deployment model
+
+### Verification Snapshot
+
+- `ruff check` on touched backend files passes
+- frontend `eslint` passes on touched shell/router/store/views
+- frontend `prettier --check` passes on touched files
+- `vite build` passes
+- targeted backend `pytest` still times out inside the existing harness, so endpoint coverage for this addendum is documented but not fully executable in the current local test setup
 
 ---
 

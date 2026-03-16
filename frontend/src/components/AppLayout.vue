@@ -62,6 +62,10 @@
         : t('app.title'),
   )
 
+  const currentDescription = computed(() =>
+    route.meta.descriptionKey ? t(route.meta.descriptionKey) : t('layout.page.default'),
+  )
+
   const visibleNavItems = computed(() => navItems.filter((item) => !item.admin || auth.isAdmin))
 
   const avatarUrl = computed(() => auth.user?.avatar_url || '')
@@ -146,6 +150,11 @@
     await auth.logout()
     router.push('/login')
   }
+
+  function isActiveRoute(item) {
+    if (item.to === '/') return route.path === '/'
+    return route.path === item.to || route.path.startsWith(`${item.to}/`)
+  }
 </script>
 
 <template>
@@ -160,7 +169,7 @@
         {{ mobileMenuOpen ? '×' : '☰' }}
       </button>
       <div class="mobile-brand">
-        <span class="brand-mark">N</span>
+        <span class="brand-mark">NN</span>
         <div>
           <strong>{{ t('app.title') }}</strong>
           <small>{{ t('app.subtitle') }}</small>
@@ -182,11 +191,16 @@
 
     <aside class="sidebar" :class="{ 'mobile-open': mobileMenuOpen }">
       <div class="sidebar-brand">
-        <div class="brand-mark">N</div>
+        <div class="brand-mark">NN</div>
         <div>
           <strong>{{ t('app.title') }}</strong>
           <small>{{ t('app.subtitle') }}</small>
         </div>
+      </div>
+
+      <div class="sidebar-intro">
+        <span class="sidebar-label">{{ t('layout.workspace') }}</span>
+        <p>{{ t('layout.workflowHint') }}</p>
       </div>
 
       <nav class="sidebar-nav" aria-label="Main navigation">
@@ -195,6 +209,7 @@
           :key="item.to"
           :to="item.to"
           class="nav-link"
+          :class="{ active: isActiveRoute(item) }"
           @click="mobileMenuOpen = false"
         >
           <span class="nav-icon"><AppIcon :name="item.icon" :size="18" /></span>
@@ -215,7 +230,9 @@
     <div class="workspace">
       <header class="topbar">
         <div class="page-meta">
+          <span class="page-kicker">{{ t('layout.workspace') }}</span>
           <h1 class="page-heading">{{ currentTitle }}</h1>
+          <p class="page-description">{{ currentDescription }}</p>
         </div>
 
         <div class="topbar-actions">
@@ -324,3 +341,105 @@
     </div>
   </div>
 </template>
+
+<style scoped>
+  .sidebar-intro {
+    padding: 0.95rem 0.95rem 1rem;
+    border-radius: 1.1rem;
+    border: 1px solid rgb(255 255 255 / 8%);
+    background: linear-gradient(135deg, rgb(255 255 255 / 8%), rgb(255 255 255 / 3%));
+  }
+
+  .sidebar-intro p {
+    margin: 0.45rem 0 0;
+    color: rgb(255 255 255 / 68%);
+    font-size: 0.86rem;
+    line-height: 1.55;
+  }
+
+  .brand-mark {
+    width: 3rem;
+    height: 3rem;
+    border-radius: 1.1rem;
+    font-size: 0.9rem;
+    letter-spacing: 0.1em;
+  }
+
+  .nav-link.active,
+  .nav-link.router-link-active {
+    background: linear-gradient(135deg, rgb(96 165 250 / 18%), rgb(255 255 255 / 8%));
+    border-color: rgb(96 165 250 / 28%);
+    color: #f8fbff;
+  }
+
+  .workspace {
+    position: relative;
+    min-height: 100vh;
+  }
+
+  .workspace::before {
+    content: '';
+    position: fixed;
+    inset: 0 0 auto var(--sidebar-width);
+    height: 280px;
+    background:
+      radial-gradient(circle at top left, rgb(37 99 235 / 12%), transparent 34%),
+      radial-gradient(circle at top right, rgb(245 158 11 / 10%), transparent 24%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 12;
+    margin: 0 1.35rem;
+    padding: 1.1rem 0 1rem;
+    backdrop-filter: blur(20px);
+  }
+
+  .page-meta,
+  .profile-copy {
+    display: grid;
+    gap: 0.2rem;
+  }
+
+  .page-kicker {
+    color: var(--text-soft);
+    font-size: 0.74rem;
+    font-weight: 800;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+
+  .page-heading {
+    margin: 0;
+  }
+
+  .page-description {
+    max-width: 58ch;
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 0.94rem;
+  }
+
+  .main {
+    position: relative;
+    z-index: 1;
+    padding-top: 0.5rem;
+  }
+
+  @media (max-width: 960px) {
+    .workspace::before {
+      inset: 0;
+    }
+
+    .topbar {
+      margin: 0 1rem;
+    }
+
+    .page-description {
+      max-width: none;
+    }
+  }
+</style>
