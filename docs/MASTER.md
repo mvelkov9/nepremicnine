@@ -6,7 +6,7 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 
 | Item | Value |
 |------|-------|
-| **Version** | 0.3.1 |
+| **Version** | 0.8.0 |
 | **Repo** | [github.com/mvelkov9/nepremicnine](https://github.com/mvelkov9/nepremicnine) |
 | **Backend** | FastAPI + Python 3.13 + PostgreSQL 17 + SQLAlchemy 2.x async |
 | **Frontend** | Vue 3 Composition API + Pinia + pnpm 9, Vite 6 |
@@ -26,8 +26,66 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 | [Phase 3](PHASE_3_ML_PIPELINE.md) | ML Pipeline — training, prediction, ARQ | ✅ Complete | `1b227cb` |
 | [Phase 4](PHASE_4_FEATURES.md) | Features — map, diagnostics, admin, i18n | ✅ Complete | `fc18742` |
 | [Phase 5](PHASE_5_PRODUCTION.md) | Production — Docker, CI/CD, deploy | ✅ Complete | `153f140` |
+| [Phase 6](PHASE_6_V030.md) | Security hardening, backend robustness, frontend accessibility, expanded tests | ✅ Complete | `(v0.3.1)` |
+| [Phase 7](PHASE_7_V040_V080.md) | Security hardening, feature completeness, test expansion, UX polish | ✅ Complete | (latest commit) |
 
 ## Changelog
+
+### v0.8.0
+- **Docs**: Comprehensive documentation update — all phases, changelog
+- **Version**: 0.7.0 → 0.8.0
+
+### v0.7.0
+- **Perf**: Model cache invalidated after training (no stale predictions)
+- **Perf**: Redis caching added to GET /stats/trend
+- **DB**: Index on dataset_files.uploaded_at (ORDER BY performance)
+- **DB**: Index on training_jobs.status (WHERE status IN queries)
+- **DB**: UniqueConstraint on region_lookup prevents duplicate imports
+- **Frontend**: CSV export composable + buttons in Prediction/Analysis views
+- **Frontend**: DiagnosticsView tables show empty state when no metrics available
+- **i18n**: predict.exportHistory, analysis.export keys
+- **Version**: 0.6.0 → 0.7.0
+
+### v0.6.0
+- **Testing**: 61 → 111 tests passing
+- **Fix**: pg_advisory_xact_lock guarded by dialect check (fixed SQLite test suite)
+- **Tests**: New auth token rotation tests (5)
+- **Tests**: New analysis runs/validation tests (5)
+- **Tests**: New admin stats/pagination tests (5)
+- **Version**: 0.5.0 → 0.6.0
+
+### v0.5.0
+- **Security**: Old refresh token blacklisted on token rotation
+- **Perf**: In-process model cache eliminates per-request joblib reads
+- **Fix**: LoginRequest.password max_length=128 (prevents bcrypt DoS)
+- **Fix**: preview_dataset limit bounded (ge=1, le=1000)
+- **Fix**: ListingItem validation: asking_price≥0, size_m2≥1
+- **Security**: stored_path removed from DatasetFileResponse
+- **Fix**: Concurrent training job guard (HTTP 409)
+- **Feat**: Paginated GET /admin/users
+- **Feat**: GET /analysis/runs endpoint
+- **Feat**: GET /admin/stats platform usage endpoint
+- **Frontend**: stats.js error handling
+- **Frontend**: ModelView.vue pollTimer cleared on unmount
+- **Frontend**: DataView.vue error handling + loading states
+- **Frontend**: AdminView.vue empty state for users table
+- **Frontend**: PredictionView.vue lega options translated
+- **i18n**: predict.lega.*, model.defaultDataset keys
+- **Version**: 0.4.0 → 0.5.0
+
+### v0.4.0
+- **Security (CRIT)**: Refresh token now blacklisted on logout
+- **Security (CRIT)**: /refresh endpoint checks token blacklist
+- **Security**: Rate limit on /refresh (10/min), /predict (30/min), /analysis/score (10/min)
+- **Security**: Swagger/ReDoc/OpenAPI disabled in production
+- **Security**: HSTS header added for production
+- **Security**: TOCTOU race condition fixed in first-user admin promotion
+- **Security**: source_type validated as Literal enum
+- **Security**: Uploaded filename sanitized before storage
+- **Fix**: Missing db.commit() in delete_dataset endpoint
+- **Fix**: Raw exception messages no longer leaked to API callers
+- **Frontend**: logout() sends refresh_token to server for full revocation
+- **Version**: 0.3.1 → 0.4.0
 
 ### v0.3.1
 - **Bug fix**: Increase nginx `client_max_body_size` from 100M to 600M — fixes 413 Request Entity Too Large on file uploads

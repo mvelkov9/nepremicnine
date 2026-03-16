@@ -1,4 +1,4 @@
-# Nepremičnine v0.4.0
+# Nepremičnine v0.8.0
 
 > Slovenian real estate price analysis & prediction platform — powered by machine learning on official ETN transaction data.
 
@@ -7,7 +7,9 @@
 - **Predict** residential property prices using per-type gradient boosting models trained on real Slovenian transaction data (GURS ETN)
 - **Visualize** market trends, regional statistics, and price distributions on interactive dashboards and maps
 - **Analyze** listings against trained models to identify over/under-priced properties
+- **Export** prediction history and analysis results to CSV
 - **Manage** datasets, model training, and users through a full admin interface
+- **Monitor** platform usage with an admin stats dashboard
 - **Secure** with rate limiting, token blacklist, security headers, and input validation
 - **Accessible** with dark mode, mobile responsive layout, WCAG AA contrast, and keyboard navigation
 
@@ -120,7 +122,7 @@ nepremicnine/
 │   │   ├── services/           # Business logic (data processing, ML, regions)
 │   │   └── tasks/              # ARQ async workers (model training)
 │   ├── models/                 # Trained model artifacts (*.joblib)
-│   └── tests/                  # pytest tests (96 tests)
+│   └── tests/                  # pytest tests (111 tests)
 │
 └── frontend/
     ├── Dockerfile              # Multi-stage: node build → nginx
@@ -185,10 +187,12 @@ nepremicnine/
 | GET | `/api/model/diagnostics` | token | Diagnostic metrics |
 | **Analysis** | | | |
 | POST | `/api/analysis/score` | token | Score listings vs model |
+| GET | `/api/analysis/runs` | token | List analysis run history |
 | **Admin** | | | |
-| GET | `/api/admin/users` | admin | List all users |
+| GET | `/api/admin/users` | admin | List all users (paginated) |
 | PATCH | `/api/admin/users/{id}` | admin | Update user role/status |
 | DELETE | `/api/admin/users/{id}` | admin | Delete user |
+| GET | `/api/admin/stats` | admin | Platform usage statistics |
 
 Full interactive API documentation available at `/docs` (Swagger UI).
 
@@ -219,6 +223,7 @@ docker compose exec frontend pnpm build
 - [Phase 4: Features](docs/PHASE_4_FEATURES.md)
 - [Phase 5: Production](docs/PHASE_5_PRODUCTION.md)
 - [Phase 6: v0.3.0 Hardening](docs/PHASE_6_V030.md)
+- [Phase 7: v0.4.0–v0.8.0 Security & Features](docs/PHASE_7_V040_V080.md)
 - [Deployment Guide](docs/DEPLOYMENT.md)
 
 ## License
