@@ -418,6 +418,10 @@ def train_from_csv(
         "trained_at": pd.Timestamp.now().isoformat(),
         "csv_path": csv_path,
         "rows": len(df),
+        "train_rows": len(X_train),
+        "test_rows": len(X_test),
+        "used_features": global_num + global_cat,
+        "model_type": "HistGradientBoostingRegressor",
         "duration_sec": duration,
     }
     model_path = os.path.join(MODEL_DIR, "price_model.joblib")
@@ -635,6 +639,10 @@ def get_model_info() -> dict[str, Any] | None:
         "version": artifact.get("version"),
         "trained_at": artifact.get("trained_at"),
         "rows": artifact.get("rows"),
+        "train_rows": artifact.get("train_rows"),
+        "test_rows": artifact.get("test_rows"),
+        "used_features": artifact.get("used_features", []),
+        "model_type": artifact.get("model_type", "HistGradientBoostingRegressor"),
         "duration_sec": artifact.get("duration_sec"),
         "global_metrics": artifact.get("global_metrics"),
         "per_type_metrics": artifact.get("per_type_metrics"),

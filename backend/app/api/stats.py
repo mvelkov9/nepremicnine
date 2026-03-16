@@ -159,12 +159,29 @@ async def overview(
         "total_records": len(df),
         "avg_price": round(float(df["price_eur"].mean()), 2) if "price_eur" in df.columns else None,
         "median_price": round(float(df["price_eur"].median()), 2) if "price_eur" in df.columns else None,
+        "min_price": round(float(df["price_eur"].min()), 2) if "price_eur" in df.columns else None,
+        "max_price": round(float(df["price_eur"].max()), 2) if "price_eur" in df.columns else None,
+        "std_price": round(float(df["price_eur"].std()), 2) if "price_eur" in df.columns else None,
         "avg_area": round(float(df["size_m2"].mean()), 2) if "size_m2" in df.columns else None,
         "median_area": round(float(df["size_m2"].median()), 2) if "size_m2" in df.columns else None,
         "avg_price_per_m2": None,
+        "regions_count": int(df["statistical_region"].nunique()) if "statistical_region" in df.columns else None,
         "top_municipalities": [],
         "property_types": [],
     }
+
+    # Year built stats
+    if "year_built" in df.columns:
+        yb = pd.to_numeric(df["year_built"], errors="coerce").dropna()
+        if not yb.empty:
+            result["year_built_avg"] = round(float(yb.mean()), 1)
+            result["year_built_min"] = int(yb.min())
+            result["year_built_max"] = int(yb.max())
+
+    # Data years from source_label
+    if "source_label" in df.columns:
+        years = df["source_label"].astype(str).str[:4].unique().tolist()
+        result["data_years"] = sorted(years)
 
     if "price_eur" in df.columns and "size_m2" in df.columns:
         tmp = df[["price_eur"]].copy()
@@ -233,6 +250,8 @@ async def regions_stats(
             if not valid.empty:
                 entry["avg_price_per_m2"] = round(float((valid["price_eur"] / valid["_area"]).mean()), 2)
                 entry["median_price_per_m2"] = round(float((valid["price_eur"] / valid["_area"]).median()), 2)
+        entry["min_price"] = round(float(group["price_eur"].min()), 2) if "price_eur" in group.columns else None
+        entry["max_price"] = round(float(group["price_eur"].max()), 2) if "price_eur" in group.columns else None
         results.append(entry)
 
     result = sorted(results, key=lambda x: x["count"], reverse=True)

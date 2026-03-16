@@ -45,6 +45,12 @@ class ScoredListing(BaseModel):
     predicted_price: float
     deviation_pct: float
     label: str
+    size_m2: float | None = None
+    rooms: float | None = None
+    year_built: int | None = None
+    floor: int | None = None
+    municipality: str | None = None
+    property_type: str | None = None
 
 
 class ScoreResponse(BaseModel):
@@ -98,6 +104,12 @@ async def score_listings(
                 predicted_price=round(predicted, 2),
                 deviation_pct=round(deviation, 2),
                 label=label,
+                size_m2=listing.size_m2,
+                rooms=listing.rooms,
+                year_built=listing.year_built,
+                floor=listing.floor,
+                municipality=listing.municipality,
+                property_type=listing.property_type,
             )
         )
 

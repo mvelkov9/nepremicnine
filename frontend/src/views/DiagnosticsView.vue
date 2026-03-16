@@ -80,8 +80,20 @@
     ]
   })
 
+  const combinedMetrics = computed(() => {
+    const m = model.diagnostics?.combined_metrics
+    if (!m) return []
+    return [
+      { label: 'MAE', value: `€${Math.round(m.mae).toLocaleString()}` },
+      { label: 'RMSE', value: `€${Math.round(m.rmse).toLocaleString()}` },
+      { label: 'R²', value: m.r2?.toFixed(4) },
+      { label: 'MAPE', value: `${m.mape?.toFixed(1)}%` },
+      { label: t('diag.medianError'), value: `€${Math.round(m.median_ae).toLocaleString()}` },
+    ]
+  })
+
   onMounted(async () => {
-    await model.fetchInfo()
+    await Promise.all([model.fetchInfo(), model.fetchDiagnostics()])
   })
 </script>
 
@@ -106,6 +118,18 @@
         </div>
       </div>
 
+      <!-- Combined routing metrics -->
+      <div v-if="combinedMetrics.length" class="card" style="margin-bottom: 1.5rem">
+        <h2>{{ t('diag.combinedMetrics') }}</h2>
+        <p class="muted" style="margin-bottom: 0.75rem">{{ t('diag.combinedDesc') }}</p>
+        <div class="kpi-grid">
+          <div v-for="m in combinedMetrics" :key="m.label" class="kpi-card">
+            <span class="kpi-label">{{ m.label }}</span>
+            <span class="kpi-value">{{ m.value }}</span>
+          </div>
+        </div>
+      </div>
+
       <!-- Model info -->
       <div class="card" style="margin-bottom: 1.5rem">
         <h2>{{ t('diag.modelDetails') }}</h2>
@@ -124,6 +148,14 @@
                 <td class="muted">{{ t('diag.rows') }}</td>
                 <td>{{ model.info.rows?.toLocaleString() }}</td>
               </tr>
+              <tr v-if="model.diagnostics?.train_rows">
+                <td class="muted">{{ t('diag.trainRows') }}</td>
+                <td>{{ model.diagnostics.train_rows?.toLocaleString() }}</td>
+              </tr>
+              <tr v-if="model.diagnostics?.test_rows">
+                <td class="muted">{{ t('diag.testRows') }}</td>
+                <td>{{ model.diagnostics.test_rows?.toLocaleString() }}</td>
+              </tr>
               <tr>
                 <td class="muted">{{ t('diag.duration') }}</td>
                 <td>{{ model.info.duration_sec?.toFixed(1) }}s</td>
@@ -131,6 +163,14 @@
               <tr>
                 <td class="muted">{{ t('diag.perTypeModels') }}</td>
                 <td>{{ model.info.per_type_count }}</td>
+              </tr>
+              <tr v-if="model.diagnostics?.model_type">
+                <td class="muted">{{ t('diag.modelType') }}</td>
+                <td>{{ model.diagnostics.model_type }}</td>
+              </tr>
+              <tr v-if="model.diagnostics?.type_models_trained?.length">
+                <td class="muted">{{ t('diag.trainedTypes') }}</td>
+                <td>{{ model.diagnostics.type_models_trained.join(', ') }}</td>
               </tr>
             </tbody>
           </table>

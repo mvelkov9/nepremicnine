@@ -73,3 +73,5 @@ class ModelInfoResponse(BaseModel):
     feature_labels: dict | None = None
     per_type_count: int = 0
     coords_by_municipality: dict[str, dict] | None = None
+    combined_metrics: dict | None = None
+    type_models_trained: list[str] | None = None

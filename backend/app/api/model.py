@@ -97,10 +97,16 @@ async def model_diagnostics(_user: User = Depends(get_current_user)):
         "version": info.get("version"),
         "trained_at": info.get("trained_at"),
         "rows": info.get("rows"),
+        "train_rows": info.get("train_rows"),
+        "test_rows": info.get("test_rows"),
+        "model_type": info.get("model_type", "HistGradientBoostingRegressor"),
+        "used_features": info.get("used_features", []),
         "global_metrics": info.get("global_metrics"),
+        "combined_metrics": info.get("combined_metrics"),
         "per_type_metrics": info.get("per_type_metrics", {}),
         "per_region_metrics": info.get("per_region_metrics", {}),
         "per_type_count": info.get("per_type_count", 0),
+        "type_models_trained": info.get("type_models_trained", []),
     }
 
 

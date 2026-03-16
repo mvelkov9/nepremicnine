@@ -208,6 +208,9 @@
                 <th>{{ t('analysis.predictedPrice') }}</th>
                 <th>{{ t('analysis.deviation') }}</th>
                 <th>{{ t('analysis.label') }}</th>
+                <th>{{ t('predict.propertyType') }}</th>
+                <th>{{ t('predict.municipality') }}</th>
+                <th>m²</th>
               </tr>
             </thead>
             <tbody>
@@ -228,6 +231,9 @@
                     t('analysis.' + item.label)
                   }}</span>
                 </td>
+                <td>{{ item.property_type || '—' }}</td>
+                <td>{{ item.municipality || '—' }}</td>
+                <td>{{ item.size_m2 || '—' }}</td>
               </tr>
             </tbody>
           </table>

@@ -4,6 +4,7 @@ import api from '../composables/useApi'
 
 export const useModelStore = defineStore('model', () => {
   const info = ref(null)
+  const diagnostics = ref(null)
   const importance = ref([])
   const training = ref(false)
   const trainingStatus = ref(null)
@@ -30,6 +31,15 @@ export const useModelStore = defineStore('model', () => {
       importance.value = data
     } catch {
       importance.value = []
+    }
+  }
+
+  async function fetchDiagnostics() {
+    try {
+      const { data } = await api.get('/api/model/diagnostics')
+      diagnostics.value = data
+    } catch {
+      diagnostics.value = null
     }
   }
 
@@ -68,6 +78,7 @@ export const useModelStore = defineStore('model', () => {
 
   return {
     info,
+    diagnostics,
     importance,
     training,
     trainingStatus,
@@ -75,6 +86,7 @@ export const useModelStore = defineStore('model', () => {
     error,
     fetchInfo,
     fetchImportance,
+    fetchDiagnostics,
     startTraining,
     pollStatus,
     reset,

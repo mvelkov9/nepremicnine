@@ -223,8 +223,8 @@ A thorough comparison of the v1 app (`Nepremicnine v3.5`, Flask/SQLite) with the
 
 | Phase | Description | Version | Status |
 |-------|-------------|---------|--------|
-| Phase 8 | Critical ML & Data Fixes | v0.8.4 | 🔄 In Progress |
-| Phase 9 | Feature Parity & API Completeness | v0.8.5 | ⬜ Pending |
+| Phase 8 | Critical ML & Data Fixes | v0.8.4 | ✅ Complete |
+| Phase 9 | Feature Parity & API Completeness | v0.8.5 | 🔄 In Progress |
 | Phase 10 | Backend Performance & Code Quality | v0.8.6 | ⬜ Pending |
 | Phase 11 | Security Hardening | v0.8.7 | ⬜ Pending |
 | Phase 12 | Frontend UX & Accessibility | v0.8.8 | ⬜ Pending |
