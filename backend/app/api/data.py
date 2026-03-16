@@ -4,7 +4,10 @@ import hashlib
 import json
 import logging
 import os
+import pathlib
+import re
 import uuid
+from typing import Literal
 
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
@@ -54,7 +57,7 @@ def _validate_path_within_data_dir(raw_path: str) -> str:
 @router.post("/upload", response_model=DatasetUploadResponse)
 async def upload_files(
     files: list[UploadFile],
-    source_type: str = "csv",
+    source_type: Literal["csv", "etn", "rpe"] = "csv",
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_admin),
 ):
@@ -85,8 +88,10 @@ async def upload_files(
             skipped.append(file.filename or "unknown")
             continue
 
-        # Save to disk
-        stored_name = f"{uuid.uuid4().hex}_{file.filename}"
+        # Save to disk — sanitise filename to prevent path injection
+        safe_filename = pathlib.Path(file.filename or "upload").name
+        safe_filename = re.sub(r"[^\w.\-]", "_", safe_filename)[:200] or "upload"
+        stored_name = f"{uuid.uuid4().hex}_{safe_filename}"
         stored_path = os.path.join(UPLOAD_DIR, stored_name)
         with open(stored_path, "wb") as f:
             f.write(content)
@@ -237,6 +242,7 @@ async def delete_dataset(
         os.remove(dataset.stored_path)
 
     await db.delete(dataset)
+    await db.commit()
 
 
 class BulkDeleteRequest(BaseModel):
@@ -282,7 +288,10 @@ async def prepare_etn_kpp(
     try:
         result = prepare_training_csv_from_etn_kpp(posli, delistavb, TRAIN_CSV)
     except Exception as exc:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+        logger.error("ETN KPP preparation failed: %s", exc, exc_info=True)
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, "Data preparation failed. Check server logs."
+        ) from exc
     return result
 
 
@@ -313,7 +322,10 @@ async def prepare_etn_kpp_bulk(
         pairs_dicts = [p.model_dump() for p in req.pairs]
         result = prepare_training_csv_from_etn_kpp_bulk(pairs_dicts, TRAIN_CSV)
     except Exception as exc:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+        logger.error("ETN KPP bulk preparation failed: %s", exc, exc_info=True)
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, "Data preparation failed. Check server logs."
+        ) from exc
     return result
 
 
@@ -336,7 +348,8 @@ async def import_rpe_rn_endpoint(
     try:
         result = import_rpe_rn(rn_path, stat_path, UPLOAD_DIR)
     except Exception as exc:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+        logger.error("RPE/RN import failed: %s", exc, exc_info=True)
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Region import failed. Check server logs.") from exc
 
     for m in result["mappings"]:
         record = RegionLookupModel(
@@ -386,5 +399,8 @@ async def prepare_train(
     try:
         result = prepare_training_csv(source, req.column_map, TRAIN_CSV)
     except Exception as exc:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+        logger.error("Training CSV preparation failed: %s", exc, exc_info=True)
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, "Data preparation failed. Check server logs."
+        ) from exc
     return result

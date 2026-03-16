@@ -4,14 +4,15 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.dependencies.auth import get_current_user
 from app.models.listings_run import ListingsRun
 from app.models.user import User
+from app.rate_limit import limiter
 from app.services.model_service import load_model, predict_one
 
 logger = logging.getLogger(__name__)
@@ -32,8 +33,8 @@ class ListingItem(BaseModel):
 
 
 class ScoreRequest(BaseModel):
-    listings: list[ListingItem]
-    threshold: float = 15.0
+    listings: list[ListingItem] = Field(..., max_length=500)
+    threshold: float = Field(15.0, ge=0.0, le=100.0)
 
 
 class ScoredListing(BaseModel):
@@ -53,7 +54,9 @@ class ScoreResponse(BaseModel):
 
 
 @router.post("/score", response_model=ScoreResponse)
+@limiter.limit("10/minute")
 async def score_listings(
+    request: Request,
     req: ScoreRequest,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),

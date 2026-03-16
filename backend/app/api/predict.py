@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,14 +14,19 @@ from app.database import get_db
 from app.dependencies.auth import get_current_user, require_admin
 from app.models.prediction import PredictionLog
 from app.models.user import User
+from app.rate_limit import limiter
 from app.schemas.model import PredictRequest, PredictResponse
 from app.services.model_service import predict_one
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/predict", tags=["prediction"])
 
 
 @router.post("", response_model=PredictResponse)
+@limiter.limit("30/minute")
 async def predict(
+    request: Request,
     req: PredictRequest,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -30,7 +36,10 @@ async def predict(
     try:
         result = predict_one(features)
     except RuntimeError as exc:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+        logger.error("Prediction failed: %s", exc, exc_info=True)
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, "Prediction failed. Ensure a model has been trained."
+        ) from exc
 
     log = PredictionLog(
         payload_json=json.dumps(features),

@@ -46,8 +46,8 @@
       .slice(0, 2)
   }
 
-  function handleLogout() {
-    auth.logout()
+  async function handleLogout() {
+    await auth.logout()
     router.push('/login')
   }
 </script>

@@ -71,12 +71,17 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     settings = get_settings()
+    is_production = settings.app_env == "production"
 
     app = FastAPI(
         title="Nepremicnine API",
         description="Slovenian real estate price analysis & prediction",
         version=settings.app_version,
         lifespan=lifespan,
+        # Disable interactive docs in production to reduce attack surface
+        docs_url=None if is_production else "/docs",
+        redoc_url=None if is_production else "/redoc",
+        openapi_url=None if is_production else "/openapi.json",
     )
 
     # GZip compression for responses >= 1000 bytes
@@ -114,6 +119,8 @@ def create_app() -> FastAPI:
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["X-XSS-Protection"] = "0"
+        if settings.app_env == "production":
+            response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
         return response
 
     # Structured request logging with correlation IDs

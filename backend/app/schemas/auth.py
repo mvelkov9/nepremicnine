@@ -24,6 +24,10 @@ class RefreshRequest(BaseModel):
     refresh_token: str
 
 
+class LogoutRequest(BaseModel):
+    refresh_token: str | None = None
+
+
 class UserResponse(BaseModel):
     id: int
     email: str
