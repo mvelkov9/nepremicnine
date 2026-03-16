@@ -21,7 +21,7 @@ class TrainingJob(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     job_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
-    status: Mapped[JobStatus] = mapped_column(String(20), default=JobStatus.queued, nullable=False)
+    status: Mapped[JobStatus] = mapped_column(String(20), default=JobStatus.queued, nullable=False, index=True)
     stage: Mapped[str | None] = mapped_column(String(100), nullable=True)
     progress: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     csv_path: Mapped[str | None] = mapped_column(String(500), nullable=True)

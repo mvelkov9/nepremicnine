@@ -10,7 +10,7 @@ from arq import create_pool
 from arq.connections import RedisSettings
 
 from app.config import get_settings
-from app.services.model_service import train_from_csv
+from app.services.model_service import invalidate_model_cache, train_from_csv
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +52,7 @@ async def run_training(ctx: dict, job_id: str, csv_path: str) -> dict:
 
     try:
         result = train_from_csv(csv_path, progress_callback=progress_callback)
+        invalidate_model_cache()
         await _update(
             "completed",
             stage="done",

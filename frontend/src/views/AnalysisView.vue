@@ -4,10 +4,12 @@
   import { Doughnut } from 'vue-chartjs'
   import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js'
   import api from '../composables/useApi'
+  import { useExport } from '../composables/useExport'
 
   ChartJS.register(ArcElement, Tooltip, Legend)
 
   const { t } = useI18n()
+  const { exportToCSV } = useExport()
 
   const jsonInput = ref('')
   const threshold = ref(15)
@@ -178,7 +180,25 @@
 
       <!-- Listings table -->
       <div class="card">
-        <h2>{{ t('analysis.scoredListings') }}</h2>
+        <div
+          style="
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-bottom: 0.5rem;
+          "
+        >
+          <h2 style="margin: 0">{{ t('analysis.scoredListings') }}</h2>
+          <button
+            v-if="result.listings && result.listings.length"
+            class="secondary"
+            @click="exportToCSV(result.listings, 'analysis.csv')"
+          >
+            {{ t('analysis.export') }}
+          </button>
+        </div>
         <div class="table-wrap">
           <table>
             <thead>

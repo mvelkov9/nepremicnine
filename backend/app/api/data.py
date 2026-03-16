@@ -352,11 +352,21 @@ async def import_rpe_rn_endpoint(
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Region import failed. Check server logs.") from exc
 
     for m in result["mappings"]:
+        # Skip if a record with same (obcina_naziv, vir) already exists
+        vir_value = m.get("vir", "RPE/RN")
+        existing = await db.execute(
+            select(RegionLookupModel).where(
+                RegionLookupModel.obcina_naziv == m["obcina_naziv"],
+                RegionLookupModel.vir == vir_value,
+            )
+        )
+        if existing.scalar_one_or_none() is not None:
+            continue
         record = RegionLookupModel(
             obcina_sifra=m.get("obcina_sifra"),
             obcina_naziv=m["obcina_naziv"],
             regija_naziv=m["regija_naziv"],
-            vir=m.get("vir", "RPE/RN"),
+            vir=vir_value,
         )
         db.add(record)
     await db.commit()

@@ -223,8 +223,14 @@ async def price_distribution(
 
 @router.get("/trend")
 async def trend(
+    request: Request,
     _user: User = Depends(get_current_user),
 ):
+    cache_key = "cache:stats:trend"
+    cached = await _cache_get(request, cache_key)
+    if cached is not None:
+        return cached
+
     df = _load_df()
     if df is None or df.empty:
         return []
@@ -283,6 +289,7 @@ async def trend(
                 entry["by_type"][pt] = pt_entry
         results.append(entry)
 
+    await _cache_set(request, cache_key, results)
     return results
 
 

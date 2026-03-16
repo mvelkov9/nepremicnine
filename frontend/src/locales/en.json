@@ -123,6 +123,7 @@
     "stavbaDokoncana": "Building Completed",
     "ddvVkljucen": "VAT Included",
     "featuresUsed": "Features Used",
+    "exportHistory": "Export history",
     "lega": {
       "pritlicje": "Ground floor",
       "nadstropje": "Upper floor",
@@ -241,7 +242,8 @@
     "predictedPrice": "Predicted Price",
     "deviation": "Deviation",
     "label": "Label",
-    "invalidJson": "Invalid JSON format"
+    "invalidJson": "Invalid JSON format",
+    "export": "Export results"
   },
   "admin": {
     "userManagement": "User Management",

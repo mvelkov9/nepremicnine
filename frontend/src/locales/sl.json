@@ -123,6 +123,7 @@
     "stavbaDokoncana": "Stavba dokončana",
     "ddvVkljucen": "DDV vključen",
     "featuresUsed": "Uporabljene značilke",
+    "exportHistory": "Izvozi zgodovino",
     "lega": {
       "pritlicje": "Pritličje",
       "nadstropje": "Nadstropje",
@@ -241,7 +242,8 @@
     "predictedPrice": "Napovedana cena",
     "deviation": "Odstopanje",
     "label": "Oznaka",
-    "invalidJson": "Neveljaven JSON format"
+    "invalidJson": "Neveljaven JSON format",
+    "export": "Izvozi rezultate"
   },
   "admin": {
     "userManagement": "Upravljanje uporabnikov",

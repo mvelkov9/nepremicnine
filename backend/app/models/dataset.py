@@ -19,4 +19,6 @@ class DatasetFile(Base):
     columns_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     file_hash: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
     uploaded_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    uploaded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
+    )

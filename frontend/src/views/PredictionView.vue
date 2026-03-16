@@ -3,8 +3,10 @@
   import { useI18n } from 'vue-i18n'
   import api from '../composables/useApi'
   import EmptyState from '../components/EmptyState.vue'
+  import { useExport } from '../composables/useExport'
 
   const { t } = useI18n()
+  const { exportToCSV } = useExport()
 
   const form = ref({
     size_m2: null,
@@ -342,7 +344,25 @@
 
     <!-- History -->
     <div class="card">
-      <h2>{{ t('predict.history') }}</h2>
+      <div
+        style="
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          flex-wrap: wrap;
+          gap: 0.5rem;
+          margin-bottom: 0.5rem;
+        "
+      >
+        <h2 style="margin: 0">{{ t('predict.history') }}</h2>
+        <button
+          v-if="history.length"
+          class="btn btn-secondary"
+          @click="exportToCSV(history, 'predictions.csv')"
+        >
+          {{ t('predict.exportHistory') }}
+        </button>
+      </div>
       <EmptyState v-if="!history.length" icon="📋" :message="t('empty.noPredictions')" />
       <div v-else class="table-wrap">
         <table>

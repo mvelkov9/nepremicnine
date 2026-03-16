@@ -11,6 +11,7 @@
     Legend,
   } from 'chart.js'
   import { useModelStore } from '../stores/model'
+  import EmptyState from '../components/EmptyState.vue'
 
   ChartJS.register(BarElement, CategoryScale, LinearScale, Tooltip, Legend)
 
@@ -165,7 +166,12 @@
       <!-- Per-type table -->
       <div v-if="model.info.per_type_metrics" class="card" style="margin-bottom: 1.5rem">
         <h2>{{ t('diag.perTypeTable') }}</h2>
-        <div class="table-wrap">
+        <EmptyState
+          v-if="!Object.keys(model.info.per_type_metrics).length"
+          icon="📊"
+          :message="t('empty.noResults')"
+        />
+        <div v-else class="table-wrap">
           <table>
             <thead>
               <tr>
@@ -204,7 +210,12 @@
       <!-- Per-region table -->
       <div v-if="model.info.per_region_metrics" class="card">
         <h2>{{ t('diag.perRegionTable') }}</h2>
-        <div class="table-wrap">
+        <EmptyState
+          v-if="!Object.keys(model.info.per_region_metrics).length"
+          icon="🗺️"
+          :message="t('empty.noResults')"
+        />
+        <div v-else class="table-wrap">
           <table>
             <thead>
               <tr>
