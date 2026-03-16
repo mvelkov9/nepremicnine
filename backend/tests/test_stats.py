@@ -6,6 +6,9 @@ handlers return safe empty / zero-value responses — which is what we assert he
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
+import pandas as pd
 import pytest
 from httpx import AsyncClient
 
@@ -133,3 +136,62 @@ async def test_municipalities_by_region_returns_json(client: AsyncClient, admin_
     resp = await client.get("/api/stats/municipalities-by-region", headers=admin_headers)
     assert resp.status_code == 200
     assert isinstance(resp.json(), dict)
+
+
+# ── Enhanced stats & coordinate conversion ───────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_overview_includes_enhanced_fields(client: AsyncClient, admin_headers: dict):
+    """When data exists, stats overview should include min_price, max_price, std_price, year_built_min, year_built_max."""
+    import numpy as np
+
+    fake_df = pd.DataFrame(
+        {
+            "price_eur": [100_000, 200_000, 300_000],
+            "size_m2": [50, 80, 120],
+            "municipality": ["Ljubljana"] * 3,
+            "property_type": ["Stanovanje"] * 3,
+            "year_built": [1970, 1990, 2010],
+        }
+    )
+    with patch("app.api.stats._load_df", return_value=fake_df):
+        resp = await client.get("/api/stats/overview", headers=admin_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "min_price" in data
+    assert "max_price" in data
+    assert "std_price" in data
+    assert "year_built_min" in data
+    assert "year_built_max" in data
+    assert data["min_price"] == 100_000.0
+    assert data["max_price"] == 300_000.0
+    assert data["year_built_min"] == 1970
+    assert data["year_built_max"] == 2010
+
+
+@pytest.mark.asyncio
+async def test_map_transactions_returns_wgs84_coordinates(client: AsyncClient, admin_headers: dict):
+    """Verify D96/TM coordinates are converted to WGS84 range (45-47 lat, 13-17 lon)."""
+    import numpy as np
+
+    fake_df = pd.DataFrame(
+        {
+            "price_eur": [200_000.0],
+            "size_m2": [75.0],
+            "municipality": ["Ljubljana"],
+            "property_type": ["Stanovanje"],
+            "rooms": [3.0],
+            "latitude": [100_000.0],   # D96/TM northing
+            "longitude": [460_000.0],  # D96/TM easting
+            "source_label": ["2024"],
+        }
+    )
+    with patch("app.api.stats._load_df", return_value=fake_df):
+        resp = await client.get("/api/stats/map-transactions", headers=admin_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["count"] == 1
+    tx = data["transactions"][0]
+    assert 45.0 <= tx["lat"] <= 47.0, f"lat {tx['lat']} not in WGS84 range"
+    assert 13.0 <= tx["lon"] <= 17.0, f"lon {tx['lon']} not in WGS84 range"

@@ -160,3 +160,32 @@ async def test_list_runs_after_score(client: AsyncClient, admin_headers: dict):
     run = data["items"][0]
     assert run["total_count"] == 1
     assert "created_at" in run
+
+
+# ── Enriched score response ──────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_score_response_includes_listing_fields(client: AsyncClient, admin_headers: dict):
+    """Score response should include original listing fields like size_m2, municipality, property_type."""
+    fake_artifact = {"version": "test"}
+    fake_predict = {
+        "predicted_price_eur": 195_000.0,
+        "model_used": "global",
+        "features_used": {},
+    }
+    with (
+        patch("app.api.analysis.load_model", return_value=fake_artifact),
+        patch("app.api.analysis.predict_one", return_value=fake_predict),
+    ):
+        resp = await client.post(
+            "/api/analysis/score",
+            json={"listings": [_LISTING]},
+            headers=admin_headers,
+        )
+    assert resp.status_code == 200
+    item = resp.json()["listings"][0]
+    assert item["size_m2"] == _LISTING["size_m2"]
+    assert item["municipality"] == _LISTING["municipality"]
+    assert item["property_type"] == _LISTING["property_type"]
+    assert item["rooms"] == _LISTING["rooms"]

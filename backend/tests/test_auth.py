@@ -255,3 +255,19 @@ async def test_logout_blacklists_refresh_token(client: AsyncClient):
 async def test_logout_unauthenticated(client: AsyncClient):
     resp = await client.post("/api/auth/logout", json={})
     assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_register_duplicate_generic_error(client: AsyncClient):
+    """Duplicate registration should say 'Registration failed', not leak 'Email already registered'."""
+    await client.post(
+        "/api/auth/register",
+        json={"email": "generic@test.com", "password": "testpass123", "full_name": "User"},
+    )
+    resp = await client.post(
+        "/api/auth/register",
+        json={"email": "generic@test.com", "password": "testpass123", "full_name": "User 2"},
+    )
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == "Registration failed"
+    assert "already registered" not in resp.json()["detail"].lower()

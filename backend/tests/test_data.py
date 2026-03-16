@@ -118,3 +118,43 @@ async def test_delete_requires_admin(client: AsyncClient):
 async def test_datasets_unauthenticated(client: AsyncClient):
     resp = await client.get("/api/data/datasets")
     assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_upload_rejects_invalid_extension(client: AsyncClient):
+    """Uploading a .exe file must be rejected with 400."""
+    token = await _get_admin_token(client)
+    resp = await client.post(
+        "/api/data/upload",
+        headers={"Authorization": f"Bearer {token}"},
+        files={"files": ("malware.exe", io.BytesIO(b"MZ..."), "application/octet-stream")},
+    )
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_bulk_delete_limit(client: AsyncClient):
+    """BulkDeleteRequest with >500 IDs should fail validation (422)."""
+    token = await _get_admin_token(client)
+    resp = await client.post(
+        "/api/data/datasets/delete-bulk",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"dataset_ids": list(range(501))},
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_etn_bulk_limit(client: AsyncClient):
+    """EtnBulkRequest with >50 pairs should fail validation (422)."""
+    token = await _get_admin_token(client)
+    pairs = [
+        {"posli_csv_path": "/data/p.csv", "delistavb_csv_path": "/data/d.csv"}
+        for _ in range(51)
+    ]
+    resp = await client.post(
+        "/api/data/prepare-etn-kpp-bulk",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"pairs": pairs},
+    )
+    assert resp.status_code == 422

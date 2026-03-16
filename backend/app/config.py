@@ -14,7 +14,7 @@ class Settings(BaseSettings):
 
     # App
     app_env: str = "development"
-    app_version: str = "0.8.7"
+    app_version: str = "0.8.9"
 
     # Postgres
     database_url: str = "postgresql+asyncpg://nepremicnine:changeme_in_production@postgres:5432/nepremicnine"

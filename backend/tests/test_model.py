@@ -236,3 +236,27 @@ async def test_clear_model_runs_admin_success(client: AsyncClient, admin_headers
     resp = await client.delete("/api/model/runs/clear", headers=admin_headers)
     assert resp.status_code == 200
     assert resp.json()["deleted"] == 0
+
+
+# ── Enhanced diagnostics ─────────────────────────────────────────────────────
+
+_ENHANCED_MODEL_INFO = {
+    **_FAKE_MODEL_INFO,
+    "train_rows": 80,
+    "test_rows": 20,
+    "used_features": ["size_m2", "rooms", "floor"],
+    "model_type": "HistGradientBoostingRegressor",
+}
+
+
+@pytest.mark.asyncio
+async def test_diagnostics_includes_enhanced_fields(client: AsyncClient, admin_headers: dict):
+    """When model exists, diagnostics should include train_rows, test_rows, used_features, model_type."""
+    with patch("app.api.model.get_model_info", return_value=_ENHANCED_MODEL_INFO):
+        resp = await client.get("/api/model/diagnostics", headers=admin_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["train_rows"] == 80
+    assert data["test_rows"] == 20
+    assert data["used_features"] == ["size_m2", "rooms", "floor"]
+    assert data["model_type"] == "HistGradientBoostingRegressor"
