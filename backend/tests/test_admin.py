@@ -24,9 +24,10 @@ async def test_list_users_viewer_forbidden(client: AsyncClient, viewer_headers: 
 async def test_list_users_admin_success(client: AsyncClient, admin_headers: dict):
     resp = await client.get("/api/admin/users", headers=admin_headers)
     assert resp.status_code == 200
-    users = resp.json()
-    assert isinstance(users, list)
-    assert len(users) >= 1  # at least the admin
+    data = resp.json()
+    assert "items" in data
+    assert isinstance(data["items"], list)
+    assert len(data["items"]) >= 1  # at least the admin
 
 
 @pytest.mark.asyncio
@@ -37,7 +38,7 @@ async def test_list_users_contains_both_users(
 ):
     resp = await client.get("/api/admin/users", headers=admin_headers)
     assert resp.status_code == 200
-    emails = {u["email"] for u in resp.json()}
+    emails = {u["email"] for u in resp.json()["items"]}
     assert "admin@test.com" in emails
     assert "viewer@test.com" in emails
 
@@ -60,7 +61,7 @@ async def test_update_user_change_role(
     """Admin can promote a viewer to admin."""
     # Find the viewer user id
     resp = await client.get("/api/admin/users", headers=admin_headers)
-    users = resp.json()
+    users = resp.json()["items"]
     viewer = next(u for u in users if u["role"] == "viewer")
 
     resp = await client.patch(
@@ -79,7 +80,7 @@ async def test_update_user_invalid_role(
     viewer_headers: dict,  # noqa: ARG001
 ):
     resp = await client.get("/api/admin/users", headers=admin_headers)
-    viewer = next(u for u in resp.json() if u["role"] == "viewer")
+    viewer = next(u for u in resp.json()["items"] if u["role"] == "viewer")
 
     resp = await client.patch(
         f"/api/admin/users/{viewer['id']}",
@@ -93,7 +94,7 @@ async def test_update_user_invalid_role(
 async def test_update_self_forbidden(client: AsyncClient, admin_headers: dict):
     """Admin cannot modify their own account."""
     resp = await client.get("/api/admin/users", headers=admin_headers)
-    admin = next(u for u in resp.json() if u["role"] == "admin")
+    admin = next(u for u in resp.json()["items"] if u["role"] == "admin")
 
     resp = await client.patch(
         f"/api/admin/users/{admin['id']}",
@@ -122,7 +123,7 @@ async def test_delete_user_viewer_forbidden(client: AsyncClient, viewer_headers:
 async def test_delete_self_forbidden(client: AsyncClient, admin_headers: dict):
     """Admin cannot delete their own account."""
     resp = await client.get("/api/admin/users", headers=admin_headers)
-    admin = next(u for u in resp.json() if u["role"] == "admin")
+    admin = next(u for u in resp.json()["items"] if u["role"] == "admin")
 
     resp = await client.delete(f"/api/admin/users/{admin['id']}", headers=admin_headers)
     assert resp.status_code == 400
@@ -142,12 +143,82 @@ async def test_delete_user_success(
 ):
     """Admin can delete another user."""
     resp = await client.get("/api/admin/users", headers=admin_headers)
-    viewer = next(u for u in resp.json() if u["role"] == "viewer")
+    viewer = next(u for u in resp.json()["items"] if u["role"] == "viewer")
 
     resp = await client.delete(f"/api/admin/users/{viewer['id']}", headers=admin_headers)
     assert resp.status_code == 204
 
     # User should no longer appear in the list
     resp = await client.get("/api/admin/users", headers=admin_headers)
-    ids = {u["id"] for u in resp.json()}
+    ids = {u["id"] for u in resp.json()["items"]}
     assert viewer["id"] not in ids
+
+
+# ── GET /api/admin/stats ─────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_admin_stats_unauthenticated(client: AsyncClient):
+    resp = await client.get("/api/admin/stats")
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_admin_stats_viewer_forbidden(client: AsyncClient, viewer_headers: dict):
+    resp = await client.get("/api/admin/stats", headers=viewer_headers)
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_admin_stats_success(client: AsyncClient, admin_headers: dict):
+    resp = await client.get("/api/admin/stats", headers=admin_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "total_users" in data
+    assert "active_users" in data
+    assert "total_predictions" in data
+    assert "total_training_jobs" in data
+    assert "completed_jobs" in data
+    assert "total_datasets" in data
+    # At least the admin user exists
+    assert data["total_users"] >= 1
+    assert data["active_users"] >= 1
+
+
+# ── GET /api/admin/users — pagination ────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_list_users_pagination_structure(
+    client: AsyncClient,
+    admin_headers: dict,
+    viewer_headers: dict,  # noqa: ARG001
+):
+    """Response includes pagination envelope with correct keys and values."""
+    resp = await client.get("/api/admin/users?page=1&per_page=1", headers=admin_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "items" in data
+    assert "total" in data
+    assert "page" in data
+    assert "per_page" in data
+    assert "pages" in data
+    assert data["page"] == 1
+    assert data["per_page"] == 1
+    assert len(data["items"]) == 1  # exactly 1 result per page
+
+
+@pytest.mark.asyncio
+async def test_list_users_pagination_page2(
+    client: AsyncClient,
+    admin_headers: dict,
+    viewer_headers: dict,  # noqa: ARG001
+):
+    """Page 2 with per_page=1 returns the second user."""
+    resp_p1 = await client.get("/api/admin/users?page=1&per_page=1", headers=admin_headers)
+    resp_p2 = await client.get("/api/admin/users?page=2&per_page=1", headers=admin_headers)
+    assert resp_p1.status_code == 200
+    assert resp_p2.status_code == 200
+    id_p1 = resp_p1.json()["items"][0]["id"]
+    id_p2 = resp_p2.json()["items"][0]["id"]
+    assert id_p1 != id_p2

@@ -43,7 +43,10 @@ async def register(request: Request, body: RegisterRequest, db: AsyncSession = D
 
     # First user → admin, rest → viewer (serialised to avoid TOCTOU race)
     async with db.begin_nested():
-        await db.execute(text("SELECT pg_advisory_xact_lock(12345678)"))
+        # pg_advisory_xact_lock is PostgreSQL-only; skip on other DBs (e.g. SQLite in tests)
+        settings_inner = get_settings()
+        if "postgresql" in settings_inner.database_url:
+            await db.execute(text("SELECT pg_advisory_xact_lock(12345678)"))
         count = await db.execute(select(func.count(User.id)))
         is_first = count.scalar() == 0
 
