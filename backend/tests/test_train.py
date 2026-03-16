@@ -10,6 +10,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 
+from app.api.train import DATA_DIR
 from app.models.training_job import JobStatus, TrainingJob
 
 
@@ -104,7 +105,7 @@ async def test_train_start_conflict_returns_existing_job_context(
     db_session,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    train_csv = Path("/home/michel/nepremicnine-v2/backend/data/raw/train.csv")
+    train_csv = Path(DATA_DIR) / "raw" / "train.csv"
     train_csv.parent.mkdir(parents=True, exist_ok=True)
     train_csv.write_text("price_eur,size_m2\n100000,55\n", encoding="utf-8")
 
@@ -141,7 +142,7 @@ async def test_train_start_marks_stale_job_failed_and_enqueues_new_job(
     db_session,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    train_csv = Path("/home/michel/nepremicnine-v2/backend/data/raw/train.csv")
+    train_csv = Path(DATA_DIR) / "raw" / "train.csv"
     train_csv.parent.mkdir(parents=True, exist_ok=True)
     train_csv.write_text("price_eur,size_m2\n100000,55\n", encoding="utf-8")
 

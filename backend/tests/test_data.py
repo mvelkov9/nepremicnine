@@ -7,6 +7,7 @@ import pandas as pd
 import pytest
 from httpx import AsyncClient
 
+from app.api.data import DATA_DIR
 from app.services.data_processing_service import prepare_training_csv_from_etn_kpp_bulk
 
 
@@ -203,8 +204,9 @@ async def test_prepare_etn_bulk_resolves_relative_paths(client: AsyncClient, mon
     )
     monkeypatch.setattr("app.api.data.TRAIN_CSV", "/tmp/train.csv")
 
-    posli = Path("/home/michel/nepremicnine-v2/backend/data/uploads/posli.csv")
-    deli = Path("/home/michel/nepremicnine-v2/backend/data/uploads/deli.csv")
+    uploads_dir = Path(DATA_DIR) / "uploads"
+    posli = uploads_dir / "posli.csv"
+    deli = uploads_dir / "deli.csv"
     posli.parent.mkdir(parents=True, exist_ok=True)
     posli.write_text("id\n1\n", encoding="utf-8")
     deli.write_text("id\n1\n", encoding="utf-8")
@@ -225,8 +227,8 @@ async def test_prepare_etn_bulk_resolves_relative_paths(client: AsyncClient, mon
     )
 
     assert resp.status_code == 200
-    assert recorded["pairs"][0]["posli_csv_path"].endswith("/backend/data/uploads/posli.csv")
-    assert recorded["pairs"][0]["delistavb_csv_path"].endswith("/backend/data/uploads/deli.csv")
+    assert recorded["pairs"][0]["posli_csv_path"] == str(posli.resolve())
+    assert recorded["pairs"][0]["delistavb_csv_path"] == str(deli.resolve())
 
 
 def test_prepare_etn_bulk_uses_stable_source_keys_for_dedup_and_reports_per_year(
