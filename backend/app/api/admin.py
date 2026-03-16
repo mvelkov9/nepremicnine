@@ -1,12 +1,15 @@
 """Admin routes — user management (admin only)."""
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.dependencies.auth import require_admin
+from app.models.dataset import DatasetFile
+from app.models.prediction import PredictionLog
+from app.models.training_job import JobStatus, TrainingJob
 from app.models.user import User, UserRole
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -28,14 +31,23 @@ class UpdateUserRequest(BaseModel):
     is_active: bool | None = None
 
 
-@router.get("/users", response_model=list[UserListItem])
+@router.get("/users")
 async def list_users(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
     _admin: User = Depends(require_admin),
 ):
-    result = await db.execute(select(User).order_by(User.created_at.desc()))
+    import math
+
+    count_result = await db.execute(select(func.count(User.id)))
+    total = count_result.scalar() or 0
+    pages = math.ceil(total / per_page) if total > 0 else 0
+
+    offset = (page - 1) * per_page
+    result = await db.execute(select(User).order_by(User.created_at.desc()).offset(offset).limit(per_page))
     users = result.scalars().all()
-    return [
+    items = [
         UserListItem(
             id=u.id,
             email=u.email,
@@ -46,6 +58,7 @@ async def list_users(
         )
         for u in users
     ]
+    return {"items": items, "total": total, "page": page, "per_page": per_page, "pages": pages}
 
 
 @router.patch("/users/{user_id}", response_model=UserListItem)
@@ -101,3 +114,28 @@ async def delete_user(
 
     await db.delete(user)
     await db.commit()
+
+
+@router.get("/stats")
+async def admin_stats(
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    """Platform usage statistics. Admin only."""
+    total_users = (await db.execute(select(func.count(User.id)))).scalar() or 0
+    active_users = (await db.execute(select(func.count(User.id)).where(User.is_active == True))).scalar() or 0  # noqa: E712
+    total_predictions = (await db.execute(select(func.count(PredictionLog.id)))).scalar() or 0
+    total_training_jobs = (await db.execute(select(func.count(TrainingJob.id)))).scalar() or 0
+    completed_jobs = (
+        await db.execute(select(func.count(TrainingJob.id)).where(TrainingJob.status == JobStatus.completed))
+    ).scalar() or 0
+    total_datasets = (await db.execute(select(func.count(DatasetFile.id)))).scalar() or 0
+
+    return {
+        "total_users": total_users,
+        "active_users": active_users,
+        "total_predictions": total_predictions,
+        "total_training_jobs": total_training_jobs,
+        "completed_jobs": completed_jobs,
+        "total_datasets": total_datasets,
+    }

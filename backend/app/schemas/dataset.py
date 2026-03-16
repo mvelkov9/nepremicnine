@@ -8,7 +8,6 @@ from pydantic import BaseModel
 class DatasetFileResponse(BaseModel):
     id: int
     original_name: str
-    stored_path: str
     source_type: str
     row_count: int | None = None
     columns_json: str | None = None

@@ -13,6 +13,7 @@
   const fileInput = ref(null)
   const previewData = ref(null)
   const previewName = ref('')
+  const previewLoading = ref(false)
   const uploadResult = ref(null)
   const error = ref('')
 
@@ -34,12 +35,24 @@
 
   async function showPreview(dataset) {
     previewName.value = dataset.original_name
-    previewData.value = await dataStore.fetchPreview(dataset.id)
+    previewLoading.value = true
+    error.value = ''
+    try {
+      previewData.value = await dataStore.fetchPreview(dataset.id)
+    } catch (e) {
+      error.value = e.response?.data?.detail || t('common.error')
+    } finally {
+      previewLoading.value = false
+    }
   }
 
   async function handleDelete(id) {
     if (!confirm(t('data.confirmDelete'))) return
-    await dataStore.deleteDataset(id)
+    try {
+      await dataStore.deleteDataset(id)
+    } catch (e) {
+      error.value = e.response?.data?.detail || t('common.error')
+    }
   }
 
   function formatDate(iso) {

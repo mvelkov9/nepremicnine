@@ -202,7 +202,7 @@ async def list_datasets(
 @router.get("/preview/{dataset_id}", response_model=DatasetPreviewResponse)
 async def preview_dataset(
     dataset_id: int,
-    limit: int = 50,
+    limit: int = Query(50, ge=1, le=1000),
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):

@@ -8,6 +8,7 @@ export const useStatsStore = defineStore('stats', () => {
   const priceDistribution = ref(null)
   const trend = ref([])
   const loading = ref(false)
+  const error = ref(null)
 
   async function fetchOverview(params = {}) {
     const { data } = await api.get('/api/stats/overview', { params })
@@ -31,8 +32,11 @@ export const useStatsStore = defineStore('stats', () => {
 
   async function fetchAll() {
     loading.value = true
+    error.value = null
     try {
       await Promise.all([fetchOverview(), fetchRegions(), fetchPriceDistribution(), fetchTrend()])
+    } catch (e) {
+      error.value = e.response?.data?.detail || e.message
     } finally {
       loading.value = false
     }
@@ -44,6 +48,7 @@ export const useStatsStore = defineStore('stats', () => {
     priceDistribution,
     trend,
     loading,
+    error,
     fetchAll,
     fetchOverview,
     fetchRegions,

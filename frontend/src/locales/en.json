@@ -43,7 +43,8 @@
     "transactions": "Transactions",
     "filterByType": "Filter by Type",
     "featureImportance": "Feature Importance",
-    "perTypeR2": "R² by Property Type"
+    "perTypeR2": "R² by Property Type",
+    "modelLoadError": "Model could not be loaded"
   },
   "data": {
     "upload": "File Upload",
@@ -92,7 +93,8 @@
     "featureImportance": "Feature Importance",
     "importance": "Importance",
     "medianError": "Median Error",
-    "noModel": "No model trained yet. Upload data and start training."
+    "noModel": "No model trained yet. Upload data and start training.",
+    "defaultDataset": "train.csv (default)"
   },
   "predict": {
     "title": "Property Price Prediction",
@@ -120,7 +122,13 @@
     "hasTerasa": "Terrace",
     "stavbaDokoncana": "Building Completed",
     "ddvVkljucen": "VAT Included",
-    "featuresUsed": "Features Used"
+    "featuresUsed": "Features Used",
+    "lega": {
+      "pritlicje": "Ground floor",
+      "nadstropje": "Upper floor",
+      "klet": "Basement",
+      "unknown": "Unknown"
+    }
   },
   "map": {
     "title": "Property Map",

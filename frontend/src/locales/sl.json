@@ -43,7 +43,8 @@
     "transactions": "Transakcije",
     "filterByType": "Filter po tipu",
     "featureImportance": "Pomembnost značilk",
-    "perTypeR2": "R² po tipu nepremičnine"
+    "perTypeR2": "R² po tipu nepremičnine",
+    "modelLoadError": "Model ni bil naložen"
   },
   "data": {
     "upload": "Nalaganje datotek",
@@ -92,7 +93,8 @@
     "featureImportance": "Pomembnost značilk",
     "importance": "Pomembnost",
     "medianError": "Mediana napake",
-    "noModel": "Model še ni naučen. Naložite podatke in začnite urjenje."
+    "noModel": "Model še ni naučen. Naložite podatke in začnite urjenje.",
+    "defaultDataset": "train.csv (privzeto)"
   },
   "predict": {
     "title": "Napoved cene nepremičnine",
@@ -120,7 +122,13 @@
     "hasTerasa": "Terasa",
     "stavbaDokoncana": "Stavba dokončana",
     "ddvVkljucen": "DDV vključen",
-    "featuresUsed": "Uporabljene značilke"
+    "featuresUsed": "Uporabljene značilke",
+    "lega": {
+      "pritlicje": "Pritličje",
+      "nadstropje": "Nadstropje",
+      "klet": "Klet",
+      "unknown": "Neznano"
+    }
   },
   "map": {
     "title": "Zemljevid nepremičnin",

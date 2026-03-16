@@ -1,5 +1,5 @@
 <script setup>
-  import { ref, onMounted, computed } from 'vue'
+  import { ref, onMounted, onUnmounted, computed } from 'vue'
   import { useI18n } from 'vue-i18n'
   import { Bar } from 'vue-chartjs'
   import { Chart as ChartJS, BarElement, CategoryScale, LinearScale, Tooltip } from 'chart.js'
@@ -75,6 +75,13 @@
   onMounted(async () => {
     await Promise.all([model.fetchInfo(), model.fetchImportance(), data.fetchDatasets()])
   })
+
+  onUnmounted(() => {
+    if (pollTimer.value) {
+      clearInterval(pollTimer.value)
+      pollTimer.value = null
+    }
+  })
 </script>
 
 <template>
@@ -89,7 +96,7 @@
           <label class="form-label">{{ t('model.selectDataset') }}</label>
           <select v-model="selectedCsv" class="form-input">
             <option value="">-- {{ t('model.selectDataset') }} --</option>
-            <option value="data/raw/train.csv">train.csv (default)</option>
+            <option value="data/raw/train.csv">{{ t('model.defaultDataset') }}</option>
             <option
               v-for="ds in Array.isArray(data.datasets) ? data.datasets : []"
               :key="ds.id"

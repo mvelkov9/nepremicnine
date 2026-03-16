@@ -41,7 +41,6 @@
 
   // Municipality autocomplete
   const municipalityQuery = ref('')
-  const municipalitySuggestions = ref([])
   const allMunicipalities = ref([])
   const showSuggestions = ref(false)
 
@@ -230,7 +229,9 @@
             <label class="form-label">{{ t('predict.legaVStavbi') }}</label>
             <select v-model="form.lega_v_stavbi" class="form-input">
               <option value="">—</option>
-              <option v-for="l in legaOptions" :key="l" :value="l">{{ l }}</option>
+              <option v-for="l in legaOptions" :key="l" :value="l">
+                {{ t(`predict.lega.${l}`) }}
+              </option>
             </select>
           </div>
         </div>

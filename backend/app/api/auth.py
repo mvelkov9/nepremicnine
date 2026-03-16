@@ -103,6 +103,10 @@ async def refresh(request: Request, body: RefreshRequest, db: AsyncSession = Dep
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="User not found or inactive")
 
+    # Invalidate the consumed refresh token (token rotation)
+    old_ttl = max(0, int(payload["exp"] - datetime.now(UTC).timestamp()))
+    await blacklist_token(request.app.state.redis, body.refresh_token, old_ttl)
+
     return TokenResponse(
         access_token=create_access_token(user.id),
         refresh_token=create_refresh_token(user.id),

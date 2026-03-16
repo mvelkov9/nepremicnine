@@ -91,6 +91,14 @@
             </tr>
           </thead>
           <tbody>
+            <tr v-if="users.length === 0">
+              <td
+                colspan="7"
+                style="text-align: center; color: var(--text-muted, #6b7280); padding: 1.5rem"
+              >
+                {{ t('empty.noUsers') }}
+              </td>
+            </tr>
             <tr v-for="user in users" :key="user.id">
               <td>{{ user.id }}</td>
               <td>{{ user.full_name }}</td>

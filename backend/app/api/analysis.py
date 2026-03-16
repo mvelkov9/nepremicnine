@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import logging
+import math
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -21,7 +23,7 @@ router = APIRouter(prefix="/analysis", tags=["analysis"])
 
 
 class ListingItem(BaseModel):
-    size_m2: float
+    size_m2: float = Field(..., ge=1, le=10000)
     rooms: float | None = None
     year_built: int | None = None
     floor: int | None = None
@@ -29,11 +31,11 @@ class ListingItem(BaseModel):
     longitude: float | None = None
     municipality: str | None = None
     property_type: str = "stanovanje"
-    asking_price: float
+    asking_price: float = Field(..., ge=0)
 
 
 class ScoreRequest(BaseModel):
-    listings: list[ListingItem] = Field(..., max_length=500)
+    listings: list[ListingItem] = Field(..., min_length=1, max_length=500)
     threshold: float = Field(15.0, ge=0.0, le=100.0)
 
 
@@ -117,3 +119,35 @@ async def score_listings(
         market_aligned=market_aligned,
         listings=scored,
     )
+
+
+@router.get("/runs")
+async def list_runs(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    """List past analysis runs with pagination."""
+    count_result = await db.execute(select(func.count(ListingsRun.id)))
+    total = count_result.scalar() or 0
+    pages = math.ceil(total / per_page) if total > 0 else 0
+
+    offset = (page - 1) * per_page
+    result = await db.execute(
+        select(ListingsRun).order_by(ListingsRun.created_at.desc()).offset(offset).limit(per_page)
+    )
+    runs = result.scalars().all()
+    items = [
+        {
+            "id": r.id,
+            "threshold": r.threshold,
+            "total_count": r.total_count,
+            "overpriced_count": r.overpriced_count,
+            "underpriced_count": r.underpriced_count,
+            "market_aligned_count": r.market_aligned_count,
+            "created_at": r.created_at.isoformat(),
+        }
+        for r in runs
+    ]
+    return {"items": items, "total": total, "page": page, "per_page": per_page, "pages": pages}

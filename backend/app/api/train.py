@@ -62,6 +62,13 @@ async def start_training(
     if not os.path.exists(csv_path):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "CSV not found")
 
+    # Guard: reject if a job is already queued or running
+    active_check = await db.execute(
+        select(func.count(TrainingJob.id)).where(TrainingJob.status.in_([JobStatus.queued, JobStatus.running]))
+    )
+    if (active_check.scalar() or 0) > 0:
+        raise HTTPException(status.HTTP_409_CONFLICT, "A training job is already queued or running")
+
     job_id = uuid.uuid4().hex[:16]
 
     # Record in DB

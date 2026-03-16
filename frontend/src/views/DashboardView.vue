@@ -38,6 +38,7 @@
   const selectedType = ref('')
   const modelInfo = ref(null)
   const featureImportance = ref([])
+  const modelError = ref(null)
 
   const propertyTypes = [
     '',
@@ -55,7 +56,10 @@
     stats.fetchAll()
     try {
       const [infoRes, impRes] = await Promise.all([
-        api.get('/api/model/info').catch(() => ({ data: {} })),
+        api.get('/api/model/info').catch((e) => {
+          modelError.value = e.response?.data?.detail || e.message
+          return { data: {} }
+        }),
         api.get('/api/model/importance').catch(() => ({ data: [] })),
       ])
       modelInfo.value = infoRes.data
@@ -261,6 +265,10 @@
     </div>
 
     <LoadingSpinner v-if="stats.loading" :label="t('common.loading')" />
+
+    <p v-if="modelError" class="muted" style="margin-bottom: 0.5rem; font-size: 0.875rem">
+      ⚠️ {{ t('dashboard.modelLoadError') }}: {{ modelError }}
+    </p>
 
     <div class="kpi-grid">
       <div class="kpi-card">
