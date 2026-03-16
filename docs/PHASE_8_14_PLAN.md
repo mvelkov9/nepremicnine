@@ -458,6 +458,7 @@ A thorough comparison of the v1 app (`Nepremicnine v3.5`, Flask/SQLite) with the
 3. **Analytical locale sweep** — applied the shared formatter across Dashboard, Model, Map, Prediction, Municipality, Data, Prepare, Analysis, and Admin views
 4. **Translation consistency** — completed new diagnostics copy in both locales and reused translated property-type labels throughout analytical surfaces
 5. **Version bump** — app/config/docs updated to `0.8.16`
+6. **Release commit** — shipped as `4c58881`
 
 ### Files Modified
 
