@@ -5,9 +5,7 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import pytest
-from httpx import ASGITransport, AsyncClient
-
-from app.main import create_app
+from httpx import AsyncClient
 
 
 @pytest.mark.asyncio

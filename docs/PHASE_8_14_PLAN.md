@@ -1,11 +1,11 @@
-# Phase 8–14 — v0.8.4–v0.8.10 Upgrade & Improvement Plan
+# Phase 8–14 — v0.8.4–v0.8.11 Upgrade & Improvement Plan
 
 > Comprehensive upgrade from v1 feature parity analysis, powered by [Agency Agents](https://github.com/msitarzewski/agency-agents).
 
 | Item | Value |
 |------|-------|
 | **Current Version** | 0.8.3 |
-| **Target Version** | 0.8.10 |
+| **Target Version** | 0.8.11 |
 | **Scope** | ML bug fixes, feature parity, performance, security, UX, accessibility, testing, documentation |
 | **Method** | Agency agent-driven analysis and implementation across 7 phases |
 
@@ -193,6 +193,45 @@ A thorough comparison of the v1 app (`Nepremicnine v3.5`, Flask/SQLite) with the
 ---
 
 ## Phase 14 — Documentation & Final Polish (v0.8.10)
+## Phase 15 — CI/CD & Production Fix (v0.8.11)
+
+**Agents**: DevOps
+
+### Changes
+
+1. **Backend lint/format** — fixed 4 unused imports (ruff check) + 3 files reformatted (ruff format)
+2. **Frontend format** — fixed 5 Vue files with Prettier style violations
+3. **Production version fix** — `APP_VERSION=0.1.1` in VPS `.env` was overriding the code default; updated to `0.8.11`
+4. **Version bump** — all version references updated to 0.8.11
+
+### Files Modified
+- `backend/tests/test_security.py` — removed unused imports
+- `backend/tests/test_stats.py` — removed unused imports
+- `backend/app/main.py` — reformatted
+- `backend/tests/test_data.py` — reformatted
+- `backend/tests/test_stats.py` — reformatted
+- `frontend/src/views/AdminView.vue` — Prettier format
+- `frontend/src/views/DataView.vue` — Prettier format
+- `frontend/src/views/LoginView.vue` — Prettier format
+- `frontend/src/views/PredictionView.vue` — Prettier format
+- `frontend/src/views/PrepareView.vue` — Prettier format
+- `backend/app/config.py` — version → 0.8.11
+- `backend/pyproject.toml` — version → 0.8.11
+- `frontend/package.json` — version → 0.8.11
+- `.env.example` — APP_VERSION → 0.8.11
+- VPS `/root/nepremicnine/.env` — APP_VERSION → 0.8.11
+
+### Verification
+- [x] `ruff check .` passes (0 errors)
+- [x] `ruff format --check .` passes (58 files formatted)
+- [x] `pnpm format:check` passes
+- [x] `pnpm lint` passes
+- [x] `pnpm build` succeeds
+- [x] VPS `.env` APP_VERSION updated to 0.8.11
+
+---
+
+
 
 **Agents**: Technical Writer
 
@@ -211,7 +250,7 @@ A thorough comparison of the v1 app (`Nepremicnine v3.5`, Flask/SQLite) with the
 - `docs/DEPLOYMENT.md`
 
 ### Verification
-- [x] All docs reflect v0.8.10
+- [x] All docs reflect v0.8.11
 - [x] No stale version references
 - [x] All new features documented
 - [x] API reference complete
@@ -230,3 +269,4 @@ A thorough comparison of the v1 app (`Nepremicnine v3.5`, Flask/SQLite) with the
 | Phase 12 | Frontend UX & Accessibility | v0.8.8 | ✅ Complete |
 | Phase 13 | Testing Expansion | v0.8.9 | ✅ Complete |
 | Phase 14 | Documentation & Final Polish | v0.8.10 | ✅ Complete |
+| Phase 15 | CI/CD & Production Fix | v0.8.11 | ✅ Complete |

@@ -144,7 +144,6 @@ async def test_municipalities_by_region_returns_json(client: AsyncClient, admin_
 @pytest.mark.asyncio
 async def test_overview_includes_enhanced_fields(client: AsyncClient, admin_headers: dict):
     """When data exists, stats overview should include min_price, max_price, std_price, year_built_min, year_built_max."""
-    import numpy as np
 
     fake_df = pd.DataFrame(
         {
@@ -173,7 +172,6 @@ async def test_overview_includes_enhanced_fields(client: AsyncClient, admin_head
 @pytest.mark.asyncio
 async def test_map_transactions_returns_wgs84_coordinates(client: AsyncClient, admin_headers: dict):
     """Verify D96/TM coordinates are converted to WGS84 range (45-47 lat, 13-17 lon)."""
-    import numpy as np
 
     fake_df = pd.DataFrame(
         {
@@ -182,7 +180,7 @@ async def test_map_transactions_returns_wgs84_coordinates(client: AsyncClient, a
             "municipality": ["Ljubljana"],
             "property_type": ["Stanovanje"],
             "rooms": [3.0],
-            "latitude": [100_000.0],   # D96/TM northing
+            "latitude": [100_000.0],  # D96/TM northing
             "longitude": [460_000.0],  # D96/TM easting
             "source_label": ["2024"],
         }

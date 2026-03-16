@@ -1,4 +1,4 @@
-# Nepremičnine v0.8.10
+# Nepremičnine v0.8.11
 
 > Slovenian real estate price analysis & prediction platform — powered by machine learning on official ETN transaction data.
 
@@ -224,7 +224,7 @@ docker compose exec frontend pnpm build
 - [Phase 5: Production](docs/PHASE_5_PRODUCTION.md)
 - [Phase 6: v0.3.0 Hardening](docs/PHASE_6_V030.md)
 - [Phase 7: v0.4.0–v0.8.0 Security & Features](docs/PHASE_7_V040_V080.md)
-- [Phase 8–14: v0.8.4–v0.8.10 Upgrades](docs/PHASE_8_14_PLAN.md)
+- [Phase 8–14: v0.8.4–v0.8.11 Upgrades](docs/PHASE_8_14_PLAN.md)
 - [Deployment Guide](docs/DEPLOYMENT.md)
 
 ## License

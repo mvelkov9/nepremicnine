@@ -68,7 +68,9 @@
             :aria-describedby="formErrors.fullName ? 'fullName-error' : undefined"
             @input="formErrors.fullName = null"
           />
-          <span v-if="formErrors.fullName" id="fullName-error" class="field-error">{{ formErrors.fullName }}</span>
+          <span v-if="formErrors.fullName" id="fullName-error" class="field-error">{{
+            formErrors.fullName
+          }}</span>
         </div>
 
         <div class="field">
@@ -83,7 +85,9 @@
             :aria-describedby="formErrors.email ? 'email-error' : undefined"
             @input="formErrors.email = null"
           />
-          <span v-if="formErrors.email" id="email-error" class="field-error">{{ formErrors.email }}</span>
+          <span v-if="formErrors.email" id="email-error" class="field-error">{{
+            formErrors.email
+          }}</span>
         </div>
 
         <div class="field">
@@ -98,7 +102,9 @@
             :aria-describedby="formErrors.password ? 'password-error' : undefined"
             @input="formErrors.password = null"
           />
-          <span v-if="formErrors.password" id="password-error" class="field-error">{{ formErrors.password }}</span>
+          <span v-if="formErrors.password" id="password-error" class="field-error">{{
+            formErrors.password
+          }}</span>
         </div>
 
         <p v-if="error" class="error" style="margin-bottom: 12px">{{ error }}</p>

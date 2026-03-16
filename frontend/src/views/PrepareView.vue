@@ -183,13 +183,28 @@
     <!-- Mode tabs -->
     <div class="card" style="margin-bottom: 1.5rem">
       <div class="mode-tabs" role="tablist">
-        <button :class="['tab-btn', { active: etnMode === 'bulk' }]" role="tab" :aria-selected="etnMode === 'bulk'" @click="etnMode = 'bulk'">
+        <button
+          :class="['tab-btn', { active: etnMode === 'bulk' }]"
+          role="tab"
+          :aria-selected="etnMode === 'bulk'"
+          @click="etnMode = 'bulk'"
+        >
           {{ t('prepare.autoEtn') }}
         </button>
-        <button :class="['tab-btn', { active: etnMode === 'single' }]" role="tab" :aria-selected="etnMode === 'single'" @click="etnMode = 'single'">
+        <button
+          :class="['tab-btn', { active: etnMode === 'single' }]"
+          role="tab"
+          :aria-selected="etnMode === 'single'"
+          @click="etnMode = 'single'"
+        >
           {{ t('prepare.singleEtn') }}
         </button>
-        <button :class="['tab-btn', { active: etnMode === 'manual' }]" role="tab" :aria-selected="etnMode === 'manual'" @click="etnMode = 'manual'">
+        <button
+          :class="['tab-btn', { active: etnMode === 'manual' }]"
+          role="tab"
+          :aria-selected="etnMode === 'manual'"
+          @click="etnMode = 'manual'"
+        >
           {{ t('prepare.manualMapping') }}
         </button>
       </div>

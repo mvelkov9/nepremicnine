@@ -6,7 +6,7 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 
 | Item | Value |
 |------|-------|
-| **Version** | 0.8.10 |
+| **Version** | 0.8.11 |
 | **Repo** | [github.com/mvelkov9/nepremicnine](https://github.com/mvelkov9/nepremicnine) |
 | **Backend** | FastAPI + Python 3.13 + PostgreSQL 17 + SQLAlchemy 2.x async |
 | **Frontend** | Vue 3 Composition API + Pinia + pnpm 9, Vite 6 |
@@ -31,6 +31,11 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 | [Phase 8–14](PHASE_8_14_PLAN.md) | v1→v2 gap fixes, feature parity, performance, security, UX, tests, docs | ✅ Complete | — |
 
 ## Changelog
+
+### v0.8.11
+- **Fix**: Fix CI pipeline — backend ruff lint/format + frontend prettier format violations
+- **Fix**: Fix production version stuck on v0.1.1 — stale `APP_VERSION` in VPS `.env`
+- **Version**: 0.8.10 → 0.8.11
 
 ### v0.8.10
 - **Docs**: Comprehensive documentation update — README, MASTER.md, PHASE_8_14_PLAN.md, DEPLOYMENT.md all updated to v0.8.10

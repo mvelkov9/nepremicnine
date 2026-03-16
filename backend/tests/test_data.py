@@ -148,10 +148,7 @@ async def test_bulk_delete_limit(client: AsyncClient):
 async def test_etn_bulk_limit(client: AsyncClient):
     """EtnBulkRequest with >50 pairs should fail validation (422)."""
     token = await _get_admin_token(client)
-    pairs = [
-        {"posli_csv_path": "/data/p.csv", "delistavb_csv_path": "/data/d.csv"}
-        for _ in range(51)
-    ]
+    pairs = [{"posli_csv_path": "/data/p.csv", "delistavb_csv_path": "/data/d.csv"} for _ in range(51)]
     resp = await client.post(
         "/api/data/prepare-etn-kpp-bulk",
         headers={"Authorization": f"Bearer {token}"},

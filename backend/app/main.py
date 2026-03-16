@@ -130,9 +130,7 @@ def create_app() -> FastAPI:
             "frame-ancestors 'none'"
         )
         if settings.app_env == "production":
-            response.headers["Strict-Transport-Security"] = (
-                "max-age=63072000; includeSubDomains; preload"
-            )
+            response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains; preload"
         return response
 
     # Structured request logging with correlation IDs

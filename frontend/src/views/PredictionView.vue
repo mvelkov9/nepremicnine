@@ -224,7 +224,12 @@
               @focus="showSuggestions = true"
               @blur="setTimeout(() => (showSuggestions = false), 200)"
             />
-            <ul v-if="showSuggestions && filteredMunicipalities.length" id="municipality-listbox" role="listbox" class="suggestions">
+            <ul
+              v-if="showSuggestions && filteredMunicipalities.length"
+              id="municipality-listbox"
+              role="listbox"
+              class="suggestions"
+            >
               <li
                 v-for="(m, idx) in filteredMunicipalities"
                 :key="m"

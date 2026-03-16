@@ -88,7 +88,14 @@
     <div v-if="auth.isAdmin" class="card">
       <div class="card-title">{{ t('data.upload') }}</div>
       <div class="actions">
-        <input ref="fileInput" type="file" multiple accept=".csv,.zip" style="flex: 1" :aria-label="t('data.upload')" />
+        <input
+          ref="fileInput"
+          type="file"
+          multiple
+          accept=".csv,.zip"
+          style="flex: 1"
+          :aria-label="t('data.upload')"
+        />
         <button :disabled="dataStore.uploading" @click="handleUpload">
           {{ dataStore.uploading ? t('common.loading') : t('data.uploadButton') }}
         </button>
