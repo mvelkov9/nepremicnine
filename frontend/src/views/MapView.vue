@@ -513,7 +513,7 @@
                 <div class="rail-copy">
                   <strong>{{ item.municipality || '—' }}</strong>
                   <small
-                  >{{ formatType(item.property_type) || '—' }} · {{ item.year || '—' }}</small
+                    >{{ formatType(item.property_type) || '—' }} · {{ item.year || '—' }}</small
                   >
                 </div>
                 <div class="rail-metric">
