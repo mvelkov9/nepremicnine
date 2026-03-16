@@ -6,7 +6,7 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 
 | Item | Value |
 |------|-------|
-| **Version** | 0.8.15 |
+| **Version** | 0.8.16 |
 | **Repo** | [github.com/mvelkov9/nepremicnine](https://github.com/mvelkov9/nepremicnine) |
 | **Backend** | FastAPI + Python 3.13 + PostgreSQL 17 + SQLAlchemy 2.x async |
 | **Frontend** | Vue 3 Composition API + Pinia + pnpm 9, Vite 6 |
@@ -30,10 +30,18 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 | [Phase 7](PHASE_7_V040_V080.md) | Security hardening, feature completeness, test expansion, UX polish | ✅ Complete | (latest commit) |
 | [Phase 8–17](PHASE_8_14_PLAN.md) | v1→v2 gap fixes, feature parity, performance, security, UX, tests, docs | ✅ Complete | — |
 | [Phase 18](PHASE_8_14_PLAN.md#phase-18--cache-coherency--phase-tracking-v0814) | Agency re-audit, cache coherency fixes, tracked execution plan | ✅ Complete | `3cf6248` |
-| [Phase 19](PHASE_8_14_PLAN.md#phase-19--dashboard-property-type-parity-v0815) | Dashboard property-type parity and analytical lens controls | ✅ Complete | `(current)` |
-| [Phase 20](PHASE_8_14_PLAN.md#phase-20--diagnostics-focus--locale-formatting-v0816) | Diagnostics focus workflow and locale-aware formatting polish | 🚧 Planned | — |
+| [Phase 19](PHASE_8_14_PLAN.md#phase-19--dashboard-property-type-parity-v0815) | Dashboard property-type parity and analytical lens controls | ✅ Complete | `fb4a786` |
+| [Phase 20](PHASE_8_14_PLAN.md#phase-20--diagnostics-focus--locale-formatting-v0816) | Diagnostics focus workflow and locale-aware formatting polish | ✅ Complete | — |
 
 ## Changelog
+
+### v0.8.16
+
+- **Diagnostics UX**: Rebuilt diagnostics around a property-type focus workflow with clearer summary cards, highlighted feature importance, and more scannable per-type review states
+- **Locale formatting**: Added shared formatting helpers for numbers, currency, percentages, and dates so analytical pages respect the active SI/EN locale instead of leaking hardcoded Slovenian formatting
+- **Analytical consistency**: Applied translated property-type labels and locale-aware output across Dashboard, Model, Map, Prediction, Municipality, Data, Prepare, Analysis, and Admin views
+- **Verification**: Backend Ruff + targeted unit tests and frontend Prettier/ESLint/build all pass after the Phase 20 UI sweep
+- **Version**: 0.8.15 → 0.8.16
 
 ### v0.8.15
 

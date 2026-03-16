@@ -8,7 +8,9 @@
   import AppIcon from '../components/AppIcon.vue'
   import LoadingSpinner from '../components/LoadingSpinner.vue'
   import { getApiErrorMessage } from '../utils/apiError'
+  import { formatCurrency, formatNumber } from '../utils/format'
   import { municipalitySlug } from '../utils/municipality'
+  import { getPropertyTypeLabel } from '../utils/propertyType'
 
   const { t } = useI18n()
   const route = useRoute()
@@ -82,9 +84,25 @@
   })
 
   const topMunicipality = computed(() => municipalities.value[0] || null)
+
+  function fmt(value, decimals = 0) {
+    return formatNumber(value, { maximumFractionDigits: decimals })
+  }
+
+  function fmtCurrency(value, decimals = 0) {
+    return formatCurrency(value, {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    })
+  }
+
+  function formatType(value) {
+    return getPropertyTypeLabel(value, t)
+  }
+
   const activeChips = computed(() =>
     [
-      selectedType.value,
+      selectedType.value ? formatType(selectedType.value) : '',
       selectedRegion.value,
       selectedYear.value,
       selectedMunicipality.value,
@@ -96,11 +114,6 @@
       ? transactions.value.slice(0, 12)
       : municipalities.value.slice(0, 12),
   )
-
-  function fmt(value, decimals = 0) {
-    if (value == null) return '—'
-    return Number(value).toLocaleString('sl-SI', { maximumFractionDigits: decimals })
-  }
 
   function markerRadius(count) {
     if (!totalCount.value) return 6
@@ -155,10 +168,10 @@
       marker.bindPopup(
         `<div style="font-size:13px;line-height:1.6;min-width:160px">
           <strong>${item.municipality || '—'}</strong><br>
-          ${t('map.price')}: <b>${fmt(item.price_eur)} €</b><br>
+          ${t('map.price')}: <b>${fmtCurrency(item.price_eur)}</b><br>
           ${t('predict.size')}: <b>${fmt(item.size_m2, 1)} m²</b><br>
-          €/m²: <b>${fmt(item.price_per_m2)} €</b><br>
-          ${item.property_type ? `${t('map.propertyType')}: ${item.property_type}<br>` : ''}
+          €/m²: <b>${fmtCurrency(item.price_per_m2)}</b><br>
+          ${item.property_type ? `${t('map.propertyType')}: ${formatType(item.property_type)}<br>` : ''}
           ${item.year ? `${t('map.year')}: ${item.year}` : ''}
         </div>`,
       )
@@ -185,7 +198,7 @@
         `<div style="font-size:13px;line-height:1.6;min-width:150px">
           <strong>${item.name}</strong><br>
           ${t('map.transactions')}: <b>${fmt(item.count)}</b><br>
-          ${t('map.avgPrice')}: <b>${fmt(item.avg_price)} €</b>
+          ${t('map.avgPrice')}: <b>${fmtCurrency(item.avg_price)}</b>
         </div>`,
       )
 
@@ -379,7 +392,7 @@
           <select v-model="selectedType" class="form-input">
             <option value="">{{ t('map.allTypes') }}</option>
             <option v-for="item in propertyTypes" :key="item.type" :value="item.type">
-              {{ item.type }} ({{ fmt(item.count) }})
+              {{ formatType(item.type) }} ({{ fmt(item.count) }})
             </option>
           </select>
         </label>
@@ -438,7 +451,7 @@
         </article>
         <article class="metric-card">
           <span>{{ t('map.avgPrice') }}</span>
-          <strong>{{ fmt(avgPrice) }} €</strong>
+          <strong>{{ fmtCurrency(avgPrice) }}</strong>
         </article>
         <article class="metric-card">
           <span>{{ t('map.municipalities') }}</span>
@@ -499,11 +512,13 @@
               <template v-if="viewMode === 'transactions'">
                 <div class="rail-copy">
                   <strong>{{ item.municipality || '—' }}</strong>
-                  <small>{{ item.property_type || '—' }} · {{ item.year || '—' }}</small>
+                  <small
+                  >{{ formatType(item.property_type) || '—' }} · {{ item.year || '—' }}</small
+                  >
                 </div>
                 <div class="rail-metric">
-                  <strong>{{ fmt(item.price_eur) }} €</strong>
-                  <small>{{ fmt(item.price_per_m2) }} €/m²</small>
+                  <strong>{{ fmtCurrency(item.price_eur) }}</strong>
+                  <small>{{ fmtCurrency(item.price_per_m2) }}/m²</small>
                 </div>
                 <div class="rail-actions">
                   <button class="mini-btn" @click="openMunicipality(item.municipality)">
@@ -521,7 +536,7 @@
                   <small>{{ fmt(item.count) }} {{ t('map.transactions') }}</small>
                 </div>
                 <div class="rail-metric">
-                  <strong>{{ fmt(item.avg_price) }} €</strong>
+                  <strong>{{ fmtCurrency(item.avg_price) }}</strong>
                 </div>
                 <div class="rail-actions">
                   <button class="mini-btn" @click="openMunicipality(item.name)">
@@ -558,9 +573,9 @@
               <tr v-for="item in regionStats" :key="item.region">
                 <td>{{ item.region }}</td>
                 <td>{{ fmt(item.count) }}</td>
-                <td>{{ fmt(item.avg_price) }} €</td>
-                <td>{{ fmt(item.median_price) }} €</td>
-                <td>{{ fmt(item.avg_price_per_m2) }} €</td>
+                <td>{{ fmtCurrency(item.avg_price) }}</td>
+                <td>{{ fmtCurrency(item.median_price) }}</td>
+                <td>{{ fmtCurrency(item.avg_price_per_m2) }}</td>
               </tr>
             </tbody>
           </table>

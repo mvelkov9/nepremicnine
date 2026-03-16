@@ -6,6 +6,7 @@
   import LoadingSpinner from '../components/LoadingSpinner.vue'
   import EmptyState from '../components/EmptyState.vue'
   import { getApiErrorMessage } from '../utils/apiError'
+  import { formatDate as formatDateValue, formatNumber } from '../utils/format'
 
   const { t } = useI18n()
   const auth = useAuthStore()
@@ -67,17 +68,11 @@
   }
 
   function formatDate(iso) {
-    if (!iso) return '—'
-    return new Date(iso).toLocaleDateString('sl-SI', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-    })
+    return formatDateValue(iso, { dateStyle: 'medium' })
   }
 
   function formatSize(rows) {
-    if (rows == null) return '—'
-    return Number(rows).toLocaleString('sl-SI')
+    return formatNumber(rows)
   }
 </script>
 
@@ -123,9 +118,7 @@
       >
         <span class="eyebrow">{{ t('data.preparedDataset') }}</span>
         <strong>{{ dataStore.trainingDataset.relative_path }}</strong>
-        <p class="muted">
-          {{ dataStore.trainingDataset.rows?.toLocaleString() || 0 }} {{ t('data.rows') }}
-        </p>
+        <p class="muted">{{ formatSize(dataStore.trainingDataset.rows) }} {{ t('data.rows') }}</p>
       </div>
     </div>
 

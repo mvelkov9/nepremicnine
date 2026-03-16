@@ -9,7 +9,9 @@
   import { useExport } from '../composables/useExport'
   import { useStatsStore } from '../stores/stats'
   import { getApiErrorMessage } from '../utils/apiError'
+  import { formatCurrency, formatDateTime, formatNumber } from '../utils/format'
   import { municipalitySlug } from '../utils/municipality'
+  import { getPropertyTypeLabel } from '../utils/propertyType'
 
   const { t } = useI18n()
   const route = useRoute()
@@ -75,8 +77,11 @@
   const effectiveSize = computed(() => form.value.uporabna_povrsina || form.value.size_m2)
 
   function fmt(value, decimals = 0) {
-    if (value == null) return '—'
-    return Number(value).toLocaleString('sl-SI', { maximumFractionDigits: decimals })
+    return formatNumber(value, { maximumFractionDigits: decimals })
+  }
+
+  function formatType(value) {
+    return getPropertyTypeLabel(value, t)
   }
 
   async function fetchMunicipalities() {
@@ -497,7 +502,7 @@
         <template v-else-if="result">
           <section class="estimate-card">
             <span>{{ t('predict.predictedPrice') }}</span>
-            <strong>{{ fmt(result.predicted_price_eur) }} €</strong>
+            <strong>{{ formatCurrency(result.predicted_price_eur) }}</strong>
             <p>{{ t('predict.modelUsed') }}: {{ result.model_used }}</p>
           </section>
 
@@ -529,11 +534,13 @@
             <div class="context-metrics">
               <article>
                 <span>{{ t('dashboard.medianPrice') }}</span>
-                <strong>{{ fmt(municipalityContext.overview?.median_price) }} €</strong>
+                <strong>{{ formatCurrency(municipalityContext.overview?.median_price) }}</strong>
               </article>
               <article>
                 <span>{{ t('dashboard.pricePerM2') }}</span>
-                <strong>{{ fmt(municipalityContext.overview?.median_price_per_m2) }} €</strong>
+                <strong>{{
+                  formatCurrency(municipalityContext.overview?.median_price_per_m2)
+                }}</strong>
               </article>
               <article>
                 <span>{{ t('dashboard.transactions') }}</span>
@@ -559,11 +566,11 @@
                   <span>{{ item.year || '—' }}</span>
                 </div>
                 <p>
-                  {{ item.property_type || '—' }} · {{ fmt(item.size_m2, 1) }} m² ·
-                  {{ fmt(item.price_per_m2) }} €/m²
+                  {{ formatType(item.property_type) || '—' }} · {{ fmt(item.size_m2, 1) }} m² ·
+                  {{ formatCurrency(item.price_per_m2) }}/m²
                 </p>
                 <div class="comparable-foot">
-                  <strong>{{ fmt(item.price_eur) }} €</strong>
+                  <strong>{{ formatCurrency(item.price_eur) }}</strong>
                   <small>{{ t('predict.similarityLabel') }} {{ item.similarity_score }}</small>
                 </div>
                 <button class="mini-btn" type="button" @click="reuseComparable(item)">
@@ -589,11 +596,11 @@
             <article v-for="item in history" :key="item.id" class="history-card">
               <div>
                 <strong>{{ item.payload?.municipality || '—' }}</strong>
-                <small>{{ new Date(item.created_at).toLocaleString('sl-SI') }}</small>
+                <small>{{ formatDateTime(item.created_at) }}</small>
               </div>
               <div class="history-metric">
-                <strong>{{ fmt(item.predicted_price_eur) }} €</strong>
-                <small>{{ item.payload?.property_type || '—' }}</small>
+                <strong>{{ formatCurrency(item.predicted_price_eur) }}</strong>
+                <small>{{ formatType(item.payload?.property_type) || '—' }}</small>
               </div>
             </article>
           </div>

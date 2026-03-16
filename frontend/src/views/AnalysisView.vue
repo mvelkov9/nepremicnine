@@ -6,6 +6,8 @@
   import api from '../composables/useApi'
   import { useExport } from '../composables/useExport'
   import { getApiErrorMessage } from '../utils/apiError'
+  import { formatCurrency, formatNumber } from '../utils/format'
+  import { getPropertyTypeLabel } from '../utils/propertyType'
 
   ChartJS.register(ArcElement, Tooltip, Legend)
 
@@ -100,6 +102,24 @@
     if (label === 'underpriced') return 'badge-green'
     return 'badge-blue'
   }
+
+  function fmt(value, decimals = 0) {
+    return formatNumber(value, { maximumFractionDigits: decimals })
+  }
+
+  function fmtCurrency(value) {
+    return formatCurrency(value)
+  }
+
+  function fmtDeviation(value) {
+    if (value == null || Number.isNaN(Number(value))) return '—'
+    const formatted = `${fmt(value, 1)}%`
+    return value > 0 ? `+${formatted}` : formatted
+  }
+
+  function formatType(value) {
+    return getPropertyTypeLabel(value, t)
+  }
 </script>
 
 <template>
@@ -155,19 +175,19 @@
           <div class="kpi-grid">
             <div class="kpi-card">
               <span class="kpi-label">{{ t('analysis.total') }}</span>
-              <span class="kpi-value">{{ result.total }}</span>
+              <span class="kpi-value">{{ fmt(result.total) }}</span>
             </div>
             <div class="kpi-card" style="border-left: 3px solid #ef4444">
               <span class="kpi-label">{{ t('analysis.overpriced') }}</span>
-              <span class="kpi-value">{{ result.overpriced }}</span>
+              <span class="kpi-value">{{ fmt(result.overpriced) }}</span>
             </div>
             <div class="kpi-card" style="border-left: 3px solid #22c55e">
               <span class="kpi-label">{{ t('analysis.underpriced') }}</span>
-              <span class="kpi-value">{{ result.underpriced }}</span>
+              <span class="kpi-value">{{ fmt(result.underpriced) }}</span>
             </div>
             <div class="kpi-card" style="border-left: 3px solid #3b82f6">
               <span class="kpi-label">{{ t('analysis.marketAligned') }}</span>
-              <span class="kpi-value">{{ result.market_aligned }}</span>
+              <span class="kpi-value">{{ fmt(result.market_aligned) }}</span>
             </div>
           </div>
           <div v-if="summaryChart" style="max-width: 220px">
@@ -217,24 +237,24 @@
             <tbody>
               <tr v-for="item in result.listings" :key="item.index">
                 <td>{{ item.index + 1 }}</td>
-                <td>€{{ Math.round(item.asking_price).toLocaleString() }}</td>
-                <td>€{{ Math.round(item.predicted_price).toLocaleString() }}</td>
+                <td>{{ fmtCurrency(item.asking_price) }}</td>
+                <td>{{ fmtCurrency(item.predicted_price) }}</td>
                 <td
                   :style="{
                     color: item.deviation_pct > 0 ? '#ef4444' : '#22c55e',
                     fontWeight: 600,
                   }"
                 >
-                  {{ item.deviation_pct > 0 ? '+' : '' }}{{ item.deviation_pct.toFixed(1) }}%
+                  {{ fmtDeviation(item.deviation_pct) }}
                 </td>
                 <td>
                   <span class="badge" :class="labelColor(item.label)">{{
                     t('analysis.' + item.label)
                   }}</span>
                 </td>
-                <td>{{ item.property_type || '—' }}</td>
+                <td>{{ formatType(item.property_type) || '—' }}</td>
                 <td>{{ item.municipality || '—' }}</td>
-                <td>{{ item.size_m2 || '—' }}</td>
+                <td>{{ item.size_m2 == null ? '—' : fmt(item.size_m2, 1) }}</td>
               </tr>
             </tbody>
           </table>

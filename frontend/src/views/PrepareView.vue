@@ -5,6 +5,7 @@
   import { useDataStore } from '../stores/data'
   import api from '../composables/useApi'
   import { getApiErrorMessage } from '../utils/apiError'
+  import { formatNumber } from '../utils/format'
 
   const { t } = useI18n()
   const dataStore = useDataStore()
@@ -213,6 +214,10 @@
   function openModelView() {
     router.push('/model')
   }
+
+  function fmt(value, decimals = 0) {
+    return formatNumber(value, { maximumFractionDigits: decimals })
+  }
 </script>
 
 <template>
@@ -385,17 +390,15 @@
       <div class="kpi-grid">
         <div class="kpi-card">
           <span class="kpi-label">{{ t('prepare.outputRows') }}</span>
-          <span class="kpi-value">{{
-            (result.rows || result.total_rows || 0).toLocaleString()
-          }}</span>
+          <span class="kpi-value">{{ fmt(result.rows || result.total_rows || 0) }}</span>
         </div>
         <div v-if="result.columns" class="kpi-card">
           <span class="kpi-label">{{ t('prepare.outputColumns') }}</span>
-          <span class="kpi-value">{{ result.columns?.length || 0 }}</span>
+          <span class="kpi-value">{{ fmt(result.columns?.length || 0) }}</span>
         </div>
         <div v-if="result.per_year" class="kpi-card">
           <span class="kpi-label">{{ t('prepare.yearsCovered') }}</span>
-          <span class="kpi-value">{{ Object.keys(result.per_year).length }}</span>
+          <span class="kpi-value">{{ fmt(Object.keys(result.per_year).length) }}</span>
         </div>
       </div>
 
@@ -412,7 +415,7 @@
               <td>
                 <span class="badge-blue">{{ year }}</span>
               </td>
-              <td>{{ rows.toLocaleString() }}</td>
+              <td>{{ fmt(rows) }}</td>
             </tr>
           </tbody>
         </table>
@@ -438,7 +441,7 @@
                   {{ report.status }}
                 </span>
               </td>
-              <td>{{ (report.rows || 0).toLocaleString() }}</td>
+              <td>{{ fmt(report.rows || 0) }}</td>
               <td class="muted">{{ getReportDetail(report) }}</td>
             </tr>
           </tbody>
@@ -448,9 +451,7 @@
       <div v-if="result.training_dataset" class="selected-source-card" style="margin-top: 1rem">
         <span class="eyebrow">{{ t('prepare.readyForModel') }}</span>
         <strong>{{ result.training_dataset.relative_path }}</strong>
-        <p class="muted">
-          {{ result.training_dataset.rows?.toLocaleString() || 0 }} {{ t('data.rows') }}
-        </p>
+        <p class="muted">{{ fmt(result.training_dataset.rows) }} {{ t('data.rows') }}</p>
         <div class="actions">
           <button class="btn btn-primary" @click="openModelView">
             {{ t('prepare.openModel') }}

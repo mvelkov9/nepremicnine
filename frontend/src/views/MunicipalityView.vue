@@ -6,6 +6,8 @@
   import LoadingSpinner from '../components/LoadingSpinner.vue'
   import { useStatsStore } from '../stores/stats'
   import { getApiErrorMessage } from '../utils/apiError'
+  import { formatCurrency, formatNumber, formatPercent } from '../utils/format'
+  import { getPropertyTypeLabel } from '../utils/propertyType'
 
   const { t } = useI18n()
   const route = useRoute()
@@ -16,13 +18,15 @@
   const error = ref('')
 
   function fmt(value, decimals = 0) {
-    if (value == null) return '—'
-    return Number(value).toLocaleString('sl-SI', { maximumFractionDigits: decimals })
+    return formatNumber(value, { maximumFractionDigits: decimals })
   }
 
   function fmtPercent(value) {
-    if (value == null) return '—'
-    return `${(Number(value) * 100).toFixed(1)}%`
+    return formatPercent(value)
+  }
+
+  function formatType(value) {
+    return getPropertyTypeLabel(value, t)
   }
 
   async function loadMunicipality() {
@@ -60,12 +64,12 @@
     },
     {
       label: t('dashboard.medianPrice'),
-      value: `${fmt(detail.value?.overview?.median_price)} €`,
+      value: formatCurrency(detail.value?.overview?.median_price),
       detail: `${fmt(detail.value?.overview?.avg_area, 1)} m²`,
     },
     {
       label: t('dashboard.pricePerM2'),
-      value: `${fmt(detail.value?.overview?.median_price_per_m2)} €`,
+      value: formatCurrency(detail.value?.overview?.median_price_per_m2),
       detail: detail.value?.region || '—',
     },
   ])
@@ -161,8 +165,8 @@
             <div v-for="item in detail.year_trend" :key="item.year" class="year-card">
               <strong>{{ item.year }}</strong>
               <span>{{ fmt(item.count) }} {{ t('dashboard.transactions') }}</span>
-              <small>{{ fmt(item.median_price) }} €</small>
-              <small>{{ fmt(item.median_price_per_m2) }} €/m²</small>
+              <small>{{ formatCurrency(item.median_price) }}</small>
+              <small>{{ formatCurrency(item.median_price_per_m2) }}/m²</small>
             </div>
           </div>
           <p v-else class="empty-text">{{ t('common.noData') }}</p>
@@ -179,7 +183,7 @@
           <div v-if="detail.property_type_mix?.length" class="mix-list">
             <div v-for="item in detail.property_type_mix" :key="item.property_type" class="mix-row">
               <div class="mix-copy">
-                <strong>{{ item.property_type }}</strong>
+                <strong>{{ formatType(item.property_type) }}</strong>
                 <small>{{ fmtPercent(item.share) }}</small>
               </div>
               <div class="mix-bar">
@@ -217,10 +221,10 @@
                   v-for="item in detail.recent_transactions"
                   :key="`${item.property_type}-${item.price_eur}-${item.year}`"
                 >
-                  <td>{{ item.property_type || '—' }}</td>
+                  <td>{{ formatType(item.property_type) || '—' }}</td>
                   <td>{{ fmt(item.size_m2, 1) }} m²</td>
-                  <td>{{ fmt(item.price_eur) }} €</td>
-                  <td>{{ fmt(item.price_per_m2) }} €</td>
+                  <td>{{ formatCurrency(item.price_eur) }}</td>
+                  <td>{{ formatCurrency(item.price_per_m2) }}</td>
                   <td>{{ item.year || '—' }}</td>
                   <td>
                     <button class="table-btn" @click="openPrediction(item)">
@@ -254,7 +258,7 @@
                 <small>{{ item.region || '—' }}</small>
               </div>
               <div class="related-metric">
-                <strong>{{ fmt(item.median_price_per_m2) }} €</strong>
+                <strong>{{ formatCurrency(item.median_price_per_m2) }}</strong>
                 <small>{{ fmt(item.count) }} {{ t('dashboard.transactions') }}</small>
               </div>
             </RouterLink>

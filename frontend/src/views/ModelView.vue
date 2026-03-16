@@ -7,6 +7,8 @@
   import { useAuthStore } from '../stores/auth'
   import { useDataStore } from '../stores/data'
   import { useModelStore } from '../stores/model'
+  import { formatCurrency, formatDateTime, formatNumber, formatPercent } from '../utils/format'
+  import { getPropertyTypeLabel } from '../utils/propertyType'
 
   ChartJS.register(BarElement, CategoryScale, LinearScale, Tooltip)
 
@@ -53,17 +55,47 @@
       '',
   )
 
+  function fmt(value, decimals = 0) {
+    return formatNumber(value, { maximumFractionDigits: decimals })
+  }
+
+  function fmtCurrency(value) {
+    return formatCurrency(value)
+  }
+
+  function fmtPercent(value) {
+    return formatPercent(value, { scale: 0.01, minimumFractionDigits: 1 })
+  }
+
+  function formatScore(value) {
+    return formatNumber(value, { minimumFractionDigits: 4, maximumFractionDigits: 4 })
+  }
+
+  function formatType(value) {
+    return getPropertyTypeLabel(value, t)
+  }
+
+  function formatDate(value) {
+    if (!value) return t('common.noData')
+    return formatDateTime(value)
+  }
+
+  function formatDuration(value) {
+    if (value == null || Number.isNaN(Number(value))) return '—'
+    return `${formatNumber(value, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}s`
+  }
+
   const metricsCards = computed(() => {
     const metrics = model.info?.global_metrics
     if (!metrics) return []
     return [
-      { label: 'MAE', value: `€${Math.round(metrics.mae).toLocaleString()}` },
-      { label: 'RMSE', value: `€${Math.round(metrics.rmse).toLocaleString()}` },
-      { label: 'R²', value: metrics.r2?.toFixed(4) },
-      { label: 'MAPE', value: `${metrics.mape?.toFixed(1)}%` },
+      { label: 'MAE', value: fmtCurrency(metrics.mae) },
+      { label: 'RMSE', value: fmtCurrency(metrics.rmse) },
+      { label: 'R²', value: formatScore(metrics.r2) },
+      { label: 'MAPE', value: fmtPercent(metrics.mape) },
       {
         label: t('model.medianError'),
-        value: `€${Math.round(metrics.median_ae).toLocaleString()}`,
+        value: fmtCurrency(metrics.median_ae),
       },
     ]
   })
@@ -146,11 +178,6 @@
     }
   }
 
-  function formatDate(value) {
-    if (!value) return t('common.noData')
-    return new Date(value).toLocaleString()
-  }
-
   onMounted(async () => {
     await Promise.all([
       model.fetchInfo(),
@@ -185,7 +212,7 @@
               : t('model.preparedDatasetMissing')
           }}</strong>
           <p v-if="trainingDataset?.exists">
-            {{ trainingDataset.rows?.toLocaleString() || 0 }} {{ t('data.rows') }} ·
+            {{ fmt(trainingDataset.rows) }} {{ t('data.rows') }} ·
             {{ formatDate(trainingDataset.updated_at) }}
           </p>
           <p v-else>{{ t('model.prepareDataFirst') }}</p>
@@ -195,7 +222,7 @@
           <span class="eyebrow">{{ t('model.currentModel') }}</span>
           <strong>{{ model.info ? t('model.modelReady') : t('model.modelMissing') }}</strong>
           <p v-if="model.info">
-            {{ formatDate(model.info.trained_at) }} · {{ model.info.rows?.toLocaleString() || 0 }}
+            {{ formatDate(model.info.trained_at) }} · {{ fmt(model.info.rows) }}
             {{ t('data.rows') }}
           </p>
           <p v-else>{{ t('model.noModel') }}</p>
@@ -228,8 +255,7 @@
           <div>
             <strong>{{ t('model.preparedDatasetLabel') }}</strong>
             <p v-if="trainingDataset?.exists">
-              {{ trainingDataset.relative_path }} ·
-              {{ trainingDataset.rows?.toLocaleString() || 0 }}
+              {{ trainingDataset.relative_path }} · {{ fmt(trainingDataset.rows) }}
               {{ t('data.rows') }}
             </p>
             <p v-else>{{ t('model.prepareDataFirst') }}</p>
@@ -248,8 +274,7 @@
               :key="dataset.id"
               :value="dataset.relative_path"
             >
-              {{ dataset.original_name }} ({{ dataset.row_count?.toLocaleString() ?? 0 }}
-              {{ t('data.rows') }})
+              {{ dataset.original_name }} ({{ fmt(dataset.row_count) }} {{ t('data.rows') }})
             </option>
           </select>
         </div>
@@ -260,7 +285,8 @@
         <strong>{{ selectedSourceMeta.original_name || selectedSourceMeta.name }}</strong>
         <p>{{ selectedSourcePath }}</p>
         <p class="muted">
-          {{ selectedSourceMeta.row_count || selectedSourceMeta.rows || 0 }} {{ t('data.rows') }} ·
+          {{ fmt(selectedSourceMeta.row_count || selectedSourceMeta.rows || 0) }}
+          {{ t('data.rows') }} ·
           {{ formatDate(selectedSourceMeta.uploaded_at || selectedSourceMeta.updated_at) }}
         </p>
       </div>
@@ -304,8 +330,8 @@
           <h2>{{ t('model.currentModel') }}</h2>
           <p class="muted">
             {{ t('model.trainedAt') }}: {{ formatDate(model.info.trained_at) }} ·
-            {{ model.info.rows?.toLocaleString() }} {{ t('data.rows') }} ·
-            {{ model.info.duration_sec?.toFixed(1) }}s
+            {{ fmt(model.info.rows) }} {{ t('data.rows') }} ·
+            {{ formatDuration(model.info.duration_sec) }}
           </p>
         </div>
         <div class="model-source-pill" v-if="model.info.source_csv_path">
@@ -337,12 +363,12 @@
           </thead>
           <tbody>
             <tr v-for="(metrics, propertyType) in model.info.per_type_metrics" :key="propertyType">
-              <td>{{ propertyType }}</td>
-              <td>€{{ Math.round(metrics.mae).toLocaleString() }}</td>
-              <td>€{{ Math.round(metrics.rmse).toLocaleString() }}</td>
-              <td>{{ metrics.r2?.toFixed(4) }}</td>
-              <td>{{ metrics.mape?.toFixed(1) }}%</td>
-              <td>{{ metrics.n_train }}</td>
+              <td>{{ formatType(propertyType) }}</td>
+              <td>{{ fmtCurrency(metrics.mae) }}</td>
+              <td>{{ fmtCurrency(metrics.rmse) }}</td>
+              <td>{{ formatScore(metrics.r2) }}</td>
+              <td>{{ fmtPercent(metrics.mape) }}</td>
+              <td>{{ fmt(metrics.n_train) }}</td>
             </tr>
           </tbody>
         </table>

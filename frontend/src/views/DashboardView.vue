@@ -9,6 +9,7 @@
   import { useDataStore } from '../stores/data'
   import { useStatsStore } from '../stores/stats'
   import { getApiErrorMessage } from '../utils/apiError'
+  import { formatCurrency, formatDateTime, formatNumber, formatPercent } from '../utils/format'
   import { getPropertyTypeLabel } from '../utils/propertyType'
 
   const { t } = useI18n()
@@ -24,13 +25,18 @@
   const availablePropertyTypes = ref([])
 
   function fmt(value, decimals = 0) {
-    if (value == null) return '—'
-    return Number(value).toLocaleString('sl-SI', { maximumFractionDigits: decimals })
+    return formatNumber(value, { maximumFractionDigits: decimals })
+  }
+
+  function fmtCurrency(value, decimals = 0) {
+    return formatCurrency(value, {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    })
   }
 
   function fmtPercent(value) {
-    if (value == null) return '—'
-    return `${(Number(value) * 100).toFixed(1)}%`
+    return formatPercent(value)
   }
 
   function propertyTypeLabel(value) {
@@ -122,14 +128,14 @@
     },
     {
       label: t('dashboard.medianPrice'),
-      value: `${fmt(marketHome.value.headline?.median_price)} €`,
+      value: fmtCurrency(marketHome.value.headline?.median_price),
       detail: t('dashboard.latestYearLabel', {
         year: marketHome.value.headline?.latest_year || '—',
       }),
     },
     {
       label: t('dashboard.pricePerM2'),
-      value: `${fmt(marketHome.value.headline?.avg_price_per_m2)} €`,
+      value: fmtCurrency(marketHome.value.headline?.avg_price_per_m2),
       detail: t('dashboard.marketMunicipalities', {
         count: fmt(marketHome.value.headline?.municipalities_count),
       }),
@@ -203,7 +209,7 @@
       label: t('dashboard.modelStatus'),
       title: modelInfo.value ? t('dashboard.modelReady') : t('dashboard.modelMissing'),
       detail: modelInfo.value?.trained_at
-        ? new Date(modelInfo.value.trained_at).toLocaleString('sl-SI')
+        ? formatDateTime(modelInfo.value.trained_at)
         : modelError.value || t('dashboard.modelMissingDetail'),
     },
   ])
@@ -345,8 +351,8 @@
                     <small>{{ item.region || '—' }}</small>
                   </td>
                   <td>{{ fmt(item.count) }}</td>
-                  <td>{{ fmt(item.median_price) }} €</td>
-                  <td>{{ fmt(item.median_price_per_m2) }} €</td>
+                  <td>{{ fmtCurrency(item.median_price) }}</td>
+                  <td>{{ fmtCurrency(item.median_price_per_m2) }}</td>
                 </tr>
               </tbody>
             </table>
@@ -374,7 +380,7 @@
                 <small>{{ item.region || '—' }}</small>
               </div>
               <div class="rank-metric">
-                <strong>{{ fmt(item.median_price_per_m2) }} €</strong>
+                <strong>{{ fmtCurrency(item.median_price_per_m2) }}</strong>
                 <small>{{ fmt(item.count) }} {{ t('dashboard.transactions') }}</small>
               </div>
             </RouterLink>
@@ -403,8 +409,8 @@
                 <small>{{ fmt(region.count) }} {{ t('dashboard.transactions') }}</small>
               </div>
               <div class="rank-metric">
-                <strong>{{ fmt(region.median_price_per_m2) }} €</strong>
-                <small>{{ fmt(region.median_price) }} €</small>
+                <strong>{{ fmtCurrency(region.median_price_per_m2) }}</strong>
+                <small>{{ fmtCurrency(region.median_price) }}</small>
               </div>
             </div>
           </div>
@@ -423,8 +429,8 @@
             <div v-for="item in marketHome.year_coverage" :key="item.year" class="timeline-card">
               <strong>{{ item.year }}</strong>
               <span>{{ fmt(item.count) }} {{ t('dashboard.transactions') }}</span>
-              <small>{{ fmt(item.median_price) }} €</small>
-              <small>{{ fmt(item.median_price_per_m2) }} €/m²</small>
+              <small>{{ fmtCurrency(item.median_price) }}</small>
+              <small>{{ fmtCurrency(item.median_price_per_m2) }}/m²</small>
             </div>
           </div>
           <p v-else class="panel-empty">{{ t('common.noData') }}</p>
@@ -477,11 +483,11 @@
               </RouterLink>
               <span>{{ sale.year || '—' }}</span>
             </div>
-            <strong>{{ fmt(sale.price_eur) }} €</strong>
+            <strong>{{ fmtCurrency(sale.price_eur) }}</strong>
             <p>
               {{ propertyTypeLabel(sale.property_type) || '—' }} · {{ fmt(sale.size_m2, 1) }} m²
             </p>
-            <small>{{ fmt(sale.price_per_m2) }} €/m²</small>
+            <small>{{ fmtCurrency(sale.price_per_m2) }}/m²</small>
           </article>
         </div>
         <p v-else class="panel-empty">{{ t('common.noData') }}</p>

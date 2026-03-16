@@ -1,4 +1,4 @@
-# Nepremičnine v0.8.15
+# Nepremičnine v0.8.16
 
 > Slovenian real estate price analysis & prediction platform — powered by machine learning on official ETN transaction data.
 
@@ -6,6 +6,7 @@
 
 - **Predict** residential property prices using per-type gradient boosting models trained on real Slovenian transaction data (GURS ETN)
 - **Visualize** market trends, municipality leaders, recent sales, and regional statistics on an analytical dashboard and map explorer, including a property-type lens
+- **Review** model quality with focused diagnostics, top-feature highlights, and locale-aware number/date formatting across analytical workflows
 - **Compare** predictions against ranked comparable ETN transactions and municipality-level market context
 - **Analyze** listings against trained models to identify over/under-priced properties
 - **Export** prediction history and analysis results to CSV

@@ -4,6 +4,7 @@
   import api from '../composables/useApi'
   import LoadingSpinner from '../components/LoadingSpinner.vue'
   import { getApiErrorMessage } from '../utils/apiError'
+  import { formatDate } from '../utils/format'
 
   const { t } = useI18n()
 
@@ -73,6 +74,10 @@
     return `${user.is_active ? t('admin.disable') : t('admin.enable')} - ${user.full_name}`
   }
 
+  function formatCreatedAt(value) {
+    return formatDate(value, { dateStyle: 'medium' })
+  }
+
   onMounted(fetchUsers)
 </script>
 
@@ -120,7 +125,7 @@
                   {{ user.is_active ? t('admin.active') : t('admin.disabled') }}
                 </span>
               </td>
-              <td>{{ new Date(user.created_at).toLocaleDateString() }}</td>
+              <td>{{ formatCreatedAt(user.created_at) }}</td>
               <td>
                 <div style="display: flex; gap: 0.5rem; flex-wrap: wrap">
                   <button
