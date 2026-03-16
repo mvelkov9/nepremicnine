@@ -38,7 +38,12 @@ services:
     env_file: .env
     # Dev overrides: mount source, run as root, enable reload
     user: root
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    command:
+      [
+        "sh",
+        "-c",
+        "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload",
+      ]
     volumes:
       - ./backend:/app
       - backend-data:/app/data
@@ -69,6 +74,8 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      backend:
         condition: service_healthy
 
   frontend:

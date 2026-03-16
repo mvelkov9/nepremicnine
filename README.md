@@ -51,6 +51,8 @@ docker compose up --build
 # API docs:  http://localhost:8000/docs
 ```
 
+Development startup applies pending Alembic migrations automatically before the backend begins serving requests.
+
 The first registered user is automatically assigned the **admin** role.
 
 ### Typical Workflow
