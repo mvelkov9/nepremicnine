@@ -1,5 +1,5 @@
 <script setup>
-  import { computed, ref } from 'vue'
+  import { computed, onMounted, ref } from 'vue'
   import { useI18n } from 'vue-i18n'
   import AutoComplete from 'primevue/autocomplete'
   import Button from 'primevue/button'
@@ -207,7 +207,9 @@
     }),
   )
 
-  fetchMunicipalities()
+  onMounted(() => {
+    void fetchMunicipalities()
+  })
 </script>
 
 <template>
@@ -462,11 +464,9 @@
             <template #body="{ data }">{{ formatType(data.property_type) }}</template>
           </Column>
           <Column :header="t('predict.size')">
-            <template #body="{ data }"
-            >
+            <template #body="{ data }">
               {{ fmt(data.uporabna_povrsina || data.size_m2, 1) }} m²
-            </template
-            >
+            </template>
           </Column>
           <Column :header="t('predict.floor')">
             <template #body="{ data }">{{ data.floor ?? '—' }}</template>

@@ -1,5 +1,5 @@
 <script setup>
-  import { computed, onMounted, ref, watch } from 'vue'
+  import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
   import { RouterLink, useRoute, useRouter } from 'vue-router'
   import { useI18n } from 'vue-i18n'
   import { setLocale } from '../i18n'
@@ -20,6 +20,7 @@
   const mobileMenuOpen = ref(false)
   const profileOpen = ref(false)
   const profileSaving = ref(false)
+  const isScrolled = ref(false)
   const appVersion = ref('')
   const sidebarCollapsed = ref(localStorage.getItem('sidebar_collapsed') === '1')
   const profileForm = ref({
@@ -58,6 +59,9 @@
 
   const workspaceTag = computed(() =>
     isAdminArea.value ? t('layout.adminWorkbenchShort') : t('layout.marketWorkspaceShort'),
+  )
+  const footerSummary = computed(() =>
+    isAdminArea.value ? t('layout.footerAdminSummary') : t('layout.footerViewerSummary'),
   )
 
   const switchLink = computed(() => {
@@ -98,6 +102,10 @@
       .slice(0, 2)
   })
 
+  function updateScrollState() {
+    isScrolled.value = window.scrollY > 14
+  }
+
   watch(sidebarCollapsed, (collapsed) => {
     localStorage.setItem('sidebar_collapsed', collapsed ? '1' : '0')
   })
@@ -121,6 +129,9 @@
   )
 
   onMounted(async () => {
+    updateScrollState()
+    window.addEventListener('scroll', updateScrollState, { passive: true })
+
     try {
       const res = await fetch('/api/health')
       if (res.ok) {
@@ -130,6 +141,10 @@
     } catch {
       /* no-op */
     }
+  })
+
+  onBeforeUnmount(() => {
+    window.removeEventListener('scroll', updateScrollState)
   })
 
   function changeLocale(nextLocale) {
@@ -262,66 +277,81 @@
     </aside>
 
     <div class="workspace">
-      <header class="topbar">
-        <div class="page-meta">
-          <span class="page-kicker">{{ workspaceLabel }}</span>
-          <h1 class="page-heading">{{ currentTitle }}</h1>
-          <p class="page-description">{{ currentDescription }}</p>
-        </div>
-
-        <div class="topbar-actions">
-          <RouterLink v-if="switchLink" :to="switchLink.to" class="switch-link mobile-switch">
-            <AppIcon :name="switchLink.icon" :size="16" />
-            <span>{{ switchLink.label }}</span>
-          </RouterLink>
-
-          <div class="segmented-control" role="group" :aria-label="t('layout.language')">
-            <button
-              class="segmented-btn"
-              :class="{ active: locale === 'sl' }"
-              @click="changeLocale('sl')"
-            >
-              SI
-            </button>
-            <button
-              class="segmented-btn"
-              :class="{ active: locale === 'en' }"
-              @click="changeLocale('en')"
-            >
-              EN
-            </button>
+      <header class="topbar" :class="{ scrolled: isScrolled }">
+        <div class="topbar-shell">
+          <div class="page-meta">
+            <span class="page-kicker">{{ workspaceLabel }}</span>
+            <h1 class="page-heading">{{ currentTitle }}</h1>
+            <p class="page-description">{{ currentDescription }}</p>
           </div>
 
-          <button class="ghost-btn icon-label-btn" @click="toggleDark">
-            <AppIcon :name="isDark ? 'sun' : 'moon'" :size="16" />
-            <span>{{ isDark ? t('ui.lightMode') : t('ui.darkMode') }}</span>
-          </button>
+          <div class="topbar-actions">
+            <RouterLink v-if="switchLink" :to="switchLink.to" class="switch-link mobile-switch">
+              <AppIcon :name="switchLink.icon" :size="16" />
+              <span>{{ switchLink.label }}</span>
+            </RouterLink>
 
-          <button class="profile-pill" @click="openProfile">
-            <span class="avatar-frame">
-              <img
-                v-if="avatarUrl"
-                :src="avatarUrl"
-                :alt="auth.user?.full_name || t('layout.profile')"
-              />
-              <span v-else>{{ profileInitials }}</span>
-            </span>
-            <span class="profile-copy">
-              <strong>{{ auth.user?.full_name || t('layout.profile') }}</strong>
-              <small>{{ userRoleLabel }}</small>
-            </span>
-          </button>
+            <div class="segmented-control" role="group" :aria-label="t('layout.language')">
+              <button
+                class="segmented-btn"
+                :class="{ active: locale === 'sl' }"
+                @click="changeLocale('sl')"
+              >
+                SI
+              </button>
+              <button
+                class="segmented-btn"
+                :class="{ active: locale === 'en' }"
+                @click="changeLocale('en')"
+              >
+                EN
+              </button>
+            </div>
 
-          <button class="danger-soft icon-label-btn" @click="handleLogout">
-            <AppIcon name="logout" :size="16" />
-            <span>{{ t('nav.logout') }}</span>
-          </button>
+            <button class="ghost-btn icon-label-btn" @click="toggleDark">
+              <AppIcon :name="isDark ? 'sun' : 'moon'" :size="16" />
+              <span>{{ isDark ? t('ui.lightMode') : t('ui.darkMode') }}</span>
+            </button>
+
+            <button class="profile-pill" @click="openProfile">
+              <span class="avatar-frame">
+                <img
+                  v-if="avatarUrl"
+                  :src="avatarUrl"
+                  :alt="auth.user?.full_name || t('layout.profile')"
+                />
+                <span v-else>{{ profileInitials }}</span>
+              </span>
+              <span class="profile-copy">
+                <strong>{{ auth.user?.full_name || t('layout.profile') }}</strong>
+                <small>{{ userRoleLabel }}</small>
+              </span>
+            </button>
+
+            <button class="danger-soft icon-label-btn" @click="handleLogout">
+              <AppIcon name="logout" :size="16" />
+              <span>{{ t('nav.logout') }}</span>
+            </button>
+          </div>
         </div>
       </header>
 
       <main class="main">
         <slot />
       </main>
+
+      <footer class="shell-footer">
+        <div class="footer-brand">
+          <strong>{{ t('app.title') }}</strong>
+          <span>{{ footerSummary }}</span>
+        </div>
+
+        <div class="footer-meta">
+          <span>{{ t('app.subtitle') }}</span>
+          <span>{{ userRoleLabel }}</span>
+          <span v-if="versionBadge">{{ versionBadge }}</span>
+        </div>
+      </footer>
     </div>
   </div>
 
@@ -486,8 +516,30 @@
     top: 0;
     z-index: 12;
     margin: 0 1.35rem;
-    padding: 1rem 0 0.95rem;
-    backdrop-filter: blur(18px);
+    padding: 1rem 0 0.8rem;
+  }
+
+  .topbar-shell {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 1.1rem;
+    border-radius: 1.4rem;
+    border: 1px solid transparent;
+    background: color-mix(in srgb, var(--surface-soft-strong) 78%, transparent);
+    backdrop-filter: blur(16px);
+    transition:
+      background 160ms ease,
+      border-color 160ms ease,
+      box-shadow 160ms ease,
+      transform 160ms ease;
+  }
+
+  .topbar.scrolled .topbar-shell {
+    border-color: var(--border);
+    background: color-mix(in srgb, var(--surface-strong) 92%, transparent);
+    box-shadow: var(--shadow-sm);
   }
 
   .page-meta,
@@ -515,6 +567,39 @@
     position: relative;
     z-index: 1;
     padding-top: 0.4rem;
+    padding-bottom: 1.25rem;
+  }
+
+  .shell-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin: 0 1.35rem 1.35rem;
+    padding: 1rem 1.1rem;
+    border-radius: 1.3rem;
+    border: 1px solid var(--border);
+    background: color-mix(in srgb, var(--surface-soft) 92%, transparent);
+    color: var(--text-muted);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .footer-brand,
+  .footer-meta {
+    display: grid;
+    gap: 0.18rem;
+  }
+
+  .footer-brand strong,
+  .footer-meta span:first-child {
+    color: var(--text);
+    font-weight: 800;
+  }
+
+  .footer-meta {
+    justify-items: end;
+    text-align: right;
+    font-size: 0.82rem;
   }
 
   .desktop-only {
@@ -547,6 +632,12 @@
       margin: 0 1rem;
     }
 
+    .topbar-shell,
+    .shell-footer {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
     .page-description {
       max-width: none;
     }
@@ -557,6 +648,11 @@
 
     .desktop-only {
       display: none;
+    }
+
+    .footer-meta {
+      justify-items: start;
+      text-align: left;
     }
 
     .sidebar.collapsed .brand-copy,

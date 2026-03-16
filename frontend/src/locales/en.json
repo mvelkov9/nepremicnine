@@ -65,6 +65,8 @@
     "avatarPlaceholder": "https://example.com/avatar.png",
     "avatarHint": "Use an HTTPS image URL, a local path, or a data URL. Leave blank to use initials.",
     "savingProfile": "Saving profile...",
+    "footerViewerSummary": "A focused view of Slovenian real-estate prices, transactions, and valuations.",
+    "footerAdminSummary": "Admin workspace for data ingestion, dataset preparation, and model training.",
     "short": {
       "dashboard": "Pulse of the dataset",
       "data": "Uploads and source files",

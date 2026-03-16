@@ -150,6 +150,13 @@
           : selectedType.value || 'stanovanje',
     })
   })
+  const detailDialogTitle = computed(() => {
+    if (!selectedRecord.value) return t('common.noData')
+    if (detailMode.value === 'transaction' && selectedRecord.value.property_type) {
+      return `${selectedRecord.value.municipality} · ${formatType(selectedRecord.value.property_type)}`
+    }
+    return selectedRecord.value.municipality || t('common.noData')
+  })
 
   const mapStateMessage = computed(() => {
     if (!mapMetaReason.value) return ''
@@ -744,8 +751,9 @@
       modal
       maximizable
       class="map-detail-dialog"
-      :header="selectedRecord?.municipality || t('common.noData')"
-      :style="{ width: 'min(96vw, 1120px)' }"
+      :header="detailDialogTitle"
+      :style="{ width: 'min(98vw, 1280px)' }"
+      :breakpoints="{ '1280px': '96vw', '768px': '100vw' }"
     >
       <div v-if="selectedRecord" class="detail-dialog">
         <div class="detail-summary">
@@ -807,7 +815,7 @@
         </div>
 
         <div class="detail-grid">
-          <section class="detail-section">
+          <section class="detail-section detail-section-main">
             <h3>{{ t('map.detailTitle') }}</h3>
             <dl class="detail-list">
               <div v-if="detailMode === 'transaction'">
@@ -845,7 +853,7 @@
             </dl>
           </section>
 
-          <section v-if="detailMode === 'transaction'" class="detail-section">
+          <section v-if="detailMode === 'transaction'" class="detail-section detail-section-flags">
             <h3>{{ t('predict.buildingFlags') }}</h3>
             <div class="flag-grid">
               <span
@@ -865,32 +873,9 @@
                 {{ flag[1] }}
               </span>
             </div>
-
-            <div class="detail-actions">
-              <Button
-                icon="pi pi-building"
-                :label="t('map.openMunicipality')"
-                @click="openMunicipality()"
-              />
-              <Button
-                severity="secondary"
-                outlined
-                icon="pi pi-chart-line"
-                :label="t('map.useForPrediction')"
-                @click="useForPrediction()"
-              />
-              <a :href="comparisonUrl" target="_blank" rel="noreferrer" class="detail-link">
-                <Button
-                  severity="contrast"
-                  outlined
-                  icon="pi pi-external-link"
-                  :label="t('predict.compareOnPortal')"
-                />
-              </a>
-            </div>
           </section>
 
-          <section class="detail-section">
+          <section class="detail-section detail-section-comparables">
             <h3>{{ t('predict.comparablesTitle') }}</h3>
             <LoadingSpinner v-if="detailLoading" :label="t('common.loading')" />
             <div v-else-if="detailComparables.length" class="comparables-list">
@@ -924,6 +909,29 @@
             />
           </section>
         </div>
+
+        <section class="detail-actions-panel">
+          <Button
+            icon="pi pi-building"
+            :label="t('map.openMunicipality')"
+            @click="openMunicipality()"
+          />
+          <Button
+            severity="secondary"
+            outlined
+            icon="pi pi-chart-line"
+            :label="t('map.useForPrediction')"
+            @click="useForPrediction()"
+          />
+          <a :href="comparisonUrl" target="_blank" rel="noreferrer" class="detail-link">
+            <Button
+              severity="contrast"
+              outlined
+              icon="pi pi-external-link"
+              :label="t('predict.compareOnPortal')"
+            />
+          </a>
+        </section>
       </div>
     </Dialog>
   </div>
@@ -1047,8 +1055,9 @@
 
   .detail-grid {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 0.95fr) minmax(0, 1fr) minmax(320px, 1.1fr);
     gap: 1rem;
+    align-items: start;
   }
 
   .detail-section {
@@ -1058,6 +1067,7 @@
     border: 1px solid var(--border);
     border-radius: 1.25rem;
     background: var(--surface-soft);
+    min-width: 0;
   }
 
   .detail-section h3 {
@@ -1090,6 +1100,16 @@
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
     gap: 0.65rem;
+  }
+
+  .detail-actions-panel {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.85rem;
+    padding: 1rem;
+    border: 1px solid var(--border);
+    border-radius: 1.25rem;
+    background: var(--surface-soft);
   }
 
   .flag-chip {
@@ -1126,6 +1146,35 @@
 
   .detail-link {
     text-decoration: none;
+    display: block;
+  }
+
+  .detail-actions-panel :deep(.p-button) {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .map-detail-dialog :deep(.p-dialog-header) {
+    align-items: flex-start;
+    padding: 1.15rem 1.35rem;
+  }
+
+  .map-detail-dialog :deep(.p-dialog-content) {
+    padding: 1.25rem 1.35rem 1.35rem;
+  }
+
+  .detail-summary h2 {
+    margin: 0.2rem 0 0;
+    font-size: 1.45rem;
+  }
+
+  .detail-summary .muted {
+    margin: 0.25rem 0 0;
+  }
+
+  .comparables-list,
+  .detail-list {
+    min-width: 0;
   }
 
   @media (max-width: 1100px) {
@@ -1133,6 +1182,7 @@
     .filters-grid,
     .explorer-grid,
     .detail-grid,
+    .detail-actions-panel,
     .detail-metrics,
     .metric-band {
       grid-template-columns: 1fr;
