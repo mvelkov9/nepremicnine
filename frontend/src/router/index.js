@@ -18,13 +18,13 @@ const routes = [
     path: '/podatki',
     name: 'data',
     component: () => import('../views/DataView.vue'),
-    meta: { requiresAuth: true },
+    meta: { requiresAuth: true, requiresAdmin: true },
   },
   {
     path: '/model',
     name: 'model',
     component: () => import('../views/ModelView.vue'),
-    meta: { requiresAuth: true },
+    meta: { requiresAuth: true, requiresAdmin: true },
   },
   {
     path: '/napoved',
@@ -42,13 +42,13 @@ const routes = [
     path: '/diagnostika',
     name: 'diagnostics',
     component: () => import('../views/DiagnosticsView.vue'),
-    meta: { requiresAuth: true },
+    meta: { requiresAuth: true, requiresAdmin: true },
   },
   {
     path: '/analiza',
     name: 'analysis',
     component: () => import('../views/AnalysisView.vue'),
-    meta: { requiresAuth: true },
+    meta: { requiresAuth: true, requiresAdmin: true },
   },
   {
     path: '/priprava',

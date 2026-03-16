@@ -55,6 +55,16 @@
     }
   }
 
+  async function handleDeleteAll() {
+    if (!dataStore.datasets.length) return
+    if (!confirm(t('data.confirmDeleteAll'))) return
+    try {
+      await dataStore.deleteAllDatasets()
+    } catch (e) {
+      error.value = e.response?.data?.detail || t('common.error')
+    }
+  }
+
   function formatDate(iso) {
     if (!iso) return '—'
     return new Date(iso).toLocaleDateString('sl-SI', {
@@ -78,7 +88,7 @@
     <div v-if="auth.isAdmin" class="card">
       <div class="card-title">{{ t('data.upload') }}</div>
       <div class="actions">
-        <input ref="fileInput" type="file" multiple accept=".csv" style="flex: 1" />
+        <input ref="fileInput" type="file" multiple accept=".csv,.zip" style="flex: 1" />
         <button :disabled="dataStore.uploading" @click="handleUpload">
           {{ dataStore.uploading ? t('common.loading') : t('data.uploadButton') }}
         </button>
@@ -96,7 +106,17 @@
 
     <!-- Dataset table -->
     <div class="card">
-      <div class="card-title">{{ t('data.datasets') }}</div>
+      <div style="display: flex; justify-content: space-between; align-items: center">
+        <div class="card-title" style="margin-bottom: 0">{{ t('data.datasets') }}</div>
+        <button
+          v-if="auth.isAdmin && dataStore.datasets.length"
+          class="danger"
+          style="padding: 4px 10px; font-size: 12px"
+          @click="handleDeleteAll"
+        >
+          {{ t('data.deleteAll') }}
+        </button>
+      </div>
       <LoadingSpinner v-if="dataStore.loading" :label="t('common.loading')" />
       <EmptyState
         v-else-if="!dataStore.datasets.length"

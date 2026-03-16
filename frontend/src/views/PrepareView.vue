@@ -1,5 +1,5 @@
 <script setup>
-  import { ref, onMounted, computed } from 'vue'
+  import { ref, onMounted, computed, reactive } from 'vue'
   import { useI18n } from 'vue-i18n'
   import { useDataStore } from '../stores/data'
   import api from '../composables/useApi'
@@ -49,6 +49,9 @@
     return match ? Number(match[1]) : null
   }
 
+  // Track which years are selected (all selected by default)
+  const deselectedYears = reactive(new Set())
+
   // Reactive computed: auto-detects ETN pairs grouped by year
   const detectedPairs = computed(() => {
     const byYear = new Map()
@@ -58,7 +61,7 @@
       const year = datasetYear(item)
       if (!year || (role !== 'posli' && role !== 'delistavb' && role !== 'zemljisca')) continue
       if (!byYear.has(year))
-        byYear.set(year, { year, posli: null, delistavb: null, zemljisca: null, selected: true })
+        byYear.set(year, { year, posli: null, delistavb: null, zemljisca: null })
       const row = byYear.get(year)
       // Keep latest upload per role (highest id)
       if (role === 'posli' && (!row.posli || item.id > row.posli.id)) row.posli = item
@@ -72,12 +75,20 @@
       .sort((a, b) => a.year - b.year)
   })
 
+  function isSelected(year) {
+    return !deselectedYears.has(year)
+  }
+
+  function selectedPairs() {
+    return detectedPairs.value.filter((p) => isSelected(p.year))
+  }
+
   async function prepareEtnBulk() {
     loading.value = true
     error.value = ''
     result.value = null
     try {
-      const selected = detectedPairs.value.filter((p) => p.selected)
+      const selected = selectedPairs()
       if (!selected.length) {
         error.value = t('prepare.noPairs')
         return
@@ -139,8 +150,22 @@
     }
   }
 
-  function togglePair(index) {
-    detectedPairs.value[index].selected = !detectedPairs.value[index].selected
+  function togglePair(pair) {
+    if (deselectedYears.has(pair.year)) {
+      deselectedYears.delete(pair.year)
+    } else {
+      deselectedYears.add(pair.year)
+    }
+  }
+
+  function toggleAll(checked) {
+    if (checked) {
+      deselectedYears.clear()
+    } else {
+      for (const p of detectedPairs.value) {
+        deselectedYears.add(p.year)
+      }
+    }
   }
 
   function getDatasetPaths() {
@@ -187,8 +212,8 @@
                 <th style="width: 40px">
                   <input
                     type="checkbox"
-                    :checked="detectedPairs.every((p) => p.selected)"
-                    @change="detectedPairs.forEach((p) => (p.selected = $event.target.checked))"
+                    :checked="detectedPairs.every((p) => isSelected(p.year))"
+                    @change="toggleAll($event.target.checked)"
                   />
                 </th>
                 <th>{{ t('prepare.year') }}</th>
@@ -197,9 +222,13 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="(pair, i) in detectedPairs" :key="i">
+              <tr v-for="pair in detectedPairs" :key="pair.year">
                 <td>
-                  <input type="checkbox" v-model="pair.selected" @change="togglePair(i)" />
+                  <input
+                    type="checkbox"
+                    :checked="isSelected(pair.year)"
+                    @change="togglePair(pair)"
+                  />
                 </td>
                 <td>
                   <span class="badge-blue">{{ pair.year }}</span>
@@ -214,7 +243,7 @@
         <button
           class="btn btn-primary"
           style="margin-top: 1rem"
-          :disabled="loading || !detectedPairs.some((p) => p.selected)"
+          :disabled="loading || !selectedPairs().length"
           @click="prepareEtnBulk"
         >
           {{ loading ? t('common.loading') : t('prepare.prepareButton') }}

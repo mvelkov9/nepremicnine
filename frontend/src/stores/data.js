@@ -42,10 +42,26 @@ export const useDataStore = defineStore('data', () => {
     datasets.value = datasets.value.filter((d) => d.id !== id)
   }
 
+  async function deleteAllDatasets() {
+    const ids = datasets.value.map((d) => d.id)
+    if (!ids.length) return
+    await api.post('/api/data/datasets/delete-bulk', { dataset_ids: ids })
+    datasets.value = []
+  }
+
   async function fetchPreview(id, limit = 20) {
     const { data } = await api.get(`/api/data/preview/${id}`, { params: { limit } })
     return data
   }
 
-  return { datasets, loading, uploading, fetchDatasets, uploadFiles, deleteDataset, fetchPreview }
+  return {
+    datasets,
+    loading,
+    uploading,
+    fetchDatasets,
+    uploadFiles,
+    deleteDataset,
+    deleteAllDatasets,
+    fetchPreview,
+  }
 })

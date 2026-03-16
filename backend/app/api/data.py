@@ -42,7 +42,7 @@ DATA_DIR = os.path.realpath(os.path.join(os.path.dirname(os.path.dirname(os.path
 UPLOAD_DIR = os.path.join(DATA_DIR, "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-MAX_UPLOAD_SIZE = 500 * 1024 * 1024  # 500 MB
+MAX_UPLOAD_SIZE = 500 * 1024 * 1024  # 500 MB per file
 ALLOWED_EXTENSIONS = {".csv", ".zip"}
 
 

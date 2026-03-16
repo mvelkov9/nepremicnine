@@ -57,6 +57,8 @@
     "preview": "Predogled",
     "columns": "Stolpci",
     "confirmDelete": "Ali ste prepričani, da želite izbrisati ta nabor podatkov?",
+    "confirmDeleteAll": "Ali ste prepričani, da želite izbrisati VSE nabore podatkov?",
+    "deleteAll": "Izbriši vse",
     "uploadedCount": "{count} datotek naloženih",
     "skippedCount": "{count} datotek preskočenih (duplikat)"
   },

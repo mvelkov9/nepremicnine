@@ -27,13 +27,13 @@
 
   const navItems = [
     { to: '/', icon: '📊', label: 'nav.dashboard' },
-    { to: '/podatki', icon: '📁', label: 'nav.data' },
+    { to: '/podatki', icon: '📁', label: 'nav.data', admin: true },
     { to: '/priprava', icon: '🔧', label: 'nav.prepare', admin: true },
-    { to: '/model', icon: '🧠', label: 'nav.model' },
+    { to: '/model', icon: '🧠', label: 'nav.model', admin: true },
     { to: '/napoved', icon: '🔮', label: 'nav.prediction' },
     { to: '/zemljevid', icon: '🗺️', label: 'nav.map' },
-    { to: '/diagnostika', icon: '📈', label: 'nav.diagnostics' },
-    { to: '/analiza', icon: '🔍', label: 'nav.analysis' },
+    { to: '/diagnostika', icon: '📈', label: 'nav.diagnostics', admin: true },
+    { to: '/analiza', icon: '🔍', label: 'nav.analysis', admin: true },
   ]
 
   function userInitials() {
