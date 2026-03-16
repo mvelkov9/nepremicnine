@@ -7,6 +7,8 @@
   import Column from 'primevue/column'
   import SelectButton from 'primevue/selectbutton'
   import Tag from 'primevue/tag'
+  import MetricCard from '../components/MetricCard.vue'
+  import PageHeader from '../components/PageHeader.vue'
   import LoadingSpinner from '../components/LoadingSpinner.vue'
   import api from '../composables/useApi'
   import { useStatsStore } from '../stores/stats'
@@ -96,35 +98,45 @@
     {
       label: t('dashboard.totalRecords'),
       value: fmt(marketHome.value.headline?.total_records),
+      meta: t('dashboard.marketCoverageYears', {
+        from: marketHome.value.year_coverage?.[0]?.year || '—',
+        to:
+          marketHome.value.year_coverage?.[marketHome.value.year_coverage.length - 1]?.year || '—',
+      }),
     },
     {
       label: t('dashboard.medianPrice'),
       value: fmtCurrency(marketHome.value.headline?.median_price),
+      meta: t('dashboard.marketMunicipalities', {
+        count: fmt(marketHome.value.headline?.municipalities_count),
+      }),
     },
     {
       label: t('dashboard.pricePerM2'),
       value: fmtCurrency(marketHome.value.headline?.avg_price_per_m2),
+      meta: spotlight.value?.municipality || t('common.noData'),
     },
     {
       label: t('dashboard.marketMunicipalitiesLabel'),
       value: fmt(marketHome.value.headline?.municipalities_count),
+      meta: t('dashboard.latestYearLabel', {
+        year: marketHome.value.year_coverage?.[0]?.year || '—',
+      }),
     },
   ])
 
   const spotlight = computed(() => marketHome.value.largest_markets?.[0] || null)
 
-  const propertyTypeOptions = computed(() =>
-    [
-      {
-        label: t('dashboard.filterAllTypes'),
-        value: '',
-      },
-      ...availablePropertyTypes.value.map((value) => ({
-        label: propertyTypeLabel(value),
-        value,
-      })),
-    ],
-  )
+  const propertyTypeOptions = computed(() => [
+    {
+      label: t('dashboard.filterAllTypes'),
+      value: '',
+    },
+    ...availablePropertyTypes.value.map((value) => ({
+      label: propertyTypeLabel(value),
+      value,
+    })),
+  ])
 
   const segmentShare = computed(() => {
     const total = marketHome.value.headline?.total_records || 0
@@ -140,18 +152,22 @@
       {
         label: t('dashboard.totalRecords'),
         value: fmt(segmentHome.value.headline?.total_records),
+        meta: t('dashboard.segmentSpotlight'),
       },
       {
         label: t('dashboard.segmentShare'),
         value: segmentShare.value != null ? fmtPercent(segmentShare.value) : '—',
+        meta: propertyTypeLabel(selectedPropertyType.value),
       },
       {
         label: t('dashboard.medianPrice'),
         value: fmtCurrency(segmentHome.value.headline?.median_price),
+        meta: t('dashboard.marketTableTitle'),
       },
       {
         label: t('dashboard.pricePerM2'),
         value: fmtCurrency(segmentHome.value.headline?.avg_price_per_m2),
+        meta: t('dashboard.regionSnapshot'),
       },
     ]
   })
@@ -166,17 +182,22 @@
 <template>
   <div class="dashboard-page">
     <section class="hero-shell">
-      <div class="hero-copy">
-        <p class="eyebrow">{{ t('dashboard.consumerKicker') }}</p>
-        <h1>{{ t('dashboard.consumerTitle') }}</h1>
-        <p class="muted">{{ t('dashboard.consumerBody') }}</p>
-
-        <div class="hero-actions">
+      <PageHeader
+        :eyebrow="t('dashboard.consumerKicker')"
+        :title="t('dashboard.consumerTitle')"
+        :description="t('dashboard.consumerBody')"
+      >
+        <template #actions>
           <RouterLink to="/napoved" class="hero-link">
             <Button icon="pi pi-bolt" :label="t('dashboard.quickPrediction')" />
           </RouterLink>
           <RouterLink to="/zemljevid" class="hero-link">
-            <Button severity="secondary" outlined icon="pi pi-map" :label="t('dashboard.quickMap')" />
+            <Button
+              severity="secondary"
+              outlined
+              icon="pi pi-map"
+              :label="t('dashboard.quickMap')"
+            />
           </RouterLink>
           <RouterLink v-if="spotlight?.slug" :to="`/obcine/${spotlight.slug}`" class="hero-link">
             <Button
@@ -186,30 +207,39 @@
               :label="t('dashboard.municipalitySpotlight')"
             />
           </RouterLink>
-        </div>
-      </div>
+        </template>
+      </PageHeader>
 
       <div class="hero-summary">
-        <article v-for="card in summaryCards" :key="card.label" class="summary-card">
-          <span>{{ card.label }}</span>
-          <strong>{{ card.value }}</strong>
-        </article>
+        <MetricCard
+          v-for="card in summaryCards"
+          :key="card.label"
+          :label="card.label"
+          :value="card.value"
+          :meta="card.meta"
+        />
       </div>
     </section>
 
     <section class="filter-shell">
       <div>
         <p class="eyebrow">{{ t('dashboard.filterByType') }}</p>
-        <h2>{{ selectedPropertyType ? propertyTypeLabel(selectedPropertyType) : t('dashboard.filterAllTypes') }}</h2>
+        <h2>
+          {{
+            selectedPropertyType
+              ? propertyTypeLabel(selectedPropertyType)
+              : t('dashboard.filterAllTypes')
+          }}
+        </h2>
         <p class="muted">{{ t('dashboard.filterCompareHint') }}</p>
       </div>
 
       <SelectButton
         v-model="selectedPropertyType"
         :options="propertyTypeOptions"
-        optionLabel="label"
-        optionValue="value"
-        :allowEmpty="false"
+        option-label="label"
+        option-value="value"
+        :allow-empty="false"
       />
     </section>
 
@@ -220,13 +250,14 @@
 
     <template v-else>
       <section v-if="selectedPropertyType" class="panel segment-panel">
-        <div class="panel-head">
-          <div>
-            <p class="eyebrow subtle">{{ t('dashboard.segmentSpotlight') }}</p>
-            <h2>{{ t('dashboard.segmentSpotlightTitle', { type: propertyTypeLabel(selectedPropertyType) }) }}</h2>
-            <p class="muted">{{ t('dashboard.segmentTopMarketsTitle') }}</p>
-          </div>
-        </div>
+        <PageHeader
+          compact
+          :eyebrow="t('dashboard.segmentSpotlight')"
+          :title="
+            t('dashboard.segmentSpotlightTitle', { type: propertyTypeLabel(selectedPropertyType) })
+          "
+          :description="t('dashboard.segmentTopMarketsTitle')"
+        />
 
         <div v-if="segmentLoading" class="state-card compact">
           <LoadingSpinner :label="t('common.loading')" />
@@ -234,10 +265,13 @@
 
         <template v-else-if="segmentHome">
           <div class="hero-summary segment-summary">
-            <article v-for="card in segmentCards" :key="card.label" class="summary-card">
-              <span>{{ card.label }}</span>
-              <strong>{{ card.value }}</strong>
-            </article>
+            <MetricCard
+              v-for="card in segmentCards"
+              :key="card.label"
+              :label="card.label"
+              :value="card.value"
+              :meta="card.meta"
+            />
           </div>
 
           <div class="leader-list" v-if="segmentHome.largest_markets?.length">
@@ -251,7 +285,10 @@
                 <strong>{{ item.municipality }}</strong>
                 <p class="muted">{{ item.region || '—' }}</p>
               </div>
-              <Tag severity="success" :value="`${fmt(item.count)} ${t('dashboard.transactions')}`" />
+              <Tag
+                severity="success"
+                :value="`${fmt(item.count)} ${t('dashboard.transactions')}`"
+              />
             </RouterLink>
           </div>
           <p v-else class="muted">{{ t('common.noData') }}</p>
@@ -270,8 +307,8 @@
           <DataTable
             :value="marketHome.largest_markets.slice(0, 8)"
             size="small"
-            stripedRows
-            tableStyle="min-width: 100%"
+            striped-rows
+            table-style="min-width: 100%"
           >
             <Column :header="t('dashboard.municipality')">
               <template #body="{ data }">
@@ -303,8 +340,8 @@
           <DataTable
             :value="marketHome.region_snapshot.slice(0, 8)"
             size="small"
-            stripedRows
-            tableStyle="min-width: 100%"
+            striped-rows
+            table-style="min-width: 100%"
           >
             <Column field="region" :header="t('map.region')" />
             <Column field="count" :header="t('dashboard.transactions')">
@@ -327,7 +364,11 @@
           </div>
 
           <div class="mix-list" v-if="marketHome.property_type_mix.length">
-            <div v-for="item in marketHome.property_type_mix.slice(0, 6)" :key="item.property_type" class="mix-row">
+            <div
+              v-for="item in marketHome.property_type_mix.slice(0, 6)"
+              :key="item.property_type"
+              class="mix-row"
+            >
               <div>
                 <strong>{{ propertyTypeLabel(item.property_type) }}</strong>
                 <p class="muted">{{ fmt(item.count) }} {{ t('dashboard.transactions') }}</p>
@@ -375,8 +416,8 @@
         <DataTable
           :value="marketHome.latest_sales"
           size="small"
-          stripedRows
-          tableStyle="min-width: 100%"
+          striped-rows
+          table-style="min-width: 100%"
         >
           <Column :header="t('dashboard.municipality')">
             <template #body="{ data }">

@@ -2,13 +2,19 @@
   import { ref, onMounted, computed, reactive } from 'vue'
   import { useRouter } from 'vue-router'
   import { useI18n } from 'vue-i18n'
+  import Button from 'primevue/button'
+  import Checkbox from 'primevue/checkbox'
+  import Select from 'primevue/select'
+  import PageHeader from '../components/PageHeader.vue'
   import { useDataStore } from '../stores/data'
+  import { useModelStore } from '../stores/model'
   import api from '../composables/useApi'
   import { getApiErrorMessage } from '../utils/apiError'
   import { formatNumber } from '../utils/format'
 
   const { t } = useI18n()
   const dataStore = useDataStore()
+  const modelStore = useModelStore()
   const router = useRouter()
 
   const loading = ref(false)
@@ -33,10 +39,14 @@
 }`
 
   const datasets = computed(() => dataStore.datasets || [])
+  const trainingLocked = computed(() => modelStore.training)
 
-  onMounted(() => {
-    dataStore.fetchDatasets()
-    dataStore.fetchTrainingDataset()
+  onMounted(async () => {
+    await Promise.all([
+      dataStore.fetchDatasets(),
+      dataStore.fetchTrainingDataset(),
+      modelStore.fetchActiveTraining(),
+    ])
   })
 
   // --- Dataset role & year helpers (mirrors v1 logic) ---
@@ -212,7 +222,7 @@
   }
 
   function openModelView() {
-    router.push('/model')
+    router.push('/admin/model')
   }
 
   function fmt(value, decimals = 0) {
@@ -221,11 +231,17 @@
 </script>
 
 <template>
-  <div>
-    <h1 class="page-title">{{ t('nav.prepare') }}</h1>
+  <div class="prepare-page">
+    <section class="card">
+      <PageHeader
+        :eyebrow="t('nav.prepare')"
+        :title="t('prepare.title')"
+        :description="trainingLocked ? t('prepare.trainingLockedHint') : t('layout.page.prepare')"
+      />
+    </section>
 
     <!-- Mode tabs -->
-    <div class="card" style="margin-bottom: 1.5rem">
+    <div class="card mode-shell">
       <div class="mode-tabs" role="tablist">
         <button
           :class="['tab-btn', { active: etnMode === 'bulk' }]"
@@ -269,10 +285,10 @@
             <thead>
               <tr>
                 <th style="width: 40px">
-                  <input
-                    type="checkbox"
-                    :checked="detectedPairs.every((p) => isSelected(p.year))"
-                    @change="toggleAll($event.target.checked)"
+                  <Checkbox
+                    binary
+                    :model-value="detectedPairs.every((p) => isSelected(p.year))"
+                    @update:model-value="toggleAll($event)"
                   />
                 </th>
                 <th>{{ t('prepare.year') }}</th>
@@ -283,10 +299,10 @@
             <tbody>
               <tr v-for="pair in detectedPairs" :key="pair.year">
                 <td>
-                  <input
-                    type="checkbox"
-                    :checked="isSelected(pair.year)"
-                    @change="togglePair(pair)"
+                  <Checkbox
+                    binary
+                    :model-value="isSelected(pair.year)"
+                    @update:model-value="togglePair(pair)"
                   />
                 </td>
                 <td>
@@ -299,14 +315,14 @@
           </table>
         </div>
 
-        <button
-          class="btn btn-primary"
-          style="margin-top: 1rem"
-          :disabled="loading || !selectedPairs().length"
+        <Button
+          class="prepare-btn"
+          icon="pi pi-cog"
+          :loading="loading"
+          :disabled="loading || trainingLocked || !selectedPairs().length"
+          :label="loading ? t('common.loading') : t('prepare.prepareButton')"
           @click="prepareEtnBulk"
-        >
-          {{ loading ? t('common.loading') : t('prepare.prepareButton') }}
-        </button>
+        />
       </div>
     </div>
 
@@ -318,32 +334,32 @@
       <div class="form-grid">
         <div>
           <label class="form-label">{{ t('prepare.posliFile') }}</label>
-          <select v-model="singlePosli" class="form-input">
-            <option value="">{{ t('prepare.selectFile') }}</option>
-            <option v-for="opt in getDatasetPaths()" :key="opt.value" :value="opt.value">
-              {{ opt.label }}
-            </option>
-          </select>
+          <Select
+            v-model="singlePosli"
+            :options="[{ label: t('prepare.selectFile'), value: '' }, ...getDatasetPaths()]"
+            option-label="label"
+            option-value="value"
+          />
         </div>
         <div>
           <label class="form-label">{{ t('prepare.delistavbFile') }}</label>
-          <select v-model="singleDelistavb" class="form-input">
-            <option value="">{{ t('prepare.selectFile') }}</option>
-            <option v-for="opt in getDatasetPaths()" :key="opt.value" :value="opt.value">
-              {{ opt.label }}
-            </option>
-          </select>
+          <Select
+            v-model="singleDelistavb"
+            :options="[{ label: t('prepare.selectFile'), value: '' }, ...getDatasetPaths()]"
+            option-label="label"
+            option-value="value"
+          />
         </div>
       </div>
 
-      <button
-        class="btn btn-primary"
-        style="margin-top: 1rem"
-        :disabled="loading || !singlePosli || !singleDelistavb"
+      <Button
+        class="prepare-btn"
+        icon="pi pi-cog"
+        :loading="loading"
+        :disabled="loading || trainingLocked || !singlePosli || !singleDelistavb"
+        :label="loading ? t('common.loading') : t('prepare.prepareButton')"
         @click="prepareEtnSingle"
-      >
-        {{ loading ? t('common.loading') : t('prepare.prepareButton') }}
-      </button>
+      />
     </div>
 
     <!-- Manual mapping -->
@@ -353,12 +369,12 @@
 
       <div style="margin-bottom: 1rem">
         <label class="form-label">{{ t('prepare.sourceFile') }}</label>
-        <select v-model="manualCsvPath" class="form-input">
-          <option value="">{{ t('prepare.selectFile') }}</option>
-          <option v-for="opt in getDatasetPaths()" :key="opt.value" :value="opt.value">
-            {{ opt.label }}
-          </option>
-        </select>
+        <Select
+          v-model="manualCsvPath"
+          :options="[{ label: t('prepare.selectFile'), value: '' }, ...getDatasetPaths()]"
+          option-label="label"
+          option-value="value"
+        />
       </div>
 
       <div>
@@ -371,14 +387,14 @@
         ></textarea>
       </div>
 
-      <button
-        class="btn btn-primary"
-        style="margin-top: 1rem"
-        :disabled="loading || !manualCsvPath || !columnMap"
+      <Button
+        class="prepare-btn"
+        icon="pi pi-cog"
+        :loading="loading"
+        :disabled="loading || trainingLocked || !manualCsvPath || !columnMap"
+        :label="loading ? t('common.loading') : t('prepare.prepareButton')"
         @click="prepareManual"
-      >
-        {{ loading ? t('common.loading') : t('prepare.prepareButton') }}
-      </button>
+      />
     </div>
 
     <!-- Error -->
@@ -453,9 +469,7 @@
         <strong>{{ result.training_dataset.relative_path }}</strong>
         <p class="muted">{{ fmt(result.training_dataset.rows) }} {{ t('data.rows') }}</p>
         <div class="actions">
-          <button class="btn btn-primary" @click="openModelView">
-            {{ t('prepare.openModel') }}
-          </button>
+          <Button :label="t('prepare.openModel')" @click="openModelView" />
         </div>
       </div>
     </div>
@@ -463,10 +477,19 @@
 </template>
 
 <style scoped>
+  .prepare-page {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .mode-shell {
+    margin-bottom: 0;
+  }
+
   .mode-tabs {
     display: flex;
     gap: 4px;
-    border-bottom: 2px solid #e5e7eb;
+    border-bottom: 1px solid var(--border);
     padding-bottom: 0;
   }
   .tab-btn {
@@ -475,7 +498,7 @@
     background: transparent;
     font-size: 14px;
     font-weight: 500;
-    color: #6b7280;
+    color: var(--text-soft);
     cursor: pointer;
     border-bottom: 2px solid transparent;
     margin-bottom: -2px;
@@ -484,16 +507,19 @@
       border-color 0.2s;
   }
   .tab-btn:hover {
-    color: var(--color-primary, #3b82f6);
+    color: var(--primary);
   }
   .tab-btn.active {
-    color: var(--color-primary, #3b82f6);
-    border-bottom-color: var(--color-primary, #3b82f6);
+    color: var(--primary);
+    border-bottom-color: var(--primary);
   }
   .form-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 1rem;
+  }
+  .prepare-btn {
+    margin-top: 1rem;
   }
   .code-textarea {
     font-family: 'Fira Code', 'Consolas', monospace;
@@ -502,6 +528,12 @@
     resize: vertical;
   }
   .result-card {
-    border-left: 4px solid #22c55e;
+    border-left: 4px solid var(--success);
+  }
+
+  @media (max-width: 720px) {
+    .form-grid {
+      grid-template-columns: 1fr;
+    }
   }
 </style>

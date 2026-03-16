@@ -1,4 +1,4 @@
-# Nepremičnine v0.9.0
+# Nepremičnine v0.10.0
 
 > Slovenian real estate valuation platform for buyers, sellers, investors, and companies — powered by machine learning on official ETN transaction data.
 
@@ -6,8 +6,9 @@
 
 - **Guide viewers** through a market-first product with `Nadzorna plošča`, `Napoved`, `Zemljevid`, `Analiza`, and municipality detail pages
 - **Keep admins separate** in a dedicated workbench for uploads, ETN preparation, model training, diagnostics, and user management
+- **Track training live** with stage-aware progress, current model progress, elapsed time, ETA, job history, and completed model run history
 - **Predict** residential property prices using per-type gradient boosting models trained on Slovenian ETN transaction data
-- **Visualize** municipality leaders, recent sales, regional statistics, and transaction dots on a market map with municipality overview markers
+- **Visualize** municipality leaders, recent sales, regional statistics, and transaction dots on a market map with clickable price-band legend chips and a right-side detail drawer
 - **Compare** model estimates with ranked comparable ETN transactions, municipality context, and external listing portals
 - **Analyze** listings against trained models to identify over-, under-, or market-aligned pricing
 - **Export** prediction history and analysis results to CSV
@@ -66,9 +67,10 @@ The first registered user is automatically assigned the **admin** role.
 2. As an admin, upload ETN CSV files from [GURS/ETN](https://www.e-prostor.gov.si/) via the Admin Data page
 3. As an admin, prepare `raw/train.csv` from the Admin Prepare page
 4. As an admin, trigger model training from the Admin Model page using the prepared dataset
-5. As a viewer or admin, predict property prices from the Prediction page
-6. Explore the dashboard, municipality detail pages, and map explorer
-7. Analyze listings and compare them with portal searches
+5. Watch structured live progress during training, then review job history and completed model runs from the same admin page
+6. As a viewer or admin, predict property prices from the Prediction page
+7. Explore the dashboard, municipality detail pages, and map explorer
+8. Analyze listings and compare them with portal searches
 
 ## Production Deployment
 
@@ -183,8 +185,8 @@ nepremicnine/
 | GET | `/api/stats/market-home` | token | Analytical dashboard KPIs, municipality leaders, latest sales |
 | GET | `/api/stats/municipality/{slug}` | token | Municipality spotlight with trend, type mix, recent transactions |
 | GET | `/api/stats/comparables` | token | Ranked comparable transactions for valuation context |
-| GET | `/api/stats/map-overview` | token | Municipality centroids and counts for the overview map |
-| GET | `/api/stats/map-transactions` | token | Individual transactions with map-ready coordinates and `meta.reason` empty-state hints |
+| GET | `/api/stats/map-overview` | token | Municipality centroids, activity counts, and backend-generated price-band legend metadata |
+| GET | `/api/stats/map-transactions` | token | Individual transactions with map-ready coordinates, price bands, detail-drawer fields, and `meta.reason` empty-state hints |
 | GET | `/api/stats/municipalities-by-region` | token | Municipalities in a region (mapping or filtered list) |
 | **Regions** | | | |
 | GET | `/api/regions/municipalities` | token | Municipality list |
@@ -192,8 +194,8 @@ nepremicnine/
 | GET | `/api/regions/regions/stats` | token | Region-aggregated stats |
 | **Training** | | | |
 | POST | `/api/train/start` | admin | Start model training (async) |
-| GET | `/api/train/status/{job_id}` | token | Training job status |
-| GET | `/api/train/jobs` | token | List all training jobs |
+| GET | `/api/train/status/{job_id}` | token | Training job status with stage, per-model progress, elapsed time, and ETA |
+| GET | `/api/train/jobs` | token | List training jobs with structured live progress fields |
 | DELETE | `/api/train/jobs/clear` | admin | Clear training job history |
 | **Prediction** | | | |
 | POST | `/api/predict` | token | Predict property price |
@@ -202,7 +204,7 @@ nepremicnine/
 | **Model** | | | |
 | GET | `/api/model/info` | token | Model metrics & info |
 | GET | `/api/model/importance` | token | Feature importance |
-| GET | `/api/model/runs` | token | Model training history |
+| GET | `/api/model/runs` | admin | Completed model run history with metrics, duration, and source dataset |
 | DELETE | `/api/model/runs/clear` | admin | Clear training history |
 | GET | `/api/model/diagnostics` | token | Diagnostic metrics |
 | **Analysis** | | | |
@@ -269,7 +271,7 @@ Only run the last command if you are comfortable deleting stopped containers, un
 - [Phase 6: v0.3.0 Hardening](docs/PHASE_6_V030.md)
 - [Phase 7: v0.4.0–v0.8.0 Security & Features](docs/PHASE_7_V040_V080.md)
 - [Phase 8–20: v0.8.4–v0.8.16 Upgrades](docs/PHASE_8_14_PLAN.md)
-- [Phase 21: v0.9.0 Consumer Valuation Reset](docs/MASTER.md#v090)
+- [Phase 21: v0.10.0 Market UX & Training Reliability Reset](docs/MASTER.md#v0100)
 - [Deployment Guide](docs/DEPLOYMENT.md)
 
 ## License

@@ -195,6 +195,24 @@ def _compute_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict:
     return {"mae": mae, "rmse": rmse, "r2": r2, "mape": mape, "median_ae": median_ae}
 
 
+def _overall_training_progress(current_model_index: int, total_models: int, fitted: int, total: int) -> int:
+    model_start = 18
+    model_end = 88
+    safe_total_models = max(total_models, 1)
+    safe_total_trees = max(total, 1)
+    completed_models = max(current_model_index - 1, 0)
+    model_fraction = (completed_models + min(max(fitted, 0), safe_total_trees) / safe_total_trees) / safe_total_models
+    return int(round(model_start + (model_end - model_start) * model_fraction))
+
+
+def _normalize_model_label(label: str) -> str:
+    if label == "global":
+        return "global"
+    if label.startswith("type:"):
+        return label.split(":", 1)[1]
+    return label
+
+
 def _train_single_model(
     pipeline: Pipeline,
     X_train: pd.DataFrame,
@@ -254,10 +272,23 @@ def _train_single_model(
 def train_from_csv(
     csv_path: str,
     progress_callback: Callable | None = None,
+    status_callback: Callable | None = None,
 ) -> dict[str, Any]:
     """Train per-type + global models from a training CSV. Returns model metadata."""
     start = time.time()
+
+    def emit_status(stage: str, progress: int, **extra):
+        if status_callback:
+            status_callback(
+                stage=stage,
+                progress=progress,
+                elapsed_sec=round(time.time() - start, 2),
+                **extra,
+            )
+
+    emit_status("dataset_load", 2)
     df = read_csv_flexible(csv_path)
+    emit_status("feature_prep", 8, rows=len(df))
     df = enrich_training_df(df)
 
     # Clean price
@@ -277,8 +308,10 @@ def train_from_csv(
 
     # Filter features by fill rate
     global_num, global_cat = _filter_features(X, NUMERIC_FEATURES, CATEGORICAL_FEATURES)
+    emit_status("feature_prep", 14, rows=len(df))
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    emit_status("training_setup", 18, rows=len(df))
 
     # Compute group medians from TRAINING SET ONLY (prevent data leakage)
     train_with_price = X_train.copy()
@@ -305,7 +338,54 @@ def train_from_csv(
     X_test["price_per_m2_type"] = X_test.get("property_type", pd.Series()).map(type_medians).fillna(global_median_ppm2)
 
     # Global model
+    model_start_times: dict[str, float] = {}
     global_pipeline = _build_pipeline(global_num, global_cat, len(X_train))
+    per_type_models: dict[str, Pipeline] = {}
+    per_type_metrics: dict[str, dict] = {}
+
+    eligible: list[str] = []
+    if "property_type" in X_train.columns:
+        type_counts = X_train["property_type"].value_counts()
+        eligible = type_counts[type_counts >= MIN_SAMPLES_PER_TYPE].index.tolist()
+
+    total_models = 1 + len(eligible)
+
+    def training_progress(label: str, fitted_trees: int, total_trees: int):
+        if progress_callback:
+            progress_callback(label, fitted_trees, total_trees)
+
+        current_model = _normalize_model_label(label)
+        current_index = 1 if label == "global" else eligible.index(current_model) + 2
+        now = time.time()
+        model_started = model_start_times.setdefault(label, now)
+        model_elapsed = max(now - model_started, 0.001)
+        trees_per_sec = fitted_trees / model_elapsed if fitted_trees > 0 else None
+        eta_sec = ((total_trees - fitted_trees) / trees_per_sec) if trees_per_sec else None
+        emit_status(
+            "global_model" if label == "global" else "per_type_models",
+            _overall_training_progress(current_index, total_models, fitted_trees, total_trees),
+            rows=len(df),
+            current_model=current_model,
+            current_model_index=current_index,
+            total_models=total_models,
+            current_model_progress=int(round((fitted_trees / max(total_trees, 1)) * 100)),
+            fitted_trees=fitted_trees,
+            total_trees=total_trees,
+            eta_sec=round(float(eta_sec), 2) if eta_sec is not None else None,
+            trees_per_sec=round(float(trees_per_sec), 2) if trees_per_sec is not None else None,
+        )
+
+    emit_status(
+        "global_model",
+        18,
+        rows=len(df),
+        current_model="global",
+        current_model_index=1,
+        total_models=total_models,
+        current_model_progress=0,
+        fitted_trees=0,
+        total_trees=global_pipeline.named_steps["regressor"].max_iter,
+    )
     global_result = _train_single_model(
         global_pipeline,
         X_train,
@@ -313,17 +393,11 @@ def train_from_csv(
         X_test,
         y_test,
         "global",
-        progress_callback,
+        training_progress,
     )
 
     # Per-type models
-    per_type_models: dict[str, Pipeline] = {}
-    per_type_metrics: dict[str, dict] = {}
-
-    if "property_type" in X_train.columns:
-        type_counts = X_train["property_type"].value_counts()
-        eligible = type_counts[type_counts >= MIN_SAMPLES_PER_TYPE].index.tolist()
-
+    if eligible:
         for ptype in eligible:
             mask_train = X_train["property_type"] == ptype
             mask_test = X_test["property_type"] == ptype
@@ -337,6 +411,19 @@ def train_from_csv(
 
             pt_num, pt_cat = _filter_features(Xt, PERTYPE_NUMERIC, PERTYPE_CATEGORICAL)
             pt_pipeline = _build_pipeline(pt_num, pt_cat, len(Xt))
+            emit_status(
+                "per_type_models",
+                _overall_training_progress(
+                    eligible.index(ptype) + 2, total_models, 0, pt_pipeline.named_steps["regressor"].max_iter
+                ),
+                rows=len(df),
+                current_model=str(ptype),
+                current_model_index=eligible.index(ptype) + 2,
+                total_models=total_models,
+                current_model_progress=0,
+                fitted_trees=0,
+                total_trees=pt_pipeline.named_steps["regressor"].max_iter,
+            )
             pt_result = _train_single_model(
                 pt_pipeline,
                 Xt,
@@ -344,7 +431,7 @@ def train_from_csv(
                 Xte,
                 yte,
                 f"type:{ptype}",
-                progress_callback,
+                training_progress,
             )
             per_type_models[ptype] = {
                 "pipeline": pt_pipeline,
@@ -352,8 +439,11 @@ def train_from_csv(
                 "categorical_features": pt_cat,
             }
             per_type_metrics[ptype] = pt_result["metrics"]
+    else:
+        emit_status("per_type_models", 88, rows=len(df), total_models=total_models)
 
     # Per-region metrics (not separate models)
+    emit_status("evaluation", 92, rows=len(df), total_models=total_models)
     per_region_metrics: dict[str, dict] = {}
     if "statistical_region" in X_test.columns:
         y_pred_all = global_pipeline.predict(X_test)
@@ -380,6 +470,7 @@ def train_from_csv(
         combined_metrics = global_result["metrics"]
 
     # Municipality coordinates
+    emit_status("artifact_save", 96, rows=len(df), total_models=total_models)
     coords_by_municipality: dict[str, dict] = {}
     coord_key = "municipality_normalized" if "municipality_normalized" in df.columns else "municipality"
     for col_pair in [(coord_key, "latitude", "longitude")]:
@@ -397,8 +488,9 @@ def train_from_csv(
 
     # Save artifact
     os.makedirs(MODEL_DIR, exist_ok=True)
+    emit_status("finalizing", 99, rows=len(df), total_models=total_models)
     artifact = {
-        "version": "3.5",
+        "version": "4.0",
         "global_model": {
             "pipeline": global_pipeline,
             "numeric_features": global_num,
@@ -441,6 +533,7 @@ def train_from_csv(
         "combined_metrics": combined_metrics,
         "per_type_count": len(per_type_models),
         "used_features": global_num + global_cat,
+        "model_type": "HistGradientBoostingRegressor",
     }
 
 

@@ -2,12 +2,21 @@
   import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
   import { useI18n } from 'vue-i18n'
   import { useRoute, useRouter } from 'vue-router'
+  import Button from 'primevue/button'
+  import Column from 'primevue/column'
+  import DataTable from 'primevue/datatable'
+  import Drawer from 'primevue/drawer'
+  import Select from 'primevue/select'
+  import Tag from 'primevue/tag'
   import L from 'leaflet'
   import 'leaflet/dist/leaflet.css'
-  import api from '../composables/useApi'
-  import AppIcon from '../components/AppIcon.vue'
+  import EmptyState from '../components/EmptyState.vue'
   import LoadingSpinner from '../components/LoadingSpinner.vue'
+  import MetricCard from '../components/MetricCard.vue'
+  import PageHeader from '../components/PageHeader.vue'
+  import api from '../composables/useApi'
   import { getApiErrorMessage } from '../utils/apiError'
+  import { buildNepremicnineSearchUrl } from '../utils/externalSearch'
   import { formatCurrency, formatNumber } from '../utils/format'
   import { municipalitySlug } from '../utils/municipality'
   import { getPropertyTypeLabel } from '../utils/propertyType'
@@ -23,10 +32,12 @@
   const loading = ref(false)
   const error = ref('')
   const mapMetaReason = ref(null)
+  const mapLegend = ref(null)
   const selectedType = ref('')
   const selectedRegion = ref('')
   const selectedYear = ref('')
   const selectedMunicipality = ref('')
+  const selectedPriceBand = ref('')
   const viewMode = ref('transactions')
   const initialMunicipality = ref('')
 
@@ -37,45 +48,100 @@
   const availableYears = ref([])
   const regionMunicipalities = ref([])
 
-  const TYPE_COLORS = {
-    stanovanje: '#2563eb',
-    hisa: '#16a34a',
-    poslovni_prostor: '#f59e0b',
-    garaza: '#64748b',
-    turisticni: '#ef4444',
-    gostinstvo: '#f97316',
-    industrijski: '#0f766e',
-    kmetijsko: '#65a30d',
+  const drawerVisible = ref(false)
+  const drawerMode = ref('transaction')
+  const selectedRecord = ref(null)
+
+  const bandColors = {
+    low: '#22c55e',
+    mid: '#f59e0b',
+    high: '#ef4444',
   }
 
-  const DEFAULT_COLOR = '#2563eb'
+  const overviewColor = '#3b82f6'
 
-  const markersData = computed(() => municipalities.value)
+  const markersData = computed(() =>
+    viewMode.value === 'transactions' ? transactions.value : municipalities.value,
+  )
 
-  const totalCount = computed(() => {
-    if (viewMode.value === 'transactions') return transactions.value.length
-    return municipalities.value.reduce((sum, item) => sum + item.count, 0)
-  })
+  const totalCount = computed(() =>
+    viewMode.value === 'transactions'
+      ? transactions.value.length
+      : municipalities.value.reduce((sum, item) => sum + item.count, 0),
+  )
 
   const avgPrice = computed(() => {
-    if (viewMode.value === 'transactions') {
-      if (!transactions.value.length) return null
-      return (
-        transactions.value.reduce((sum, item) => sum + (item.price_eur || 0), 0) /
-        transactions.value.length
-      )
-    }
-
-    const items = municipalities.value.filter((item) => item.avg_price)
-    if (!items.length) return null
-
-    return (
-      items.reduce((sum, item) => sum + item.avg_price * item.count, 0) /
-      items.reduce((sum, item) => sum + item.count, 0)
-    )
+    const values =
+      viewMode.value === 'transactions'
+        ? transactions.value.map((item) => item.price_eur).filter(Boolean)
+        : municipalities.value.map((item) => item.avg_price).filter(Boolean)
+    if (!values.length) return null
+    return values.reduce((sum, value) => sum + value, 0) / values.length
   })
 
-  const topMunicipality = computed(() => municipalities.value[0] || null)
+  const topMunicipality = computed(() => municipalities.value[0] || transactions.value[0] || null)
+
+  const activityFeed = computed(() =>
+    viewMode.value === 'transactions'
+      ? transactions.value.slice(0, 10)
+      : municipalities.value.slice(0, 10),
+  )
+
+  const bandOptions = computed(() => [
+    { label: t('map.allBands'), value: '', count: totalCount.value },
+    ...(mapLegend.value
+      ? ['low', 'mid', 'high'].map((key) => ({
+          label: t(`map.${key}`),
+          value: key,
+          count: mapLegend.value?.counts?.[key] || 0,
+          range: bandRangeLabel(key),
+        }))
+      : []),
+  ])
+
+  const propertyTypeOptions = computed(() => [
+    { label: t('map.allTypes'), value: '' },
+    ...propertyTypes.value.map((item) => ({
+      label: `${formatType(item.type)} (${fmt(item.count)})`,
+      value: item.type,
+    })),
+  ])
+
+  const regionOptions = computed(() => [
+    { label: t('map.allRegions'), value: '' },
+    ...regionStats.value.map((item) => ({ label: item.region, value: item.region })),
+  ])
+
+  const yearOptions = computed(() => [
+    { label: t('map.allYears'), value: '' },
+    ...availableYears.value.map((year) => ({ label: String(year), value: String(year) })),
+  ])
+
+  const municipalityOptions = computed(() => [
+    { label: t('map.allMunicipalities'), value: '' },
+    ...regionMunicipalities.value.map((item) => ({ label: item, value: item })),
+  ])
+
+  const comparisonUrl = computed(() => {
+    if (!selectedRecord.value) return '#'
+    return buildNepremicnineSearchUrl({
+      municipality: selectedRecord.value.municipality,
+      propertyType:
+        drawerMode.value === 'transaction'
+          ? formatType(selectedRecord.value.property_type)
+          : formatType(selectedType.value || 'stanovanje'),
+      rooms: selectedRecord.value.rooms,
+      sizeM2: selectedRecord.value.uporabna_povrsina || selectedRecord.value.size_m2,
+    })
+  })
+
+  const mapStateMessage = computed(() => {
+    if (!mapMetaReason.value) return ''
+    if (mapMetaReason.value === 'no_train_dataset') return t('map.noPreparedData')
+    if (mapMetaReason.value === 'no_coordinates') return t('map.noCoordinates')
+    if (mapMetaReason.value === 'no_matches') return t('map.noMatches')
+    return t('common.noData')
+  })
 
   function fmt(value, decimals = 0) {
     return formatNumber(value, { maximumFractionDigits: decimals })
@@ -92,63 +158,53 @@
     return getPropertyTypeLabel(value, t)
   }
 
-  function formatTransactionSummary(item) {
-    return `${formatType(item.property_type) || '—'} · ${item.year || '—'}`
+  function bandColor(key) {
+    return bandColors[key] || overviewColor
   }
 
-  const activeChips = computed(() =>
-    [
-      selectedType.value ? formatType(selectedType.value) : '',
-      selectedRegion.value,
-      selectedYear.value,
-      selectedMunicipality.value,
-    ].filter(Boolean),
-  )
-
-  const activityFeed = computed(() =>
-    viewMode.value === 'transactions'
-      ? transactions.value.slice(0, 12)
-      : municipalities.value.slice(0, 12),
-  )
-
-  const mapStateMessage = computed(() => {
-    if (!mapMetaReason.value) return ''
-    if (mapMetaReason.value === 'no_train_dataset') return t('map.noPreparedData')
-    if (mapMetaReason.value === 'no_coordinates') return t('map.noCoordinates')
-    if (mapMetaReason.value === 'no_matches') return t('map.noMatches')
-    return t('common.noData')
-  })
+  function bandRangeLabel(key) {
+    const thresholds = mapLegend.value?.thresholds
+    if (!thresholds) return ''
+    if (key === 'low') return `≤ ${fmtCurrency(thresholds.low_max)}`
+    if (key === 'mid')
+      return `${fmtCurrency(thresholds.low_max)} - ${fmtCurrency(thresholds.mid_max)}`
+    return `≥ ${fmtCurrency(thresholds.mid_max)}`
+  }
 
   function markerRadius(count) {
-    if (!totalCount.value) return 6
+    if (!totalCount.value) return 8
     const ratio = count / totalCount.value
-    return Math.max(5, Math.min(30, 6 + ratio * 420))
-  }
-
-  function priceGradientColor(pricePerM2) {
-    const min = 500
-    const max = 5000
-    const clamped = Math.max(min, Math.min(max, pricePerM2 || min))
-    const ratio = (clamped - min) / (max - min)
-    if (ratio < 0.5) {
-      const r = Math.round(255 * (ratio * 2))
-      return `rgb(${r}, 190, 60)`
-    }
-    const g = Math.round(190 * (1 - (ratio - 0.5) * 2))
-    return `rgb(255, ${g}, 60)`
+    return Math.max(7, Math.min(28, 8 + ratio * 280))
   }
 
   function initMap() {
     if (!mapContainer.value) return
 
-    map = L.map(mapContainer.value, { preferCanvas: true }).setView([46.1512, 14.9955], 8)
+    map = L.map(mapContainer.value, { preferCanvas: true, zoomControl: true }).setView(
+      [46.1512, 14.9955],
+      8,
+    )
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a>',
+      attribution: '&copy; OpenStreetMap',
       maxZoom: 18,
     }).addTo(map)
 
     markersLayer = L.layerGroup().addTo(map)
+  }
+
+  function focusMapItem(item) {
+    if (!map || !item?.lat || !item?.lon) return
+    map.flyTo([item.lat, item.lon], viewMode.value === 'transactions' ? 11 : 9, {
+      duration: 0.45,
+    })
+  }
+
+  function openDrawer(item, mode = 'transaction') {
+    selectedRecord.value = item
+    drawerMode.value = mode
+    drawerVisible.value = true
+    focusMapItem(item)
   }
 
   function renderTransactionMarkers() {
@@ -156,30 +212,16 @@
     markersLayer.clearLayers()
 
     for (const item of transactions.value) {
-      const color = priceGradientColor(
-        item.price_per_m2 || (item.size_m2 ? item.price_eur / item.size_m2 : null),
-      )
-
       const marker = L.circleMarker([item.lat, item.lon], {
         radius: 5,
-        fillColor: color,
+        fillColor: bandColor(item.price_band),
         color: '#0f172a',
-        weight: 0.6,
-        opacity: 0.9,
-        fillOpacity: 0.78,
+        weight: 0.9,
+        opacity: 0.95,
+        fillOpacity: 0.82,
       })
 
-      marker.bindPopup(
-        `<div style="font-size:13px;line-height:1.6;min-width:160px">
-          <strong>${item.municipality || '—'}</strong><br>
-          ${t('map.price')}: <b>${fmtCurrency(item.price_eur)}</b><br>
-          ${t('predict.size')}: <b>${fmt(item.size_m2, 1)} m²</b><br>
-          €/m²: <b>${fmtCurrency(item.price_per_m2)}</b><br>
-          ${item.property_type ? `${t('map.propertyType')}: ${formatType(item.property_type)}<br>` : ''}
-          ${item.year ? `${t('map.year')}: ${item.year}` : ''}
-        </div>`,
-      )
-
+      marker.on('click', () => openDrawer(item, 'transaction'))
       markersLayer.addLayer(marker)
     }
   }
@@ -188,29 +230,23 @@
     if (!markersLayer) return
     markersLayer.clearLayers()
 
-    for (const item of markersData.value) {
+    for (const item of municipalities.value) {
       const marker = L.circleMarker([item.lat, item.lon], {
         radius: markerRadius(item.count),
-        fillColor: TYPE_COLORS[selectedType.value] || DEFAULT_COLOR,
+        fillColor: bandColor(item.price_band) || overviewColor,
         color: '#16324f',
-        weight: 1,
-        opacity: 0.9,
+        weight: 1.1,
+        opacity: 0.92,
         fillOpacity: 0.58,
       })
 
-      marker.bindPopup(
-        `<div style="font-size:13px;line-height:1.6;min-width:150px">
-          <strong>${item.municipality}</strong><br>
-          ${t('map.transactions')}: <b>${fmt(item.count)}</b><br>
-          ${t('map.avgPrice')}: <b>${fmtCurrency(item.avg_price)}</b>
-        </div>`,
-      )
-
+      marker.on('click', () => openDrawer(item, 'overview'))
       markersLayer.addLayer(marker)
     }
   }
 
   function renderMarkers() {
+    if (!markersLayer) return
     if (viewMode.value === 'transactions') {
       renderTransactionMarkers()
     } else {
@@ -222,24 +258,26 @@
     const params = { limit: 5000 }
     if (selectedType.value) params.property_type = selectedType.value
     if (selectedRegion.value) params.statistical_region = selectedRegion.value
-    if (selectedYear.value) params.year = parseInt(selectedYear.value, 10)
+    if (selectedYear.value) params.year = selectedYear.value
     if (selectedMunicipality.value) params.municipality = selectedMunicipality.value
+    if (selectedPriceBand.value) params.price_band = selectedPriceBand.value
 
     const { data } = await api.get('/api/stats/map-transactions', { params })
     mapMetaReason.value = data.meta?.reason || null
-    transactions.value = [...(data.transactions || [])].sort((left, right) => {
-      if ((right.year || '') !== (left.year || ''))
-        return String(right.year || '').localeCompare(String(left.year || ''))
-      return (right.price_eur || 0) - (left.price_eur || 0)
-    })
+    mapLegend.value = data.meta?.legend || null
+    transactions.value = data.transactions || []
   }
 
   async function fetchOverviewMarkers() {
     const params = {}
     if (selectedType.value) params.property_type = selectedType.value
+    if (selectedRegion.value) params.statistical_region = selectedRegion.value
+    if (selectedYear.value) params.year = selectedYear.value
+    if (selectedPriceBand.value) params.price_band = selectedPriceBand.value
 
     const { data } = await api.get('/api/stats/map-overview', { params })
     mapMetaReason.value = data.meta?.reason || null
+    mapLegend.value = data.meta?.legend || null
     municipalities.value = data.municipalities || []
   }
 
@@ -266,7 +304,6 @@
 
     try {
       const params = selectedType.value ? { property_type: selectedType.value } : {}
-
       const requests = [api.get('/api/stats/overview', { params }), api.get('/api/stats/regions')]
 
       if (viewMode.value === 'transactions') {
@@ -276,7 +313,6 @@
       }
 
       const [overviewRes, regionsRes] = await Promise.all(requests)
-
       propertyTypes.value = overviewRes.data.property_types || []
       regionStats.value = regionsRes.data || []
 
@@ -306,20 +342,26 @@
     selectedRegion.value = ''
     selectedYear.value = ''
     selectedMunicipality.value = ''
+    selectedPriceBand.value = ''
   }
 
-  function openMunicipality(name) {
+  function openMunicipality(name = selectedRecord.value?.municipality) {
+    if (!name) return
     router.push(`/obcine/${municipalitySlug(name)}`)
   }
 
-  function useForPrediction(item = null) {
+  function useForPrediction(item = selectedRecord.value) {
     router.push({
       name: 'prediction',
       query: {
         municipality:
-          item?.municipality || selectedMunicipality.value || topMunicipality.value?.municipality || '',
+          item?.municipality ||
+          selectedMunicipality.value ||
+          topMunicipality.value?.municipality ||
+          '',
         property_type: item?.property_type || selectedType.value || 'stanovanje',
         size_m2: item?.size_m2 || '',
+        year_built: item?.year_built || '',
         price_eur: item?.price_eur || '',
       },
     })
@@ -329,22 +371,21 @@
     selectedType.value = route.query.property_type ? String(route.query.property_type) : ''
     selectedRegion.value = route.query.region ? String(route.query.region) : ''
     selectedYear.value = route.query.year ? String(route.query.year) : ''
+    selectedPriceBand.value = route.query.price_band ? String(route.query.price_band) : ''
     initialMunicipality.value = route.query.municipality ? String(route.query.municipality) : ''
     selectedMunicipality.value = initialMunicipality.value
     viewMode.value = route.query.view === 'overview' ? 'overview' : 'transactions'
   }
 
-  watch(selectedType, () => fetchData())
-  watch(viewMode, () => fetchData())
-  watch(selectedYear, () => {
-    if (viewMode.value === 'transactions') fetchData()
-  })
+  watch([selectedType, selectedYear, selectedPriceBand, viewMode], () => fetchData())
+
   watch(selectedRegion, async () => {
     selectedMunicipality.value = initialMunicipality.value
     initialMunicipality.value = ''
     await fetchMunicipalitiesByRegion()
-    if (viewMode.value === 'transactions') fetchData()
+    fetchData()
   })
+
   watch(selectedMunicipality, () => {
     if (viewMode.value === 'transactions') fetchData()
   })
@@ -366,517 +407,600 @@
 
 <template>
   <div class="map-page">
-    <section class="map-hero">
-      <div>
-        <span class="eyebrow">{{ t('map.title') }}</span>
-        <h1>{{ t('map.explorerTitle') }}</h1>
-        <p>{{ t('map.explorerBody') }}</p>
-      </div>
+    <section class="card map-hero">
+      <PageHeader
+        :eyebrow="t('map.title')"
+        :title="t('map.explorerTitle')"
+        :description="t('map.explorerBody')"
+      >
+        <template #actions>
+          <Button
+            icon="pi pi-chart-line"
+            :label="t('map.useFiltersForPrediction')"
+            @click="useForPrediction()"
+          />
+          <Button
+            v-if="topMunicipality?.municipality"
+            severity="secondary"
+            outlined
+            icon="pi pi-building"
+            :label="t('map.openTopMunicipality')"
+            @click="openMunicipality(topMunicipality.municipality)"
+          />
+        </template>
+      </PageHeader>
 
-      <div class="hero-actions">
-        <button class="hero-btn primary" @click="useForPrediction()">
-          <AppIcon name="prediction" :size="16" />
-          <span>{{ t('map.useFiltersForPrediction') }}</span>
-        </button>
-        <button
-          v-if="topMunicipality?.municipality"
-          class="hero-btn"
-          @click="openMunicipality(topMunicipality.municipality)"
-        >
-          <AppIcon name="market" :size="16" />
-          <span>{{ t('map.openTopMunicipality') }}</span>
-        </button>
+      <div class="metric-band">
+        <MetricCard :label="t('map.totalTransactions')" :value="fmt(totalCount)" />
+        <MetricCard :label="t('map.avgPrice')" :value="fmtCurrency(avgPrice)" />
+        <MetricCard :label="t('map.municipalities')" :value="fmt(municipalities.length)" />
+        <MetricCard :label="t('map.regions')" :value="fmt(regionStats.length)" />
       </div>
     </section>
 
-    <section class="panel filters-panel">
+    <section class="card filters-panel">
+      <PageHeader
+        compact
+        :eyebrow="t('map.legend')"
+        :title="t('map.filterTitle')"
+        :description="t('map.filterHint')"
+      />
+
       <div class="filters-grid">
         <label class="field">
           <span>{{ t('map.viewMode') }}</span>
-          <select v-model="viewMode" class="form-input">
-            <option value="transactions">{{ t('map.transactionView') }}</option>
-            <option value="overview">{{ t('map.overviewMode') }}</option>
-          </select>
+          <Select
+            v-model="viewMode"
+            :options="[
+              { label: t('map.transactionView'), value: 'transactions' },
+              { label: t('map.overviewMode'), value: 'overview' },
+            ]"
+            option-label="label"
+            option-value="value"
+          />
         </label>
 
         <label class="field">
           <span>{{ t('map.propertyType') }}</span>
-          <select v-model="selectedType" class="form-input">
-            <option value="">{{ t('map.allTypes') }}</option>
-            <option v-for="item in propertyTypes" :key="item.type" :value="item.type">
-              {{ formatType(item.type) }} ({{ fmt(item.count) }})
-            </option>
-          </select>
+          <Select
+            v-model="selectedType"
+            :options="propertyTypeOptions"
+            option-label="label"
+            option-value="value"
+          />
         </label>
 
-        <label v-if="viewMode === 'transactions'" class="field">
+        <label class="field">
           <span>{{ t('map.regionFilter') }}</span>
-          <select v-model="selectedRegion" class="form-input">
-            <option value="">{{ t('map.allRegions') }}</option>
-            <option v-for="item in regionStats" :key="item.region" :value="item.region">
-              {{ item.region }}
-            </option>
-          </select>
+          <Select
+            v-model="selectedRegion"
+            :options="regionOptions"
+            option-label="label"
+            option-value="value"
+          />
         </label>
 
-        <label v-if="viewMode === 'transactions'" class="field">
+        <label class="field">
           <span>{{ t('map.yearFilter') }}</span>
-          <select v-model="selectedYear" class="form-input">
-            <option value="">{{ t('map.allYears') }}</option>
-            <option v-for="year in availableYears" :key="year" :value="year">{{ year }}</option>
-          </select>
+          <Select
+            v-model="selectedYear"
+            :options="yearOptions"
+            option-label="label"
+            option-value="value"
+          />
         </label>
 
         <label v-if="viewMode === 'transactions' && regionMunicipalities.length" class="field">
           <span>{{ t('map.municipalityFilter') }}</span>
-          <select v-model="selectedMunicipality" class="form-input">
-            <option value="">{{ t('map.allMunicipalities') }}</option>
-            <option v-for="item in regionMunicipalities" :key="item" :value="item">
-              {{ item }}
-            </option>
-          </select>
+          <Select
+            v-model="selectedMunicipality"
+            :options="municipalityOptions"
+            option-label="label"
+            option-value="value"
+          />
         </label>
       </div>
 
-      <div class="filter-footer">
-        <div class="chip-row">
-          <span v-for="chip in activeChips" :key="chip" class="chip">{{ chip }}</span>
-          <span v-if="!activeChips.length" class="chip muted">{{ t('map.noActiveFilters') }}</span>
-        </div>
-
-        <button class="ghost-btn" @click="clearFilters">
-          {{ t('map.clearFilter') }}
+      <div class="legend-strip">
+        <button
+          v-for="band in bandOptions"
+          :key="band.value || 'all'"
+          class="legend-chip"
+          :class="{ active: selectedPriceBand === band.value }"
+          @click="selectedPriceBand = band.value"
+        >
+          <span
+            v-if="band.value"
+            class="legend-dot"
+            :style="{ backgroundColor: bandColor(band.value) }"
+          ></span>
+          <span class="legend-copy">
+            <strong>{{ band.label }}</strong>
+            <small> {{ band.range || t('map.allBandsHint') }} · {{ fmt(band.count) }} </small>
+          </span>
         </button>
+
+        <Button
+          severity="secondary"
+          outlined
+          icon="pi pi-filter-slash"
+          :label="t('map.clearFilter')"
+          @click="clearFilters"
+        />
       </div>
     </section>
 
-    <div v-if="loading" class="state-card">
+    <div v-if="loading" class="card state-card">
       <LoadingSpinner :label="t('map.loading')" />
     </div>
-    <p v-else-if="error" class="state-card error-text">{{ error }}</p>
-    <p v-else-if="mapStateMessage" class="state-card muted">{{ mapStateMessage }}</p>
-
-    <section class="metric-band">
-      <article class="metric-card">
-        <span>{{ t('map.totalTransactions') }}</span>
-        <strong>{{ fmt(totalCount) }}</strong>
-      </article>
-      <article class="metric-card">
-        <span>{{ t('map.avgPrice') }}</span>
-        <strong>{{ fmtCurrency(avgPrice) }}</strong>
-      </article>
-      <article class="metric-card">
-        <span>{{ t('map.municipalities') }}</span>
-        <strong>{{ fmt(markersData.length) }}</strong>
-      </article>
-      <article class="metric-card">
-        <span>{{ t('map.regions') }}</span>
-        <strong>{{ fmt(regionStats.length) }}</strong>
-      </article>
-    </section>
+    <div v-else-if="error" class="card state-card">
+      <EmptyState icon="⚠️" :message="error" />
+    </div>
+    <div v-else-if="mapStateMessage" class="card state-card">
+      <EmptyState icon="🗺️" :message="mapStateMessage" />
+    </div>
 
     <section class="explorer-grid">
-      <article class="panel map-panel">
+      <article class="card map-panel">
         <div ref="mapContainer" class="map-container"></div>
-
-        <div class="map-legend">
-          <span class="legend-title">{{ t('map.legend') }}</span>
-          <span class="legend-item">
-            <span class="legend-dot" style="background: rgb(0, 190, 60)"></span>
-            {{ t('map.cheap') }}
-          </span>
-          <span class="legend-item">
-            <span class="legend-dot" style="background: rgb(255, 190, 60)"></span>
-            {{ t('map.mid') }}
-          </span>
-          <span class="legend-item">
-            <span class="legend-dot" style="background: rgb(255, 0, 60)"></span>
-            {{ t('map.expensive') }}
-          </span>
-          <span class="legend-note">
-            {{ viewMode === 'transactions' ? t('map.priceGradientHint') : t('map.sizeHint') }}
-          </span>
-        </div>
       </article>
 
-      <aside class="panel rail-panel">
-        <div class="rail-head">
-          <div>
-            <span class="eyebrow subtle">{{ t('map.transactions') }}</span>
-            <h2>
-              {{ viewMode === 'transactions' ? t('map.activityFeed') : t('map.topMunicipalities') }}
-            </h2>
-          </div>
-        </div>
+      <aside class="card rail-panel">
+        <PageHeader
+          compact
+          :eyebrow="
+            viewMode === 'transactions' ? t('map.transactions') : t('map.topMunicipalities')
+          "
+          :title="viewMode === 'transactions' ? t('map.activityFeed') : t('map.topMunicipalities')"
+          :description="viewMode === 'transactions' ? t('map.drawerHint') : t('map.overviewHint')"
+        />
 
         <div v-if="activityFeed.length" class="rail-list">
-          <article
+          <button
             v-for="item in activityFeed"
-            :key="
-              viewMode === 'transactions'
-                ? `${item.municipality}-${item.price_eur}-${item.year}`
-                : item.slug
-            "
+            :key="item.id || item.slug"
             class="rail-card"
+            @click="openDrawer(item, viewMode === 'transactions' ? 'transaction' : 'overview')"
           >
-            <template v-if="viewMode === 'transactions'">
-              <div class="rail-copy">
-                <strong>{{ item.municipality || '—' }}</strong>
-                <small>{{ formatTransactionSummary(item) }}</small>
-              </div>
-              <div class="rail-metric">
-                <strong>{{ fmtCurrency(item.price_eur) }}</strong>
-                <small>{{ fmtCurrency(item.price_per_m2) }}/m²</small>
-              </div>
-              <div class="rail-actions">
-                <button class="mini-btn" @click="openMunicipality(item.municipality)">
-                  {{ t('map.openMunicipality') }}
-                </button>
-                <button class="mini-btn primary" @click="useForPrediction(item)">
-                  {{ t('map.useForPrediction') }}
-                </button>
-              </div>
-            </template>
-
-            <template v-else>
-              <div class="rail-copy">
-                <strong>{{ item.municipality }}</strong>
-                <small>{{ fmt(item.count) }} {{ t('map.transactions') }}</small>
-              </div>
-              <div class="rail-metric">
-                <strong>{{ fmtCurrency(item.avg_price) }}</strong>
-              </div>
-              <div class="rail-actions">
-                <button class="mini-btn" @click="openMunicipality(item.municipality)">
-                  {{ t('map.openMunicipality') }}
-                </button>
-              </div>
-            </template>
-          </article>
+            <div class="rail-card-top">
+              <strong>{{ item.municipality }}</strong>
+              <Tag
+                v-if="item.price_band"
+                :value="t(`map.${item.price_band}`)"
+                :severity="
+                  item.price_band === 'high'
+                    ? 'danger'
+                    : item.price_band === 'mid'
+                      ? 'warn'
+                      : 'success'
+                "
+              />
+            </div>
+            <p>
+              {{
+                viewMode === 'transactions'
+                  ? `${formatType(item.property_type)} · ${fmt(item.size_m2, 1)} m²`
+                  : `${fmt(item.count)} ${t('map.transactions')}`
+              }}
+            </p>
+            <div class="rail-card-foot">
+              <strong>
+                {{
+                  viewMode === 'transactions'
+                    ? fmtCurrency(item.price_eur)
+                    : fmtCurrency(item.avg_price_per_m2)
+                }}
+              </strong>
+              <small>
+                {{
+                  viewMode === 'transactions'
+                    ? `${fmtCurrency(item.price_per_m2)}/m²`
+                    : item.region || '—'
+                }}
+              </small>
+            </div>
+          </button>
         </div>
-        <p v-else class="empty-text">{{ t('common.noData') }}</p>
+        <EmptyState v-else icon="📍" :message="t('common.noData')" />
       </aside>
     </section>
 
-    <section class="panel table-panel">
-      <div class="rail-head">
-        <div>
-          <span class="eyebrow subtle">{{ t('map.regionStats') }}</span>
-          <h2>{{ t('map.regionSnapshot') }}</h2>
+    <section class="card">
+      <PageHeader
+        compact
+        :eyebrow="t('map.regionStats')"
+        :title="t('map.regionSnapshot')"
+        :description="t('map.regionSnapshotHint')"
+      />
+
+      <DataTable
+        :value="regionStats.slice(0, 10)"
+        size="small"
+        striped-rows
+        table-style="min-width: 100%"
+      >
+        <Column field="region" :header="t('map.region')" />
+        <Column field="count" :header="t('map.count')">
+          <template #body="{ data }">{{ fmt(data.count) }}</template>
+        </Column>
+        <Column field="avg_price" :header="t('map.avgPrice')">
+          <template #body="{ data }">{{ fmtCurrency(data.avg_price) }}</template>
+        </Column>
+        <Column field="median_price" :header="t('map.medianPrice')">
+          <template #body="{ data }">{{ fmtCurrency(data.median_price) }}</template>
+        </Column>
+        <Column field="avg_price_per_m2" header="€/m²">
+          <template #body="{ data }">{{ fmtCurrency(data.avg_price_per_m2) }}</template>
+        </Column>
+      </DataTable>
+    </section>
+
+    <Drawer v-model:visible="drawerVisible" position="right" class="map-drawer">
+      <template #header>
+        <div class="drawer-header">
+          <div>
+            <span class="eyebrow">{{
+              drawerMode === 'transaction' ? t('map.transactions') : t('map.topMunicipalities')
+            }}</span>
+            <h2>{{ selectedRecord?.municipality || t('common.noData') }}</h2>
+          </div>
+          <Tag
+            v-if="selectedRecord?.price_band"
+            :value="t(`map.${selectedRecord.price_band}`)"
+            :severity="
+              selectedRecord.price_band === 'high'
+                ? 'danger'
+                : selectedRecord.price_band === 'mid'
+                  ? 'warn'
+                  : 'success'
+            "
+          />
+        </div>
+      </template>
+
+      <div v-if="selectedRecord" class="drawer-body">
+        <div class="drawer-metrics">
+          <MetricCard
+            :label="t('map.price')"
+            :value="
+              fmtCurrency(
+                drawerMode === 'transaction' ? selectedRecord.price_eur : selectedRecord.avg_price,
+              )
+            "
+          />
+          <MetricCard
+            :label="t('dashboard.pricePerM2')"
+            :value="
+              fmtCurrency(
+                drawerMode === 'transaction'
+                  ? selectedRecord.price_per_m2
+                  : selectedRecord.avg_price_per_m2,
+              )
+            "
+          />
+          <MetricCard
+            :label="drawerMode === 'transaction' ? t('predict.size') : t('map.transactions')"
+            :value="
+              drawerMode === 'transaction'
+                ? `${fmt(selectedRecord.size_m2, 1)} m²`
+                : fmt(selectedRecord.count)
+            "
+          />
+        </div>
+
+        <section class="drawer-section">
+          <h3>{{ t('map.detailTitle') }}</h3>
+          <dl class="detail-grid">
+            <template v-if="drawerMode === 'transaction'">
+              <div>
+                <dt>{{ t('predict.propertyType') }}</dt>
+                <dd>{{ formatType(selectedRecord.property_type) }}</dd>
+              </div>
+              <div>
+                <dt>{{ t('map.region') }}</dt>
+                <dd>{{ selectedRecord.region || '—' }}</dd>
+              </div>
+              <div>
+                <dt>{{ t('map.year') }}</dt>
+                <dd>{{ selectedRecord.year || '—' }}</dd>
+              </div>
+              <div>
+                <dt>{{ t('predict.yearBuilt') }}</dt>
+                <dd>{{ selectedRecord.year_built || '—' }}</dd>
+              </div>
+              <div>
+                <dt>{{ t('predict.rooms') }}</dt>
+                <dd>{{ selectedRecord.rooms || '—' }}</dd>
+              </div>
+              <div>
+                <dt>{{ t('predict.legaVStavbi') }}</dt>
+                <dd>{{ selectedRecord.lega_v_stavbi || '—' }}</dd>
+              </div>
+            </template>
+            <template v-else>
+              <div>
+                <dt>{{ t('map.region') }}</dt>
+                <dd>{{ selectedRecord.region || '—' }}</dd>
+              </div>
+              <div>
+                <dt>{{ t('map.transactions') }}</dt>
+                <dd>{{ fmt(selectedRecord.count) }}</dd>
+              </div>
+              <div>
+                <dt>{{ t('map.medianPrice') }}</dt>
+                <dd>{{ fmtCurrency(selectedRecord.median_price) }}</dd>
+              </div>
+              <div>
+                <dt>{{ t('dashboard.pricePerM2') }}</dt>
+                <dd>{{ fmtCurrency(selectedRecord.avg_price_per_m2) }}</dd>
+              </div>
+            </template>
+          </dl>
+        </section>
+
+        <section v-if="drawerMode === 'transaction'" class="drawer-section">
+          <h3>{{ t('predict.buildingFlags') }}</h3>
+          <div class="flag-grid">
+            <span
+              v-for="flag in [
+                ['novogradnja', t('predict.novogradnja')],
+                ['has_garaza', t('predict.hasGaraza')],
+                ['has_klet', t('predict.hasKlet')],
+                ['has_shramba', t('predict.hasShramba')],
+                ['has_terasa', t('predict.hasTerasa')],
+                ['stavba_je_dokoncana', t('predict.stavbaDokoncana')],
+                ['ddv_vkljucen', t('predict.ddvVkljucen')],
+              ]"
+              :key="flag[0]"
+              class="flag-chip"
+              :class="{ active: selectedRecord[flag[0]] }"
+            >
+              {{ flag[1] }}
+            </span>
+          </div>
+        </section>
+
+        <div class="drawer-actions">
+          <Button
+            icon="pi pi-building"
+            :label="t('map.openMunicipality')"
+            @click="openMunicipality()"
+          />
+          <Button
+            severity="secondary"
+            outlined
+            icon="pi pi-chart-line"
+            :label="t('map.useForPrediction')"
+            @click="useForPrediction()"
+          />
+          <a :href="comparisonUrl" target="_blank" rel="noreferrer" class="drawer-link">
+            <Button
+              severity="contrast"
+              outlined
+              icon="pi pi-external-link"
+              :label="t('predict.compareOnPortal')"
+            />
+          </a>
         </div>
       </div>
-
-      <div v-if="regionStats.length" class="table-shell">
-        <table>
-          <thead>
-            <tr>
-              <th>{{ t('map.region') }}</th>
-              <th>{{ t('map.count') }}</th>
-              <th>{{ t('map.avgPrice') }}</th>
-              <th>{{ t('map.medianPrice') }}</th>
-              <th>€/m²</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="item in regionStats" :key="item.region">
-              <td>{{ item.region }}</td>
-              <td>{{ fmt(item.count) }}</td>
-              <td>{{ fmtCurrency(item.avg_price) }}</td>
-              <td>{{ fmtCurrency(item.median_price) }}</td>
-              <td>{{ fmtCurrency(item.avg_price_per_m2) }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <p v-else class="empty-text">{{ t('common.noData') }}</p>
-    </section>
+    </Drawer>
   </div>
 </template>
 
 <style scoped>
   .map-page,
-  .hero-actions,
-  .filters-grid,
   .metric-band,
-  .rail-list {
+  .rail-list,
+  .drawer-body,
+  .drawer-metrics {
     display: grid;
     gap: 1rem;
   }
 
   .map-hero,
-  .panel,
-  .metric-card,
+  .filters-panel,
+  .map-panel,
+  .rail-panel,
   .state-card {
-    border-radius: 1.6rem;
-    border: 1px solid var(--border);
-    background: var(--surface-soft);
-    box-shadow: var(--shadow-sm);
-  }
-
-  .map-hero,
-  .panel {
-    padding: 1.1rem;
-  }
-
-  .map-hero {
-    display: grid;
-    grid-template-columns: minmax(0, 1.2fr) auto;
-    align-items: end;
-    background:
-      linear-gradient(135deg, var(--surface-strong), var(--surface-soft)),
-      radial-gradient(circle at top left, rgb(37 99 235 / 15%), transparent 32%),
-      radial-gradient(circle at right, rgb(245 158 11 / 12%), transparent 26%);
-  }
-
-  .map-hero h1,
-  .rail-head h2 {
-    margin: 0;
-    font-family: var(--font-display);
-  }
-
-  .map-hero p,
-  .metric-card span,
-  .legend-note,
-  .rail-copy small,
-  .rail-metric small,
-  .empty-text,
-  .error-text {
-    color: var(--text-muted);
-  }
-
-  .eyebrow {
-    display: inline-flex;
-    margin-bottom: 0.55rem;
-    color: var(--primary-strong);
-    font-size: 0.74rem;
-    font-weight: 800;
-    letter-spacing: 0.17em;
-    text-transform: uppercase;
-  }
-
-  .eyebrow.subtle {
-    color: var(--text-soft);
-  }
-
-  .hero-actions {
-    grid-auto-flow: column;
-    grid-auto-columns: max-content;
-    justify-content: end;
-    gap: 0.75rem;
-  }
-
-  .hero-btn,
-  .mini-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.8rem 1rem;
-    border-radius: 999px;
-    border: 1px solid var(--border);
-    background: var(--surface-soft-strong);
-  }
-
-  .hero-btn.primary,
-  .mini-btn.primary {
-    border-color: rgb(37 99 235 / 24%);
-    background: linear-gradient(135deg, var(--primary), var(--primary-strong));
-    color: #eff6ff;
-  }
-
-  .filters-panel {
     display: grid;
     gap: 1rem;
-  }
-
-  .filters-grid {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-  }
-
-  .field {
-    display: grid;
-    gap: 0.38rem;
-  }
-
-  .field span {
-    font-size: 0.82rem;
-    font-weight: 700;
-    color: var(--text-muted);
-  }
-
-  .filter-footer {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-  }
-
-  .chip-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-  }
-
-  .chip {
-    display: inline-flex;
-    padding: 0.4rem 0.7rem;
-    border-radius: 999px;
-    background: rgb(37 99 235 / 10%);
-    color: var(--primary-strong);
-    font-size: 0.82rem;
-    font-weight: 700;
-  }
-
-  .chip.muted {
-    background: var(--surface-muted);
-    color: var(--text-soft);
-  }
-
-  .ghost-btn {
-    border: none;
-    background: none;
-    color: var(--primary-strong);
-    font-weight: 700;
   }
 
   .metric-band {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
-  .metric-card {
-    padding: 1rem;
+  .filters-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.9rem;
   }
 
-  .metric-card strong {
-    display: block;
-    margin-top: 0.25rem;
-    font-size: 1.5rem;
+  .legend-strip {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.75rem;
+    align-items: stretch;
+  }
+
+  .legend-chip {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.8rem 0.9rem;
+    border-radius: 1rem;
+    border: 1px solid var(--border);
+    background: var(--surface-soft);
+    color: var(--text);
+    text-align: left;
+  }
+
+  .legend-chip.active {
+    border-color: rgb(59 130 246 / 34%);
+    box-shadow: 0 18px 36px rgb(59 130 246 / 12%);
+  }
+
+  .legend-dot {
+    width: 0.8rem;
+    height: 0.8rem;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .legend-copy {
+    display: grid;
+    gap: 0.1rem;
+  }
+
+  .legend-copy strong {
+    font-size: 0.9rem;
+  }
+
+  .legend-copy small {
+    color: var(--text-muted);
   }
 
   .explorer-grid {
     display: grid;
-    grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.9fr);
+    grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.75fr);
     gap: 1rem;
-  }
-
-  .map-panel {
-    overflow: hidden;
-    padding: 0;
   }
 
   .map-container {
     width: 100%;
-    height: 620px;
-    z-index: 1;
-  }
-
-  .map-legend {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.75rem;
-    padding: 0.9rem 1rem;
-    border-top: 1px solid var(--border);
-    font-size: 0.82rem;
-  }
-
-  .legend-title {
-    font-weight: 800;
-  }
-
-  .legend-item {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-  }
-
-  .legend-dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 999px;
-    border: 1px solid rgb(15 23 42 / 18%);
-  }
-
-  .rail-head {
-    margin-bottom: 0.95rem;
+    height: 640px;
+    border-radius: 1.25rem;
+    overflow: hidden;
   }
 
   .rail-card {
     display: grid;
-    gap: 0.45rem;
-    padding: 0.95rem;
+    gap: 0.6rem;
+    padding: 1rem;
     border-radius: 1.1rem;
     border: 1px solid var(--border);
-    background: var(--surface-soft-muted);
-  }
-
-  .rail-copy,
-  .rail-metric {
-    display: grid;
-    gap: 0.15rem;
-  }
-
-  .rail-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-  }
-
-  .mini-btn {
-    padding: 0.62rem 0.82rem;
-    font-size: 0.82rem;
-  }
-
-  .table-shell {
-    overflow-x: auto;
-  }
-
-  table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-
-  th,
-  td {
-    padding: 0.78rem 0.4rem;
+    background: var(--surface-soft);
     text-align: left;
-    border-bottom: 1px solid var(--border);
   }
 
-  th {
+  .rail-card p,
+  .rail-card small {
+    margin: 0;
+    color: var(--text-muted);
+  }
+
+  .rail-card-top,
+  .rail-card-foot,
+  .drawer-header,
+  .drawer-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+
+  .drawer-header h2,
+  .drawer-section h3 {
+    margin: 0.3rem 0 0;
+    font-family: var(--font-display);
+  }
+
+  .drawer-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .drawer-section {
+    display: grid;
+    gap: 0.8rem;
+  }
+
+  .detail-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.85rem;
+    margin: 0;
+  }
+
+  .detail-grid div {
+    padding: 0.85rem 0.95rem;
+    border-radius: 1rem;
+    border: 1px solid var(--border);
+    background: var(--surface-soft);
+  }
+
+  .detail-grid dt {
+    margin: 0 0 0.25rem;
     color: var(--text-soft);
-    font-size: 0.78rem;
-    letter-spacing: 0.08em;
+    font-size: 0.74rem;
+    font-weight: 800;
+    letter-spacing: 0.14em;
     text-transform: uppercase;
   }
 
-  .state-card {
-    padding: 1.4rem;
+  .detail-grid dd {
+    margin: 0;
+    font-weight: 700;
   }
 
-  @media (max-width: 1180px) {
-    .filters-grid {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
+  .flag-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.65rem;
+  }
 
+  .flag-chip {
+    padding: 0.55rem 0.8rem;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--surface-soft);
+    color: var(--text-muted);
+    font-weight: 700;
+  }
+
+  .flag-chip.active {
+    border-color: rgb(37 99 235 / 30%);
+    background: rgb(37 99 235 / 10%);
+    color: var(--text);
+  }
+
+  .drawer-actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .drawer-link {
+    text-decoration: none;
+  }
+
+  :deep(.p-drawer) {
+    width: min(34rem, 100vw);
+    background: var(--surface-strong);
+    color: var(--text);
+  }
+
+  :deep(.leaflet-popup-content-wrapper),
+  :deep(.leaflet-popup-tip) {
+    background: var(--surface-strong);
+    color: var(--text);
+  }
+
+  @media (max-width: 1120px) {
     .explorer-grid,
-    .map-hero {
+    .filters-grid,
+    .metric-band,
+    .legend-strip,
+    .drawer-metrics {
       grid-template-columns: 1fr;
-    }
-
-    .hero-actions {
-      justify-content: start;
-      grid-auto-flow: row;
-      grid-auto-columns: auto;
     }
   }
 
-  @media (max-width: 760px) {
-    .metric-band,
-    .filters-grid {
-      grid-template-columns: 1fr;
-    }
-
+  @media (max-width: 720px) {
     .map-container {
       height: 460px;
+    }
+
+    .detail-grid {
+      grid-template-columns: 1fr;
     }
   }
 </style>

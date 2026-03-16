@@ -11,7 +11,9 @@ export const useModelStore = defineStore('model', () => {
   const training = ref(false)
   const trainingStatus = ref(null)
   const jobHistory = ref([])
+  const modelRuns = ref([])
   const jobsLoading = ref(false)
+  const runsLoading = ref(false)
   const loading = ref(false)
   const error = ref(null)
 
@@ -58,7 +60,7 @@ export const useModelStore = defineStore('model', () => {
       const activeJob =
         e.response?.status === 409 && e.response?.data?.job_id
           ? {
-              job_id: e.response.data.job_id,
+              ...e.response.data,
               status: e.response.data.status || 'queued',
               stage: e.response.data.stage || null,
               progress: e.response.data.progress || 0,
@@ -125,9 +127,27 @@ export const useModelStore = defineStore('model', () => {
     }
   }
 
+  async function fetchRuns(params = {}) {
+    runsLoading.value = true
+    try {
+      const { data } = await api.get('/api/model/runs', {
+        params: { per_page: 8, ...params },
+      })
+      modelRuns.value = data.items || []
+      return data
+    } catch (e) {
+      modelRuns.value = []
+      error.value = getApiErrorMessage(e, i18n.global.t)
+      return null
+    } finally {
+      runsLoading.value = false
+    }
+  }
+
   function reset() {
     training.value = false
     trainingStatus.value = null
+    modelRuns.value = []
     error.value = null
   }
 
@@ -138,7 +158,9 @@ export const useModelStore = defineStore('model', () => {
     training,
     trainingStatus,
     jobHistory,
+    modelRuns,
     jobsLoading,
+    runsLoading,
     loading,
     error,
     fetchInfo,
@@ -148,6 +170,7 @@ export const useModelStore = defineStore('model', () => {
     fetchActiveTraining,
     pollStatus,
     fetchJobs,
+    fetchRuns,
     reset,
   }
 })

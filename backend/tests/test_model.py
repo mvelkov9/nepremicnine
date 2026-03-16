@@ -97,6 +97,33 @@ def test_train_from_csv_model_file_saved(tmp_path, monkeypatch):
     assert os.path.exists(result["model_path"]), "Model .joblib file was not saved"
 
 
+def test_train_from_csv_emits_staged_progress_updates(tmp_path, monkeypatch):
+    """Structured status callbacks should advance through multiple stages and progress values."""
+    import app.services.model_service as ms
+
+    monkeypatch.setattr(ms, "MODEL_DIR", str(tmp_path / "models"))
+    csv_path = str(tmp_path / "synthetic.csv")
+    _make_synthetic_csv(csv_path, n=120)
+
+    events: list[tuple[str, int | None, int | None]] = []
+
+    def status_callback(stage: str, **state):
+        events.append((stage, state.get("progress"), state.get("current_model_progress")))
+
+    ms.train_from_csv(csv_path, status_callback=status_callback)
+
+    stages = [stage for stage, _, _ in events]
+    progress_values = [value for _, value, _ in events if value is not None]
+
+    assert "dataset_load" in stages
+    assert "global_model" in stages
+    assert "evaluation" in stages
+    assert "artifact_save" in stages
+    assert progress_values[0] >= 0
+    assert progress_values[-1] >= 95
+    assert len(set(progress_values)) > 5
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # API endpoint tests for /api/model/*
 # ══════════════════════════════════════════════════════════════════════════════

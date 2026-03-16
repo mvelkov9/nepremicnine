@@ -100,7 +100,7 @@ async def model_runs(
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(get_current_user),
+    _user: User = Depends(require_admin),
 ):
     """Get model training run history."""
     # Count total
@@ -114,13 +114,19 @@ async def model_runs(
     items = [
         {
             "id": r.id,
-            "source_csv_path": r.source_csv_path,
+            "source_csv_path": _relative_data_path(r.source_csv_path),
             "rows": r.rows,
             "mae": r.mae,
             "rmse": r.rmse,
             "r2": r.r2,
+            "mape": r.mape,
+            "median_ae": r.median_ae,
+            "duration_sec": r.duration_sec,
+            "per_type_count": r.per_type_count,
+            "model_type": r.model_type,
             "features": json.loads(r.features_json) if r.features_json else None,
             "importance": json.loads(r.importance_json) if r.importance_json else None,
+            "combined_metrics": json.loads(r.combined_metrics_json) if r.combined_metrics_json else None,
             "created_at": r.created_at.isoformat(),
         }
         for r in runs

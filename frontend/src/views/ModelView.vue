@@ -4,10 +4,14 @@
   import { useI18n } from 'vue-i18n'
   import { Bar } from 'vue-chartjs'
   import { BarElement, CategoryScale, Chart as ChartJS, LinearScale, Tooltip } from 'chart.js'
+  import Button from 'primevue/button'
   import Column from 'primevue/column'
   import DataTable from 'primevue/datatable'
   import ProgressBar from 'primevue/progressbar'
+  import Select from 'primevue/select'
   import Tag from 'primevue/tag'
+  import MetricCard from '../components/MetricCard.vue'
+  import PageHeader from '../components/PageHeader.vue'
   import { useAuthStore } from '../stores/auth'
   import { useDataStore } from '../stores/data'
   import { useModelStore } from '../stores/model'
@@ -26,14 +30,30 @@
 
   const isAdmin = computed(() => auth.user?.role === 'admin')
   const trainingDataset = computed(() => dataStore.trainingDataset)
-  const isTerminalStatus = (status) => status === 'completed' || status === 'failed'
   const recentJobs = computed(() => model.jobHistory.slice(0, 6))
+  const recentRuns = computed(() => model.modelRuns.slice(0, 6))
+  const trainingLocked = computed(() => model.training)
 
   const uploadOptions = computed(() =>
-    (Array.isArray(dataStore.datasets) ? dataStore.datasets : []).filter(
-      (dataset) => dataset.relative_path !== trainingDataset.value?.relative_path,
-    ),
+    (Array.isArray(dataStore.datasets) ? dataStore.datasets : [])
+      .filter((dataset) => dataset.relative_path !== trainingDataset.value?.relative_path)
+      .map((dataset) => ({
+        label: `${dataset.original_name} (${fmt(dataset.row_count)} ${t('data.rows')})`,
+        value: dataset.relative_path,
+        dataset,
+      })),
   )
+
+  const sourceOptions = computed(() => {
+    const options = []
+    if (trainingDataset.value?.exists) {
+      options.push({
+        label: `${t('model.preparedDatasetLabel')} (${fmt(trainingDataset.value.rows)} ${t('data.rows')})`,
+        value: trainingDataset.value.relative_path,
+      })
+    }
+    return [...options, ...uploadOptions.value]
+  })
 
   const selectedSourceMeta = computed(() => {
     if (!selectedCsv.value) return null
@@ -45,11 +65,10 @@
         name: t('model.preparedDatasetLabel'),
         rows: trainingDataset.value.rows,
         updated_at: trainingDataset.value.updated_at,
+        relative_path: trainingDataset.value.relative_path,
       }
     }
-    return (
-      uploadOptions.value.find((dataset) => dataset.relative_path === selectedCsv.value) || null
-    )
+    return uploadOptions.value.find((option) => option.value === selectedCsv.value)?.dataset || null
   })
 
   const selectedSourcePath = computed(
@@ -58,6 +77,104 @@
       trainingDataset.value?.relative_path ||
       model.info?.source_csv_path ||
       '',
+  )
+
+  const activeStatus = computed(() => model.trainingStatus)
+
+  const activeModelLabel = computed(() => {
+    const key = activeStatus.value?.current_model
+    if (!key) return t('common.noData')
+    if (key === 'global') return t('model.globalModel')
+    if (key === 'done') return t('model.completedStage')
+    return formatType(key)
+  })
+
+  const trainingStageLabel = computed(() => {
+    const stage = activeStatus.value?.stage
+    return stage ? t(`model.stages.${stage}`) : t('common.loading')
+  })
+
+  const metricsCards = computed(() => {
+    const metrics = model.info?.global_metrics
+    if (!metrics) return []
+    return [
+      { label: 'MAE', value: fmtCurrency(metrics.mae) },
+      { label: 'RMSE', value: fmtCurrency(metrics.rmse) },
+      { label: 'R²', value: formatScore(metrics.r2) },
+      { label: 'MAPE', value: fmtPercent(metrics.mape) },
+      { label: t('model.medianError'), value: fmtCurrency(metrics.median_ae) },
+    ]
+  })
+
+  const runCards = computed(() => {
+    if (!activeStatus.value) return []
+    return [
+      {
+        label: t('model.trainingProgress'),
+        value: `${activeStatus.value.progress || 0}%`,
+        meta: trainingStageLabel.value,
+      },
+      {
+        label: t('model.currentModel'),
+        value: activeModelLabel.value,
+        meta:
+          activeStatus.value.current_model_index && activeStatus.value.total_models
+            ? `${activeStatus.value.current_model_index}/${activeStatus.value.total_models}`
+            : '',
+      },
+      {
+        label: t('model.currentModelProgress'),
+        value: `${activeStatus.value.current_model_progress || 0}%`,
+        meta:
+          activeStatus.value.fitted_trees != null && activeStatus.value.total_trees != null
+            ? `${fmt(activeStatus.value.fitted_trees)}/${fmt(activeStatus.value.total_trees)}`
+            : '',
+      },
+      {
+        label: t('model.elapsed'),
+        value: formatDuration(activeStatus.value.elapsed_sec),
+        meta:
+          activeStatus.value.eta_sec != null
+            ? `${t('model.eta')}: ${formatDuration(activeStatus.value.eta_sec)}`
+            : '',
+      },
+    ]
+  })
+
+  const importanceChart = computed(() => {
+    const items = model.importance.slice(0, 15)
+    return {
+      labels: items.map((item) => item.label),
+      datasets: [
+        {
+          label: t('model.importance'),
+          data: items.map((item) => item.importance),
+          backgroundColor: '#3b82f6',
+          borderRadius: 10,
+        },
+      ],
+    }
+  })
+
+  const importanceOptions = {
+    indexAxis: 'y',
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { beginAtZero: true, ticks: { color: '#94a3b8' } },
+      y: { ticks: { color: '#94a3b8' } },
+    },
+  }
+
+  watch(
+    trainingDataset,
+    (dataset) => {
+      if (dataset?.exists && !selectedCsv.value) {
+        selectedCsv.value = dataset.relative_path
+      }
+    },
+    { immediate: true },
   )
 
   function fmt(value, decimals = 0) {
@@ -98,62 +215,17 @@
   }
 
   function jobStatusLabel(status) {
-    if (!status) return '—'
-    return status
+    return status ? t(`model.status.${status}`) : '—'
   }
 
-  const metricsCards = computed(() => {
-    const metrics = model.info?.global_metrics
-    if (!metrics) return []
-    return [
-      { label: 'MAE', value: fmtCurrency(metrics.mae) },
-      { label: 'RMSE', value: fmtCurrency(metrics.rmse) },
-      { label: 'R²', value: formatScore(metrics.r2) },
-      { label: 'MAPE', value: fmtPercent(metrics.mape) },
-      {
-        label: t('model.medianError'),
-        value: fmtCurrency(metrics.median_ae),
-      },
-    ]
-  })
-
-  const importanceChart = computed(() => {
-    const items = model.importance.slice(0, 15)
-    return {
-      labels: items.map((item) => item.label),
-      datasets: [
-        {
-          label: t('model.importance'),
-          data: items.map((item) => item.importance),
-          backgroundColor: '#2563eb',
-          borderRadius: 8,
-        },
-      ],
-    }
-  })
-
-  const importanceOptions = {
-    indexAxis: 'y',
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: { legend: { display: false } },
-    scales: { x: { beginAtZero: true } },
+  function stageLabel(stage) {
+    return stage ? t(`model.stages.${stage}`) : '—'
   }
-
-  watch(
-    trainingDataset,
-    (dataset) => {
-      if (dataset?.exists && !selectedCsv.value) {
-        selectedCsv.value = dataset.relative_path
-      }
-    },
-    { immediate: true },
-  )
 
   async function train() {
-    if (!selectedCsv.value) return
+    if (!selectedCsv.value || trainingLocked.value) return
     const result = await model.startTraining(selectedCsv.value)
-    await model.fetchJobs()
+    await Promise.all([model.fetchJobs(), model.fetchRuns()])
     if (result?.job_id) {
       startPolling(result.job_id)
     }
@@ -164,6 +236,8 @@
       model.fetchInfo(),
       model.fetchImportance(),
       model.fetchDiagnostics(),
+      model.fetchJobs(),
+      model.fetchRuns(),
       dataStore.fetchTrainingDataset(),
     ])
   }
@@ -175,6 +249,10 @@
     }
   }
 
+  function isTerminalStatus(status) {
+    return status === 'completed' || status === 'failed'
+  }
+
   function startPolling(jobId) {
     stopPolling()
 
@@ -182,13 +260,9 @@
       const status = await model.pollStatus(jobId)
       if (!status || isTerminalStatus(status.status)) {
         stopPolling()
-        if (status?.status === 'completed') {
-          await Promise.all([refreshModelArtifacts(), model.fetchJobs()])
-        } else {
-          await model.fetchJobs()
-        }
+        await refreshModelArtifacts()
       }
-    }, 2000)
+    }, 1800)
   }
 
   async function syncExistingTraining() {
@@ -204,6 +278,7 @@
       model.fetchImportance(),
       model.fetchDiagnostics(),
       model.fetchJobs(),
+      model.fetchRuns(),
       dataStore.fetchDatasets(),
       dataStore.fetchTrainingDataset(),
     ])
@@ -216,237 +291,303 @@
 </script>
 
 <template>
-  <div>
-    <div v-if="isAdmin" class="card training-hero">
-      <div class="training-hero-copy">
-        <span class="eyebrow">{{ t('model.trainModel') }}</span>
-        <h2>{{ t('model.trainingTitle') }}</h2>
-        <p>{{ t('model.trainingBody') }}</p>
-      </div>
+  <div class="model-page">
+    <section v-if="isAdmin" class="card model-hero">
+      <PageHeader
+        :eyebrow="t('model.trainModel')"
+        :title="t('model.trainingTitle')"
+        :description="t('model.trainingBody')"
+      >
+        <template #actions>
+          <RouterLink v-if="!trainingDataset?.exists" to="/admin/priprava">
+            <Button severity="contrast" outlined :label="t('model.goToPrepare')" />
+          </RouterLink>
+        </template>
+      </PageHeader>
 
-      <div class="training-hero-status">
-        <article class="mini-status-card" :class="{ ready: trainingDataset?.exists }">
-          <span class="eyebrow">{{ t('model.preparedDataset') }}</span>
-          <strong>{{
+      <div class="hero-grid">
+        <MetricCard
+          :label="t('model.preparedDataset')"
+          :value="
             trainingDataset?.exists
               ? t('model.preparedDatasetReady')
               : t('model.preparedDatasetMissing')
-          }}</strong>
-          <p v-if="trainingDataset?.exists">
-            {{ fmt(trainingDataset.rows) }} {{ t('data.rows') }} ·
-            {{ formatDate(trainingDataset.updated_at) }}
-          </p>
-          <p v-else>{{ t('model.prepareDataFirst') }}</p>
-        </article>
-
-        <article class="mini-status-card" :class="{ ready: !!model.info }">
-          <span class="eyebrow">{{ t('model.currentModel') }}</span>
-          <strong>{{ model.info ? t('model.modelReady') : t('model.modelMissing') }}</strong>
-          <p v-if="model.info">
-            {{ formatDate(model.info.trained_at) }} · {{ fmt(model.info.rows) }}
-            {{ t('data.rows') }}
-          </p>
-          <p v-else>{{ t('model.noModel') }}</p>
-        </article>
+          "
+          :meta="
+            trainingDataset?.exists
+              ? `${fmt(trainingDataset.rows)} ${t('data.rows')} · ${formatDate(trainingDataset.updated_at)}`
+              : t('model.prepareDataFirst')
+          "
+          :tone="trainingDataset?.exists ? 'success' : 'default'"
+        />
+        <MetricCard
+          :label="t('model.currentModel')"
+          :value="model.info ? t('model.modelReady') : t('model.modelMissing')"
+          :meta="
+            model.info
+              ? `${formatDate(model.info.trained_at)} · ${fmt(model.info.rows)} ${t('data.rows')}`
+              : t('model.noModel')
+          "
+          :tone="model.info ? 'success' : 'warning'"
+        />
       </div>
-    </div>
+    </section>
 
-    <div v-if="isAdmin" class="card" style="margin-bottom: 1.5rem">
-      <div class="section-head">
-        <div>
-          <div class="card-title">{{ t('model.selectDataset') }}</div>
-          <p class="muted">{{ t('model.selectSourceHint') }}</p>
-        </div>
-        <RouterLink v-if="!trainingDataset?.exists" to="/priprava" class="ghost-link">
-          {{ t('model.goToPrepare') }}
-        </RouterLink>
-      </div>
+    <section v-if="isAdmin" class="card">
+      <PageHeader
+        compact
+        :eyebrow="t('model.selectDataset')"
+        :title="t('model.trainingWorkbench')"
+        :description="trainingLocked ? t('model.trainingLockedHint') : t('model.selectSourceHint')"
+      />
 
-      <div class="source-stack">
-        <label
-          class="source-option"
-          :class="{ active: selectedCsv === trainingDataset?.relative_path }"
-        >
-          <input
-            v-if="trainingDataset?.exists"
-            v-model="selectedCsv"
-            type="radio"
-            :value="trainingDataset.relative_path"
-          />
-          <div>
-            <strong>{{ t('model.preparedDatasetLabel') }}</strong>
-            <p v-if="trainingDataset?.exists">
-              {{ trainingDataset.relative_path }} · {{ fmt(trainingDataset.rows) }}
-              {{ t('data.rows') }}
+      <div class="source-shell">
+        <div class="source-panel">
+          <label class="field">
+            <span>{{ t('model.selectDataset') }}</span>
+            <Select
+              v-model="selectedCsv"
+              :options="sourceOptions"
+              option-label="label"
+              option-value="value"
+              class="w-full"
+              :placeholder="t('model.selectDataset')"
+              :disabled="trainingLocked"
+            />
+          </label>
+
+          <div v-if="selectedSourceMeta" class="selected-source-card">
+            <span class="eyebrow">{{ t('model.selectedSource') }}</span>
+            <strong>{{ selectedSourceMeta.original_name || selectedSourceMeta.name }}</strong>
+            <p>{{ selectedSourcePath }}</p>
+            <p class="muted">
+              {{ fmt(selectedSourceMeta.row_count || selectedSourceMeta.rows || 0) }}
+              {{ t('data.rows') }} ·
+              {{ formatDate(selectedSourceMeta.uploaded_at || selectedSourceMeta.updated_at) }}
             </p>
-            <p v-else>{{ t('model.prepareDataFirst') }}</p>
           </div>
-          <span v-if="trainingDataset?.exists" class="badge badge-green">{{
-            t('model.recommended')
-          }}</span>
-        </label>
+        </div>
 
-        <div v-if="uploadOptions.length" class="field">
-          <label class="form-label">{{ t('model.otherDatasets') }}</label>
-          <select v-model="selectedCsv" class="form-input">
-            <option value="">{{ t('model.selectDataset') }}</option>
-            <option
-              v-for="dataset in uploadOptions"
-              :key="dataset.id"
-              :value="dataset.relative_path"
-            >
-              {{ dataset.original_name }} ({{ fmt(dataset.row_count) }} {{ t('data.rows') }})
-            </option>
-          </select>
+        <div class="action-panel">
+          <Button
+            :label="trainingLocked ? t('model.training') : t('model.trainButton')"
+            icon="pi pi-play"
+            class="train-btn"
+            :disabled="!selectedCsv || trainingLocked"
+            @click="train"
+          />
+          <p class="muted">
+            {{ trainingLocked ? t('model.trainingLockedHint') : t('model.trainingCtaHint') }}
+          </p>
         </div>
       </div>
 
-      <div v-if="selectedSourceMeta" class="selected-source-card">
-        <span class="eyebrow">{{ t('model.selectedSource') }}</span>
-        <strong>{{ selectedSourceMeta.original_name || selectedSourceMeta.name }}</strong>
-        <p>{{ selectedSourcePath }}</p>
-        <p class="muted">
-          {{ fmt(selectedSourceMeta.row_count || selectedSourceMeta.rows || 0) }}
-          {{ t('data.rows') }} ·
-          {{ formatDate(selectedSourceMeta.uploaded_at || selectedSourceMeta.updated_at) }}
-        </p>
-      </div>
-
-      <div class="actions">
-        <button class="btn btn-primary" :disabled="!selectedCsv || model.training" @click="train">
-          {{ model.training ? t('model.training') : t('model.trainButton') }}
-        </button>
-        <RouterLink v-if="!trainingDataset?.exists" to="/priprava" class="ghost-link">
-          {{ t('model.prepareDatasetCta') }}
-        </RouterLink>
-      </div>
-
-      <div v-if="model.trainingStatus" class="training-progress-card">
-        <div class="training-progress-head">
+      <div v-if="activeStatus" class="live-progress">
+        <div class="live-progress-head">
           <div>
             <span class="eyebrow">{{ t('model.trainingStatus') }}</span>
-            <strong>{{ jobStatusLabel(model.trainingStatus.status) }}</strong>
+            <h2>{{ trainingStageLabel }}</h2>
           </div>
           <Tag
-            :severity="jobSeverity(model.trainingStatus.status)"
-            :value="`${model.trainingStatus.progress || 0}%`"
+            :severity="jobSeverity(activeStatus.status)"
+            :value="jobStatusLabel(activeStatus.status)"
           />
         </div>
-        <ProgressBar :value="model.trainingStatus.progress || 0" :showValue="false" />
-        <p class="muted">
-          {{ model.trainingStatus.stage || t('common.loading') }}
-        </p>
-        <p v-if="model.trainingStatus.error" class="error-text">
-          {{ model.trainingStatus.error }}
-        </p>
+
+        <ProgressBar :value="activeStatus.progress || 0" :show-value="false" />
+
+        <div class="hero-grid compact">
+          <MetricCard
+            v-for="card in runCards"
+            :key="card.label"
+            :label="card.label"
+            :value="card.value"
+            :meta="card.meta"
+          />
+        </div>
+
+        <p v-if="activeStatus.error" class="error-text">{{ activeStatus.error }}</p>
       </div>
 
       <p v-if="model.error" class="error-text">{{ model.error }}</p>
-    </div>
+    </section>
 
-    <div v-if="model.info" class="card" style="margin-bottom: 1.5rem">
-      <div class="section-head">
-        <div>
-          <h2>{{ t('model.currentModel') }}</h2>
-          <p class="muted">
-            {{ t('model.trainedAt') }}: {{ formatDate(model.info.trained_at) }} ·
-            {{ fmt(model.info.rows) }} {{ t('data.rows') }} ·
-            {{ formatDuration(model.info.duration_sec) }}
-          </p>
-        </div>
-        <div class="model-source-pill" v-if="model.info.source_csv_path">
-          {{ t('model.currentSource') }}: {{ model.info.source_csv_path }}
-        </div>
-      </div>
+    <section v-if="model.info" class="card">
+      <PageHeader
+        compact
+        :eyebrow="t('model.currentModel')"
+        :title="t('model.modelSnapshot')"
+        :description="`${t('model.trainedAt')}: ${formatDate(model.info.trained_at)} · ${fmt(model.info.rows)} ${t('data.rows')} · ${formatDuration(model.info.duration_sec)}`"
+      >
+        <template #actions>
+          <span v-if="model.info.source_csv_path" class="model-source-pill">
+            {{ t('model.currentSource') }}: {{ model.info.source_csv_path }}
+          </span>
+        </template>
+      </PageHeader>
 
-      <div class="kpi-grid" style="margin-top: 1rem">
-        <div v-for="card in metricsCards" :key="card.label" class="kpi-card">
-          <span class="kpi-label">{{ card.label }}</span>
-          <span class="kpi-value">{{ card.value }}</span>
-        </div>
+      <div class="hero-grid compact">
+        <MetricCard
+          v-for="card in metricsCards"
+          :key="card.label"
+          :label="card.label"
+          :value="card.value"
+        />
       </div>
-    </div>
+    </section>
 
-    <div v-if="model.info?.per_type_metrics" class="card" style="margin-bottom: 1.5rem">
-      <h2>{{ t('model.perTypeMetrics') }}</h2>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>{{ t('model.propertyType') }}</th>
-              <th>MAE</th>
-              <th>RMSE</th>
-              <th>R²</th>
-              <th>MAPE</th>
-              <th>N</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="(metrics, propertyType) in model.info.per_type_metrics" :key="propertyType">
-              <td>{{ formatType(propertyType) }}</td>
-              <td>{{ fmtCurrency(metrics.mae) }}</td>
-              <td>{{ fmtCurrency(metrics.rmse) }}</td>
-              <td>{{ formatScore(metrics.r2) }}</td>
-              <td>{{ fmtPercent(metrics.mape) }}</td>
-              <td>{{ fmt(metrics.n_train) }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <div v-if="model.importance.length" class="card">
-      <h2>{{ t('model.featureImportance') }}</h2>
-      <div style="height: 400px">
-        <Bar :data="importanceChart" :options="importanceOptions" />
-      </div>
-    </div>
-
-    <div v-if="isAdmin" class="card" style="margin-top: 1.5rem">
-      <div class="section-head">
-        <div>
-          <h2>{{ t('model.trainingHistory') }}</h2>
-          <p class="muted">{{ t('model.trainingHistoryHint') }}</p>
-        </div>
-      </div>
+    <section v-if="model.info?.per_type_metrics" class="card">
+      <PageHeader
+        compact
+        :eyebrow="t('model.perTypeMetrics')"
+        :title="t('model.propertyTypeBreakdown')"
+        :description="t('model.propertyTypeBreakdownHint')"
+      />
 
       <DataTable
-        :value="recentJobs"
+        :value="
+          Object.entries(model.info.per_type_metrics).map(([propertyType, metrics]) => ({
+            propertyType,
+            ...metrics,
+          }))
+        "
         size="small"
-        stripedRows
-        tableStyle="min-width: 100%"
-        responsiveLayout="scroll"
+        striped-rows
+        table-style="min-width: 100%"
       >
-        <Column field="created_at" :header="t('predict.date')">
-          <template #body="{ data }">{{ formatDate(data.created_at) }}</template>
+        <Column field="propertyType" :header="t('model.propertyType')">
+          <template #body="{ data }">{{ formatType(data.propertyType) }}</template>
         </Column>
-        <Column field="status" :header="t('model.trainingStatus')">
-          <template #body="{ data }">
-            <Tag :severity="jobSeverity(data.status)" :value="jobStatusLabel(data.status)" />
-          </template>
+        <Column field="mae" header="MAE">
+          <template #body="{ data }">{{ fmtCurrency(data.mae) }}</template>
         </Column>
-        <Column field="stage" :header="t('model.trainingStage')">
-          <template #body="{ data }">{{ data.stage || '—' }}</template>
+        <Column field="rmse" header="RMSE">
+          <template #body="{ data }">{{ fmtCurrency(data.rmse) }}</template>
         </Column>
-        <Column field="progress" :header="t('model.trainingProgress')">
-          <template #body="{ data }">{{ data.progress || 0 }}%</template>
+        <Column field="r2" header="R²">
+          <template #body="{ data }">{{ formatScore(data.r2) }}</template>
         </Column>
-        <Column field="rows" :header="t('data.rows')">
-          <template #body="{ data }">{{ fmt(data.rows) }}</template>
+        <Column field="mape" header="MAPE">
+          <template #body="{ data }">{{ fmtPercent(data.mape) }}</template>
         </Column>
-        <Column field="duration_sec" :header="t('diag.duration')">
-          <template #body="{ data }">{{ formatDuration(data.duration_sec) }}</template>
+        <Column field="n_train" header="N">
+          <template #body="{ data }">{{ fmt(data.n_train) }}</template>
         </Column>
       </DataTable>
+    </section>
 
-      <p v-if="!model.jobsLoading && !recentJobs.length" class="muted" style="margin-top: 1rem">
-        {{ t('model.noTrainingHistory') }}
-      </p>
-    </div>
+    <section v-if="model.importance.length" class="card">
+      <PageHeader
+        compact
+        :eyebrow="t('model.featureImportance')"
+        :title="t('model.featureImportanceTitle')"
+        :description="t('model.featureImportanceHint')"
+      />
+
+      <div class="importance-chart">
+        <Bar :data="importanceChart" :options="importanceOptions" />
+      </div>
+    </section>
+
+    <section v-if="isAdmin" class="history-grid">
+      <article class="card">
+        <PageHeader
+          compact
+          :eyebrow="t('model.trainingHistory')"
+          :title="t('model.jobHistoryTitle')"
+          :description="t('model.trainingHistoryHint')"
+        />
+
+        <DataTable
+          :value="recentJobs"
+          size="small"
+          striped-rows
+          table-style="min-width: 100%"
+          responsive-layout="scroll"
+        >
+          <Column field="created_at" :header="t('predict.date')">
+            <template #body="{ data }">{{ formatDate(data.created_at) }}</template>
+          </Column>
+          <Column field="status" :header="t('model.trainingStatus')">
+            <template #body="{ data }">
+              <Tag :severity="jobSeverity(data.status)" :value="jobStatusLabel(data.status)" />
+            </template>
+          </Column>
+          <Column field="stage" :header="t('model.trainingStage')">
+            <template #body="{ data }">{{ stageLabel(data.stage) }}</template>
+          </Column>
+          <Column field="progress" :header="t('model.trainingProgress')">
+            <template #body="{ data }">{{ data.progress || 0 }}%</template>
+          </Column>
+          <Column field="current_model" :header="t('model.currentModel')">
+            <template #body="{ data }">
+              {{
+                data.current_model === 'global'
+                  ? t('model.globalModel')
+                  : formatType(data.current_model) || '—'
+              }}
+            </template>
+          </Column>
+          <Column field="elapsed_sec" :header="t('model.elapsed')">
+            <template #body="{ data }">
+              {{ formatDuration(data.elapsed_sec || data.duration_sec) }}
+            </template>
+          </Column>
+        </DataTable>
+
+        <p v-if="!model.jobsLoading && !recentJobs.length" class="muted history-empty">
+          {{ t('model.noTrainingHistory') }}
+        </p>
+      </article>
+
+      <article class="card">
+        <PageHeader
+          compact
+          :eyebrow="t('model.completedRuns')"
+          :title="t('model.completedRunsTitle')"
+          :description="t('model.completedRunsHint')"
+        />
+
+        <DataTable
+          :value="recentRuns"
+          size="small"
+          striped-rows
+          table-style="min-width: 100%"
+          responsive-layout="scroll"
+        >
+          <Column field="created_at" :header="t('predict.date')">
+            <template #body="{ data }">{{ formatDate(data.created_at) }}</template>
+          </Column>
+          <Column field="source_csv_path" :header="t('model.currentSource')" />
+          <Column field="rows" :header="t('data.rows')">
+            <template #body="{ data }">{{ fmt(data.rows) }}</template>
+          </Column>
+          <Column field="mae" header="MAE">
+            <template #body="{ data }">{{ fmtCurrency(data.mae) }}</template>
+          </Column>
+          <Column field="rmse" header="RMSE">
+            <template #body="{ data }">{{ fmtCurrency(data.rmse) }}</template>
+          </Column>
+          <Column field="mape" header="MAPE">
+            <template #body="{ data }">{{ fmtPercent(data.mape) }}</template>
+          </Column>
+          <Column field="duration_sec" :header="t('diag.duration')">
+            <template #body="{ data }">{{ formatDuration(data.duration_sec) }}</template>
+          </Column>
+          <Column field="per_type_count" :header="t('model.perTypeModels')">
+            <template #body="{ data }">{{ fmt(data.per_type_count) }}</template>
+          </Column>
+        </DataTable>
+
+        <p v-if="!model.runsLoading && !recentRuns.length" class="muted history-empty">
+          {{ t('model.noCompletedRuns') }}
+        </p>
+      </article>
+    </section>
 
     <div v-if="!model.loading && !model.info" class="card empty-card">
       <p class="muted">{{ t('model.noModel') }}</p>
-      <RouterLink v-if="isAdmin" to="/priprava" class="ghost-link">
+      <RouterLink v-if="isAdmin" to="/admin/priprava" class="ghost-link">
         {{ t('model.prepareDatasetCta') }}
       </RouterLink>
     </div>
@@ -454,25 +595,95 @@
 </template>
 
 <style scoped>
-  .training-progress-card {
+  .model-page,
+  .history-grid {
     display: grid;
-    gap: 0.75rem;
+    gap: 1rem;
+  }
+
+  .history-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .model-hero,
+  .live-progress {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .hero-grid {
+    display: grid;
+    gap: 0.9rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .hero-grid.compact {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .source-shell {
+    display: grid;
+    grid-template-columns: minmax(0, 1.25fr) minmax(260px, 0.75fr);
+    gap: 1rem;
     margin-top: 1rem;
-    padding: 1rem;
-    border-radius: 1rem;
-    background: var(--surface-muted);
+  }
+
+  .source-panel,
+  .action-panel,
+  .live-progress {
+    border-radius: 1.25rem;
     border: 1px solid var(--border);
+    background: var(--surface-soft);
+    padding: 1rem;
   }
 
-  .training-progress-head {
+  .action-panel {
+    display: grid;
+    align-content: start;
+    gap: 0.85rem;
+  }
+
+  .train-btn {
+    width: 100%;
+  }
+
+  .live-progress-head {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
-    gap: 0.75rem;
+    gap: 1rem;
   }
 
-  .training-progress-head strong {
-    display: block;
-    margin-top: 0.2rem;
+  .live-progress-head h2 {
+    margin: 0.35rem 0 0;
+    font-family: var(--font-display);
+    font-size: 1.5rem;
+  }
+
+  .selected-source-card {
+    margin-top: 1rem;
+  }
+
+  .importance-chart {
+    height: 400px;
+    margin-top: 1rem;
+  }
+
+  .history-empty {
+    margin-top: 1rem;
+  }
+
+  @media (max-width: 1100px) {
+    .source-shell,
+    .history-grid,
+    .hero-grid.compact {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (max-width: 720px) {
+    .hero-grid {
+      grid-template-columns: 1fr;
+    }
   }
 </style>

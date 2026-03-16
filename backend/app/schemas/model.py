@@ -14,6 +14,15 @@ class TrainStatusResponse(BaseModel):
     status: str
     stage: str | None = None
     progress: int = 0
+    rows: int | None = None
+    current_model: str | None = None
+    current_model_index: int | None = None
+    total_models: int | None = None
+    current_model_progress: int | None = None
+    fitted_trees: int | None = None
+    total_trees: int | None = None
+    elapsed_sec: float | None = None
+    eta_sec: float | None = None
     result: dict | None = None
     error: str | None = None
 
@@ -27,6 +36,14 @@ class TrainJobResponse(BaseModel):
     stage: str | None = None
     progress: int = 0
     rows: int | None = None
+    current_model: str | None = None
+    current_model_index: int | None = None
+    total_models: int | None = None
+    current_model_progress: int | None = None
+    fitted_trees: int | None = None
+    total_trees: int | None = None
+    elapsed_sec: float | None = None
+    eta_sec: float | None = None
     duration_sec: float | None = None
     error: str | None = None
     created_at: str

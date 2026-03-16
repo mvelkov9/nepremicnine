@@ -2,10 +2,15 @@
   import { computed, onMounted, ref, watch } from 'vue'
   import { useRoute, useRouter } from 'vue-router'
   import { useI18n } from 'vue-i18n'
+  import AutoComplete from 'primevue/autocomplete'
+  import Button from 'primevue/button'
+  import Checkbox from 'primevue/checkbox'
+  import InputNumber from 'primevue/inputnumber'
+  import Select from 'primevue/select'
   import api from '../composables/useApi'
-  import AppIcon from '../components/AppIcon.vue'
   import EmptyState from '../components/EmptyState.vue'
   import LoadingSpinner from '../components/LoadingSpinner.vue'
+  import PageHeader from '../components/PageHeader.vue'
   import { useExport } from '../composables/useExport'
   import { useStatsStore } from '../stores/stats'
   import { buildNepremicnineSearchUrl } from '../utils/externalSearch'
@@ -52,24 +57,14 @@
   ]
 
   const legaOptions = ['pritlicje', 'nadstropje', 'klet', 'unknown']
-  const municipalityQuery = ref('')
   const allMunicipalities = ref([])
-  const showSuggestions = ref(false)
-  const highlightedIndex = ref(-1)
+  const municipalitySuggestions = ref([])
   const result = ref(null)
   const history = ref([])
   const loading = ref(false)
   const contextLoading = ref(false)
   const error = ref('')
   const formErrors = ref({})
-
-  const filteredMunicipalities = computed(() => {
-    if (!municipalityQuery.value) return []
-    const query = normalizeMunicipalityName(municipalityQuery.value)
-    return allMunicipalities.value
-      .filter((item) => normalizeMunicipalityName(item).includes(query))
-      .slice(0, 10)
-  })
 
   const municipalityContext = computed(() => stats.municipalityDetail)
   const comparables = computed(() => stats.comparables)
@@ -113,33 +108,13 @@
     }
   }
 
-  function selectMunicipality(name) {
-    form.value.municipality = name
-    municipalityQuery.value = name
-    showSuggestions.value = false
-    highlightedIndex.value = -1
-  }
-
-  function onMunicipalityInput() {
-    form.value.municipality = municipalityQuery.value
-    showSuggestions.value = true
-    highlightedIndex.value = -1
-  }
-
-  function onMunicipalityKeydown(event) {
-    const list = filteredMunicipalities.value
-    if (!showSuggestions.value || !list.length) return
-
-    if (event.key === 'ArrowDown') {
-      event.preventDefault()
-      highlightedIndex.value = (highlightedIndex.value + 1) % list.length
-    } else if (event.key === 'ArrowUp') {
-      event.preventDefault()
-      highlightedIndex.value = (highlightedIndex.value - 1 + list.length) % list.length
-    } else if (event.key === 'Enter' && highlightedIndex.value >= 0) {
-      event.preventDefault()
-      selectMunicipality(list[highlightedIndex.value])
-    }
+  function searchMunicipalities(event) {
+    const query = normalizeMunicipalityName(event.query || '')
+    municipalitySuggestions.value = query
+      ? allMunicipalities.value
+          .filter((item) => normalizeMunicipalityName(item).includes(query))
+          .slice(0, 12)
+      : allMunicipalities.value.slice(0, 12)
   }
 
   function validateForm() {
@@ -232,8 +207,6 @@
         }
       }
     }
-
-    municipalityQuery.value = form.value.municipality || ''
   }
 
   function exportHistoryRows() {
@@ -278,13 +251,11 @@
   <div class="prediction-page">
     <section class="prediction-shell">
       <article class="panel input-panel">
-        <div class="panel-head">
-          <div>
-            <span class="eyebrow">{{ t('predict.title') }}</span>
-            <h1>{{ t('predict.avmTitle') }}</h1>
-            <p>{{ t('predict.avmBody') }}</p>
-          </div>
-        </div>
+        <PageHeader
+          :eyebrow="t('predict.title')"
+          :title="t('predict.avmTitle')"
+          :description="t('predict.avmBody')"
+        />
 
         <form class="predict-form" @submit.prevent="predict">
           <div class="form-section">
@@ -292,14 +263,15 @@
             <div class="form-grid">
               <label class="field">
                 <span>{{ t('predict.size') }} *</span>
-                <input
-                  v-model.number="form.size_m2"
-                  type="number"
-                  min="1"
-                  step="0.1"
-                  class="form-input"
-                  :class="{ 'input-error': formErrors.size_m2 }"
-                  @input="formErrors.size_m2 = null"
+                <InputNumber
+                  v-model="form.size_m2"
+                  input-class="form-input"
+                  :min="1"
+                  :min-fraction-digits="0"
+                  :max-fraction-digits="1"
+                  fluid
+                  :invalid="!!formErrors.size_m2"
+                  @update:model-value="formErrors.size_m2 = null"
                 />
                 <small v-if="formErrors.size_m2" class="field-error">{{
                   formErrors.size_m2
@@ -308,55 +280,58 @@
 
               <label class="field">
                 <span>{{ t('predict.uporabnaPovrsina') }}</span>
-                <input
-                  v-model.number="form.uporabna_povrsina"
-                  type="number"
-                  min="0"
-                  step="0.1"
-                  class="form-input"
+                <InputNumber
+                  v-model="form.uporabna_povrsina"
+                  input-class="form-input"
+                  :min="0"
+                  :min-fraction-digits="0"
+                  :max-fraction-digits="1"
+                  fluid
                 />
               </label>
 
               <label class="field">
                 <span>{{ t('predict.rooms') }}</span>
-                <input
-                  v-model.number="form.rooms"
-                  type="number"
-                  min="0"
-                  step="0.5"
-                  class="form-input"
+                <InputNumber
+                  v-model="form.rooms"
+                  input-class="form-input"
+                  :min="0"
+                  :min-fraction-digits="0"
+                  :max-fraction-digits="1"
+                  fluid
                 />
               </label>
 
               <label class="field">
                 <span>{{ t('predict.yearBuilt') }}</span>
-                <input
-                  v-model.number="form.year_built"
-                  type="number"
-                  min="1800"
-                  max="2030"
-                  class="form-input"
+                <InputNumber
+                  v-model="form.year_built"
+                  input-class="form-input"
+                  :min="1800"
+                  :max="2030"
+                  fluid
                 />
               </label>
 
               <label class="field">
                 <span>{{ t('predict.floor') }}</span>
-                <input
-                  v-model.number="form.floor"
-                  type="number"
-                  min="-2"
-                  max="60"
-                  class="form-input"
+                <InputNumber
+                  v-model="form.floor"
+                  input-class="form-input"
+                  :min="-2"
+                  :max="60"
+                  fluid
                 />
               </label>
 
               <label class="field">
                 <span>{{ t('predict.propertyType') }}</span>
-                <select v-model="form.property_type" class="form-input">
-                  <option v-for="item in propertyTypes" :key="item" :value="item">
-                    {{ formatType(item) }}
-                  </option>
-                </select>
+                <Select
+                  v-model="form.property_type"
+                  :options="propertyTypes.map((item) => ({ label: formatType(item), value: item }))"
+                  option-label="label"
+                  option-value="value"
+                />
               </label>
             </div>
           </div>
@@ -364,70 +339,61 @@
           <div class="form-section">
             <h2>{{ t('predict.locationContext') }}</h2>
             <div class="form-grid">
-              <label class="field municipality-field">
+              <label class="field">
                 <span>{{ t('predict.municipality') }} *</span>
-                <input
-                  v-model="municipalityQuery"
-                  type="text"
-                  class="form-input"
-                  :class="{ 'input-error': formErrors.municipality }"
-                  role="combobox"
-                  :aria-expanded="showSuggestions && filteredMunicipalities.length > 0"
-                  aria-autocomplete="list"
-                  aria-controls="municipality-listbox"
+                <AutoComplete
+                  v-model="form.municipality"
+                  :suggestions="municipalitySuggestions"
                   :placeholder="t('predict.municipalityPlaceholder')"
-                  @input="onMunicipalityInput"
-                  @keydown="onMunicipalityKeydown"
-                  @focus="showSuggestions = true"
-                  @blur="setTimeout(() => (showSuggestions = false), 180)"
+                  input-class="form-input"
+                  dropdown
+                  :force-selection="false"
+                  fluid
+                  :invalid="!!formErrors.municipality"
+                  @complete="searchMunicipalities"
+                  @update:model-value="formErrors.municipality = null"
                 />
                 <small v-if="formErrors.municipality" class="field-error">{{
                   formErrors.municipality
                 }}</small>
-                <ul
-                  v-if="showSuggestions && filteredMunicipalities.length"
-                  id="municipality-listbox"
-                  class="suggestions"
-                >
-                  <li
-                    v-for="(item, index) in filteredMunicipalities"
-                    :key="item"
-                    :class="{ highlighted: index === highlightedIndex }"
-                    @mousedown.prevent="selectMunicipality(item)"
-                  >
-                    {{ item }}
-                  </li>
-                </ul>
               </label>
 
               <label class="field">
                 <span>{{ t('predict.latitude') }}</span>
-                <input
-                  v-model.number="form.latitude"
-                  type="number"
-                  step="0.0001"
-                  class="form-input"
+                <InputNumber
+                  v-model="form.latitude"
+                  input-class="form-input"
+                  :min-fraction-digits="0"
+                  :max-fraction-digits="4"
+                  fluid
                 />
               </label>
 
               <label class="field">
                 <span>{{ t('predict.longitude') }}</span>
-                <input
-                  v-model.number="form.longitude"
-                  type="number"
-                  step="0.0001"
-                  class="form-input"
+                <InputNumber
+                  v-model="form.longitude"
+                  input-class="form-input"
+                  :min-fraction-digits="0"
+                  :max-fraction-digits="4"
+                  fluid
                 />
               </label>
 
               <label class="field">
                 <span>{{ t('predict.legaVStavbi') }}</span>
-                <select v-model="form.lega_v_stavbi" class="form-input">
-                  <option value="">{{ t('common.noData') }}</option>
-                  <option v-for="option in legaOptions" :key="option" :value="option">
-                    {{ t(`predict.lega.${option}`) }}
-                  </option>
-                </select>
+                <Select
+                  v-model="form.lega_v_stavbi"
+                  :options="[
+                    { label: t('common.noData'), value: '' },
+                    ...legaOptions.map((option) => ({
+                      label: t(`predict.lega.${option}`),
+                      value: option,
+                    })),
+                  ]"
+                  option-label="label"
+                  option-value="value"
+                />
               </label>
             </div>
           </div>
@@ -436,51 +402,36 @@
             <h2>{{ t('predict.buildingFlags') }}</h2>
             <div class="toggle-grid">
               <label class="toggle-chip">
-                <input
-                  v-model="form.novogradnja"
-                  type="checkbox"
-                  :true-value="1"
-                  :false-value="0"
-                />
+                <Checkbox v-model="form.novogradnja" binary :true-value="1" :false-value="0" />
                 <span>{{ t('predict.novogradnja') }}</span>
               </label>
               <label class="toggle-chip">
-                <input v-model="form.has_garaza" type="checkbox" :true-value="1" :false-value="0" />
+                <Checkbox v-model="form.has_garaza" binary :true-value="1" :false-value="0" />
                 <span>{{ t('predict.hasGaraza') }}</span>
               </label>
               <label class="toggle-chip">
-                <input v-model="form.has_klet" type="checkbox" :true-value="1" :false-value="0" />
+                <Checkbox v-model="form.has_klet" binary :true-value="1" :false-value="0" />
                 <span>{{ t('predict.hasKlet') }}</span>
               </label>
               <label class="toggle-chip">
-                <input
-                  v-model="form.has_shramba"
-                  type="checkbox"
-                  :true-value="1"
-                  :false-value="0"
-                />
+                <Checkbox v-model="form.has_shramba" binary :true-value="1" :false-value="0" />
                 <span>{{ t('predict.hasShramba') }}</span>
               </label>
               <label class="toggle-chip">
-                <input v-model="form.has_terasa" type="checkbox" :true-value="1" :false-value="0" />
+                <Checkbox v-model="form.has_terasa" binary :true-value="1" :false-value="0" />
                 <span>{{ t('predict.hasTerasa') }}</span>
               </label>
               <label class="toggle-chip">
-                <input
+                <Checkbox
                   v-model="form.stavba_je_dokoncana"
-                  type="checkbox"
+                  binary
                   :true-value="1"
                   :false-value="0"
                 />
                 <span>{{ t('predict.stavbaDokoncana') }}</span>
               </label>
               <label class="toggle-chip">
-                <input
-                  v-model="form.ddv_vkljucen"
-                  type="checkbox"
-                  :true-value="1"
-                  :false-value="0"
-                />
+                <Checkbox v-model="form.ddv_vkljucen" binary :true-value="1" :false-value="0" />
                 <span>{{ t('predict.ddvVkljucen') }}</span>
               </label>
             </div>
@@ -489,22 +440,24 @@
           <p v-if="error" class="error-text">{{ error }}</p>
 
           <div class="form-actions">
-            <button class="submit-btn" type="submit" :disabled="loading">
-              <AppIcon name="prediction" :size="16" />
-              <span>{{ loading ? t('common.loading') : t('predict.predictButton') }}</span>
-            </button>
+            <Button
+              class="submit-btn"
+              type="submit"
+              icon="pi pi-bolt"
+              :loading="loading"
+              :label="loading ? t('common.loading') : t('predict.predictButton')"
+            />
           </div>
         </form>
       </article>
 
       <article class="panel story-panel">
-        <div class="panel-head">
-          <div>
-            <span class="eyebrow">{{ t('predict.result') }}</span>
-            <h2>{{ t('predict.valuationStory') }}</h2>
-            <p>{{ t('predict.valuationBody') }}</p>
-          </div>
-        </div>
+        <PageHeader
+          compact
+          :eyebrow="t('predict.result')"
+          :title="t('predict.valuationStory')"
+          :description="t('predict.valuationBody')"
+        />
 
         <div v-if="loading || contextLoading" class="inline-loading">
           <LoadingSpinner :label="t('common.loading')" />
@@ -727,37 +680,6 @@
     color: var(--text-muted);
   }
 
-  .municipality-field {
-    position: relative;
-  }
-
-  .suggestions {
-    position: absolute;
-    top: calc(100% + 0.35rem);
-    left: 0;
-    right: 0;
-    z-index: 6;
-    margin: 0;
-    padding: 0.35rem;
-    list-style: none;
-    border-radius: 1rem;
-    border: 1px solid var(--border);
-    background: var(--surface-strong);
-    box-shadow: var(--shadow-sm);
-  }
-
-  .suggestions li {
-    padding: 0.65rem 0.75rem;
-    border-radius: 0.85rem;
-    cursor: pointer;
-  }
-
-  .suggestions li.highlighted,
-  .suggestions li:hover {
-    background: rgb(37 99 235 / 10%);
-    color: var(--primary-strong);
-  }
-
   .toggle-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
@@ -768,11 +690,22 @@
     display: flex;
     align-items: center;
     gap: 0.65rem;
+    min-height: 3.4rem;
     padding: 0.85rem 0.95rem;
     border-radius: 1rem;
     border: 1px solid var(--border);
     background: var(--surface-soft-subtle);
     font-weight: 600;
+    line-height: 1.25;
+    cursor: pointer;
+  }
+
+  .toggle-chip :deep(.p-checkbox) {
+    flex: 0 0 auto;
+  }
+
+  .toggle-chip :deep(.p-checkbox-box) {
+    border-radius: 0.55rem;
   }
 
   .form-actions {

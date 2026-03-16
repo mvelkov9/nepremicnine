@@ -114,6 +114,57 @@ def _round_or_none(value: float | int | None, digits: int = 2):
     return round(float(value), digits)
 
 
+def _price_band_key(value: float | int | None, thresholds: dict[str, float] | None) -> str | None:
+    if value is None or pd.isna(value) or not thresholds:
+        return None
+    numeric = float(value)
+    if numeric <= thresholds["low_max"]:
+        return "low"
+    if numeric <= thresholds["mid_max"]:
+        return "mid"
+    return "high"
+
+
+def _build_price_band_meta(values: pd.Series) -> dict | None:
+    numeric = pd.to_numeric(values, errors="coerce").dropna()
+    if numeric.empty:
+        return None
+
+    low_max = float(numeric.quantile(0.33))
+    mid_max = float(numeric.quantile(0.66))
+    max_value = float(numeric.max())
+    min_value = float(numeric.min())
+
+    thresholds = {
+        "min": round(min_value, 2),
+        "low_max": round(low_max, 2),
+        "mid_max": round(mid_max, 2),
+        "max": round(max_value, 2),
+    }
+    bands = numeric.map(lambda value: _price_band_key(value, thresholds))
+
+    return {
+        "metric": "price_per_m2",
+        "unit": "eur_per_m2",
+        "thresholds": thresholds,
+        "counts": {
+            "low": int((bands == "low").sum()),
+            "mid": int((bands == "mid").sum()),
+            "high": int((bands == "high").sum()),
+        },
+    }
+
+
+def _stable_transaction_key(row: pd.Series) -> str:
+    municipality = municipality_slug(str(row.get("municipality") or "unknown"))
+    year = str(row.get("_year") or row.get("source_label") or "na")
+    price = int(round(float(row.get("price_eur") or 0)))
+    area = int(round(float(row.get("_area") or 0)))
+    lat = int(round(float(row.get("_map_lat") or row.get("latitude") or 0) * 10000))
+    lon = int(round(float(row.get("_map_lon") or row.get("longitude") or 0) * 10000))
+    return f"{municipality}:{year}:{price}:{area}:{lat}:{lon}"
+
+
 def _detect_year_column(df: pd.DataFrame) -> str | None:
     for col in [
         "transaction_year",
@@ -152,7 +203,9 @@ def _prepare_market_df(property_type: str | None = None) -> pd.DataFrame | None:
         frame["_municipality_normalized"] = frame["municipality"].map(normalize_municipality_name)
 
     if "statistical_region" in frame.columns:
-        frame["statistical_region"] = frame["statistical_region"].map(lambda value: format_region_label(value) or "Neznana")
+        frame["statistical_region"] = frame["statistical_region"].map(
+            lambda value: format_region_label(value) or "Neznana"
+        )
 
     frame["_area"] = _effective_area(frame)
 
@@ -227,17 +280,34 @@ def _mode_or_none(values: pd.Series) -> str | None:
 
 def _serialize_price_row(row: pd.Series) -> dict:
     return {
+        "id": _stable_transaction_key(row),
         "municipality": format_municipality_label(row.get("municipality")) or row.get("municipality"),
         "slug": row.get("_municipality_slug") or municipality_slug(row.get("municipality")),
         "region": format_region_label(row.get("statistical_region")) or row.get("statistical_region"),
         "property_type": row.get("property_type"),
         "price_eur": _round_or_none(row.get("price_eur")),
         "size_m2": _round_or_none(row.get("_area"), 1),
+        "uporabna_povrsina": _round_or_none(row.get("uporabna_povrsina"), 1),
         "price_per_m2": _round_or_none(row.get("_price_per_m2")),
         "year": str(row.get("_year")) if pd.notna(row.get("_year")) else None,
         "year_built": int(row["year_built"]) if "year_built" in row.index and pd.notna(row["year_built"]) else None,
-        "lat": _round_or_none(row.get("latitude"), 6),
-        "lon": _round_or_none(row.get("longitude"), 6),
+        "rooms": _round_or_none(row.get("rooms"), 1),
+        "floor": _round_or_none(row.get("floor"), 0),
+        "num_prostori": _round_or_none(row.get("num_prostori"), 0),
+        "lega_v_stavbi": row.get("lega_v_stavbi"),
+        "lat": _round_or_none(row.get("_map_lat") or row.get("latitude"), 6),
+        "lon": _round_or_none(row.get("_map_lon") or row.get("longitude"), 6),
+        "novogradnja": int(row["novogradnja"]) if "novogradnja" in row.index and pd.notna(row["novogradnja"]) else None,
+        "has_garaza": int(row["has_garaza"]) if "has_garaza" in row.index and pd.notna(row["has_garaza"]) else None,
+        "has_klet": int(row["has_klet"]) if "has_klet" in row.index and pd.notna(row["has_klet"]) else None,
+        "has_terasa": int(row["has_terasa"]) if "has_terasa" in row.index and pd.notna(row["has_terasa"]) else None,
+        "has_shramba": int(row["has_shramba"]) if "has_shramba" in row.index and pd.notna(row["has_shramba"]) else None,
+        "stavba_je_dokoncana": int(row["stavba_je_dokoncana"])
+        if "stavba_je_dokoncana" in row.index and pd.notna(row["stavba_je_dokoncana"])
+        else None,
+        "ddv_vkljucen": int(row["ddv_vkljucen"])
+        if "ddv_vkljucen" in row.index and pd.notna(row["ddv_vkljucen"])
+        else None,
     }
 
 
@@ -264,7 +334,9 @@ def _municipality_stats(group: pd.DataFrame) -> dict:
         if "_municipality_slug" in group.columns
         else municipality_slug(group["municipality"].iloc[0]),
         "region": (
-            format_region_label(_mode_or_none(group["statistical_region"])) if "statistical_region" in group.columns else None
+            format_region_label(_mode_or_none(group["statistical_region"]))
+            if "statistical_region" in group.columns
+            else None
         ),
         "count": int(len(group)),
         "avg_price": _round_or_none(group["price_eur"].mean()) if "price_eur" in group.columns else None,
@@ -911,7 +983,8 @@ async def municipalities_by_region(
     result: dict[str, list[str]] = {}
     for region, group in mapping.groupby("statistical_region"):
         result[format_region_label(region) or str(region)] = sorted(
-            (format_municipality_label(municipality) or municipality) for municipality in group["municipality"].unique().tolist()
+            (format_municipality_label(municipality) or municipality)
+            for municipality in group["municipality"].unique().tolist()
         )
     return result
 
@@ -921,6 +994,7 @@ async def map_overview(
     property_type: str | None = None,
     statistical_region: str | None = None,
     year: str | None = None,
+    price_band: str | None = None,
     _user: User = Depends(get_current_user),
 ):
     """Return municipality markers for the overview map without relying on model artifacts."""
@@ -947,10 +1021,13 @@ async def map_overview(
     municipalities = []
     group_key = "_municipality_slug" if "_municipality_slug" in map_df.columns else "municipality"
     for _, group in map_df.groupby(group_key):
+        avg_price_per_m2 = _round_or_none(group["_price_per_m2"].dropna().mean())
         municipalities.append(
             {
                 "municipality": (
-                    format_municipality_label(group["municipality"].iloc[0]) if "municipality" in group.columns else "unknown"
+                    format_municipality_label(group["municipality"].iloc[0])
+                    if "municipality" in group.columns
+                    else "unknown"
                 ),
                 "slug": str(group["_municipality_slug"].iloc[0])
                 if "_municipality_slug" in group.columns
@@ -965,12 +1042,35 @@ async def map_overview(
                 "lon": _round_or_none(group["_map_lon"].median(), 6),
                 "avg_price": _round_or_none(group["price_eur"].mean()) if "price_eur" in group.columns else None,
                 "median_price": _round_or_none(group["price_eur"].median()) if "price_eur" in group.columns else None,
-                "avg_price_per_m2": _round_or_none(group["_price_per_m2"].dropna().mean()),
+                "avg_price_per_m2": avg_price_per_m2,
+                "price_band": None,
             }
         )
 
+    legend = _build_price_band_meta(pd.Series([item["avg_price_per_m2"] for item in municipalities], dtype=float))
+    for item in municipalities:
+        item["price_band"] = _price_band_key(item.get("avg_price_per_m2"), legend["thresholds"]) if legend else None
+
+    if price_band:
+        municipalities = [item for item in municipalities if item.get("price_band") == str(price_band).casefold()]
+        if not municipalities:
+            return {
+                "municipalities": [],
+                "count": 0,
+                "meta": {"reason": "no_matches", "legend": legend, "price_band": price_band},
+            }
+
     municipalities.sort(key=lambda item: item["count"], reverse=True)
-    return {"municipalities": municipalities, "count": len(municipalities), "meta": {"reason": None}}
+    return {
+        "municipalities": municipalities,
+        "count": len(municipalities),
+        "meta": {
+            "reason": None,
+            "legend": legend,
+            "price_band": price_band,
+            "filtered_total": len(municipalities),
+        },
+    }
 
 
 @router.get("/map-transactions")
@@ -979,6 +1079,7 @@ async def map_transactions(
     statistical_region: str | None = None,
     year: str | None = None,
     municipality: str | None = None,
+    price_band: str | None = None,
     limit: int = Query(5000, ge=100, le=50000),
     _user: User = Depends(get_current_user),
 ):
@@ -1006,54 +1107,51 @@ async def map_transactions(
     if map_df.empty:
         return {"transactions": [], "count": 0, "meta": {"reason": reason or "no_coordinates"}}
 
+    legend = _build_price_band_meta(map_df["_price_per_m2"])
+    if legend:
+        map_df["_price_band"] = map_df["_price_per_m2"].map(lambda value: _price_band_key(value, legend["thresholds"]))
+    else:
+        map_df["_price_band"] = None
+
+    filtered_total = int(len(map_df))
+    if price_band:
+        map_df = map_df[map_df["_price_band"] == str(price_band).casefold()]
+        if map_df.empty:
+            return {
+                "transactions": [],
+                "count": 0,
+                "meta": {"reason": "no_matches", "legend": legend, "price_band": price_band},
+            }
+
+    filtered_after_band = int(len(map_df))
+
     # Sample if too many
+    truncated = False
     if len(map_df) > limit:
         map_df = map_df.sample(n=limit, random_state=42)
+        truncated = True
 
     area = _effective_area(map_df)
 
     # Build result DataFrame vectorized (no iterrows)
-    result_df = pd.DataFrame(
-        {
-            "lat": map_df["_map_lat"].values,
-            "lon": map_df["_map_lon"].values,
-        }
-    )
+    map_df = map_df.copy()
+    map_df["_area"] = area
+    transactions = []
+    for _, row in map_df.iterrows():
+        item = _serialize_price_row(row)
+        item["price_band"] = row.get("_price_band")
+        transactions.append(item)
 
-    result_df["price_eur"] = map_df["price_eur"].values if "price_eur" in map_df.columns else np.nan
-    result_df["size_m2"] = map_df["size_m2"].values if "size_m2" in map_df.columns else np.nan
-    result_df["municipality"] = (
-        map_df["municipality"].map(lambda value: format_municipality_label(value) or "").astype(str).values
-        if "municipality" in map_df.columns
-        else ""
-    )
-    result_df["property_type"] = (
-        map_df["property_type"].astype(str).values if "property_type" in map_df.columns else ""
-    )
-    result_df["rooms"] = map_df["rooms"].values if "rooms" in map_df.columns else np.nan
-
-    # Year column — pick first available
-    year_src = None
-    for col in ["_year", "transaction_year", "source_label"]:
-        if col in map_df.columns:
-            year_src = col
-            break
-    result_df["year"] = map_df[year_src].astype(str).str[:4].values if year_src else ""
-
-    # Price per m2
-    area_arr = area.values
-    valid_area = (area_arr > 0) & np.isfinite(area_arr)
-    valid_price = result_df["price_eur"].notna().values & np.isfinite(result_df["price_eur"].values)
-    price_per_m2 = np.where(
-        valid_area & valid_price,
-        np.round(result_df["price_eur"].values / np.where(area_arr > 0, area_arr, 1), 2),
-        np.nan,
-    )
-    result_df["price_per_m2"] = price_per_m2
-
-    # Replace NaN with None for valid JSON
-    result_df = result_df.where(result_df.notna(), None)
-
-    transactions = result_df.to_dict(orient="records")
-
-    return {"transactions": transactions, "count": len(transactions), "meta": {"reason": None}}
+    return {
+        "transactions": transactions,
+        "count": len(transactions),
+        "meta": {
+            "reason": None,
+            "legend": legend,
+            "price_band": price_band,
+            "filtered_total": filtered_total,
+            "band_total": filtered_after_band,
+            "returned_total": len(transactions),
+            "truncated": truncated,
+        },
+    }

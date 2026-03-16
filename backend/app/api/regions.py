@@ -89,13 +89,10 @@ async def get_municipalities(
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
-    query = (
-        select(
-            distinct(RegionLookup.obcina_naziv).label("municipality"),
-            RegionLookup.regija_naziv.label("region"),
-        )
-        .order_by(RegionLookup.obcina_naziv)
-    )
+    query = select(
+        distinct(RegionLookup.obcina_naziv).label("municipality"),
+        RegionLookup.regija_naziv.label("region"),
+    ).order_by(RegionLookup.obcina_naziv)
 
     result = await db.execute(query)
     rows = result.all()

@@ -167,7 +167,12 @@
       </div>
 
       <a :href="comparisonUrl" target="_blank" rel="noreferrer" class="hero-link">
-        <Button severity="secondary" outlined icon="pi pi-external-link" :label="t('analysis.compareOnPortal')" />
+        <Button
+          severity="secondary"
+          outlined
+          icon="pi pi-external-link"
+          :label="t('analysis.compareOnPortal')"
+        />
       </a>
     </section>
 
@@ -180,7 +185,7 @@
 
         <div class="threshold">
           <label>{{ t('analysis.threshold') }}</label>
-          <InputNumber v-model="threshold" inputId="threshold" :min="1" :max="100" suffix="%" />
+          <InputNumber v-model="threshold" input-id="threshold" :min="1" :max="100" suffix="%" />
         </div>
       </div>
 
@@ -192,7 +197,12 @@
 
         <label class="field">
           <span>{{ t('predict.propertyType') }}</span>
-          <Select v-model="guidedForm.property_type" :options="propertyTypeOptions" optionLabel="label" optionValue="value" />
+          <Select
+            v-model="guidedForm.property_type"
+            :options="propertyTypeOptions"
+            option-label="label"
+            option-value="value"
+          />
         </label>
 
         <label class="field">
@@ -212,14 +222,29 @@
 
         <label class="field">
           <span>{{ t('analysis.askingPrice') }}</span>
-          <InputNumber v-model="guidedForm.asking_price" mode="currency" currency="EUR" locale="sl-SI" />
+          <InputNumber
+            v-model="guidedForm.asking_price"
+            mode="currency"
+            currency="EUR"
+            locale="sl-SI"
+          />
         </label>
       </div>
 
       <div class="actions-row">
-        <Button icon="pi pi-search" :loading="loading" :label="t('analysis.analyzeButton')" @click="analyzeGuided" />
+        <Button
+          icon="pi pi-search"
+          :loading="loading"
+          :label="t('analysis.analyzeButton')"
+          @click="analyzeGuided"
+        />
         <a :href="comparisonUrl" target="_blank" rel="noreferrer">
-          <Button severity="contrast" outlined icon="pi pi-external-link" :label="t('analysis.compareOnPortal')" />
+          <Button
+            severity="contrast"
+            outlined
+            icon="pi pi-external-link"
+            :label="t('analysis.compareOnPortal')"
+          />
         </a>
       </div>
     </section>
@@ -235,13 +260,25 @@
       <Textarea
         v-model="advancedJson"
         rows="8"
-        autoResize
+        auto-resize
         :placeholder="t('analysis.jsonPlaceholder')"
       />
 
       <div class="actions-row">
-        <Button severity="secondary" outlined icon="pi pi-file-edit" :label="t('analysis.loadSample')" @click="loadSample" />
-        <Button severity="secondary" icon="pi pi-play" :loading="loading" :label="t('analysis.runBulk')" @click="analyzeAdvanced" />
+        <Button
+          severity="secondary"
+          outlined
+          icon="pi pi-file-edit"
+          :label="t('analysis.loadSample')"
+          @click="loadSample"
+        />
+        <Button
+          severity="secondary"
+          icon="pi pi-play"
+          :loading="loading"
+          :label="t('analysis.runBulk')"
+          @click="analyzeAdvanced"
+        />
       </div>
     </section>
 
@@ -263,7 +300,10 @@
         </article>
         <article class="result-card">
           <span>{{ t('analysis.label') }}</span>
-          <Tag :severity="labelSeverity(primaryListing.label)" :value="labelText(primaryListing.label)" />
+          <Tag
+            :severity="labelSeverity(primaryListing.label)"
+            :value="labelText(primaryListing.label)"
+          />
         </article>
       </section>
 
@@ -284,7 +324,12 @@
           />
         </div>
 
-        <DataTable :value="result.listings || []" size="small" stripedRows tableStyle="min-width: 100%">
+        <DataTable
+          :value="result.listings || []"
+          size="small"
+          striped-rows
+          table-style="min-width: 100%"
+        >
           <Column :header="t('dashboard.municipality')">
             <template #body="{ data }">{{ data.municipality || '—' }}</template>
           </Column>

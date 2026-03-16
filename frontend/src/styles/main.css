@@ -1,22 +1,22 @@
 :root {
-  --bg: #f3f6fb;
+  --bg: #eef3f7;
   --bg-accent:
-    radial-gradient(circle at top left, rgb(37 99 235 / 10%), transparent 32%),
+    radial-gradient(circle at top left, rgb(14 165 233 / 10%), transparent 30%),
     radial-gradient(circle at top right, rgb(245 158 11 / 10%), transparent 24%),
-    linear-gradient(180deg, #f8fbff 0%, #eef3f9 48%, #f3f6fb 100%);
-  --surface: rgb(255 255 255 / 86%);
+    linear-gradient(180deg, #f8fbfc 0%, #eef3f7 42%, #eaf1f6 100%);
+  --surface: rgb(255 255 255 / 88%);
   --surface-strong: #ffffff;
-  --surface-muted: #f4f7fb;
-  --surface-soft: rgb(255 255 255 / 78%);
-  --surface-soft-strong: rgb(255 255 255 / 88%);
-  --surface-soft-muted: rgb(255 255 255 / 72%);
-  --surface-soft-subtle: rgb(255 255 255 / 68%);
-  --surface-elevated: rgb(15 23 42 / 4%);
+  --surface-muted: #f4f7fa;
+  --surface-soft: rgb(255 255 255 / 82%);
+  --surface-soft-strong: rgb(255 255 255 / 92%);
+  --surface-soft-muted: rgb(255 255 255 / 76%);
+  --surface-soft-subtle: rgb(255 255 255 / 70%);
+  --surface-elevated: rgb(255 255 255 / 58%);
   --surface-dark: #111827;
   --surface-dark-muted: rgb(255 255 255 / 8%);
   --text: #0f172a;
-  --text-muted: #5b6472;
-  --text-soft: #7b8492;
+  --text-muted: #556274;
+  --text-soft: #748396;
   --border: rgb(15 23 42 / 9%);
   --border-strong: rgb(15 23 42 / 16%);
   --primary: #2563eb;
@@ -42,14 +42,14 @@
     radial-gradient(circle at top left, rgb(37 99 235 / 22%), transparent 28%),
     radial-gradient(circle at top right, rgb(245 158 11 / 12%), transparent 22%),
     linear-gradient(180deg, #08101d 0%, #0c1628 48%, #101826 100%);
-  --surface: rgb(12 22 40 / 84%);
-  --surface-strong: #10192a;
+  --surface: rgb(10 20 37 / 88%);
+  --surface-strong: #0d1728;
   --surface-muted: rgb(255 255 255 / 4%);
-  --surface-soft: rgb(12 22 40 / 84%);
-  --surface-soft-strong: rgb(15 27 45 / 88%);
-  --surface-soft-muted: rgb(255 255 255 / 6%);
-  --surface-soft-subtle: rgb(255 255 255 / 5%);
-  --surface-elevated: rgb(255 255 255 / 6%);
+  --surface-soft: rgb(11 22 40 / 88%);
+  --surface-soft-strong: rgb(14 27 46 / 92%);
+  --surface-soft-muted: rgb(255 255 255 / 7%);
+  --surface-soft-subtle: rgb(255 255 255 / 6%);
+  --surface-elevated: rgb(255 255 255 / 7%);
   --surface-dark: #050c18;
   --surface-dark-muted: rgb(255 255 255 / 8%);
   --text: #eef3ff;
@@ -83,7 +83,7 @@ body,
 body {
   margin: 0;
   font-family: var(--font-body);
-  font-size: 15px;
+  font-size: 14px;
   background: var(--bg-accent);
   color: var(--text);
   line-height: 1.5;
@@ -126,6 +126,7 @@ button {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  overflow-y: auto;
   background: linear-gradient(180deg, rgb(15 23 42 / 98%) 0%, rgb(19 31 58 / 98%) 100%), #0f172a;
   border-right: 1px solid rgb(255 255 255 / 7%);
   color: #f4faf8;
@@ -230,9 +231,24 @@ button {
 
 .sidebar-footer {
   margin-top: auto;
-  padding: 0.85rem 0 0;
+  padding: 0.95rem 0 0;
   border-top: 1px solid rgb(255 255 255 / 10%);
   background: transparent;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.switch-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.8rem 0.9rem;
+  border-radius: 1rem;
+  border: 1px solid rgb(255 255 255 / 10%);
+  background: rgb(255 255 255 / 6%);
+  color: inherit;
+  text-decoration: none;
+  font-weight: 700;
 }
 
 .status-stack {
@@ -258,6 +274,15 @@ button {
   background: var(--surface-muted);
   color: var(--text-muted);
   border-color: var(--border);
+}
+
+.sidebar::-webkit-scrollbar {
+  width: 10px;
+}
+
+.sidebar::-webkit-scrollbar-thumb {
+  background: rgb(255 255 255 / 12%);
+  border-radius: 999px;
 }
 
 .topbar {
@@ -289,7 +314,7 @@ button {
 .page-heading {
   margin: 0;
   font-family: var(--font-display);
-  font-size: clamp(1.45rem, 2.5vw, 2rem);
+  font-size: clamp(1.35rem, 2.2vw, 1.85rem);
   line-height: 1.08;
   letter-spacing: -0.03em;
 }
@@ -561,7 +586,7 @@ button:disabled {
 .login-panel h2 {
   margin: 0.45rem 0 0.65rem;
   font-family: var(--font-display);
-  font-size: clamp(1.6rem, 3vw, 2.25rem);
+  font-size: clamp(1.5rem, 2.5vw, 2rem);
   line-height: 1.06;
   letter-spacing: -0.04em;
 }
@@ -743,6 +768,93 @@ select {
   background: var(--surface-strong);
   color: var(--text);
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 40%);
+}
+
+.p-component {
+  font-family: var(--font-body);
+}
+
+.p-inputtext,
+.p-inputnumber-input,
+.p-select-label,
+.p-select-dropdown,
+.p-autocomplete-input,
+.p-textarea,
+.p-checkbox-box,
+.p-progressbar,
+.p-datatable-table-container,
+.p-drawer {
+  border-color: var(--border);
+}
+
+.p-inputtext,
+.p-inputnumber-input,
+.p-autocomplete-input,
+.p-select,
+.p-textarea {
+  background: var(--surface-strong);
+  color: var(--text);
+  border-radius: 1rem;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 25%);
+}
+
+.p-select,
+.p-autocomplete,
+.p-inputnumber {
+  width: 100%;
+}
+
+.p-select-option,
+.p-autocomplete-option {
+  color: var(--text);
+}
+
+.p-select-overlay,
+.p-autocomplete-overlay,
+.p-drawer {
+  background: var(--surface-strong);
+  color: var(--text);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+}
+
+.p-button {
+  border-radius: 1rem;
+  font-weight: 700;
+}
+
+.p-checkbox-box {
+  background: var(--surface-strong);
+}
+
+.p-checkbox-checked .p-checkbox-box {
+  background: var(--primary);
+}
+
+.p-datatable-thead > tr > th {
+  background: transparent;
+  color: var(--text-soft);
+  border-color: var(--border);
+}
+
+.p-datatable-tbody > tr > td {
+  background: transparent;
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.p-datatable-tbody > tr {
+  background: transparent;
+}
+
+.p-progressbar {
+  background: rgb(37 99 235 / 12%);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.p-progressbar-value {
+  background: linear-gradient(135deg, var(--secondary), var(--primary));
 }
 
 input:focus,

@@ -6,7 +6,7 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 
 | Item | Value |
 |------|-------|
-| **Version** | 0.9.0 |
+| **Version** | 0.10.0 |
 | **Repo** | [github.com/mvelkov9/nepremicnine](https://github.com/mvelkov9/nepremicnine) |
 | **Backend** | FastAPI + Python 3.13 + PostgreSQL 17 + SQLAlchemy 2.x async |
 | **Frontend** | Vue 3 Composition API + Pinia + pnpm 9, Vite 6 |
@@ -32,9 +32,18 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 | [Phase 18](PHASE_8_14_PLAN.md#phase-18--cache-coherency--phase-tracking-v0814) | Agency re-audit, cache coherency fixes, tracked execution plan | ✅ Complete | `3cf6248` |
 | [Phase 19](PHASE_8_14_PLAN.md#phase-19--dashboard-property-type-parity-v0815) | Dashboard property-type parity and analytical lens controls | ✅ Complete | `fb4a786` |
 | [Phase 20](PHASE_8_14_PLAN.md#phase-20--diagnostics-focus--locale-formatting-v0816) | Diagnostics focus workflow and locale-aware formatting polish | ✅ Complete | `4c58881` |
-| Phase 21 | Consumer valuation companion reset: viewer/admin split, map overhaul, municipality canonicalization, PrimeVue UI system | ✅ Complete | working tree |
+| Phase 21 | Market UX and training reliability reset: structured progress, map legend/drawer, PrimeVue admin/viewer polish | ✅ Complete | working tree |
 
 ## Changelog
+
+### v0.10.0
+
+- **Training reliability**: Model training now publishes structured stage updates, current-model progress, elapsed time, ETA, and richer job/run history so admins can follow real work instead of a fake 0→100 jump
+- **Map redesign**: The market map now defaults to transactions, exposes a clickable low/mid/high price-band legend, and opens a right-side drawer with property details, municipality drill-down, prediction prefill, and portal comparison actions
+- **UI system**: Prediction and preparation flows now use PrimeVue controls more consistently, the shared theme tokens are tightened for dark mode, and checkbox/toggle alignment is cleaned up for a more professional feel
+- **Canonical formatting**: Municipality and region labels keep Slovenian šumniki and proper capitalization across dashboard, map, autocomplete, and regional summaries
+- **Release hygiene**: README, MASTER, package/config versions, `.env.example`, and the local `.env` APP_VERSION are all synced to the new release
+- **Version**: 0.9.0 → 0.10.0
 
 ### v0.9.0
 

@@ -7,7 +7,8 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
-from app.api.stats import market_home, regions_stats, trend
+from app.api.stats import map_transactions, market_home, regions_stats, trend
+from app.utils.municipality import municipality_slug
 
 
 class _FakeRedis:
@@ -100,3 +101,22 @@ async def test_trend_property_type_filter_returns_only_selected_type_rows(monkey
     assert result
     assert sum(item["count"] for item in result) == 3
     assert all("stanovanje" in item["by_type"] for item in result if item["by_type"])
+
+
+@pytest.mark.asyncio
+async def test_map_transactions_exposes_price_band_legend_and_filter(monkeypatch: pytest.MonkeyPatch):
+    df = _build_market_df().copy()
+    df["_price_per_m2"] = df["price_eur"] / df["uporabna_povrsina"]
+    df["_year"] = df["source_label"].astype(str)
+    df["_municipality_slug"] = df["municipality"].map(municipality_slug)
+
+    monkeypatch.setattr("app.api.stats._prepare_market_df", lambda: df.copy())
+
+    result = await map_transactions(limit=1000, _user=object())
+    filtered = await map_transactions(limit=1000, price_band="high", _user=object())
+
+    assert result["meta"]["reason"] is None
+    assert set(result["meta"]["legend"]["counts"]) == {"low", "mid", "high"}
+    assert {item["price_band"] for item in result["transactions"]} == {"low", "mid", "high"}
+    assert filtered["count"] >= 1
+    assert all(item["price_band"] == "high" for item in filtered["transactions"])

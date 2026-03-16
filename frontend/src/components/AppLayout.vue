@@ -254,9 +254,9 @@
           <span>{{ switchLink.label }}</span>
         </RouterLink>
 
-        <div class="sidebar-meta">
-          <span v-if="versionBadge" class="sidebar-version">{{ versionBadge }}</span>
-          <small>{{ userRoleLabel }}</small>
+        <div class="status-stack">
+          <span class="status-pill muted">{{ userRoleLabel }}</span>
+          <span v-if="versionBadge" class="status-pill">{{ versionBadge }}</span>
         </div>
       </div>
     </aside>

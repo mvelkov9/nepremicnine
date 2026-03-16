@@ -50,7 +50,12 @@
       </div>
 
       <RouterLink to="/" class="hero-link">
-        <Button severity="contrast" outlined icon="pi pi-arrow-left" :label="t('layout.backToMarket')" />
+        <Button
+          severity="contrast"
+          outlined
+          icon="pi pi-arrow-left"
+          :label="t('layout.backToMarket')"
+        />
       </RouterLink>
     </section>
 

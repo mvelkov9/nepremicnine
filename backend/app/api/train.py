@@ -64,15 +64,30 @@ async def _read_redis_job_state(redis, job_id: str) -> dict | None:
 
 
 def _serialize_job(job: TrainingJob, state: dict | None = None) -> TrainStatusResponse:
-    status_value = state.get("status") if state else None
-    progress_value = state.get("progress") if state else None
+    payload = state or {}
+    status_value = payload.get("status")
+    progress_value = payload.get("progress")
     return TrainStatusResponse(
         job_id=job.job_id,
         status=status_value or (job.status.value if isinstance(job.status, JobStatus) else str(job.status)),
-        stage=(state or {}).get("stage") or job.stage,
+        stage=payload.get("stage") or job.stage,
         progress=_coerce_progress(progress_value, fallback=job.progress or 0),
-        result=(state or {}).get("result"),
-        error=(state or {}).get("error") or job.error,
+        rows=payload.get("rows") or job.rows,
+        current_model=payload.get("current_model") or job.current_model,
+        current_model_index=payload.get("current_model_index") or job.current_model_index,
+        total_models=payload.get("total_models") or job.total_models,
+        current_model_progress=_coerce_progress(
+            payload.get("current_model_progress"),
+            fallback=job.current_model_progress or 0,
+        )
+        if payload.get("current_model_progress") is not None or job.current_model_progress is not None
+        else None,
+        fitted_trees=payload.get("fitted_trees") or job.fitted_trees,
+        total_trees=payload.get("total_trees") or job.total_trees,
+        elapsed_sec=payload.get("elapsed_sec") or job.elapsed_sec,
+        eta_sec=payload.get("eta_sec") or job.eta_sec,
+        result=payload.get("result"),
+        error=payload.get("error") or job.error,
     )
 
 
@@ -100,13 +115,28 @@ async def _reconcile_active_job(db: AsyncSession, redis) -> tuple[TrainingJob | 
             redis_status = state.get("status")
             job.stage = state.get("stage") or job.stage
             job.progress = _coerce_progress(state.get("progress"), fallback=job.progress or 0)
+            job.rows = state.get("rows") or job.rows
+            job.current_model = state.get("current_model") or job.current_model
+            job.current_model_index = state.get("current_model_index") or job.current_model_index
+            job.total_models = state.get("total_models") or job.total_models
+            if state.get("current_model_progress") is not None:
+                job.current_model_progress = _coerce_progress(
+                    state.get("current_model_progress"),
+                    fallback=job.current_model_progress or 0,
+                )
+            job.fitted_trees = state.get("fitted_trees") or job.fitted_trees
+            job.total_trees = state.get("total_trees") or job.total_trees
+            job.elapsed_sec = state.get("elapsed_sec") or job.elapsed_sec
+            job.eta_sec = state.get("eta_sec") or job.eta_sec
             job.error = state.get("error") or job.error
+            dirty = True
 
             if redis_status == "completed":
                 job.status = JobStatus.completed
                 result_payload = state.get("result") or {}
                 job.rows = result_payload.get("rows") or job.rows
                 job.duration_sec = result_payload.get("duration_sec") or job.duration_sec
+                job.current_model_progress = 100
                 dirty = True
                 continue
 
@@ -271,6 +301,14 @@ async def list_jobs(
             stage=j.stage,
             progress=j.progress,
             rows=j.rows,
+            current_model=j.current_model,
+            current_model_index=j.current_model_index,
+            total_models=j.total_models,
+            current_model_progress=j.current_model_progress,
+            fitted_trees=j.fitted_trees,
+            total_trees=j.total_trees,
+            elapsed_sec=j.elapsed_sec,
+            eta_sec=j.eta_sec,
             duration_sec=j.duration_sec,
             error=j.error,
             created_at=j.created_at.isoformat(),
