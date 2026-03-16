@@ -90,8 +90,13 @@
           <select v-model="selectedCsv" class="form-input">
             <option value="">-- {{ t('model.selectDataset') }} --</option>
             <option value="data/raw/train.csv">train.csv (default)</option>
-            <option v-for="ds in data.datasets" :key="ds.id" :value="ds.stored_path">
-              {{ ds.original_name }} ({{ ds.row_count }} {{ t('data.rows') }})
+            <option
+              v-for="ds in Array.isArray(data.datasets) ? data.datasets : []"
+              :key="ds.id"
+              :value="ds.stored_path"
+            >
+              {{ ds.original_name }} ({{ ds.row_count?.toLocaleString() ?? 0 }}
+              {{ t('data.rows') }})
             </option>
           </select>
         </div>

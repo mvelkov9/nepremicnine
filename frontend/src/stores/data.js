@@ -11,7 +11,7 @@ export const useDataStore = defineStore('data', () => {
     loading.value = true
     try {
       const { data } = await api.get('/api/data/datasets')
-      datasets.value = data
+      datasets.value = Array.isArray(data) ? data : []
     } finally {
       loading.value = false
     }

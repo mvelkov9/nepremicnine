@@ -1,4 +1,4 @@
-# Nepremičnine v0.2 — Master Tracking
+# Nepremičnine v0.3 — Master Tracking
 
 ## Overview
 
@@ -6,7 +6,7 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 
 | Item | Value |
 |------|-------|
-| **Version** | 0.3.0 |
+| **Version** | 0.3.1 |
 | **Repo** | [github.com/mvelkov9/nepremicnine](https://github.com/mvelkov9/nepremicnine) |
 | **Backend** | FastAPI + Python 3.13 + PostgreSQL 17 + SQLAlchemy 2.x async |
 | **Frontend** | Vue 3 Composition API + Pinia + pnpm 9, Vite 6 |
@@ -28,6 +28,13 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 | [Phase 5](PHASE_5_PRODUCTION.md) | Production — Docker, CI/CD, deploy | ✅ Complete | `153f140` |
 
 ## Changelog
+
+### v0.3.1
+- **Bug fix**: Increase nginx `client_max_body_size` from 100M to 600M — fixes 413 Request Entity Too Large on file uploads
+- **Bug fix**: PrepareView `TypeError: M.value is not iterable` — defensive guard on datasets iteration when no files uploaded
+- **Bug fix**: ModelView dropdown showing `(vrstic)` with no datasets — guard against null/empty dataset entries + null-safe row_count
+- **Robustness**: Data store `fetchDatasets()` now guarantees `datasets` is always an array via `Array.isArray()` check
+- **Version**: 0.3.0 → 0.3.1
 
 ### v0.3.0
 - **Security**: Rate limiting on auth endpoints (slowapi, 5 req/min per IP)

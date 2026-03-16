@@ -52,7 +52,8 @@
   // Reactive computed: auto-detects ETN pairs grouped by year
   const detectedPairs = computed(() => {
     const byYear = new Map()
-    for (const item of datasets.value) {
+    const items = datasets.value || []
+    for (const item of items) {
       const role = datasetRole(item)
       const year = datasetYear(item)
       if (!year || (role !== 'posli' && role !== 'delistavb' && role !== 'zemljisca')) continue

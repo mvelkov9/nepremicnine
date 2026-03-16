@@ -4,7 +4,7 @@
 
 | Item | Value |
 |------|-------|
-| **Version** | 0.3.0 |
+| **Version** | 0.3.1 |
 | **Previous** | 0.2.5 |
 | **Scope** | Security, backend infra, frontend UX, testing, i18n |
 
@@ -206,3 +206,35 @@
 - [x] All 4 config files show 0.3.0
 - [x] README accurately reflects current feature set
 - [x] MASTER.md changelog covers all phases
+
+---
+
+## Phase 6.8 — v0.3.1 Bug Fixes
+
+### Changes
+- **Nginx** `client_max_body_size` increased from 100M → 600M to match backend 500 MB upload limit — fixes 413 Request Entity Too Large on file uploads
+- **PrepareView** `TypeError: M.value is not iterable` — added defensive `|| []` guard on `datasets.value` iteration in `detectedPairs` computed
+- **ModelView** dropdown showing `(vrstic)` label with no datasets — added `Array.isArray()` guard on `v-for` + null-safe `row_count?.toLocaleString()`
+- **Data store** `fetchDatasets()` — `datasets.value` assignment now guarantees array via `Array.isArray()` check
+- Version bumped to 0.3.1 across all config files
+
+### Files Modified
+- `frontend/nginx.conf` — `client_max_body_size 100M` → `600M`
+- `frontend/src/stores/data.js` — defensive array assignment
+- `frontend/src/views/PrepareView.vue` — defensive datasets iteration
+- `frontend/src/views/ModelView.vue` — guarded dataset dropdown rendering
+- `backend/pyproject.toml` — version 0.3.1
+- `frontend/package.json` — version 0.3.1
+- `backend/app/config.py` — APP_VERSION 0.3.1
+- `.env.example` — APP_VERSION 0.3.1
+- `.env` — APP_VERSION 0.3.1
+- `README.md` — version 0.3.1
+- `docs/MASTER.md` — version 0.3.1, v0.3.1 changelog entry
+- `docs/PHASE_6_V030.md` — added Phase 6.8 section
+
+### Verification
+- [x] Nginx allows uploads up to 600 MB
+- [x] PrepareView renders without error when no datasets uploaded
+- [x] ModelView dropdown shows only default options when no datasets exist
+- [x] All config files show 0.3.1
+- [x] MASTER.md changelog covers v0.3.1 changes
