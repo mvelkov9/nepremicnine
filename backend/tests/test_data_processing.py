@@ -3,6 +3,7 @@
 import pandas as pd
 
 from app.services.data_processing_service import _CC_SI_PREFIX_MAP, enrich_training_df, group_property_type
+from app.utils.slovenian_labels import format_municipality_label
 
 
 def test_cc_si_prefix_map_1110_is_hisa():
@@ -40,3 +41,8 @@ def test_enrich_training_df_preserves_display_names_and_adds_normalized_column()
 
     assert enriched["municipality"].tolist() == ["Škofja Loka", "Ljubljana"]
     assert enriched["municipality_normalized"].tolist() == ["skofja loka", "ljubljana"]
+
+
+def test_format_municipality_label_handles_ascii_and_hyphenated_names():
+    assert format_municipality_label("skofja loka") == "Škofja Loka"
+    assert format_municipality_label("race-fram") == "Rače - Fram"

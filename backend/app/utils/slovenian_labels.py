@@ -156,14 +156,14 @@ def format_municipality_label(value: object | None) -> str | None:
     if normalized in PHRASE_OVERRIDES:
         return PHRASE_OVERRIDES[normalized]
 
-    tokens = re.split(r"([\\s\\-/]+)", text.lower())
+    tokens = re.split(r"([\s/-]+)", text.lower())
     formatted: list[str] = []
     word_index = 0
 
     for token in tokens:
         if token == "":
             continue
-        if re.fullmatch(r"[\\s\\-/]+", token):
+        if re.fullmatch(r"[\s/-]+", token):
             formatted.append(token)
             continue
 
