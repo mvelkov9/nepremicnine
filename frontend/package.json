@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "NUXT_BUILD_DIR=.nuxt-dev NUXT_OUTPUT_DIR=.output-dev nuxt dev",
     "build": "NUXT_BUILD_DIR=.nuxt-build NUXT_OUTPUT_DIR=.output-build nuxt build",
+    "postinstall": "NUXT_BUILD_DIR=.nuxt-dev NUXT_OUTPUT_DIR=.output-dev nuxt prepare",
     "preview": "NUXT_BUILD_DIR=.nuxt-preview NUXT_OUTPUT_DIR=.output-build nuxt preview",
     "lint": "eslint .",
     "format": "prettier --write \"**/*.{vue,js,ts,css,json,md}\"",

@@ -5,7 +5,7 @@ const local = (path) => fileURLToPath(new URL(path, import.meta.url))
 export default defineNuxtConfig({
   compatibilityDate: '2025-01-01',
   devtools: { enabled: false },
-  buildDir: process.env.NUXT_BUILD_DIR || '.nuxt-local',
+  buildDir: process.env.NUXT_BUILD_DIR || '.nuxt-dev',
   modules: ['@nuxt/ui', '@pinia/nuxt'],
   css: ['~/assets/css/app.css', 'leaflet/dist/leaflet.css'],
   fonts: {
@@ -24,11 +24,31 @@ export default defineNuxtConfig({
   },
   nitro: {
     output: {
-      dir: process.env.NUXT_OUTPUT_DIR || '.output-local',
+      dir: process.env.NUXT_OUTPUT_DIR || '.output-dev',
     },
   },
   vite: {
     cacheDir: process.env.VITE_CACHE_DIR || '.vite-cache',
+    optimizeDeps: {
+      include: ['vue-i18n', 'leaflet'],
+    },
+    server: {
+      watch: {
+        ignored: [
+          '**/.nuxt-app/**',
+          '**/.nuxt-build/**',
+          '**/.nuxt-local/**',
+          '**/.nuxt-preview/**',
+          '**/.nuxt-typecheck/**',
+          '**/.nuxt-verify/**',
+          '**/.output/**',
+          '**/.output-build/**',
+          '**/.output-local/**',
+          '**/.output-typecheck/**',
+          '**/.output-verify/**',
+        ],
+      },
+    },
     resolve: {
       alias: {
         'primevue/autocomplete': local('./components/primevue/AutoComplete.vue'),
