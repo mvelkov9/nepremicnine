@@ -141,6 +141,14 @@
       <path d="M16 6.5h4v4" />
     </template>
 
+    <template v-else-if="name === 'brand'">
+      <path d="M3.5 10.5 12 4l8.5 6.5" />
+      <path d="M5.5 9.8v9.2h13V9.8" />
+      <path d="M9 19v-4.2h6V19" />
+      <path d="M7.6 13.2 10 10.9l2.2 1.9 4.2-4.3" />
+      <path d="M14.8 8.6H18v3.2" />
+    </template>
+
     <template v-else>
       <circle cx="12" cy="12" r="8" />
     </template>

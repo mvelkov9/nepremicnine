@@ -2,6 +2,11 @@
   import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
   import { RouterLink, useRoute, useRouter } from 'vue-router'
   import { useI18n } from 'vue-i18n'
+  import Button from 'primevue/button'
+  import Dialog from 'primevue/dialog'
+  import InputText from 'primevue/inputtext'
+  import SelectButton from 'primevue/selectbutton'
+  import Tag from 'primevue/tag'
   import { setLocale } from '../i18n'
   import { adminNavigation, viewerNavigation } from '../constants/navigation'
   import AppIcon from './AppIcon.vue'
@@ -31,7 +36,7 @@
   const isAdminArea = computed(() => route.path.startsWith('/admin'))
   const currentNavItems = computed(() => (isAdminArea.value ? adminNavigation : viewerNavigation))
   const shellStyle = computed(() => ({
-    '--sidebar-width': sidebarCollapsed.value ? '5.75rem' : '17.5rem',
+    '--sidebar-width': sidebarCollapsed.value ? '6.2rem' : '18.5rem',
   }))
 
   const currentItem = computed(
@@ -60,6 +65,7 @@
   const workspaceTag = computed(() =>
     isAdminArea.value ? t('layout.adminWorkbenchShort') : t('layout.marketWorkspaceShort'),
   )
+
   const footerSummary = computed(() =>
     isAdminArea.value ? t('layout.footerAdminSummary') : t('layout.footerViewerSummary'),
   )
@@ -91,6 +97,16 @@
     appVersion.value ? t('layout.versionBadge', { version: appVersion.value }) : '',
   )
 
+  const localeOptions = computed(() => [
+    { label: 'SL', value: 'sl' },
+    { label: 'EN', value: 'en' },
+  ])
+
+  const localeChoice = computed({
+    get: () => locale.value,
+    set: (nextLocale) => changeLocale(nextLocale),
+  })
+
   const profileInitials = computed(() => {
     const source = profileForm.value.full_name || auth.user?.full_name || ''
     if (!source.trim()) return '?'
@@ -103,7 +119,11 @@
   })
 
   function updateScrollState() {
-    isScrolled.value = window.scrollY > 14
+    isScrolled.value = window.scrollY > 16
+  }
+
+  function sidebarTooltip(label) {
+    return sidebarCollapsed.value ? { value: label, showDelay: 120, autoHide: true } : null
   }
 
   watch(sidebarCollapsed, (collapsed) => {
@@ -148,6 +168,7 @@
   })
 
   function changeLocale(nextLocale) {
+    if (!nextLocale || nextLocale === locale.value) return
     locale.value = nextLocale
     setLocale(nextLocale)
   }
@@ -162,10 +183,6 @@
       avatar_url: auth.user?.avatar_url || '',
     }
     profileOpen.value = true
-  }
-
-  function closeProfile() {
-    profileOpen.value = false
   }
 
   async function saveProfile() {
@@ -197,25 +214,29 @@
 
 <template>
   <div class="app-shell" :style="shellStyle" :class="{ collapsed: sidebarCollapsed }">
-    <div class="mobile-topbar">
-      <button
-        class="icon-btn"
+    <div class="mobile-shell-bar">
+      <Button
+        class="shell-icon-button mobile-menu-button"
+        text
+        rounded
         @click="mobileMenuOpen = !mobileMenuOpen"
         :aria-label="mobileMenuOpen ? t('ui.closeMenu') : t('ui.openMenu')"
         :aria-expanded="mobileMenuOpen"
       >
-        {{ mobileMenuOpen ? '×' : '☰' }}
-      </button>
+        <i :class="mobileMenuOpen ? 'pi pi-times' : 'pi pi-bars'" aria-hidden="true"></i>
+      </Button>
 
-      <div class="mobile-brand">
-        <span class="brand-mark">NN</span>
-        <div>
+      <RouterLink to="/" class="shell-brand shell-brand-mobile">
+        <span class="brand-mark">
+          <AppIcon name="brand" :size="22" :stroke="1.9" />
+        </span>
+        <div class="brand-copy">
           <strong>{{ t('app.title') }}</strong>
-          <small>{{ workspaceTag }}</small>
+          <small>{{ t('layout.brandTagline') }}</small>
         </div>
-      </div>
+      </RouterLink>
 
-      <button class="profile-pill compact" @click="openProfile">
+      <Button class="profile-trigger compact" text rounded @click="openProfile">
         <span class="avatar-frame">
           <img
             v-if="avatarUrl"
@@ -224,150 +245,187 @@
           />
           <span v-else>{{ profileInitials }}</span>
         </span>
-      </button>
+      </Button>
     </div>
 
-    <div v-if="mobileMenuOpen" class="mobile-backdrop" @click="mobileMenuOpen = false"></div>
+    <div v-if="mobileMenuOpen" class="mobile-shell-backdrop" @click="mobileMenuOpen = false"></div>
 
-    <aside class="sidebar" :class="{ 'mobile-open': mobileMenuOpen, collapsed: sidebarCollapsed }">
-      <div class="sidebar-top">
-        <div class="sidebar-brand">
-          <div class="brand-mark">NN</div>
+    <aside
+      class="shell-sidebar"
+      :class="{ 'mobile-open': mobileMenuOpen, collapsed: sidebarCollapsed }"
+    >
+      <div class="sidebar-pane">
+        <RouterLink to="/" class="shell-brand">
+          <span class="brand-mark">
+            <AppIcon name="brand" :size="24" :stroke="1.95" />
+          </span>
           <div class="brand-copy">
             <strong>{{ t('app.title') }}</strong>
-            <small>{{ workspaceTag }}</small>
+            <small>{{ t('layout.brandTagline') }}</small>
           </div>
-        </div>
-
-        <button class="icon-btn subtle desktop-only" @click="toggleSidebar">
-          {{ sidebarCollapsed ? '→' : '←' }}
-        </button>
-      </div>
-
-      <div class="sidebar-rail-label">
-        <span class="sidebar-label">{{ workspaceTag }}</span>
-      </div>
-
-      <nav class="sidebar-nav" :aria-label="t('layout.navigation')">
-        <RouterLink
-          v-for="item in currentNavItems"
-          :key="item.to"
-          :to="item.to"
-          class="nav-link"
-          :class="{ active: isActiveRoute(item) }"
-        >
-          <span class="nav-icon"><AppIcon :name="item.icon" :size="18" /></span>
-          <span class="nav-copy">
-            <strong>{{ t(item.label) }}</strong>
-          </span>
-        </RouterLink>
-      </nav>
-
-      <div class="sidebar-footer">
-        <RouterLink v-if="switchLink" :to="switchLink.to" class="switch-link">
-          <AppIcon :name="switchLink.icon" :size="16" />
-          <span>{{ switchLink.label }}</span>
         </RouterLink>
 
-        <div class="status-stack">
-          <span class="status-pill muted">{{ userRoleLabel }}</span>
-          <span v-if="versionBadge" class="status-pill">{{ versionBadge }}</span>
+        <section class="sidebar-context" :class="{ compact: sidebarCollapsed }">
+          <span class="sidebar-section-label">{{ t('layout.workspaceMode') }}</span>
+          <strong>{{ workspaceLabel }}</strong>
+          <p>{{ footerSummary }}</p>
+        </section>
+
+        <nav class="shell-nav" :aria-label="t('layout.navigation')">
+          <RouterLink
+            v-for="item in currentNavItems"
+            :key="item.to"
+            :to="item.to"
+            class="shell-nav-link"
+            :class="{ active: isActiveRoute(item) }"
+            v-tooltip.right="sidebarTooltip(t(item.label))"
+          >
+            <span class="shell-nav-icon">
+              <AppIcon :name="item.icon" :size="18" />
+            </span>
+            <span class="shell-nav-copy">
+              <strong>{{ t(item.label) }}</strong>
+            </span>
+          </RouterLink>
+        </nav>
+
+        <div class="sidebar-footer">
+          <RouterLink
+            v-if="switchLink"
+            :to="switchLink.to"
+            class="shell-switch-link"
+            v-tooltip.right="sidebarTooltip(switchLink.label)"
+          >
+            <span class="shell-nav-icon subtle">
+              <AppIcon :name="switchLink.icon" :size="16" />
+            </span>
+            <span class="shell-nav-copy">
+              <strong>{{ switchLink.label }}</strong>
+            </span>
+          </RouterLink>
+
+          <div class="sidebar-status">
+            <Tag :value="workspaceTag" severity="contrast" rounded />
+            <Tag :value="userRoleLabel" severity="secondary" rounded />
+            <Tag v-if="versionBadge" :value="versionBadge" rounded />
+          </div>
         </div>
       </div>
     </aside>
 
-    <div class="workspace">
-      <header class="topbar" :class="{ scrolled: isScrolled }">
-        <div class="topbar-shell">
-          <div class="page-meta">
-            <span class="page-kicker">{{ workspaceLabel }}</span>
-            <h1 class="page-heading">{{ currentTitle }}</h1>
-            <p class="page-description">{{ currentDescription }}</p>
-          </div>
-
-          <div class="topbar-actions">
-            <RouterLink v-if="switchLink" :to="switchLink.to" class="switch-link mobile-switch">
-              <AppIcon :name="switchLink.icon" :size="16" />
-              <span>{{ switchLink.label }}</span>
-            </RouterLink>
-
-            <div class="segmented-control" role="group" :aria-label="t('layout.language')">
-              <button
-                class="segmented-btn"
-                :class="{ active: locale === 'sl' }"
-                @click="changeLocale('sl')"
+    <div class="shell-workspace">
+      <header class="shell-topbar" :class="{ scrolled: isScrolled }">
+        <div class="shell-topbar-inner">
+          <div class="shell-heading-row">
+            <div class="shell-heading-main">
+              <Button
+                class="shell-icon-button desktop-sidebar-toggle"
+                text
+                rounded
+                @click="toggleSidebar"
+                v-tooltip.bottom="
+                  sidebarCollapsed ? t('layout.expandSidebar') : t('layout.collapseSidebar')
+                "
               >
-                SI
-              </button>
-              <button
-                class="segmented-btn"
-                :class="{ active: locale === 'en' }"
-                @click="changeLocale('en')"
-              >
-                EN
-              </button>
+                <i
+                  :class="sidebarCollapsed ? 'pi pi-angle-double-right' : 'pi pi-angle-double-left'"
+                  aria-hidden="true"
+                ></i>
+              </Button>
+
+              <div class="page-meta">
+                <div class="page-meta-row">
+                  <span class="page-kicker">{{ workspaceLabel }}</span>
+                  <Tag :value="workspaceTag" severity="contrast" rounded />
+                  <Tag v-if="versionBadge" :value="versionBadge" rounded />
+                </div>
+                <h1 class="page-heading">{{ currentTitle }}</h1>
+                <p class="page-description">{{ currentDescription }}</p>
+              </div>
             </div>
 
-            <button class="ghost-btn icon-label-btn" @click="toggleDark">
-              <AppIcon :name="isDark ? 'sun' : 'moon'" :size="16" />
-              <span>{{ isDark ? t('ui.lightMode') : t('ui.darkMode') }}</span>
-            </button>
+            <div class="shell-header-actions">
+              <RouterLink v-if="switchLink" :to="switchLink.to" class="shell-link-pill">
+                <AppIcon :name="switchLink.icon" :size="16" />
+                <span>{{ switchLink.label }}</span>
+              </RouterLink>
 
-            <button class="profile-pill" @click="openProfile">
-              <span class="avatar-frame">
-                <img
-                  v-if="avatarUrl"
-                  :src="avatarUrl"
-                  :alt="auth.user?.full_name || t('layout.profile')"
-                />
-                <span v-else>{{ profileInitials }}</span>
-              </span>
-              <span class="profile-copy">
-                <strong>{{ auth.user?.full_name || t('layout.profile') }}</strong>
-                <small>{{ userRoleLabel }}</small>
-              </span>
-            </button>
+              <SelectButton
+                v-model="localeChoice"
+                :options="localeOptions"
+                option-label="label"
+                option-value="value"
+                :allow-empty="false"
+                class="language-toggle"
+                :aria-label="t('layout.language')"
+              />
 
-            <button class="danger-soft icon-label-btn" @click="handleLogout">
-              <AppIcon name="logout" :size="16" />
-              <span>{{ t('nav.logout') }}</span>
-            </button>
+              <Button class="shell-action-button" rounded @click="toggleDark">
+                <AppIcon :name="isDark ? 'sun' : 'moon'" :size="16" />
+                <span>{{ isDark ? t('ui.lightMode') : t('ui.darkMode') }}</span>
+              </Button>
+
+              <Button class="profile-trigger" rounded @click="openProfile">
+                <span class="avatar-frame">
+                  <img
+                    v-if="avatarUrl"
+                    :src="avatarUrl"
+                    :alt="auth.user?.full_name || t('layout.profile')"
+                  />
+                  <span v-else>{{ profileInitials }}</span>
+                </span>
+                <span class="profile-copy">
+                  <strong>{{ auth.user?.full_name || t('layout.profile') }}</strong>
+                  <small>{{ userRoleLabel }}</small>
+                </span>
+              </Button>
+
+              <Button class="logout-button" outlined rounded @click="handleLogout">
+                <AppIcon name="logout" :size="16" />
+                <span>{{ t('nav.logout') }}</span>
+              </Button>
+            </div>
           </div>
         </div>
       </header>
 
-      <main class="main">
+      <main class="shell-main">
         <slot />
       </main>
 
-      <footer class="shell-footer">
-        <div class="footer-brand">
-          <strong>{{ t('app.title') }}</strong>
-          <span>{{ footerSummary }}</span>
-        </div>
+      <footer class="shell-footer-bar">
+        <div class="shell-footer-inner">
+          <div class="footer-brand-block">
+            <span class="brand-mark footer-brand-mark">
+              <AppIcon name="brand" :size="18" :stroke="1.95" />
+            </span>
+            <div>
+              <strong>{{ t('app.title') }}</strong>
+              <p>{{ t('app.subtitle') }}</p>
+            </div>
+          </div>
 
-        <div class="footer-meta">
-          <span>{{ t('app.subtitle') }}</span>
-          <span>{{ userRoleLabel }}</span>
-          <span v-if="versionBadge">{{ versionBadge }}</span>
+          <p class="footer-summary">{{ footerSummary }}</p>
+
+          <div class="footer-meta">
+            <Tag :value="workspaceTag" severity="contrast" rounded />
+            <Tag :value="userRoleLabel" severity="secondary" rounded />
+            <Tag v-if="versionBadge" :value="versionBadge" rounded />
+          </div>
         </div>
       </footer>
     </div>
   </div>
 
-  <div v-if="profileOpen" class="modal-overlay" @click.self="closeProfile">
-    <div class="modal-content profile-modal">
-      <div class="profile-header">
-        <div>
-          <p class="eyebrow">{{ t('layout.profile') }}</p>
-          <h2>{{ t('layout.profileTitle') }}</h2>
-          <p class="muted">{{ t('layout.profileDescription') }}</p>
-        </div>
-        <button class="icon-btn subtle" :aria-label="t('common.close')" @click="closeProfile">
-          ×
-        </button>
-      </div>
-
+  <Dialog
+    v-model:visible="profileOpen"
+    modal
+    :header="t('layout.profileTitle')"
+    class="profile-dialog"
+    :dismissable-mask="true"
+    :draggable="false"
+  >
+    <div class="profile-dialog-body">
       <div class="profile-preview">
         <span class="avatar-frame large">
           <img
@@ -377,290 +435,746 @@
           />
           <span v-else>{{ profileInitials }}</span>
         </span>
-        <div>
+
+        <div class="profile-preview-copy">
           <strong>{{ profileForm.full_name || t('layout.profilePlaceholder') }}</strong>
-          <p class="muted">{{ auth.user?.email }}</p>
+          <p>{{ auth.user?.email }}</p>
+          <small>{{ t('layout.profileDescription') }}</small>
         </div>
       </div>
 
-      <div class="form-grid profile-form">
-        <div>
-          <label class="form-label">{{ t('auth.fullName') }}</label>
-          <input v-model="profileForm.full_name" class="form-input" type="text" />
-        </div>
-        <div>
-          <label class="form-label">{{ t('layout.avatarUrl') }}</label>
-          <input
+      <div class="profile-form-grid">
+        <label class="profile-field">
+          <span>{{ t('auth.fullName') }}</span>
+          <InputText v-model="profileForm.full_name" />
+        </label>
+
+        <label class="profile-field">
+          <span>{{ t('layout.avatarUrl') }}</span>
+          <InputText
             v-model="profileForm.avatar_url"
-            class="form-input"
-            type="url"
             :placeholder="t('layout.avatarPlaceholder')"
           />
-        </div>
+        </label>
       </div>
 
-      <p class="muted">{{ t('layout.avatarHint') }}</p>
-
-      <div class="modal-actions">
-        <button class="ghost-btn" @click="closeProfile">{{ t('common.cancel') }}</button>
-        <button class="btn btn-primary" :disabled="profileSaving" @click="saveProfile">
-          {{ profileSaving ? t('layout.savingProfile') : t('common.save') }}
-        </button>
-      </div>
+      <p class="profile-hint">{{ t('layout.avatarHint') }}</p>
     </div>
-  </div>
+
+    <template #footer>
+      <div class="profile-dialog-actions">
+        <Button
+          text
+          severity="secondary"
+          :label="t('common.cancel')"
+          @click="profileOpen = false"
+        />
+        <Button
+          :label="profileSaving ? t('layout.savingProfile') : t('common.save')"
+          :loading="profileSaving"
+          @click="saveProfile"
+        />
+      </div>
+    </template>
+  </Dialog>
 </template>
 
 <style scoped>
-  .sidebar {
+  .shell-sidebar {
+    position: sticky;
+    top: 0;
+    height: 100vh;
     overflow-y: auto;
+    background: var(--shell-chrome-bg);
+    color: var(--shell-text);
+    border-right: 1px solid var(--shell-chrome-border);
+    box-shadow: inset -1px 0 0 rgb(255 255 255 / 2%);
     transition:
-      width 160ms ease,
+      width 180ms ease,
       transform 180ms ease;
+    z-index: 18;
   }
 
-  .sidebar-top {
+  .sidebar-pane {
+    min-height: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    padding: 1.35rem 1rem 1rem;
+  }
+
+  .shell-brand {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-  }
-
-  .sidebar-brand {
+    gap: 0.9rem;
+    text-decoration: none;
+    color: inherit;
     min-width: 0;
   }
 
-  .brand-copy {
-    display: grid;
-    gap: 0.15rem;
-  }
-
-  .sidebar-rail-label {
-    min-height: 1rem;
-  }
-
-  .sidebar-label {
-    color: rgb(255 255 255 / 44%);
-  }
-
-  .nav-link.active {
-    background: linear-gradient(135deg, rgb(16 185 129 / 22%), rgb(255 255 255 / 8%));
-    border-color: rgb(16 185 129 / 24%);
-    color: #f8fbff;
-  }
-
-  .sidebar-footer {
-    display: grid;
-    gap: 0.6rem;
-    padding-top: 0.15rem;
-  }
-
-  .switch-link {
+  .brand-mark {
+    width: 3rem;
+    height: 3rem;
+    flex-shrink: 0;
     display: inline-flex;
     align-items: center;
-    gap: 0.55rem;
-    padding: 0.82rem 0.9rem;
-    border-radius: 1rem;
-    border: 1px solid var(--border);
-    background: var(--surface);
-    color: var(--text);
-    text-decoration: none;
-    font-weight: 700;
+    justify-content: center;
+    border-radius: 1.1rem;
+    background: linear-gradient(145deg, var(--shell-brand-start), var(--shell-brand-end));
+    color: var(--shell-brand-contrast);
+    border: 1px solid rgb(255 255 255 / 10%);
+    box-shadow: 0 16px 30px rgb(0 0 0 / 22%);
   }
 
-  .switch-link:hover {
-    border-color: rgb(16 185 129 / 32%);
-  }
-
-  .sidebar-meta {
+  .brand-copy {
+    min-width: 0;
     display: grid;
-    gap: 0.18rem;
-    padding: 0 0.15rem;
-    color: rgb(255 255 255 / 60%);
+    gap: 0.1rem;
   }
 
-  .sidebar-meta small {
-    font-size: 0.8rem;
+  .brand-copy strong {
+    color: var(--shell-text);
+    font-size: 1rem;
+    font-weight: 800;
+    letter-spacing: 0.01em;
   }
 
-  .sidebar-version {
-    font-size: 0.76rem;
-    font-weight: 700;
-    letter-spacing: 0.08em;
+  .brand-copy small {
+    color: var(--shell-text-soft);
+    font-size: 0.82rem;
+  }
+
+  .sidebar-context {
+    display: grid;
+    gap: 0.3rem;
+    padding: 1rem;
+    border-radius: 1.2rem;
+    border: 1px solid var(--shell-panel-border);
+    background: var(--shell-panel-bg);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 4%);
+  }
+
+  .sidebar-context strong {
+    color: var(--shell-text);
+    font-size: 1rem;
+  }
+
+  .sidebar-context p {
+    margin: 0;
+    color: var(--shell-text-soft);
+    font-size: 0.84rem;
+    line-height: 1.45;
+  }
+
+  .sidebar-section-label {
+    color: var(--shell-text-muted);
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.14em;
     text-transform: uppercase;
   }
 
-  .mobile-switch {
-    display: none;
+  .shell-nav {
+    display: grid;
+    gap: 0.4rem;
   }
 
-  .workspace {
-    position: relative;
+  .shell-nav-link,
+  .shell-switch-link {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    min-width: 0;
+    padding: 0.78rem 0.86rem;
+    border-radius: 1.05rem;
+    border: 1px solid transparent;
+    text-decoration: none;
+    color: var(--shell-text-soft);
+    transition:
+      background 160ms ease,
+      border-color 160ms ease,
+      color 160ms ease,
+      transform 160ms ease;
+  }
+
+  .shell-nav-link:hover,
+  .shell-switch-link:hover,
+  .shell-nav-link.active {
+    background: var(--shell-active-bg);
+    border-color: var(--shell-active-border);
+    color: var(--shell-text);
+    transform: translateX(2px);
+  }
+
+  .shell-nav-icon {
+    width: 2.65rem;
+    height: 2.65rem;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.95rem;
+    background: var(--shell-control-bg);
+    border: 1px solid var(--shell-control-border);
+    color: var(--shell-icon-color);
+  }
+
+  .shell-nav-icon.subtle {
+    width: 2.3rem;
+    height: 2.3rem;
+  }
+
+  .shell-nav-copy {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+  }
+
+  .shell-nav-copy strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.93rem;
+    font-weight: 700;
+  }
+
+  .sidebar-footer {
+    margin-top: auto;
+    display: grid;
+    gap: 0.8rem;
+    padding-top: 0.95rem;
+    border-top: 1px solid var(--shell-divider);
+  }
+
+  .sidebar-status {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .shell-workspace {
+    min-width: 0;
     min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    position: relative;
   }
 
-  .workspace::before {
+  .shell-workspace::before {
     content: '';
     position: fixed;
     inset: 0 0 auto var(--sidebar-width);
-    height: 220px;
+    height: 16rem;
     background:
-      radial-gradient(circle at top left, rgb(16 185 129 / 10%), transparent 32%),
-      radial-gradient(circle at top right, rgb(245 158 11 / 8%), transparent 24%);
+      radial-gradient(circle at top left, rgb(45 132 121 / 12%), transparent 34%),
+      radial-gradient(circle at top right, rgb(213 154 53 / 10%), transparent 28%);
     pointer-events: none;
     z-index: 0;
   }
 
-  .topbar {
-    position: sticky;
-    top: 0;
-    z-index: 12;
-    margin: 0 1.35rem;
-    padding: 1rem 0 0.8rem;
+  .shell-topbar,
+  .shell-footer-bar {
+    position: relative;
+    z-index: 5;
+    width: 100%;
+    background: var(--shell-chrome-bg);
+    color: var(--shell-text);
   }
 
-  .topbar-shell {
+  .shell-topbar {
+    position: sticky;
+    top: 0;
+    border-bottom: 1px solid var(--shell-chrome-border);
+    transition:
+      box-shadow 160ms ease,
+      backdrop-filter 160ms ease;
+  }
+
+  .shell-topbar.scrolled {
+    box-shadow: var(--shell-topbar-shadow);
+    backdrop-filter: blur(16px);
+  }
+
+  .shell-topbar-inner,
+  .shell-footer-inner {
+    width: 100%;
+    padding: 1.05rem 1.5rem;
+  }
+
+  .shell-heading-row {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
+    gap: 1.2rem;
+  }
+
+  .shell-heading-main {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.95rem;
+    min-width: 0;
+  }
+
+  .page-meta {
+    min-width: 0;
+    display: grid;
+    gap: 0.3rem;
+  }
+
+  .page-meta-row {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    flex-wrap: wrap;
+  }
+
+  .page-kicker {
+    color: var(--shell-text-muted);
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+  }
+
+  .page-heading {
+    margin: 0;
+    color: var(--shell-text);
+    font-family: var(--font-display);
+    font-size: clamp(1.45rem, 2.2vw, 1.95rem);
+    line-height: 1.04;
+    letter-spacing: -0.03em;
+  }
+
+  .page-description {
+    margin: 0;
+    max-width: 62ch;
+    color: var(--shell-text-soft);
+    font-size: 0.92rem;
+  }
+
+  .shell-header-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.7rem;
+    flex-wrap: wrap;
+  }
+
+  .shell-link-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.72rem 0.95rem;
+    border-radius: 999px;
+    text-decoration: none;
+    font-weight: 700;
+    color: var(--shell-text);
+    background: var(--shell-control-bg);
+    border: 1px solid var(--shell-control-border);
+  }
+
+  .shell-main {
+    position: relative;
+    z-index: 1;
+    flex: 1;
+    padding: 1.2rem 1.5rem 1.7rem;
+  }
+
+  .shell-footer-bar {
+    border-top: 1px solid var(--shell-chrome-border);
+    margin-top: auto;
+  }
+
+  .shell-footer-inner {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) auto;
+    align-items: center;
     gap: 1rem;
-    padding: 1rem 1.1rem;
-    border-radius: 1.4rem;
-    border: 1px solid transparent;
-    background: color-mix(in srgb, var(--surface-soft-strong) 78%, transparent);
-    backdrop-filter: blur(16px);
-    transition:
-      background 160ms ease,
-      border-color 160ms ease,
-      box-shadow 160ms ease,
-      transform 160ms ease;
   }
 
-  .topbar.scrolled .topbar-shell {
-    border-color: var(--border);
-    background: color-mix(in srgb, var(--surface-strong) 92%, transparent);
-    box-shadow: var(--shadow-sm);
+  .footer-brand-block {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    min-width: 0;
   }
 
-  .page-meta,
+  .footer-brand-mark {
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 0.95rem;
+  }
+
+  .footer-brand-block strong {
+    display: block;
+    color: var(--shell-text);
+    font-size: 0.95rem;
+  }
+
+  .footer-brand-block p,
+  .footer-summary {
+    margin: 0;
+    color: var(--shell-text-soft);
+    font-size: 0.85rem;
+  }
+
+  .footer-meta {
+    display: flex;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .mobile-shell-bar,
+  .mobile-shell-backdrop {
+    display: none;
+  }
+
+  .profile-trigger,
+  .shell-action-button,
+  .shell-icon-button,
+  .logout-button,
+  .language-toggle,
+  .shell-link-pill,
+  .shell-switch-link {
+    flex-shrink: 0;
+  }
+
+  .profile-trigger,
+  .shell-action-button,
+  .logout-button,
+  .shell-icon-button {
+    background: var(--shell-control-bg);
+    border-color: var(--shell-control-border);
+    color: var(--shell-text);
+  }
+
+  .profile-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding-inline: 0.5rem 0.9rem;
+  }
+
+  .profile-trigger.compact {
+    min-width: auto;
+    padding-inline: 0.35rem;
+  }
+
   .profile-copy {
+    display: grid;
+    gap: 0.12rem;
+    min-width: 0;
+    text-align: left;
+  }
+
+  .profile-copy strong {
+    max-width: 12rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.92rem;
+  }
+
+  .profile-copy small {
+    color: var(--shell-text-soft);
+    font-size: 0.76rem;
+  }
+
+  .avatar-frame {
+    width: 2.45rem;
+    height: 2.45rem;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(145deg, var(--shell-brand-start), var(--shell-brand-end));
+    color: var(--shell-brand-contrast);
+    font-weight: 800;
+    overflow: hidden;
+  }
+
+  .avatar-frame.large {
+    width: 4.75rem;
+    height: 4.75rem;
+    font-size: 1.2rem;
+  }
+
+  .avatar-frame img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .desktop-sidebar-toggle {
+    margin-top: 0.1rem;
+  }
+
+  .profile-dialog-body {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .profile-preview {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .profile-preview-copy {
     display: grid;
     gap: 0.2rem;
   }
 
-  .page-kicker {
-    color: var(--text-soft);
-    font-size: 0.72rem;
-    font-weight: 800;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
+  .profile-preview-copy strong {
+    font-size: 1rem;
   }
 
-  .page-description {
-    max-width: 56ch;
+  .profile-preview-copy p,
+  .profile-preview-copy small,
+  .profile-hint {
     margin: 0;
     color: var(--text-muted);
-    font-size: 0.92rem;
   }
 
-  .main {
-    position: relative;
-    z-index: 1;
-    padding-top: 0.4rem;
-    padding-bottom: 1.25rem;
-  }
-
-  .shell-footer {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    margin: 0 1.35rem 1.35rem;
-    padding: 1rem 1.1rem;
-    border-radius: 1.3rem;
-    border: 1px solid var(--border);
-    background: color-mix(in srgb, var(--surface-soft) 92%, transparent);
-    color: var(--text-muted);
-    box-shadow: var(--shadow-sm);
-  }
-
-  .footer-brand,
-  .footer-meta {
+  .profile-form-grid {
     display: grid;
-    gap: 0.18rem;
+    gap: 0.9rem;
   }
 
-  .footer-brand strong,
-  .footer-meta span:first-child {
+  .profile-field {
+    display: grid;
+    gap: 0.4rem;
     color: var(--text);
-    font-weight: 800;
+    font-weight: 700;
   }
 
-  .footer-meta {
-    justify-items: end;
-    text-align: right;
-    font-size: 0.82rem;
+  .profile-field span {
+    font-size: 0.83rem;
   }
 
-  .desktop-only {
-    display: inline-flex;
+  .profile-dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.7rem;
+    width: 100%;
   }
 
+  .collapsed .sidebar-context,
+  .collapsed .shell-nav-copy,
   .collapsed .brand-copy,
-  .collapsed .nav-copy,
-  .collapsed .switch-link span,
-  .collapsed .sidebar-rail-label,
-  .collapsed .sidebar-meta {
+  .collapsed .sidebar-footer :deep(.p-tag-label) {
     display: none;
   }
 
-  .collapsed .sidebar-top {
+  .collapsed .sidebar-pane {
+    padding-inline: 0.75rem;
+  }
+
+  .collapsed .shell-brand,
+  .collapsed .shell-nav-link,
+  .collapsed .shell-switch-link {
     justify-content: center;
   }
 
-  .collapsed .switch-link {
+  .collapsed .sidebar-status {
     justify-content: center;
-    padding-inline: 0.6rem;
+  }
+
+  .collapsed .sidebar-footer :deep(.p-tag) {
+    min-width: 2.65rem;
+    justify-content: center;
+  }
+
+  .collapsed .shell-nav-link,
+  .collapsed .shell-switch-link {
+    padding-inline: 0.5rem;
+  }
+
+  .collapsed .desktop-sidebar-toggle {
+    transform: rotate(0deg);
+  }
+
+  :deep(.shell-icon-button .p-button-label),
+  :deep(.profile-trigger .p-button-label),
+  :deep(.shell-action-button .p-button-label),
+  :deep(.logout-button .p-button-label) {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+  }
+
+  :deep(.shell-icon-button .p-button-label) {
+    justify-content: center;
+  }
+
+  :deep(.shell-icon-button) {
+    min-width: 2.9rem;
+  }
+
+  :deep(.shell-action-button),
+  :deep(.logout-button),
+  :deep(.profile-trigger) {
+    min-height: 2.85rem;
+  }
+
+  :deep(.language-toggle .p-togglebutton) {
+    background: var(--shell-control-bg);
+    border-color: var(--shell-control-border);
+    color: var(--shell-text-soft);
+  }
+
+  :deep(.language-toggle .p-togglebutton.p-togglebutton-checked) {
+    background: var(--shell-active-bg);
+    border-color: var(--shell-active-border);
+    color: var(--shell-text);
+  }
+
+  :deep(.sidebar-status .p-tag),
+  :deep(.page-meta-row .p-tag),
+  :deep(.footer-meta .p-tag) {
+    background: var(--shell-control-bg);
+    border: 1px solid var(--shell-control-border);
+    color: var(--shell-text);
+  }
+
+  :deep(.page-meta-row .p-tag) {
+    font-size: 0.74rem;
+  }
+
+  :deep(.profile-dialog) {
+    width: min(34rem, calc(100vw - 2rem));
+  }
+
+  :deep(.profile-dialog .p-dialog-header) {
+    padding-bottom: 0.85rem;
+  }
+
+  :deep(.profile-dialog .p-dialog-content) {
+    padding-top: 0.4rem;
+  }
+
+  @media (max-width: 1100px) {
+    .shell-heading-row,
+    .shell-footer-inner {
+      grid-template-columns: 1fr;
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .shell-header-actions,
+    .footer-meta {
+      justify-content: flex-start;
+    }
   }
 
   @media (max-width: 960px) {
-    .workspace::before {
+    .shell-sidebar {
+      position: fixed;
+      inset: 0 auto 0 0;
+      width: min(90vw, 21rem);
+      transform: translateX(-102%);
+      z-index: 40;
+    }
+
+    .shell-sidebar.mobile-open {
+      transform: translateX(0);
+    }
+
+    .shell-workspace::before {
       inset: 0;
     }
 
-    .topbar {
-      margin: 0 1rem;
+    .mobile-shell-bar,
+    .mobile-shell-backdrop {
+      display: flex;
     }
 
-    .topbar-shell,
-    .shell-footer {
-      flex-direction: column;
-      align-items: stretch;
+    .mobile-shell-bar {
+      position: sticky;
+      top: 0;
+      z-index: 30;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      padding: 0.85rem 1rem;
+      background: var(--shell-chrome-bg);
+      border-bottom: 1px solid var(--shell-chrome-border);
+    }
+
+    .mobile-shell-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgb(5 12 24 / 56%);
+      z-index: 35;
+    }
+
+    .shell-brand-mobile {
+      flex: 1;
+    }
+
+    .desktop-sidebar-toggle,
+    .shell-header-actions .profile-trigger {
+      display: none;
+    }
+
+    .collapsed .brand-copy,
+    .collapsed .shell-nav-copy,
+    .collapsed .sidebar-context,
+    .collapsed .sidebar-footer :deep(.p-tag-label) {
+      display: initial;
+    }
+  }
+
+  @media (max-width: 760px) {
+    .shell-topbar-inner,
+    .shell-main,
+    .shell-footer-inner {
+      padding-inline: 1rem;
     }
 
     .page-description {
       max-width: none;
     }
 
-    .mobile-switch {
-      display: inline-flex;
+    .shell-header-actions {
+      gap: 0.55rem;
     }
 
-    .desktop-only {
+    .shell-link-pill,
+    .shell-action-button,
+    .logout-button {
+      width: 100%;
+      justify-content: center;
+    }
+
+    .profile-preview {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+  }
+
+  @media (max-width: 560px) {
+    .brand-copy small,
+    .footer-summary,
+    .profile-copy,
+    .shell-link-pill span,
+    .shell-action-button span,
+    .logout-button span {
       display: none;
     }
 
-    .footer-meta {
-      justify-items: start;
-      text-align: left;
+    .shell-main {
+      padding-top: 1rem;
     }
 
-    .sidebar.collapsed .brand-copy,
-    .sidebar.collapsed .nav-copy,
-    .sidebar.collapsed .switch-link span,
-    .sidebar.collapsed .sidebar-rail-label,
-    .sidebar.collapsed .sidebar-meta {
-      display: initial;
+    :deep(.profile-dialog) {
+      width: calc(100vw - 1rem);
+      margin: 0.5rem;
+    }
+
+    .profile-dialog-actions {
+      flex-direction: column-reverse;
     }
   }
 </style>
