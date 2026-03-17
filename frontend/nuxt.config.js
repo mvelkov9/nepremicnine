@@ -1,11 +1,25 @@
+import { createRequire } from 'node:module'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const local = (path) => fileURLToPath(new URL(path, import.meta.url))
+const require = createRequire(import.meta.url)
+
+function resolveVueRouterVolarPlugin() {
+  try {
+    const nuxtPackagePath = require.resolve('nuxt/package.json')
+    return join(dirname(nuxtPackagePath), '../vue-router/dist/volar/sfc-route-blocks.cjs')
+  } catch {
+    return 'vue-router/volar/sfc-route-blocks'
+  }
+}
+
+const vueRouterVolarPlugin = resolveVueRouterVolarPlugin()
 
 export default defineNuxtConfig({
   compatibilityDate: '2025-01-01',
   devtools: { enabled: false },
-  buildDir: process.env.NUXT_BUILD_DIR || '.nuxt-dev',
+  buildDir: process.env.NUXT_BUILD_DIR || '.nuxt',
   modules: ['@nuxt/ui', '@pinia/nuxt'],
   css: ['~/assets/css/app.css', 'leaflet/dist/leaflet.css'],
   fonts: {
@@ -24,7 +38,21 @@ export default defineNuxtConfig({
   },
   nitro: {
     output: {
-      dir: process.env.NUXT_OUTPUT_DIR || '.output-dev',
+      dir: process.env.NUXT_OUTPUT_DIR || '.output',
+    },
+  },
+  hooks: {
+    'prepare:types': ({ tsConfig }) => {
+      const plugins = tsConfig.vueCompilerOptions?.plugins
+      if (!Array.isArray(plugins)) return
+
+      const pluginIndex = plugins.findIndex(
+        (plugin) => plugin === 'vue-router/volar/sfc-route-blocks',
+      )
+
+      if (pluginIndex !== -1) {
+        plugins[pluginIndex] = vueRouterVolarPlugin
+      }
     },
   },
   vite: {

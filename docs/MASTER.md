@@ -4,37 +4,38 @@
 
 Complete rebuild of the Slovenian real estate price prediction application — from diploma prototype to a production-grade, publicly deployed platform.
 
-| Item | Value |
-|------|-------|
-| **Version** | 0.11.0 |
-| **Repo** | [github.com/mvelkov9/nepremicnine](https://github.com/mvelkov9/nepremicnine) |
-| **Backend** | FastAPI + Python 3.13 + PostgreSQL 17 + SQLAlchemy 2.x async |
-| **Frontend** | Nuxt 4 + @nuxt/ui + Tailwind 4 + Pinia + vue-i18n |
-| **ML** | scikit-learn HistGradientBoostingRegressor (per-type) |
-| **Auth** | JWT (access 15 min + refresh 7 days) + HttpOnly cookies, admin/viewer roles |
-| **i18n** | Slovenian (default) + English |
-| **CI/CD** | GitHub Actions → GHCR → VPS (SSH) |
-| **Infra** | Docker Compose (dev + prod profiles), cloud VPS |
+| Item         | Value                                                                        |
+| ------------ | ---------------------------------------------------------------------------- |
+| **Version**  | 0.11.0                                                                       |
+| **Repo**     | [github.com/mvelkov9/nepremicnine](https://github.com/mvelkov9/nepremicnine) |
+| **Backend**  | FastAPI + Python 3.13 + PostgreSQL 17 + SQLAlchemy 2.x async                 |
+| **Frontend** | Nuxt 4 + @nuxt/ui + Tailwind 4 + Pinia + vue-i18n                            |
+| **ML**       | scikit-learn HistGradientBoostingRegressor (per-type)                        |
+| **Auth**     | JWT (access 15 min + refresh 7 days) + HttpOnly cookies, admin/viewer roles  |
+| **i18n**     | Slovenian (default) + English                                                |
+| **CI/CD**    | GitHub Actions → GHCR + SSH deploy (current VPS rebuild hybrid)              |
+| **Infra**    | Docker Compose (dev + prod profiles), cloud VPS                              |
 
 ## Phase Progress
 
-| Phase | Description | Status | Commit |
-|-------|-------------|--------|--------|
-| [Phase 0](PHASE_0_FOUNDATION.md) | Foundation — skeleton, Docker, CI | ✅ Complete | `914a4ca` |
-| [Phase 1](PHASE_1_BACKEND.md) | Backend Core — ORM, auth, CRUD, tests | ✅ Complete | `7b0a80c` |
-| [Phase 2](PHASE_2_FRONTEND.md) | Frontend Core — pages, charts, stores | ✅ Complete | `1def8db` |
-| [Phase 3](PHASE_3_ML_PIPELINE.md) | ML Pipeline — training, prediction, ARQ | ✅ Complete | `1b227cb` |
-| [Phase 4](PHASE_4_FEATURES.md) | Features — map, diagnostics, admin, i18n | ✅ Complete | `fc18742` |
-| [Phase 5](PHASE_5_PRODUCTION.md) | Production — Docker, CI/CD, deploy | ✅ Complete | `153f140` |
-| [Phase 6](PHASE_6_V030.md) | Security hardening, backend robustness, frontend accessibility, expanded tests | ✅ Complete | `(v0.3.1)` |
-| [Phase 7](PHASE_7_V040_V080.md) | Security hardening, feature completeness, test expansion, UX polish | ✅ Complete | (latest commit) |
-| [Phase 8–17](PHASE_8_14_PLAN.md) | v1→v2 gap fixes, feature parity, performance, security, UX, tests, docs | ✅ Complete | — |
-| [Phase 18](PHASE_8_14_PLAN.md#phase-18--cache-coherency--phase-tracking-v0814) | Agency re-audit, cache coherency fixes, tracked execution plan | ✅ Complete | `3cf6248` |
-| [Phase 19](PHASE_8_14_PLAN.md#phase-19--dashboard-property-type-parity-v0815) | Dashboard property-type parity and analytical lens controls | ✅ Complete | `fb4a786` |
-| [Phase 20](PHASE_8_14_PLAN.md#phase-20--diagnostics-focus--locale-formatting-v0816) | Diagnostics focus workflow and locale-aware formatting polish | ✅ Complete | `4c58881` |
-| Phase 21 | Market UX and training reliability reset: structured progress, map legend/drawer, PrimeVue admin/viewer polish | ✅ Complete | `22c90cf` |
-| Phase 22 | Data quality, map UX, and PrimeVue modernization: canonical municipality coverage, direct portal links, centered map modal, cached analytics, admin quality summary | ✅ Complete | working tree |
-| Phase 23 | Nuxt 4 migration, SSR auth cookie alignment, backend stats cache regression fix, premium redesign mainline | 🚧 In Progress | `main` |
+| Phase                                                                               | Description                                                                                                                                                         | Status         | Commit          |
+| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- | --------------- |
+| [Phase 0](PHASE_0_FOUNDATION.md)                                                    | Foundation — skeleton, Docker, CI                                                                                                                                   | ✅ Complete    | `914a4ca`       |
+| [Phase 1](PHASE_1_BACKEND.md)                                                       | Backend Core — ORM, auth, CRUD, tests                                                                                                                               | ✅ Complete    | `7b0a80c`       |
+| [Phase 2](PHASE_2_FRONTEND.md)                                                      | Frontend Core — pages, charts, stores                                                                                                                               | ✅ Complete    | `1def8db`       |
+| [Phase 3](PHASE_3_ML_PIPELINE.md)                                                   | ML Pipeline — training, prediction, ARQ                                                                                                                             | ✅ Complete    | `1b227cb`       |
+| [Phase 4](PHASE_4_FEATURES.md)                                                      | Features — map, diagnostics, admin, i18n                                                                                                                            | ✅ Complete    | `fc18742`       |
+| [Phase 5](PHASE_5_PRODUCTION.md)                                                    | Production — Docker, CI/CD, deploy                                                                                                                                  | ✅ Complete    | `153f140`       |
+| [Phase 6](PHASE_6_V030.md)                                                          | Security hardening, backend robustness, frontend accessibility, expanded tests                                                                                      | ✅ Complete    | `(v0.3.1)`      |
+| [Phase 7](PHASE_7_V040_V080.md)                                                     | Security hardening, feature completeness, test expansion, UX polish                                                                                                 | ✅ Complete    | (latest commit) |
+| [Phase 8–17](PHASE_8_14_PLAN.md)                                                    | v1→v2 gap fixes, feature parity, performance, security, UX, tests, docs                                                                                             | ✅ Complete    | —               |
+| [Phase 18](PHASE_8_14_PLAN.md#phase-18--cache-coherency--phase-tracking-v0814)      | Agency re-audit, cache coherency fixes, tracked execution plan                                                                                                      | ✅ Complete    | `3cf6248`       |
+| [Phase 19](PHASE_8_14_PLAN.md#phase-19--dashboard-property-type-parity-v0815)       | Dashboard property-type parity and analytical lens controls                                                                                                         | ✅ Complete    | `fb4a786`       |
+| [Phase 20](PHASE_8_14_PLAN.md#phase-20--diagnostics-focus--locale-formatting-v0816) | Diagnostics focus workflow and locale-aware formatting polish                                                                                                       | ✅ Complete    | `4c58881`       |
+| Phase 21                                                                            | Market UX and training reliability reset: structured progress, map legend/drawer, PrimeVue admin/viewer polish                                                      | ✅ Complete    | `22c90cf`       |
+| Phase 22                                                                            | Data quality, map UX, and PrimeVue modernization: canonical municipality coverage, direct portal links, centered map modal, cached analytics, admin quality summary | ✅ Complete    | working tree    |
+| Phase 23                                                                            | Nuxt 4 migration, SSR auth cookie alignment, backend stats cache regression fix, premium redesign mainline                                                          | 🚧 In Progress | `main`          |
+| [Phase 24-31](PHASE_24_OVERHAUL_PROGRAM.md)                                         | 2026 overhaul program: pipeline stability, Nuxt UI completion, route-by-route migration, deployment simplification                                                  | 🚧 In Progress | working tree    |
 
 ## Current Mainline State
 
@@ -43,7 +44,10 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 - **Backend reliability**: the prepared-data cache path in `stats.py` now rebuilds correctly when raw-source `mtime` is unavailable, which fixes the failing property-type and map/stat regression tests
 - **Developer workflow reset**: local frontend development now defaults to `pnpm dev` against Dockerized backend services, while the frontend container is kept as an optional compose profile for parity/debugging instead of the default path
 - **Generated-dir cleanup**: frontend scripts now use isolated writable output folders such as `.nuxt-dev`, `.nuxt-build`, and `.output-build`, which avoids stale root-owned artifacts from older container runs
-- **Design migration**: the redesign is still in progress; the app shell and multiple pages already run through the Nuxt structure, while some migrated legacy screens still use compatibility shims under `frontend/legacy` and `frontend/components/primevue`
+- **Build stability reset**: frontend Docker builds now align on `.nuxt/tsconfig.json`, copy `.output-build` into the runtime image, and avoid clean-environment failures caused by generated-path drift
+- **Design migration**: the redesign is still in progress; the shell, login, dashboard, and admin home are now Nuxt UI-native, while the remaining viewer/admin screens still rely on compatibility shims under `frontend/legacy` and `frontend/components/primevue`
+- **Migration tracking**: use [FRONTEND_MIGRATION_MAP.md](FRONTEND_MIGRATION_MAP.md) as the route-by-route source of truth for what is still legacy
+- **Release reality**: production deployment still rebuilds on the VPS with merged compose files even though CI also publishes GHCR images; Phase 30 will collapse this to one deployment model
 - **Runtime implications**: production frontend traffic is served by a Node/Nitro server on port `3000` behind Docker Compose, not by an internal nginx layer
 
 ## Changelog
@@ -109,6 +113,7 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 - **Version**: 0.8.12 → 0.8.13
 
 ### v0.8.12
+
 - **UX**: Rebuilt the authenticated shell with a real top header, better navigation context, cleaner landing/auth screen, and a stronger dashboard first impression
 - **Workflow**: Prepared training dataset is now visible through the API and surfaced directly in the Model view as the recommended source
 - **Profile**: Added editable profile settings (`PATCH /api/auth/me`) with optional avatar URLs
@@ -118,17 +123,20 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 - **Version**: 0.8.11 → 0.8.12
 
 ### v0.8.11
+
 - **Fix**: Fix CI pipeline — backend ruff lint/format + frontend prettier format violations
 - **Fix**: Fix production version stuck on v0.1.1 — stale `APP_VERSION` in VPS `.env`
 - **Version**: 0.8.10 → 0.8.11
 
 ### v0.8.10
+
 - **Docs**: Comprehensive documentation update — README, MASTER.md, PHASE_8_14_PLAN.md, DEPLOYMENT.md all updated to v0.8.10
 - **Docs**: All Phase 8–14 verification checkboxes completed in plan doc
 - **Docs**: Test count updated to 126 (from 111)
 - **Version**: 0.8.9 → 0.8.10
 
 ### v0.8.9
+
 - **Test**: 15 new tests added (111 → 126 total)
 - **Test**: Phase 8 coverage — CC-SI prefix map validation, group property type classification
 - **Test**: Phase 9 coverage — enriched score listing response fields, enhanced diagnostics fields
@@ -138,6 +146,7 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 - **Version**: 0.8.8 → 0.8.9
 
 ### v0.8.8
+
 - **A11y**: ARIA labels on all icon-only buttons (AdminView, DataView)
 - **A11y**: Municipality autocomplete — role="combobox", aria-expanded, keyboard navigation (arrow keys + enter)
 - **A11y**: Progress bar — role="progressbar" with aria-valuenow/min/max
@@ -148,6 +157,7 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 - **Version**: 0.8.7 → 0.8.8
 
 ### v0.8.7
+
 - **Security**: Content-Security-Policy header added to FastAPI middleware and nginx (default-src 'self', script/style/img/font/connect restrictions, frame-ancestors 'none')
 - **Security**: Permissions-Policy header added (geolocation, microphone, camera, payment disabled)
 - **Security**: HSTS upgraded with `preload` directive
@@ -163,12 +173,14 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 - **Version**: 0.8.6 → 0.8.7
 
 ### v0.8.6
+
 - **Refactor**: DRY up Redis cache helpers — extracted shared `cache_get`/`cache_set` into `app/utils/cache.py`, removed duplicated code from stats.py and model.py
 - **Fix**: Stale `_cache_set` reference in model info endpoint
 - **Cleanup**: Removed unused `json` import from model.py
 - **Version**: 0.8.5 → 0.8.6
 
 ### v0.8.5
+
 - **Feat**: Enriched score listings response — includes original listing fields (size_m2, rooms, municipality, property_type, etc.)
 - **Feat**: Enhanced stats overview — added min/max/std price, year_built stats, regions_count, data_years
 - **Feat**: Region stats now include min_price and max_price per region
@@ -179,6 +191,7 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 - **Version**: 0.8.4 → 0.8.5
 
 ### v0.8.4
+
 - **Fix (CRIT)**: Data leakage — group medians (price_per_m2_region, price_per_m2_type) now computed from training set only, after train/test split
 - **Fix (CRIT)**: Warm-start loop — preprocessor (incl. TargetEncoder) now fitted once; warm-start loop only re-fits the regressor on transformed data
 - **Fix (CRIT)**: D96/TM → WGS84 coordinate conversion — map-transactions now validates D96/TM ranges and vectorizes conversion (was showing raw D96/TM values)
@@ -188,6 +201,7 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 - **Version**: 0.8.3 → 0.8.4
 
 ### v0.8.3
+
 - **Fix**: 413 upload error — host nginx `client_max_body_size` increased from 100M to 1G in deployment docs
 - **Fix**: Version display showing stale value — `.env` and `.env.example` `APP_VERSION` now kept in sync with config.py
 - **Fix**: Select-all checkbox in PrepareView — replaced mutating computed with reactive `deselectedYears` Set
@@ -202,10 +216,12 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 - **Version**: 0.8.0 → 0.8.3
 
 ### v0.8.0
+
 - **Docs**: Comprehensive documentation update — all phases, changelog
 - **Version**: 0.7.0 → 0.8.0
 
 ### v0.7.0
+
 - **Perf**: Model cache invalidated after training (no stale predictions)
 - **Perf**: Redis caching added to GET /stats/trend
 - **DB**: Index on dataset_files.uploaded_at (ORDER BY performance)
@@ -217,6 +233,7 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 - **Version**: 0.6.0 → 0.7.0
 
 ### v0.6.0
+
 - **Testing**: 61 → 111 tests passing
 - **Fix**: pg_advisory_xact_lock guarded by dialect check (fixed SQLite test suite)
 - **Tests**: New auth token rotation tests (5)
@@ -225,6 +242,7 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 - **Version**: 0.5.0 → 0.6.0
 
 ### v0.5.0
+
 - **Security**: Old refresh token blacklisted on token rotation
 - **Perf**: In-process model cache eliminates per-request joblib reads
 - **Fix**: LoginRequest.password max_length=128 (prevents bcrypt DoS)
@@ -240,10 +258,11 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 - **Frontend**: DataView.vue error handling + loading states
 - **Frontend**: AdminView.vue empty state for users table
 - **Frontend**: PredictionView.vue lega options translated
-- **i18n**: predict.lega.*, model.defaultDataset keys
+- **i18n**: predict.lega.\*, model.defaultDataset keys
 - **Version**: 0.4.0 → 0.5.0
 
 ### v0.4.0
+
 - **Security (CRIT)**: Refresh token now blacklisted on logout
 - **Security (CRIT)**: /refresh endpoint checks token blacklist
 - **Security**: Rate limit on /refresh (10/min), /predict (30/min), /analysis/score (10/min)
@@ -258,6 +277,7 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 - **Version**: 0.3.1 → 0.4.0
 
 ### v0.3.1
+
 - **Bug fix**: Increase nginx `client_max_body_size` from 100M to 600M — fixes 413 Request Entity Too Large on file uploads
 - **Bug fix**: PrepareView `TypeError: M.value is not iterable` — defensive guard on datasets iteration when no files uploaded
 - **Bug fix**: ModelView dropdown showing `(vrstic)` with no datasets — guard against null/empty dataset entries + null-safe row_count
@@ -265,12 +285,13 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 - **Version**: 0.3.0 → 0.3.1
 
 ### v0.3.0
+
 - **Security**: Rate limiting on auth endpoints (slowapi, 5 req/min per IP)
 - **Security**: Token blacklist for logout via Redis
 - **Security**: Security response headers (X-Content-Type-Options, X-Frame-Options, Referrer-Policy)
 - **Security**: Input range validation on prediction requests (Pydantic Field constraints)
 - **Security**: Fixed silent exception swallowing — specific exceptions with logging throughout
-- **ML**: Permutation importance (sklearn, n_repeats=3) replaces built-in feature_importances_
+- **ML**: Permutation importance (sklearn, n*repeats=3) replaces built-in feature_importances*
 - **Backend**: Structured request logging middleware with correlation IDs (X-Request-ID)
 - **Backend**: Global exception handler — structured JSON errors, no stack trace leaks
 - **Backend**: Production-grade logging config (JSON format in prod, human-readable in dev)
@@ -292,6 +313,7 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 - **Version**: 0.2.5 → 0.3.0
 
 ### v0.2.5
+
 - Rewrite ETN pair detection: use reactive `computed` (like v1) instead of fragile `watch` + imperative function
 - Search both `original_name` AND `stored_path` for file role detection (posli/delistavb/zemljisca)
 - Restrict year regex to `/(20\d{2})/` to avoid false 4-digit matches
@@ -300,17 +322,20 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 - Version: 0.2.4 → 0.2.5
 
 ### v0.2.4
+
 - Fix PrepareView i18n: added missing locale keys (`autoEtn`, `singleEtn`, `manualMapping`, `autoEtnDesc`, `singleEtnDesc`, `columnMapping`, `prepareButton`, `outputRows`, `outputColumns`, `year`, `noPairsDetected`, `noPairs`, `invalidJson`) to both sl.json and en.json
 - Fix ETN pair detection: `detectEtnPairs()` now runs via `watch(datasets)` instead of `onMounted`, so it fires after async `fetchDatasets()` completes
 - Version: 0.2.3 → 0.2.4
 
 ### v0.2.3
+
 - Fix PrepareView.vue build error: multi-statement `@click` handler incompatible with Vue 3.5.30 compiler (extracted to `switchToBulk()` method)
 - Fix backend ruff lint: import sort order in train.py, line length formatting in data.py
 - Fix frontend Prettier formatting in PrepareView.vue
 - Version: 0.2.2 → 0.2.3
 
 ### v0.2.2
+
 - **Security**: Path traversal fix — all file-path endpoints validate paths stay within the data directory
 - **Security**: ZIP slip fix — ZIP extraction validates no member escapes the target directory
 - **Security**: Upload validation — 500 MB size limit + `.csv`/`.zip` extension allowlist
@@ -324,10 +349,12 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 - **Version**: 0.2.1 → 0.2.2
 
 ### v0.2.1
+
 - Fix CI pipeline: ruff format (backend) + Prettier (frontend) formatting issues
 - Version bump across all config files
 
 ### v0.2.0
+
 - **Backend**: Add model training history endpoints (GET/DELETE /model/runs), map transactions endpoint with region/year/municipality filters, manual column mapping endpoint (POST /data/prepare-train)
 - **Frontend**: New PrepareView (3-tab data preparation), PredictionView expanded with 9 fields + municipality autocomplete, MapView transaction-level view with price/m² gradient + region/year filters, DashboardView with type filter + feature importance & per-type R² charts
 - **Locales**: 60+ new i18n keys in both Slovenian and English
@@ -363,28 +390,28 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 
 ## Tech Stack Details
 
-| Layer | Technology | Version |
-|-------|-----------|---------|
-| Runtime | Python | 3.13 |
-| Framework | FastAPI | 0.115+ |
-| ORM | SQLAlchemy (async) | 2.0+ |
-| Migrations | Alembic | 1.14+ |
-| DB Driver | asyncpg | 0.30+ |
-| Auth | python-jose (JWT) + bcrypt | — |
-| Task Queue | ARQ | 0.26+ |
-| ML | scikit-learn (HistGBR) | 1.6+ |
-| Rate Limiting | slowapi | 0.1.9+ |
-| Data | pandas + numpy | — |
-| Frontend | Nuxt 4 + Vue 3 | 4.4+ / 3.5+ |
-| State | Pinia | 3.0+ |
-| UI | @nuxt/ui + Tailwind CSS | 4.x / 4.x |
-| Build / Runtime | Nitro | bundled with Nuxt 4 |
-| Charts | Chart.js + vue-chartjs | — |
-| Maps | Leaflet | 1.9.4 |
-| i18n | vue-i18n | 11.x |
-| Lint (BE) | ruff | 0.8+ |
-| Lint (FE) | ESLint (flat config) | 10.x |
-| Package Mgr | pnpm | 9.15.4 |
-| CI/CD | GitHub Actions | — |
-| Registry | GHCR | — |
-| Containers | Docker Compose | v2 |
+| Layer           | Technology                 | Version             |
+| --------------- | -------------------------- | ------------------- |
+| Runtime         | Python                     | 3.13                |
+| Framework       | FastAPI                    | 0.115+              |
+| ORM             | SQLAlchemy (async)         | 2.0+                |
+| Migrations      | Alembic                    | 1.14+               |
+| DB Driver       | asyncpg                    | 0.30+               |
+| Auth            | python-jose (JWT) + bcrypt | —                   |
+| Task Queue      | ARQ                        | 0.26+               |
+| ML              | scikit-learn (HistGBR)     | 1.6+                |
+| Rate Limiting   | slowapi                    | 0.1.9+              |
+| Data            | pandas + numpy             | —                   |
+| Frontend        | Nuxt 4 + Vue 3             | 4.4+ / 3.5+         |
+| State           | Pinia                      | 3.0+                |
+| UI              | @nuxt/ui + Tailwind CSS    | 4.x / 4.x           |
+| Build / Runtime | Nitro                      | bundled with Nuxt 4 |
+| Charts          | Chart.js + vue-chartjs     | —                   |
+| Maps            | Leaflet                    | 1.9.4               |
+| i18n            | vue-i18n                   | 11.x                |
+| Lint (BE)       | ruff                       | 0.8+                |
+| Lint (FE)       | ESLint (flat config)       | 10.x                |
+| Package Mgr     | pnpm                       | 9.15.4              |
+| CI/CD           | GitHub Actions             | —                   |
+| Registry        | GHCR                       | —                   |
+| Containers      | Docker Compose             | v2                  |

@@ -1,5 +1,6 @@
 <script setup>
   import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+  import { useIntervalFn, useMutationObserver } from '@vueuse/core'
   import { RouterLink } from 'vue-router'
   import { useI18n } from 'vue-i18n'
   import { Bar } from 'vue-chartjs'
@@ -26,8 +27,8 @@
   const model = useModelStore()
 
   const selectedCsv = ref('')
-  const pollTimer = ref(null)
-  const themeObserver = ref(null)
+  const activeJobId = ref(null)
+  let stopThemeObserver = () => {}
 
   const isAdmin = computed(() => auth.user?.role === 'admin')
   const trainingDataset = computed(() => dataStore.trainingDataset)
@@ -335,11 +336,23 @@
     ])
   }
 
+  const { pause: pausePolling, resume: resumePolling } = useIntervalFn(
+    async () => {
+      if (!activeJobId.value) return
+
+      const status = await model.pollStatus(activeJobId.value)
+      if (!status || isTerminalStatus(status.status)) {
+        stopPolling()
+        await refreshModelArtifacts()
+      }
+    },
+    1800,
+    { immediate: false },
+  )
+
   function stopPolling() {
-    if (pollTimer.value) {
-      clearInterval(pollTimer.value)
-      pollTimer.value = null
-    }
+    activeJobId.value = null
+    pausePolling()
   }
 
   function isTerminalStatus(status) {
@@ -348,14 +361,8 @@
 
   function startPolling(jobId) {
     stopPolling()
-
-    pollTimer.value = setInterval(async () => {
-      const status = await model.pollStatus(jobId)
-      if (!status || isTerminalStatus(status.status)) {
-        stopPolling()
-        await refreshModelArtifacts()
-      }
-    }, 1800)
+    activeJobId.value = jobId
+    resumePolling()
   }
 
   async function syncExistingTraining() {
@@ -368,13 +375,11 @@
   onMounted(async () => {
     syncChartPalette()
     if (typeof window !== 'undefined') {
-      themeObserver.value = new MutationObserver(() => {
-        syncChartPalette()
-      })
-      themeObserver.value.observe(document.documentElement, {
+      const observer = useMutationObserver(document.documentElement, syncChartPalette, {
         attributes: true,
         attributeFilter: ['class', 'style'],
       })
+      stopThemeObserver = observer.stop
     }
     await Promise.all([
       model.fetchInfo(),
@@ -390,8 +395,7 @@
 
   onUnmounted(() => {
     stopPolling()
-    themeObserver.value?.disconnect()
-    themeObserver.value = null
+    stopThemeObserver()
   })
 </script>
 

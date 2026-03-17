@@ -1,0 +1,1 @@
+import{ay as i,az as n,n as o}from"./CuV5ft40.js";import{u as s}from"./ifuKFGKl.js";import"./P3MMwK0B.js";import"./H5NBuqTE.js";const p=i(async a=>{let e,t;const r=s();if(!([e,t]=n(()=>r.init()),e=await e,t(),e))return o(`/login?redirect=${encodeURIComponent(a.fullPath)}`);if(!r.isAdmin)return o("/")});export{p as default};

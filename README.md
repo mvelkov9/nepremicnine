@@ -24,22 +24,22 @@
 
 ## Tech Stack
 
-| Layer | Technology |
-|-------|-----------|
-| Backend | FastAPI + Python 3.13 + uvicorn |
-| Database | PostgreSQL 17 + SQLAlchemy 2.x (async) + Alembic |
-| Cache | Redis 7 (caching + task queue + token blacklist) |
-| Task Queue | ARQ + Redis 7 |
-| ML | scikit-learn HistGradientBoostingRegressor (per property type) |
-| Security | slowapi rate limiting, security headers, input validation |
-| Frontend | Nuxt 4 + @nuxt/ui + Tailwind 4 + Pinia + vue-i18n |
-| Charts | Chart.js + vue-chartjs |
-| Maps | Leaflet 1.9 |
-| Auth | JWT (access + refresh) with bcrypt + HttpOnly cookie support |
-| i18n | vue-i18n (Slovenian + English) |
-| Lint | ruff (backend) + ESLint (frontend) |
-| CI/CD | GitHub Actions → GHCR → VPS (SSH deploy) |
-| Deploy | Docker Compose (dev + prod profiles) |
+| Layer      | Technology                                                     |
+| ---------- | -------------------------------------------------------------- |
+| Backend    | FastAPI + Python 3.13 + uvicorn                                |
+| Database   | PostgreSQL 17 + SQLAlchemy 2.x (async) + Alembic               |
+| Cache      | Redis 7 (caching + task queue + token blacklist)               |
+| Task Queue | ARQ + Redis 7                                                  |
+| ML         | scikit-learn HistGradientBoostingRegressor (per property type) |
+| Security   | slowapi rate limiting, security headers, input validation      |
+| Frontend   | Nuxt 4 + @nuxt/ui + Tailwind 4 + Pinia + vue-i18n              |
+| Charts     | Chart.js + vue-chartjs                                         |
+| Maps       | Leaflet 1.9                                                    |
+| Auth       | JWT (access + refresh) with bcrypt + HttpOnly cookie support   |
+| i18n       | vue-i18n (Slovenian + English)                                 |
+| Lint       | ruff (backend) + ESLint (frontend)                             |
+| CI/CD      | GitHub Actions → GHCR → VPS (SSH deploy)                       |
+| Deploy     | Docker Compose (dev + prod profiles)                           |
 
 ## Quick Start
 
@@ -120,11 +120,11 @@ Production deployment is handled through git-based CI/CD; normal releases no lon
 
 Required GitHub Actions secrets:
 
-| Secret | Description |
-|--------|-------------|
-| `VPS_HOST` | Server IP or hostname |
-| `VPS_USER` | SSH username |
-| `VPS_SSH_KEY` | Private SSH key |
+| Secret        | Description                 |
+| ------------- | --------------------------- |
+| `VPS_HOST`    | Server IP or hostname       |
+| `VPS_USER`    | SSH username                |
+| `VPS_SSH_KEY` | Private SSH key             |
 | `VPS_APP_DIR` | Deployment directory on VPS |
 
 ## Project Structure
@@ -172,67 +172,67 @@ nepremicnine/
 
 ## API Reference
 
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| GET | `/api/health` | — | Health check |
-| **Auth** | | | |
-| POST | `/api/auth/register` | — | Register (first user → admin) |
-| POST | `/api/auth/login` | — | Login (returns JWT pair and sets HttpOnly access/refresh cookies) |
-| POST | `/api/auth/refresh` | token/cookie | Rotate refresh token, issue a new access token, and refresh HttpOnly cookies |
-| GET | `/api/auth/me` | token/cookie | Current user profile |
-| PATCH | `/api/auth/me` | token | Update name/avatar profile fields |
-| POST | `/api/auth/logout` | token/cookie | Blacklist active tokens and clear auth cookies |
-| **Data** | | | |
-| POST | `/api/data/upload` | admin | Upload ETN CSV files |
-| GET | `/api/data/datasets` | token | List uploaded datasets |
-| GET | `/api/data/training-dataset` | token | Prepared `train.csv` metadata |
-| GET | `/api/data/quality-summary` | admin | Data quality summary for unresolved municipalities, alias collisions, and reference coverage |
-| DELETE | `/api/data/datasets/{id}` | admin | Delete a dataset |
-| POST | `/api/data/prepare-etn-kpp` | admin | Prepare single ETN pair |
-| POST | `/api/data/prepare-etn-kpp-bulk` | admin | Prepare bulk ETN pairs |
-| POST | `/api/data/prepare-train` | admin | Manual column mapping |
-| POST | `/api/data/datasets/delete-bulk` | admin | Bulk delete datasets |
-| POST | `/api/data/regions/import-rpe-rn` | admin | Import RPE/RN region data |
-| GET | `/api/data/preview/{id}` | token | Preview dataset rows |
-| GET | `/api/data/inspect/{id}` | token | Inspect dataset columns & stats |
-| **Stats** | | | |
-| GET | `/api/stats/overview` | token | Dataset statistics summary |
-| GET | `/api/stats/regions` | token | Per-region statistics |
-| GET | `/api/stats/price-distribution` | token | Price distribution data |
-| GET | `/api/stats/trend` | token | Price trend over time |
-| GET | `/api/stats/market-home` | token | Analytical dashboard KPIs, canonical municipality coverage, earliest/latest year metadata, municipality leaders, latest sales |
-| GET | `/api/stats/municipality/{slug}` | token | Municipality spotlight with trend, type mix, recent transactions |
-| GET | `/api/stats/comparables` | token | Ranked comparable transactions for valuation context |
-| GET | `/api/stats/map-overview` | token | Municipality centroids, activity counts, and backend-generated price-band legend metadata |
-| GET | `/api/stats/map-transactions` | token | Individual transactions with map-ready coordinates, backend price bands, centered-detail-modal fields, municipality filter support, and `meta.reason` empty-state hints |
-| GET | `/api/stats/municipalities-by-region` | token | Municipalities in a region (mapping or filtered list) |
-| **Regions** | | | |
-| GET | `/api/regions/municipalities` | token | Canonical municipality list sourced from `region_lookup` (fallback only if the reference table is empty) |
-| GET | `/api/regions/regions` | token | Statistical regions |
-| GET | `/api/regions/regions/stats` | token | Region-aggregated stats |
-| **Training** | | | |
-| POST | `/api/train/start` | admin | Start model training (async) |
-| GET | `/api/train/status/{job_id}` | token | Training job status with stage, per-model progress, elapsed time, and ETA |
-| GET | `/api/train/jobs` | token | List training jobs with structured live progress fields |
-| DELETE | `/api/train/jobs/clear` | admin | Clear training job history |
-| **Prediction** | | | |
-| POST | `/api/predict` | token | Predict property price |
-| GET | `/api/predict/history` | token | Prediction history (user-scoped) |
-| DELETE | `/api/predict/history/clear` | admin | Clear all prediction history |
-| **Model** | | | |
-| GET | `/api/model/info` | token | Model metrics & info |
-| GET | `/api/model/importance` | token | Feature importance |
-| GET | `/api/model/runs` | admin | Completed model run history with metrics, duration, and source dataset |
-| DELETE | `/api/model/runs/clear` | admin | Clear training history |
-| GET | `/api/model/diagnostics` | token | Diagnostic metrics |
-| **Analysis** | | | |
-| POST | `/api/analysis/score` | token | Score listings vs model |
-| GET | `/api/analysis/runs` | token | List analysis run history |
-| **Admin** | | | |
-| GET | `/api/admin/users` | admin | List all users (paginated) |
-| PATCH | `/api/admin/users/{id}` | admin | Update user role/status |
-| DELETE | `/api/admin/users/{id}` | admin | Delete user |
-| GET | `/api/admin/stats` | admin | Platform usage statistics |
+| Method         | Endpoint                              | Auth         | Description                                                                                                                                                             |
+| -------------- | ------------------------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET            | `/api/health`                         | —            | Health check                                                                                                                                                            |
+| **Auth**       |                                       |              |                                                                                                                                                                         |
+| POST           | `/api/auth/register`                  | —            | Register (first user → admin)                                                                                                                                           |
+| POST           | `/api/auth/login`                     | —            | Login (returns JWT pair and sets HttpOnly access/refresh cookies)                                                                                                       |
+| POST           | `/api/auth/refresh`                   | token/cookie | Rotate refresh token, issue a new access token, and refresh HttpOnly cookies                                                                                            |
+| GET            | `/api/auth/me`                        | token/cookie | Current user profile                                                                                                                                                    |
+| PATCH          | `/api/auth/me`                        | token        | Update name/avatar profile fields                                                                                                                                       |
+| POST           | `/api/auth/logout`                    | token/cookie | Blacklist active tokens and clear auth cookies                                                                                                                          |
+| **Data**       |                                       |              |                                                                                                                                                                         |
+| POST           | `/api/data/upload`                    | admin        | Upload ETN CSV files                                                                                                                                                    |
+| GET            | `/api/data/datasets`                  | token        | List uploaded datasets                                                                                                                                                  |
+| GET            | `/api/data/training-dataset`          | token        | Prepared `train.csv` metadata                                                                                                                                           |
+| GET            | `/api/data/quality-summary`           | admin        | Data quality summary for unresolved municipalities, alias collisions, and reference coverage                                                                            |
+| DELETE         | `/api/data/datasets/{id}`             | admin        | Delete a dataset                                                                                                                                                        |
+| POST           | `/api/data/prepare-etn-kpp`           | admin        | Prepare single ETN pair                                                                                                                                                 |
+| POST           | `/api/data/prepare-etn-kpp-bulk`      | admin        | Prepare bulk ETN pairs                                                                                                                                                  |
+| POST           | `/api/data/prepare-train`             | admin        | Manual column mapping                                                                                                                                                   |
+| POST           | `/api/data/datasets/delete-bulk`      | admin        | Bulk delete datasets                                                                                                                                                    |
+| POST           | `/api/data/regions/import-rpe-rn`     | admin        | Import RPE/RN region data                                                                                                                                               |
+| GET            | `/api/data/preview/{id}`              | token        | Preview dataset rows                                                                                                                                                    |
+| GET            | `/api/data/inspect/{id}`              | token        | Inspect dataset columns & stats                                                                                                                                         |
+| **Stats**      |                                       |              |                                                                                                                                                                         |
+| GET            | `/api/stats/overview`                 | token        | Dataset statistics summary                                                                                                                                              |
+| GET            | `/api/stats/regions`                  | token        | Per-region statistics                                                                                                                                                   |
+| GET            | `/api/stats/price-distribution`       | token        | Price distribution data                                                                                                                                                 |
+| GET            | `/api/stats/trend`                    | token        | Price trend over time                                                                                                                                                   |
+| GET            | `/api/stats/market-home`              | token        | Analytical dashboard KPIs, canonical municipality coverage, earliest/latest year metadata, municipality leaders, latest sales                                           |
+| GET            | `/api/stats/municipality/{slug}`      | token        | Municipality spotlight with trend, type mix, recent transactions                                                                                                        |
+| GET            | `/api/stats/comparables`              | token        | Ranked comparable transactions for valuation context                                                                                                                    |
+| GET            | `/api/stats/map-overview`             | token        | Municipality centroids, activity counts, and backend-generated price-band legend metadata                                                                               |
+| GET            | `/api/stats/map-transactions`         | token        | Individual transactions with map-ready coordinates, backend price bands, centered-detail-modal fields, municipality filter support, and `meta.reason` empty-state hints |
+| GET            | `/api/stats/municipalities-by-region` | token        | Municipalities in a region (mapping or filtered list)                                                                                                                   |
+| **Regions**    |                                       |              |                                                                                                                                                                         |
+| GET            | `/api/regions/municipalities`         | token        | Canonical municipality list sourced from `region_lookup` (fallback only if the reference table is empty)                                                                |
+| GET            | `/api/regions/regions`                | token        | Statistical regions                                                                                                                                                     |
+| GET            | `/api/regions/regions/stats`          | token        | Region-aggregated stats                                                                                                                                                 |
+| **Training**   |                                       |              |                                                                                                                                                                         |
+| POST           | `/api/train/start`                    | admin        | Start model training (async)                                                                                                                                            |
+| GET            | `/api/train/status/{job_id}`          | token        | Training job status with stage, per-model progress, elapsed time, and ETA                                                                                               |
+| GET            | `/api/train/jobs`                     | token        | List training jobs with structured live progress fields                                                                                                                 |
+| DELETE         | `/api/train/jobs/clear`               | admin        | Clear training job history                                                                                                                                              |
+| **Prediction** |                                       |              |                                                                                                                                                                         |
+| POST           | `/api/predict`                        | token        | Predict property price                                                                                                                                                  |
+| GET            | `/api/predict/history`                | token        | Prediction history (user-scoped)                                                                                                                                        |
+| DELETE         | `/api/predict/history/clear`          | admin        | Clear all prediction history                                                                                                                                            |
+| **Model**      |                                       |              |                                                                                                                                                                         |
+| GET            | `/api/model/info`                     | token        | Model metrics & info                                                                                                                                                    |
+| GET            | `/api/model/importance`               | token        | Feature importance                                                                                                                                                      |
+| GET            | `/api/model/runs`                     | admin        | Completed model run history with metrics, duration, and source dataset                                                                                                  |
+| DELETE         | `/api/model/runs/clear`               | admin        | Clear training history                                                                                                                                                  |
+| GET            | `/api/model/diagnostics`              | token        | Diagnostic metrics                                                                                                                                                      |
+| **Analysis**   |                                       |              |                                                                                                                                                                         |
+| POST           | `/api/analysis/score`                 | token        | Score listings vs model                                                                                                                                                 |
+| GET            | `/api/analysis/runs`                  | token        | List analysis run history                                                                                                                                               |
+| **Admin**      |                                       |              |                                                                                                                                                                         |
+| GET            | `/api/admin/users`                    | admin        | List all users (paginated)                                                                                                                                              |
+| PATCH          | `/api/admin/users/{id}`               | admin        | Update user role/status                                                                                                                                                 |
+| DELETE         | `/api/admin/users/{id}`               | admin        | Delete user                                                                                                                                                             |
+| GET            | `/api/admin/stats`                    | admin        | Platform usage statistics                                                                                                                                               |
 
 Full interactive API documentation available at `/docs` (Swagger UI).
 
@@ -336,7 +336,9 @@ NUXT_BUILD_DIR=.nuxt-verify NUXT_OUTPUT_DIR=.output-verify npx nuxt build
 - [Phase 8–20: v0.8.4–v0.8.16 Upgrades](docs/PHASE_8_14_PLAN.md)
 - [Phase 21: v0.10.0 Market UX & Training Reliability Reset](docs/MASTER.md#v0100)
 - [Phase 22: v0.11.0 Data Quality, Map UX, and PrimeVue Modernization](docs/MASTER.md#v0110)
-- [Phase 23: Nuxt Migration, SSR Auth Alignment, and Premium Redesign Branch](docs/MASTER.md#current-branch--featnuxt-ui-redesign)
+- [Phase 23: Nuxt Migration and SSR Auth Alignment](docs/MASTER.md#current-mainline-state)
+- [Phase 24-31: 2026 Overhaul Program](docs/PHASE_24_OVERHAUL_PROGRAM.md)
+- [Frontend Migration Map](docs/FRONTEND_MIGRATION_MAP.md)
 - [Deployment Guide](docs/DEPLOYMENT.md)
 
 ## License

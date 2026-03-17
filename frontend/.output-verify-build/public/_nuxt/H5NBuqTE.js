@@ -1,0 +1,1 @@
+import{q as n}from"./CuV5ft40.js";const t=n([]);let a=0;function f(s,u="info",e=4e3){const o=a++;t.value.push({id:o,message:s,type:u}),e>0&&setTimeout(()=>{t.value=t.value.filter(i=>i.id!==o)},e)}function l(){return{toasts:t,showToast:f}}export{l as u};

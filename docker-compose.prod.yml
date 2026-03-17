@@ -17,10 +17,10 @@ services:
     # Remove dev overrides: no source mount, no reload, run as appuser
     user: appuser
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
-    volumes:
+    volumes: !override
       - backend-data:/app/data
       - backend-models:/app/models
-    ports:
+    ports: !override
       - "127.0.0.1:8000:8000"
     environment:
       APP_ENV: production
@@ -29,7 +29,7 @@ services:
     user: appuser
     healthcheck:
       disable: true
-    volumes:
+    volumes: !override
       - backend-data:/app/data
       - backend-models:/app/models
     environment:
@@ -40,10 +40,11 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      target: runner
     command: !reset []
     volumes: !reset []
-    environment:
+    environment: !override
       BACKEND_URL: http://backend:8000
       APP_VERSION: ${APP_VERSION:-0.11.0}
-    ports:
+    ports: !override
       - "80:3000"

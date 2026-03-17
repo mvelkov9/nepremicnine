@@ -1,0 +1,1 @@
+import{ay as r,az as s,n as o}from"./CuV5ft40.js";import{u}from"./ifuKFGKl.js";import"./P3MMwK0B.js";import"./H5NBuqTE.js";const f=r(async()=>{let t,e;const a=u();if([t,e]=s(()=>a.init()),t=await t,e(),t)return o("/")});export{f as default};
