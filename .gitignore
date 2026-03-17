@@ -13,8 +13,17 @@ node_modules/
 frontend/dist/
 frontend/.nuxt/
 frontend/.nuxt-app/
+frontend/.nuxt-build/
+frontend/.nuxt-dev/
+frontend/.nuxt-local/
+frontend/.nuxt-preview/
+frontend/.nuxt-typecheck/
 frontend/.nuxt-verify/
 frontend/.output/
+frontend/.output-build/
+frontend/.output-dev/
+frontend/.output-local/
+frontend/.output-typecheck/
 frontend/.output-verify/
 
 # Environment

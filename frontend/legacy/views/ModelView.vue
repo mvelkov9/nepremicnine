@@ -504,7 +504,11 @@
               {{
                 activeStatus?.eta_sec != null
                   ? `${t('model.eta')}: ${formatDuration(activeStatus.eta_sec)}`
-                  : formatDate(selectedSourceMeta?.uploaded_at || selectedSourceMeta?.updated_at || model.info?.trained_at)
+                  : formatDate(
+                      selectedSourceMeta?.uploaded_at ||
+                        selectedSourceMeta?.updated_at ||
+                        model.info?.trained_at,
+                    )
               }}
             </span>
           </div>
@@ -713,11 +717,7 @@
           </p>
 
           <div class="feature-list">
-            <div
-              v-for="item in featureHighlights"
-              :key="item.label"
-              class="feature-item"
-            >
+            <div v-for="item in featureHighlights" :key="item.label" class="feature-item">
               <div class="feature-copy">
                 <strong>{{ item.label }}</strong>
                 <span>{{ fmt(item.importance, 3) }}</span>
@@ -916,12 +916,11 @@
     padding: 1.15rem 1.2rem;
     border-radius: 1.35rem;
     border: 1px solid var(--border);
-    background:
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--surface-soft-strong) 92%, transparent),
-        color-mix(in srgb, var(--surface-soft) 84%, transparent)
-      );
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--surface-soft-strong) 92%, transparent),
+      color-mix(in srgb, var(--surface-soft) 84%, transparent)
+    );
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 12%),
       0 16px 28px rgb(15 23 42 / 8%);
@@ -1005,12 +1004,11 @@
   .live-progress {
     border-radius: 1.25rem;
     border: 1px solid var(--border);
-    background:
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--surface-soft-strong) 92%, transparent),
-        color-mix(in srgb, var(--surface-soft) 84%, transparent)
-      );
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--surface-soft-strong) 92%, transparent),
+      color-mix(in srgb, var(--surface-soft) 84%, transparent)
+    );
     padding: 1rem;
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 12%),
@@ -1034,12 +1032,11 @@
     display: grid;
     align-content: start;
     gap: 0.85rem;
-    background:
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--primary) 10%, transparent),
-        color-mix(in srgb, var(--secondary) 10%, transparent)
-      );
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--primary) 10%, transparent),
+      color-mix(in srgb, var(--secondary) 10%, transparent)
+    );
   }
 
   .train-btn {
@@ -1065,12 +1062,11 @@
 
   .selected-source-card {
     margin-top: 1rem;
-    background:
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--surface-soft) 92%, transparent),
-        color-mix(in srgb, var(--primary) 7%, transparent)
-      );
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--surface-soft) 92%, transparent),
+      color-mix(in srgb, var(--primary) 7%, transparent)
+    );
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 12%),
       0 14px 24px rgb(15 23 42 / 6%);
@@ -1132,12 +1128,11 @@
     padding: 0.85rem;
     border-radius: 1.25rem;
     border: 1px solid var(--border);
-    background:
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--surface-soft) 92%, transparent),
-        color-mix(in srgb, var(--surface-muted) 82%, transparent)
-      );
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--surface-soft) 92%, transparent),
+      color-mix(in srgb, var(--surface-muted) 82%, transparent)
+    );
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 12%),
       0 16px 28px rgb(15 23 42 / 6%);
@@ -1185,12 +1180,11 @@
     display: block;
     height: 100%;
     border-radius: inherit;
-    background:
-      linear-gradient(
-        90deg,
-        color-mix(in srgb, var(--ui-primary) 86%, white 6%),
-        color-mix(in srgb, var(--ui-secondary) 24%, var(--ui-primary) 76%)
-      );
+    background: linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--ui-primary) 86%, white 6%),
+      color-mix(in srgb, var(--ui-secondary) 24%, var(--ui-primary) 76%)
+    );
     box-shadow: 0 8px 18px color-mix(in srgb, var(--ui-primary) 24%, transparent);
   }
 

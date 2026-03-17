@@ -1,5 +1,7 @@
 <template>
-  <article class="rounded-[1.5rem] border border-[var(--ui-border)] bg-[var(--ui-bg-elevated)] p-5 shadow-sm shadow-black/5">
+  <article
+    class="rounded-[1.5rem] border border-[var(--ui-border)] bg-[var(--ui-bg-elevated)] p-5 shadow-sm shadow-black/5"
+  >
     <header v-if="$slots.title" class="mb-4">
       <slot name="title" />
     </header>

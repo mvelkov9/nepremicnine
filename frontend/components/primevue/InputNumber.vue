@@ -14,7 +14,7 @@
 
   const emit = defineEmits(['update:modelValue'])
 
-  const displayValue = computed(() => (props.modelValue ?? '') === '' ? '' : props.modelValue)
+  const displayValue = computed(() => ((props.modelValue ?? '') === '' ? '' : props.modelValue))
   const inputClass = computed(() => attrs['input-class'] || attrs.inputClass)
   const wrapperClass = computed(() => attrs.class)
   const forwardedAttrs = computed(() => {
@@ -37,7 +37,10 @@
 
 <template>
   <div class="relative w-full" :class="wrapperClass">
-    <span v-if="prefix" class="number-affix pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm">
+    <span
+      v-if="prefix"
+      class="number-affix pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm"
+    >
       {{ prefix }}
     </span>
     <input
@@ -56,7 +59,10 @@
       :step="step"
       @input="updateValue"
     />
-    <span v-if="suffix" class="number-affix pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-sm">
+    <span
+      v-if="suffix"
+      class="number-affix pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-sm"
+    >
       {{ suffix }}
     </span>
   </div>

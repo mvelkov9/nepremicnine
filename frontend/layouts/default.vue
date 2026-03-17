@@ -19,23 +19,47 @@
 
   const routeMeta = computed(() => {
     const mappings = [
-      { match: (path) => path === '/', title: 'nav.dashboard', description: 'layout.page.dashboard' },
-      { match: (path) => path === '/napoved', title: 'nav.prediction', description: 'layout.page.prediction' },
+      {
+        match: (path) => path === '/',
+        title: 'nav.dashboard',
+        description: 'layout.page.dashboard',
+      },
+      {
+        match: (path) => path === '/napoved',
+        title: 'nav.prediction',
+        description: 'layout.page.prediction',
+      },
       { match: (path) => path === '/zemljevid', title: 'nav.map', description: 'layout.page.map' },
-      { match: (path) => path === '/analiza', title: 'nav.analysis', description: 'layout.page.analysis' },
+      {
+        match: (path) => path === '/analiza',
+        title: 'nav.analysis',
+        description: 'layout.page.analysis',
+      },
       {
         match: (path) => path.startsWith('/obcine/'),
         title: 'municipality.pageTitle',
         description: 'municipality.pageDescription',
       },
-      { match: (path) => path === '/admin', title: 'nav.admin', description: 'layout.page.adminHome' },
-      { match: (path) => path === '/admin/podatki', title: 'nav.data', description: 'layout.page.data' },
+      {
+        match: (path) => path === '/admin',
+        title: 'nav.admin',
+        description: 'layout.page.adminHome',
+      },
+      {
+        match: (path) => path === '/admin/podatki',
+        title: 'nav.data',
+        description: 'layout.page.data',
+      },
       {
         match: (path) => path === '/admin/priprava',
         title: 'nav.prepare',
         description: 'layout.page.prepare',
       },
-      { match: (path) => path === '/admin/model', title: 'nav.model', description: 'layout.page.model' },
+      {
+        match: (path) => path === '/admin/model',
+        title: 'nav.model',
+        description: 'layout.page.model',
+      },
       {
         match: (path) => path === '/admin/diagnostika',
         title: 'nav.diagnostics',
@@ -56,12 +80,14 @@
     )
   })
 
-  const viewerItems = computed(() => viewerNavigation.map((item) => ({ ...item, label: t(item.label) })))
+  const viewerItems = computed(() =>
+    viewerNavigation.map((item) => ({ ...item, label: t(item.label) })),
+  )
   const adminItems = computed(() =>
     auth.isAdmin ? adminNavigation.map((item) => ({ ...item, label: t(item.label) })) : [],
   )
-  const versionLabel = computed(() =>
-    `${locale.value === 'sl' ? 'Verzija' : 'Version'} ${runtimeConfig.public.appVersion}`,
+  const versionLabel = computed(
+    () => `${locale.value === 'sl' ? 'Verzija' : 'Version'} ${runtimeConfig.public.appVersion}`,
   )
   const roleLabel = computed(() => (auth.isAdmin ? t('layout.roleAdmin') : t('layout.roleViewer')))
 

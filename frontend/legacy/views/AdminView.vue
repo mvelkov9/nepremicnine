@@ -111,10 +111,7 @@
           </thead>
           <tbody>
             <tr v-if="users.length === 0">
-              <td
-                colspan="7"
-                class="admin-empty"
-              >
+              <td colspan="7" class="admin-empty">
                 {{ t('empty.noUsers') }}
               </td>
             </tr>

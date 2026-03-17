@@ -19,22 +19,20 @@
 
 <style scoped>
   .progress-track {
-    background:
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--ui-bg-muted) 90%, transparent),
-        color-mix(in srgb, var(--ui-bg) 72%, transparent)
-      );
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--ui-bg-muted) 90%, transparent),
+      color-mix(in srgb, var(--ui-bg) 72%, transparent)
+    );
     box-shadow: inset 0 1px 2px rgb(15 23 42 / 14%);
   }
 
   .progress-fill {
-    background:
-      linear-gradient(
-        135deg,
-        color-mix(in srgb, var(--ui-primary) 86%, white 6%),
-        color-mix(in srgb, var(--ui-secondary) 18%, var(--ui-primary) 82%)
-      );
+    background: linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--ui-primary) 86%, white 6%),
+      color-mix(in srgb, var(--ui-secondary) 18%, var(--ui-primary) 82%)
+    );
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 18%),
       0 0 18px color-mix(in srgb, var(--ui-primary) 18%, transparent);

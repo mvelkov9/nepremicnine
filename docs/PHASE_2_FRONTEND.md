@@ -3,16 +3,18 @@
 **Status:** ✅ Complete  
 **Commit:** `1def8db`
 
-> Historical note: Phase 2 originally shipped as a Vue 3 + Vite SPA. The current `feat/nuxt-ui-redesign` branch has since moved the live frontend to Nuxt 3 + Nitro while preserving the same product routes and business flows.
+> Historical note: Phase 2 originally shipped as a Vue 3 + Vite SPA. The current mainline has since moved the live frontend to Nuxt 4 + Nitro while preserving the same product routes and business flows.
 
 ## Current Frontend Architecture
 
-- **Runtime**: Nuxt 3 application served by Nitro in both development and production
+- **Runtime**: Nuxt 4 application served by Nitro in both development and production
 - **UI system**: `@nuxt/ui` + Tailwind 4, with a compatibility layer still wrapping some migrated legacy controls
 - **Routing**: file-based Nuxt pages preserve `/login`, `/`, `/napoved`, `/zemljevid`, `/analiza`, `/obcine/:slug`, and `/admin*`
 - **Auth**: SSR-aware bootstrap with HttpOnly access/refresh cookies as the browser default, while bearer-token support remains available during migration
 - **API access**: browser `/api/*` requests stay same-origin through `frontend/server/routes/api/[...path].ts`, which proxies to FastAPI
 - **State and i18n**: Pinia remains the state layer and existing Slovenian/English locale content is loaded through a Nuxt plugin
+- **Developer workflow**: local `pnpm dev` is the primary frontend workflow; Docker now focuses on backend services by default, with the frontend container available behind the optional `container-frontend` profile when parity testing is needed
+- **Local verification**: frontend scripts now isolate generated output into `.nuxt-dev`, `.nuxt-build`, `.nuxt-typecheck`, and `.output-build` so local verification no longer depends on container-owned `.nuxt-app` paths
 
 ## Current Key Files
 

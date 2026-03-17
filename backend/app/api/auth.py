@@ -117,7 +117,9 @@ async def login(request: Request, response: Response, body: LoginRequest, db: As
     access_token = create_access_token(user.id)
     refresh_token = create_refresh_token(user.id)
     _set_auth_cookie(response, ACCESS_COOKIE_NAME, access_token, settings.access_token_expire_minutes * 60, settings)
-    _set_auth_cookie(response, REFRESH_COOKIE_NAME, refresh_token, settings.refresh_token_expire_days * 24 * 60 * 60, settings)
+    _set_auth_cookie(
+        response, REFRESH_COOKIE_NAME, refresh_token, settings.refresh_token_expire_days * 24 * 60 * 60, settings
+    )
 
     return TokenResponse(
         access_token=access_token,

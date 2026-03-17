@@ -167,22 +167,12 @@
         <form class="auth-form" @submit.prevent="submit">
           <label v-if="!isLogin" class="field">
             <span>{{ t('auth.fullName') }}</span>
-            <input
-              v-model="fullName"
-              type="text"
-              class="form-input"
-              autocomplete="name"
-            />
+            <input v-model="fullName" type="text" class="form-input" autocomplete="name" />
           </label>
 
           <label class="field">
             <span>{{ t('auth.email') }}</span>
-            <input
-              v-model="email"
-              type="email"
-              class="form-input"
-              autocomplete="username"
-            />
+            <input v-model="email" type="email" class="form-input" autocomplete="username" />
           </label>
 
           <label class="field">

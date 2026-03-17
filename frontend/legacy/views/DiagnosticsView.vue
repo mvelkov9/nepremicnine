@@ -111,10 +111,7 @@
       },
       {
         label: t('diag.focusType'),
-        value:
-          selectedType.value === 'all'
-            ? t('diag.allTypes')
-            : formatType(selectedType.value),
+        value: selectedType.value === 'all' ? t('diag.allTypes') : formatType(selectedType.value),
         meta: selectedMetric.value.toUpperCase(),
       },
     ]
@@ -479,12 +476,11 @@
     padding: 0.95rem 1rem;
     border-radius: 1.25rem;
     border: 1px solid color-mix(in srgb, var(--border) 92%, transparent);
-    background:
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--surface-soft) 92%, transparent),
-        color-mix(in srgb, var(--primary) 7%, transparent)
-      );
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--surface-soft) 92%, transparent),
+      color-mix(in srgb, var(--primary) 7%, transparent)
+    );
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 12%),
       0 14px 24px rgb(15 23 42 / 6%);
@@ -523,12 +519,11 @@
   .focus-chip {
     border: 1px solid var(--border);
     border-radius: 999px;
-    background:
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--surface-soft) 92%, transparent),
-        color-mix(in srgb, var(--surface-muted) 82%, transparent)
-      );
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--surface-soft) 92%, transparent),
+      color-mix(in srgb, var(--surface-muted) 82%, transparent)
+    );
     color: var(--text);
     padding: 0.45rem 0.8rem;
     font: inherit;
@@ -554,12 +549,11 @@
 
   .focus-chip.active {
     border-color: color-mix(in srgb, var(--primary) 34%, var(--border));
-    background:
-      linear-gradient(
-        135deg,
-        color-mix(in srgb, var(--primary) 14%, transparent),
-        color-mix(in srgb, var(--secondary) 11%, transparent)
-      );
+    background: linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--primary) 14%, transparent),
+      color-mix(in srgb, var(--secondary) 11%, transparent)
+    );
     color: var(--primary-strong);
   }
 
@@ -573,12 +567,11 @@
     padding: 1rem;
     border-radius: 1.25rem;
     border: 1px solid color-mix(in srgb, var(--border) 92%, transparent);
-    background:
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--surface-soft) 92%, transparent),
-        color-mix(in srgb, var(--surface-muted) 82%, transparent)
-      );
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--surface-soft) 92%, transparent),
+      color-mix(in srgb, var(--surface-muted) 82%, transparent)
+    );
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 12%),
       0 14px 24px rgb(15 23 42 / 6%);
@@ -605,12 +598,11 @@
     padding: 0.9rem 1rem;
     border-radius: 1.15rem;
     border: 1px solid color-mix(in srgb, var(--border) 92%, transparent);
-    background:
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--surface-soft) 92%, transparent),
-        color-mix(in srgb, var(--primary) 7%, transparent)
-      );
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--surface-soft) 92%, transparent),
+      color-mix(in srgb, var(--primary) 7%, transparent)
+    );
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 12%),
       0 12px 22px rgb(15 23 42 / 6%);
@@ -636,12 +628,11 @@
     display: block;
     height: 100%;
     border-radius: inherit;
-    background:
-      linear-gradient(
-        90deg,
-        color-mix(in srgb, var(--primary) 86%, white 6%),
-        color-mix(in srgb, var(--secondary) 20%, var(--primary) 80%)
-      );
+    background: linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--primary) 86%, white 6%),
+      color-mix(in srgb, var(--secondary) 20%, var(--primary) 80%)
+    );
   }
 
   .active-focus-row {

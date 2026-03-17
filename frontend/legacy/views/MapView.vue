@@ -1011,12 +1011,11 @@
     padding: 0.8rem 0.9rem;
     border-radius: 1rem;
     border: 1px solid var(--border);
-    background:
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--surface-soft) 92%, transparent),
-        color-mix(in srgb, var(--surface-muted) 82%, transparent)
-      );
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--surface-soft) 92%, transparent),
+      color-mix(in srgb, var(--surface-muted) 82%, transparent)
+    );
     color: var(--text);
     text-align: left;
     box-shadow:
@@ -1039,12 +1038,11 @@
 
   .legend-chip.active {
     border-color: color-mix(in srgb, var(--primary) 34%, var(--border));
-    background:
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--primary) 14%, transparent),
-        color-mix(in srgb, var(--secondary) 10%, transparent)
-      );
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--primary) 14%, transparent),
+      color-mix(in srgb, var(--secondary) 10%, transparent)
+    );
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 14%),
       0 18px 36px color-mix(in srgb, var(--primary) 16%, transparent);
@@ -1092,12 +1090,11 @@
     padding: 0.9rem;
     border-radius: 1rem;
     border: 1px solid var(--border);
-    background:
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--surface-soft) 92%, transparent),
-        color-mix(in srgb, var(--surface-muted) 82%, transparent)
-      );
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--surface-soft) 92%, transparent),
+      color-mix(in srgb, var(--surface-muted) 82%, transparent)
+    );
     text-align: left;
     color: inherit;
     box-shadow:
@@ -1113,12 +1110,11 @@
   .rail-card:hover {
     transform: translateY(-2px);
     border-color: color-mix(in srgb, var(--primary) 24%, var(--border));
-    background:
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--primary) 8%, var(--surface-soft)),
-        color-mix(in srgb, var(--secondary) 8%, var(--surface-muted))
-      );
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--primary) 8%, var(--surface-soft)),
+      color-mix(in srgb, var(--secondary) 8%, var(--surface-muted))
+    );
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 14%),
       0 18px 30px rgb(15 23 42 / 10%);
@@ -1225,12 +1221,11 @@
   .flag-chip.active {
     color: var(--text);
     border-color: color-mix(in srgb, var(--success) 32%, var(--border));
-    background:
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--success) 15%, transparent),
-        color-mix(in srgb, var(--success) 9%, var(--surface-soft))
-      );
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--success) 15%, transparent),
+      color-mix(in srgb, var(--success) 9%, var(--surface-soft))
+    );
   }
 
   .comparables-list {
@@ -1258,12 +1253,11 @@
   .comparable-card:hover {
     transform: translateY(-2px);
     border-color: color-mix(in srgb, var(--primary) 24%, var(--border));
-    background:
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--primary) 8%, var(--surface-muted)),
-        color-mix(in srgb, var(--secondary) 7%, var(--surface-soft))
-      );
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--primary) 8%, var(--surface-muted)),
+      color-mix(in srgb, var(--secondary) 7%, var(--surface-soft))
+    );
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 14%),
       0 18px 30px rgb(15 23 42 / 10%);
@@ -1282,12 +1276,11 @@
   .map-detail-dialog :deep(.p-dialog-header) {
     align-items: flex-start;
     padding: 1.15rem 1.35rem;
-    background:
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--surface-strong) 94%, transparent),
-        color-mix(in srgb, var(--ui-primary) 7%, transparent)
-      );
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--surface-strong) 94%, transparent),
+      color-mix(in srgb, var(--ui-primary) 7%, transparent)
+    );
   }
 
   .map-detail-dialog :deep(.p-dialog) {
@@ -1300,12 +1293,11 @@
 
   .map-detail-dialog :deep(.p-dialog-content) {
     padding: 1.25rem 1.35rem 1.35rem;
-    background:
-      linear-gradient(
-        180deg,
-        color-mix(in srgb, var(--surface-strong) 96%, transparent),
-        color-mix(in srgb, var(--surface-soft) 92%, transparent)
-      );
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface-strong) 96%, transparent),
+      color-mix(in srgb, var(--surface-soft) 92%, transparent)
+    );
     color: var(--text);
   }
 

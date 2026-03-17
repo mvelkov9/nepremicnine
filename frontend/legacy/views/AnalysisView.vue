@@ -502,12 +502,11 @@
   .result-card {
     border: 1px solid var(--border);
     border-radius: 1.5rem;
-    background:
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--surface-soft-strong) 92%, transparent),
-        color-mix(in srgb, var(--surface-soft) 84%, transparent)
-      );
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--surface-soft-strong) 92%, transparent),
+      color-mix(in srgb, var(--surface-soft) 84%, transparent)
+    );
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 14%),
       var(--shadow-sm);
@@ -590,12 +589,11 @@
     gap: 0.7rem;
     border: 1px solid var(--border);
     border-radius: 999px;
-    background:
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--surface-soft) 90%, transparent),
-        color-mix(in srgb, var(--surface-muted) 82%, transparent)
-      );
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--surface-soft) 90%, transparent),
+      color-mix(in srgb, var(--surface-muted) 82%, transparent)
+    );
     color: var(--text);
     padding: 0.7rem 0.9rem;
     font-weight: 700;
@@ -619,12 +617,11 @@
 
   .focus-chip.active {
     border-color: color-mix(in srgb, var(--primary) 34%, var(--border));
-    background:
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--primary) 16%, transparent),
-        color-mix(in srgb, var(--secondary) 11%, transparent)
-      );
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--primary) 16%, transparent),
+      color-mix(in srgb, var(--secondary) 11%, transparent)
+    );
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 14%),
       0 18px 28px rgb(15 23 42 / 10%);

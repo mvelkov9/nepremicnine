@@ -57,12 +57,11 @@
     padding: 0.35rem 0.75rem;
     border-radius: 999px;
     border: 1px solid var(--ui-border);
-    background:
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--ui-bg-elevated) 92%, transparent),
-        color-mix(in srgb, var(--ui-primary) 7%, transparent)
-      );
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--ui-bg-elevated) 92%, transparent),
+      color-mix(in srgb, var(--ui-primary) 7%, transparent)
+    );
     color: var(--ui-text-muted);
     font-size: 0.68rem;
     font-weight: 800;
@@ -77,12 +76,11 @@
     width: 4.5rem;
     height: 1px;
     border-radius: 999px;
-    background:
-      linear-gradient(
-        90deg,
-        color-mix(in srgb, var(--ui-primary) 34%, transparent),
-        color-mix(in srgb, var(--ui-secondary) 28%, transparent)
-      );
+    background: linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--ui-primary) 34%, transparent),
+      color-mix(in srgb, var(--ui-secondary) 28%, transparent)
+    );
   }
 
   .page-header-title {

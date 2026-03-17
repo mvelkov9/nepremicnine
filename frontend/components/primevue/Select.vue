@@ -24,11 +24,11 @@
   })
 
   function renderOptionLabel(item) {
-    return typeof item === 'object' ? item?.[props.optionLabel] ?? '' : item
+    return typeof item === 'object' ? (item?.[props.optionLabel] ?? '') : item
   }
 
   function renderOptionValue(item) {
-    return typeof item === 'object' ? item?.[props.optionValue] ?? renderOptionLabel(item) : item
+    return typeof item === 'object' ? (item?.[props.optionValue] ?? renderOptionLabel(item)) : item
   }
 </script>
 

@@ -34,12 +34,11 @@
 <style scoped>
   .p-toggleswitch {
     border: 1px solid color-mix(in srgb, var(--ui-border) 88%, transparent);
-    background:
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--ui-bg-elevated) 92%, transparent),
-        color-mix(in srgb, var(--ui-bg) 76%, transparent)
-      );
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--ui-bg-elevated) 92%, transparent),
+      color-mix(in srgb, var(--ui-bg) 76%, transparent)
+    );
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 12%),
       0 10px 18px rgb(15 23 42 / 8%);
@@ -76,22 +75,20 @@
   }
 
   .p-toggleswitch-checked .p-toggleswitch-slider {
-    background:
-      linear-gradient(
-        135deg,
-        color-mix(in srgb, var(--ui-primary) 68%, var(--ui-bg-elevated) 32%),
-        color-mix(in srgb, var(--ui-secondary) 34%, var(--ui-primary) 66%)
-      );
+    background: linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--ui-primary) 68%, var(--ui-bg-elevated) 32%),
+      color-mix(in srgb, var(--ui-secondary) 34%, var(--ui-primary) 66%)
+    );
     box-shadow: inset 0 1px 0 rgb(255 255 255 / 16%);
   }
 
   .p-toggleswitch-handle {
-    background:
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--ui-bg-elevated) 96%, transparent),
-        color-mix(in srgb, var(--ui-bg) 80%, transparent)
-      );
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--ui-bg-elevated) 96%, transparent),
+      color-mix(in srgb, var(--ui-bg) 80%, transparent)
+    );
     box-shadow: 0 8px 18px rgb(15 23 42 / 16%);
   }
 </style>

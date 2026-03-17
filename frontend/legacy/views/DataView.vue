@@ -285,10 +285,7 @@
           <div class="spotlight-head">
             <span class="eyebrow">{{ t('data.upload') }}</span>
             <div class="spotlight-tags">
-              <Tag
-                severity="secondary"
-                :value="latestDataset?.source_type || t('data.datasets')"
-              />
+              <Tag severity="secondary" :value="latestDataset?.source_type || t('data.datasets')" />
               <Tag
                 :severity="dataStore.trainingDataset?.exists ? 'success' : 'warn'"
                 :value="
@@ -616,12 +613,11 @@
     padding: 1.1rem 1.15rem;
     border-radius: 1.35rem;
     border: 1px solid var(--border);
-    background:
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--surface-soft-strong) 92%, transparent),
-        color-mix(in srgb, var(--surface-soft) 80%, transparent)
-      );
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--surface-soft-strong) 92%, transparent),
+      color-mix(in srgb, var(--surface-soft) 80%, transparent)
+    );
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 12%),
       0 14px 26px rgb(15 23 42 / 8%);
@@ -772,12 +768,11 @@
     padding: 1rem 1rem;
     border-radius: 1.25rem;
     border: 1px dashed color-mix(in srgb, var(--border) 88%, transparent);
-    background:
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--surface-soft-strong) 92%, transparent),
-        color-mix(in srgb, var(--ui-primary) 6%, transparent)
-      );
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--surface-soft-strong) 92%, transparent),
+      color-mix(in srgb, var(--ui-primary) 6%, transparent)
+    );
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 12%),
       0 12px 22px rgb(15 23 42 / 6%);

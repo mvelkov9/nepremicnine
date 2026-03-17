@@ -39,7 +39,8 @@
     if (props.severity === 'success') return 'border-[var(--ui-success)] text-[var(--ui-success)]'
     if (props.severity === 'warn') return 'border-[var(--ui-warning)] text-[var(--ui-warning)]'
     if (props.severity === 'danger') return 'border-[var(--ui-error)] text-[var(--ui-error)]'
-    if (props.severity === 'contrast') return 'border-[var(--ui-secondary)] text-[var(--ui-secondary)]'
+    if (props.severity === 'contrast')
+      return 'border-[var(--ui-secondary)] text-[var(--ui-secondary)]'
     if (props.severity === 'secondary') return 'border-[var(--ui-border)] text-[var(--ui-text)]'
     return 'border-[var(--ui-primary)] text-[var(--ui-primary)]'
   })
@@ -118,12 +119,11 @@
   }
 
   .p-button--primary {
-    background:
-      linear-gradient(
-        135deg,
-        color-mix(in srgb, var(--ui-primary) 86%, white 6%),
-        color-mix(in srgb, var(--ui-secondary) 18%, var(--ui-primary) 82%)
-      );
+    background: linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--ui-primary) 86%, white 6%),
+      color-mix(in srgb, var(--ui-secondary) 18%, var(--ui-primary) 82%)
+    );
   }
 
   .p-button--secondary {
@@ -131,30 +131,27 @@
   }
 
   .p-button--success {
-    background:
-      linear-gradient(
-        135deg,
-        color-mix(in srgb, var(--ui-success) 88%, white 6%),
-        color-mix(in srgb, var(--ui-success) 76%, var(--ui-secondary) 12%)
-      );
+    background: linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--ui-success) 88%, white 6%),
+      color-mix(in srgb, var(--ui-success) 76%, var(--ui-secondary) 12%)
+    );
   }
 
   .p-button--warn {
-    background:
-      linear-gradient(
-        135deg,
-        color-mix(in srgb, var(--ui-warning) 88%, white 8%),
-        color-mix(in srgb, var(--ui-warning) 76%, var(--ui-secondary) 18%)
-      );
+    background: linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--ui-warning) 88%, white 8%),
+      color-mix(in srgb, var(--ui-warning) 76%, var(--ui-secondary) 18%)
+    );
   }
 
   .p-button--danger {
-    background:
-      linear-gradient(
-        135deg,
-        color-mix(in srgb, var(--ui-error) 88%, white 8%),
-        color-mix(in srgb, var(--ui-error) 78%, var(--ui-warning) 12%)
-      );
+    background: linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--ui-error) 88%, white 8%),
+      color-mix(in srgb, var(--ui-error) 78%, var(--ui-warning) 12%)
+    );
   }
 
   .p-button--outlined,
@@ -173,11 +170,10 @@
 
   .p-button--outlined:hover:not(:disabled),
   .p-button--text:hover:not(:disabled) {
-    background:
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--ui-primary) 12%, transparent),
-        color-mix(in srgb, var(--ui-secondary) 8%, transparent)
-      );
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--ui-primary) 12%, transparent),
+      color-mix(in srgb, var(--ui-secondary) 8%, transparent)
+    );
   }
 </style>

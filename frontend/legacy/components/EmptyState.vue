@@ -23,12 +23,11 @@
     text-align: center;
     border: 1px dashed color-mix(in srgb, var(--ui-border) 88%, transparent);
     border-radius: 1.75rem;
-    background:
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--ui-bg-elevated) 90%, transparent),
-        color-mix(in srgb, var(--ui-bg) 72%, transparent)
-      );
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--ui-bg-elevated) 90%, transparent),
+      color-mix(in srgb, var(--ui-bg) 72%, transparent)
+    );
   }
 
   .empty-icon {

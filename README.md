@@ -32,7 +32,7 @@
 | Task Queue | ARQ + Redis 7 |
 | ML | scikit-learn HistGradientBoostingRegressor (per property type) |
 | Security | slowapi rate limiting, security headers, input validation |
-| Frontend | Nuxt 3 + @nuxt/ui + Tailwind 4 + Pinia + vue-i18n |
+| Frontend | Nuxt 4 + @nuxt/ui + Tailwind 4 + Pinia + vue-i18n |
 | Charts | Chart.js + vue-chartjs |
 | Maps | Leaflet 1.9 |
 | Auth | JWT (access + refresh) with bcrypt + HttpOnly cookie support |
@@ -50,18 +50,29 @@ cd nepremicnine
 cp .env.example .env
 # Edit .env — set JWT_SECRET_KEY to a real secret
 
-# Start all services
-docker compose up --build
+# Start backend services
+docker compose up --build postgres redis backend worker
+
+# Start the frontend locally (recommended for day-to-day development)
+cd frontend
+corepack pnpm install
+corepack pnpm dev
 
 # Access the application
-# Frontend:  http://localhost:3000
+# Frontend:  http://localhost:3000 (or the next free port)
 # Backend:   http://localhost:8000
 # API docs:  http://localhost:8000/docs
 ```
 
 Development startup applies pending Alembic migrations automatically before the backend begins serving requests.
 
-The frontend now runs as a Nuxt 3 app and proxies browser `/api/*` requests to the FastAPI backend through Nitro, so the browser stays same-origin in both development and production.
+The frontend now runs as a Nuxt 4 app and proxies browser `/api/*` requests to the FastAPI backend through Nitro, so the browser stays same-origin in both development and production. Local `pnpm dev` targets `http://localhost:8000` by default; set `BACKEND_URL` only if your backend lives elsewhere.
+
+For most frontend work, local `pnpm dev` is the primary workflow. The repository still includes an optional containerized frontend profile for parity/debugging:
+
+```bash
+docker compose --profile container-frontend up --build
+```
 
 The first registered user is automatically assigned the **admin** role.
 
@@ -121,7 +132,7 @@ Required GitHub Actions secrets:
 ```
 nepremicnine/
 ├── .github/workflows/ci.yml    # CI/CD (lint, test, build, deploy)
-├── docker-compose.yml          # Development stack (5 services)
+├── docker-compose.yml          # Development services + optional containerized frontend profile
 ├── docker-compose.prod.yml     # Production overrides
 ├── .env.example                # Environment template
 │
@@ -228,6 +239,9 @@ Full interactive API documentation available at `/docs` (Swagger UI).
 ## Development
 
 ```bash
+# Start backend services for local frontend development
+docker compose up postgres redis backend worker
+
 # Backend lint + format
 docker compose exec backend ruff check .
 docker compose exec backend ruff format .
@@ -235,18 +249,31 @@ docker compose exec backend ruff format .
 # Backend tests
 docker compose exec backend pytest -v
 
+# Frontend dev (recommended)
+cd frontend
+corepack pnpm install
+corepack pnpm dev
+
 # Frontend lint
-docker compose exec frontend corepack pnpm lint
+corepack pnpm lint
 
 # Frontend format check
-docker compose exec frontend corepack pnpm format:check
+corepack pnpm format:check
 
 # Frontend typecheck
-docker compose exec frontend corepack pnpm typecheck
+corepack pnpm typecheck
 
 # Frontend build check
-docker compose exec frontend corepack pnpm build
+corepack pnpm build
 ```
+
+### Optional containerized frontend
+
+```bash
+docker compose --profile container-frontend up --build frontend
+```
+
+That optional profile binds port `3000`, so stop it before using local `pnpm dev` if you want Nuxt on the default port.
 
 ## Troubleshooting
 
@@ -277,18 +304,22 @@ For this repo specifically:
 - The development `worker` now reuses the same backend image as the API service, which avoids creating a second full-size Python image on every rebuild.
 - The biggest remaining source of growth is stale superseded images after repeated `docker compose up --build` runs, so `docker image prune -af` is the primary cleanup command when disk pressure returns.
 
-### Nuxt build fails with `EACCES` on `.nuxt-app` or `.output`
+### Nuxt local dev hits `EACCES` or port conflicts
 
-If older generated Nuxt/Nitro folders were created by a different user or container, local source verification can fail with permission errors such as:
+The frontend package scripts now write to isolated local directories such as `.nuxt-dev`, `.nuxt-build`, and `.output-build`, so normal `corepack pnpm dev` and `corepack pnpm build` runs should avoid old container-owned `.nuxt-app` or `.output` folders.
 
-- `EACCES: permission denied, unlink frontend/.nuxt-app/...`
-- `EACCES: permission denied, unlink frontend/.output/...`
-
-Use temporary writable output folders for verification:
+If port `3000` is already occupied, either stop the optional `container-frontend` profile or run:
 
 ```bash
 cd frontend
-NUXT_BUILD_DIR=.nuxt-verify NUXT_OUTPUT_DIR=.output-verify corepack pnpm build
+corepack pnpm dev -- --port 3001
+```
+
+If you still run raw `nuxt` commands and hit stale ownership issues, pass explicit writable output directories:
+
+```bash
+cd frontend
+NUXT_BUILD_DIR=.nuxt-verify NUXT_OUTPUT_DIR=.output-verify npx nuxt build
 ```
 
 ## Documentation

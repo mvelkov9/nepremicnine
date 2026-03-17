@@ -1,6 +1,6 @@
 # Deployment Guide
 
-The production frontend is now a Nuxt 3 application served by Nitro on port `3000` inside the container. In the default production compose profile, Docker exposes it as `80:3000`, and browser `/api/*` requests are proxied same-origin through Nitro to the FastAPI backend.
+The production frontend is now a Nuxt 4 application served by Nitro on port `3000` inside the container. In the default production compose profile, Docker exposes it as `80:3000`, and browser `/api/*` requests are proxied same-origin through Nitro to the FastAPI backend.
 
 ## Prerequisites
 
@@ -209,12 +209,15 @@ If uploads still return `413 Request Entity Too Large`, verify the host nginx co
 - The backend remains private on `127.0.0.1:8000` by default in production; external traffic should enter through the frontend or your host reverse proxy.
 - Because the frontend proxies `/api/*`, the browser can stay same-origin and still use HttpOnly access/refresh cookies for SSR-friendly authentication.
 - If you expose the frontend on an alternate host port such as `8080`, update any host nginx `proxy_pass` lines to that port.
+- `docker-compose.prod.yml` explicitly clears the dev-only `container-frontend` profile so the production Nitro frontend still starts by default on the VPS.
 
 ## Local Verification
 
-If you need to verify the Nuxt build on a machine where old generated folders have restrictive ownership, use temporary output folders:
+For normal local work, use `corepack pnpm dev` or `corepack pnpm build` from `frontend/`; those scripts already write to isolated local directories such as `.nuxt-dev`, `.nuxt-build`, and `.output-build`.
+
+If you run bare `nuxt` commands on a machine where old generated folders have restrictive ownership, use temporary output folders:
 
 ```bash
 cd frontend
-NUXT_BUILD_DIR=.nuxt-verify NUXT_OUTPUT_DIR=.output-verify corepack pnpm build
+NUXT_BUILD_DIR=.nuxt-verify NUXT_OUTPUT_DIR=.output-verify npx nuxt build
 ```

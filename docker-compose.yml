@@ -80,19 +80,20 @@ services:
         condition: service_healthy
 
   frontend:
+    profiles: ["container-frontend"]
     build:
       context: ./frontend
       dockerfile: Dockerfile
-      target: builder
-    command:
-      sh -c "corepack enable && corepack prepare pnpm@9.15.4 --activate &&
-      pnpm install --frozen-lockfile --force && pnpm dev"
+      target: dev
+    command: ["pnpm", "dev", "--host", "0.0.0.0", "--port", "3000"]
     environment:
       BACKEND_URL: http://backend:8000
       APP_VERSION: ${APP_VERSION:-0.11.0}
+      NUXT_BUILD_DIR: /tmp/.nuxt-app
+      NUXT_OUTPUT_DIR: /tmp/.output
     volumes:
       - ./frontend:/app
-      - /app/node_modules
+      - frontend-node-modules:/app/node_modules
     ports:
       - "3000:3000"
     depends_on:
@@ -103,3 +104,4 @@ volumes:
   redisdata:
   backend-data:
   backend-models:
+  frontend-node-modules:

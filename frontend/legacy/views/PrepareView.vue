@@ -567,12 +567,11 @@
     padding: 0.35rem;
     border: 1px solid var(--border);
     border-radius: 999px;
-    background:
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--surface-soft) 92%, transparent),
-        color-mix(in srgb, var(--surface-muted) 82%, transparent)
-      );
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--surface-soft) 92%, transparent),
+      color-mix(in srgb, var(--surface-muted) 82%, transparent)
+    );
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 12%),
       0 12px 22px rgb(15 23 42 / 6%);
@@ -603,12 +602,11 @@
   .tab-btn.active {
     color: var(--primary);
     border-color: color-mix(in srgb, var(--primary) 26%, var(--border));
-    background:
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--primary) 14%, transparent),
-        color-mix(in srgb, var(--secondary) 10%, transparent)
-      );
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--primary) 14%, transparent),
+      color-mix(in srgb, var(--secondary) 10%, transparent)
+    );
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 14%),
       0 12px 20px rgb(15 23 42 / 8%);
@@ -633,12 +631,11 @@
     padding: 0.95rem 1rem;
     border-radius: 1.25rem;
     border: 1px solid color-mix(in srgb, var(--border) 92%, transparent);
-    background:
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--surface-soft) 92%, transparent),
-        color-mix(in srgb, var(--primary) 7%, transparent)
-      );
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--surface-soft) 92%, transparent),
+      color-mix(in srgb, var(--primary) 7%, transparent)
+    );
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 12%),
       0 14px 24px rgb(15 23 42 / 6%);

@@ -1,5 +1,5 @@
-# ── Build stage ─────────────────────────────
-FROM node:24-alpine AS builder
+# ── Base stage ──────────────────────────────
+FROM node:24-alpine AS base
 
 WORKDIR /app
 
@@ -7,6 +7,16 @@ RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
 
 COPY package.json pnpm-lock.yaml* ./
 RUN pnpm install --frozen-lockfile 2>/dev/null || pnpm install
+
+# ── Dev stage ───────────────────────────────
+FROM base AS dev
+
+ENV NODE_ENV=development
+
+COPY . .
+
+# ── Build stage ─────────────────────────────
+FROM base AS builder
 
 COPY . .
 RUN pnpm build

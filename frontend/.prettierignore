@@ -1,0 +1,17 @@
+.nuxt/
+.nuxt-app/
+.nuxt-build/
+.nuxt-dev/
+.nuxt-local/
+.nuxt-preview/
+.nuxt-typecheck/
+.nuxt-verify/
+.output/
+.output-build/
+.output-dev/
+.output-local/
+.output-typecheck/
+.output-verify/
+.pnpm-store/
+dist/
+node_modules/

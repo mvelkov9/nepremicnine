@@ -632,12 +632,11 @@
   .panel {
     border-radius: 1.8rem;
     border: 1px solid var(--border);
-    background:
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--surface-strong) 88%, transparent),
-        color-mix(in srgb, var(--surface-soft) 84%, transparent)
-      );
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--surface-strong) 88%, transparent),
+      color-mix(in srgb, var(--surface-soft) 84%, transparent)
+    );
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 14%),
       var(--shadow-sm);
@@ -722,12 +721,11 @@
     padding: 1rem 1.05rem;
     border: 1px solid color-mix(in srgb, var(--border) 92%, transparent);
     border-radius: 1.15rem;
-    background:
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--surface-soft) 86%, transparent),
-        color-mix(in srgb, var(--surface-muted) 78%, transparent)
-      );
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--surface-soft) 86%, transparent),
+      color-mix(in srgb, var(--surface-muted) 78%, transparent)
+    );
   }
 
   .municipality-chip strong {
@@ -764,12 +762,11 @@
     padding: 0.85rem 0.95rem;
     border-radius: 1.1rem;
     border: 1px solid color-mix(in srgb, var(--border) 92%, transparent);
-    background:
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--surface-soft) 82%, transparent),
-        color-mix(in srgb, var(--surface-muted) 80%, transparent)
-      );
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--surface-soft) 82%, transparent),
+      color-mix(in srgb, var(--surface-muted) 80%, transparent)
+    );
     font-weight: 600;
     line-height: 1.25;
     cursor: pointer;
@@ -794,12 +791,11 @@
 
   .toggle-chip.active {
     border-color: color-mix(in srgb, var(--primary) 34%, var(--border));
-    background:
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--primary) 16%, transparent),
-        color-mix(in srgb, var(--secondary) 12%, transparent)
-      );
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--primary) 16%, transparent),
+      color-mix(in srgb, var(--secondary) 12%, transparent)
+    );
     color: var(--text);
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 16%),
@@ -827,12 +823,11 @@
     padding: 0.9rem 1.1rem;
     border-radius: 999px;
     border: 1px solid color-mix(in srgb, var(--primary) 28%, transparent);
-    background:
-      linear-gradient(
-        135deg,
-        color-mix(in srgb, var(--primary) 86%, white 6%),
-        color-mix(in srgb, var(--secondary) 18%, var(--primary) 82%)
-      );
+    background: linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--primary) 86%, white 6%),
+      color-mix(in srgb, var(--secondary) 18%, var(--primary) 82%)
+    );
     color: var(--ui-text-inverted);
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 14%),
@@ -861,12 +856,11 @@
     padding: 1.05rem;
     border: 1px solid color-mix(in srgb, var(--border) 92%, transparent);
     border-radius: 1.35rem;
-    background:
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--surface-soft-strong) 90%, transparent),
-        color-mix(in srgb, var(--surface-soft) 82%, transparent)
-      );
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--surface-soft-strong) 90%, transparent),
+      color-mix(in srgb, var(--surface-soft) 82%, transparent)
+    );
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 14%),
       0 16px 28px rgb(15 23 42 / 6%);
@@ -898,8 +892,16 @@
     padding: 1.25rem;
     border-radius: 1.5rem;
     background:
-      radial-gradient(circle at top left, color-mix(in srgb, var(--primary) 28%, transparent), transparent 32%),
-      radial-gradient(circle at bottom right, color-mix(in srgb, var(--secondary) 18%, transparent), transparent 26%),
+      radial-gradient(
+        circle at top left,
+        color-mix(in srgb, var(--primary) 28%, transparent),
+        transparent 32%
+      ),
+      radial-gradient(
+        circle at bottom right,
+        color-mix(in srgb, var(--secondary) 18%, transparent),
+        transparent 26%
+      ),
       linear-gradient(
         145deg,
         color-mix(in srgb, var(--ui-bg-inverted) 88%, var(--ui-bg) 12%),
@@ -936,12 +938,11 @@
     padding: 0.45rem 0.7rem;
     border-radius: 999px;
     border: 1px solid var(--border);
-    background:
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--surface-soft-subtle) 92%, transparent),
-        color-mix(in srgb, var(--primary) 7%, transparent)
-      );
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--surface-soft-subtle) 92%, transparent),
+      color-mix(in srgb, var(--primary) 7%, transparent)
+    );
     box-shadow: inset 0 1px 0 rgb(255 255 255 / 12%);
   }
 
@@ -953,12 +954,11 @@
     padding: 1.05rem;
     border-radius: 1.35rem;
     border: 1px solid color-mix(in srgb, var(--primary) 14%, var(--border));
-    background:
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--primary) 8%, transparent),
-        color-mix(in srgb, var(--secondary) 9%, transparent)
-      );
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--primary) 8%, transparent),
+      color-mix(in srgb, var(--secondary) 9%, transparent)
+    );
   }
 
   .context-metrics {
@@ -991,12 +991,11 @@
     padding: 1rem;
     border-radius: 1.2rem;
     border: 1px solid color-mix(in srgb, var(--border) 92%, transparent);
-    background:
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--surface-soft-muted) 90%, transparent),
-        color-mix(in srgb, var(--surface-soft) 82%, transparent)
-      );
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--surface-soft-muted) 90%, transparent),
+      color-mix(in srgb, var(--surface-soft) 82%, transparent)
+    );
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 12%),
       0 12px 22px rgb(15 23 42 / 6%);
@@ -1011,12 +1010,11 @@
   .history-card:hover {
     transform: translateY(-2px);
     border-color: color-mix(in srgb, var(--primary) 24%, var(--border));
-    background:
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--primary) 9%, var(--surface-soft-muted)),
-        color-mix(in srgb, var(--secondary) 7%, var(--surface-soft))
-      );
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--primary) 9%, var(--surface-soft-muted)),
+      color-mix(in srgb, var(--secondary) 7%, var(--surface-soft))
+    );
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 14%),
       0 18px 30px rgb(15 23 42 / 10%);

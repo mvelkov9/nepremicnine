@@ -93,11 +93,7 @@
               :key="`${column.id.toString()}-${row.id || rowIndex}`"
               class="datatable-cell px-4 py-3 text-[var(--ui-text)]"
             >
-              <CellRenderer
-                v-if="column.slots.body"
-                :slot-fn="column.slots.body"
-                :row="row"
-              />
+              <CellRenderer v-if="column.slots.body" :slot-fn="column.slots.body" :row="row" />
               <template v-else>
                 {{ resolveField(row, column.props.field) ?? '—' }}
               </template>
@@ -139,12 +135,11 @@
     overflow: hidden;
     border: 1px solid var(--ui-border);
     border-radius: 1.5rem;
-    background:
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--ui-bg-elevated) 92%, transparent),
-        color-mix(in srgb, var(--ui-bg) 72%, transparent)
-      );
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--ui-bg-elevated) 92%, transparent),
+      color-mix(in srgb, var(--ui-bg) 72%, transparent)
+    );
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 14%),
       0 18px 32px rgb(15 23 42 / 7%);
@@ -156,12 +151,11 @@
   }
 
   .datatable-head {
-    background:
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--ui-bg) 84%, transparent),
-        color-mix(in srgb, var(--ui-primary) 6%, transparent)
-      );
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--ui-bg) 84%, transparent),
+      color-mix(in srgb, var(--ui-primary) 6%, transparent)
+    );
   }
 
   .datatable-head-cell {
@@ -187,12 +181,11 @@
   }
 
   .datatable-row:hover td {
-    background:
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--ui-primary) 8%, transparent),
-        color-mix(in srgb, var(--ui-secondary) 6%, transparent)
-      );
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--ui-primary) 8%, transparent),
+      color-mix(in srgb, var(--ui-secondary) 6%, transparent)
+    );
   }
 
   .datatable-pagination {
@@ -205,12 +198,11 @@
     padding: 0.4rem 0.85rem;
     border-radius: 999px;
     border: 1px solid var(--ui-border);
-    background:
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--ui-bg-elevated) 94%, transparent),
-        color-mix(in srgb, var(--ui-bg) 78%, transparent)
-      );
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--ui-bg-elevated) 94%, transparent),
+      color-mix(in srgb, var(--ui-bg) 78%, transparent)
+    );
     color: var(--ui-text);
     font-weight: 700;
     box-shadow:
@@ -226,12 +218,11 @@
   .datatable-page-button:hover:not(:disabled) {
     transform: translateY(-1px);
     border-color: color-mix(in srgb, var(--ui-primary) 24%, var(--ui-border));
-    background:
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--ui-primary) 8%, transparent),
-        color-mix(in srgb, var(--ui-secondary) 6%, transparent)
-      );
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--ui-primary) 8%, transparent),
+      color-mix(in srgb, var(--ui-secondary) 6%, transparent)
+    );
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 16%),
       0 12px 20px rgb(15 23 42 / 10%);

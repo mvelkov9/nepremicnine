@@ -40,12 +40,11 @@
     inset: auto 1.2rem 0.95rem 1.2rem;
     height: 1px;
     border-radius: 999px;
-    background:
-      linear-gradient(
-        90deg,
-        color-mix(in srgb, var(--ui-primary) 22%, transparent),
-        transparent
-      );
+    background: linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--ui-primary) 22%, transparent),
+      transparent
+    );
     pointer-events: none;
   }
 

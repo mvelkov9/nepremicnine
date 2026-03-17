@@ -31,7 +31,13 @@
       >
         <div
           class="p-dialog-header flex items-center justify-between gap-4 border-b border-[var(--ui-border)] px-6 py-4"
-          style="background: linear-gradient(145deg, color-mix(in srgb, var(--surface-strong) 94%, transparent), color-mix(in srgb, var(--ui-primary) 6%, transparent))"
+          style="
+            background: linear-gradient(
+              145deg,
+              color-mix(in srgb, var(--surface-strong) 94%, transparent),
+              color-mix(in srgb, var(--ui-primary) 6%, transparent)
+            );
+          "
         >
           <h3 class="text-lg font-semibold">{{ header }}</h3>
           <button type="button" class="rounded-full px-3 py-1 text-xl" @click="close">×</button>

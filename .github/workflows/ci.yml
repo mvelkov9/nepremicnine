@@ -95,6 +95,7 @@ jobs:
         with:
           version: 9.15.4
       - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
       - run: pnpm build
 
   # ── Docker build & push (main branch + tags) ──────────

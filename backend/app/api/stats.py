@@ -269,10 +269,7 @@ def _prepare_market_df(property_type: str | None = None) -> pd.DataFrame | None:
             _PREPARED_DF_CACHE["mtime"] = None
             _PREPARED_DF_CACHE["df"] = None
 
-    if not use_prepared_cache:
-        cached = frame
-    else:
-        cached = _PREPARED_DF_CACHE["df"]
+    cached = frame if not use_prepared_cache else _PREPARED_DF_CACHE["df"]
 
     if not isinstance(cached, pd.DataFrame):
         return None

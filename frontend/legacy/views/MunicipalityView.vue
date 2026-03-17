@@ -90,7 +90,9 @@
     },
     {
       label: t('dashboard.propertyTypes'),
-      value: dominantPropertyType.value ? formatType(dominantPropertyType.value.property_type) : '—',
+      value: dominantPropertyType.value
+        ? formatType(dominantPropertyType.value.property_type)
+        : '—',
     },
     {
       label: t('municipality.relatedMarkets'),
@@ -318,12 +320,11 @@
   .state-card {
     border-radius: 1.6rem;
     border: 1px solid var(--border);
-    background:
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--surface-soft-strong) 92%, transparent),
-        color-mix(in srgb, var(--surface-soft) 84%, transparent)
-      );
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--surface-soft-strong) 92%, transparent),
+      color-mix(in srgb, var(--surface-soft) 84%, transparent)
+    );
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 14%),
       var(--shadow-sm);
@@ -338,8 +339,16 @@
     padding: 1.35rem;
     background:
       linear-gradient(135deg, var(--surface-panel-strong), var(--surface-soft)),
-      radial-gradient(circle at top left, color-mix(in srgb, var(--primary) 16%, transparent), transparent 32%),
-      radial-gradient(circle at right, color-mix(in srgb, var(--secondary) 12%, transparent), transparent 26%);
+      radial-gradient(
+        circle at top left,
+        color-mix(in srgb, var(--primary) 16%, transparent),
+        transparent 32%
+      ),
+      radial-gradient(
+        circle at right,
+        color-mix(in srgb, var(--secondary) 12%, transparent),
+        transparent 26%
+      );
   }
 
   .municipality-hero h1,
@@ -422,12 +431,11 @@
   .hero-btn.primary,
   .table-btn {
     border-color: color-mix(in srgb, var(--primary) 28%, transparent);
-    background:
-      linear-gradient(
-        135deg,
-        color-mix(in srgb, var(--primary) 86%, white 6%),
-        color-mix(in srgb, var(--secondary) 18%, var(--primary) 82%)
-      );
+    background: linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--primary) 86%, white 6%),
+      color-mix(in srgb, var(--secondary) 18%, var(--primary) 82%)
+    );
     color: var(--ui-text-inverted);
   }
 
@@ -450,12 +458,11 @@
     padding: 0.9rem 0.95rem;
     border-radius: 1.2rem;
     border: 1px solid color-mix(in srgb, var(--border) 92%, transparent);
-    background:
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--surface-soft) 92%, transparent),
-        color-mix(in srgb, var(--primary) 7%, transparent)
-      );
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--surface-soft) 92%, transparent),
+      color-mix(in srgb, var(--primary) 7%, transparent)
+    );
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 12%),
       0 12px 20px rgb(15 23 42 / 6%);
@@ -493,12 +500,11 @@
   }
 
   .metric-card.accent {
-    background:
-      linear-gradient(
-        135deg,
-        color-mix(in srgb, var(--ui-bg-inverted) 88%, var(--ui-bg) 12%),
-        color-mix(in srgb, var(--ui-bg-inverted) 80%, transparent)
-      );
+    background: linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--ui-bg-inverted) 88%, var(--ui-bg) 12%),
+      color-mix(in srgb, var(--ui-bg-inverted) 80%, transparent)
+    );
     color: var(--ui-text-inverted);
   }
 
@@ -538,12 +544,11 @@
     padding: 0.9rem;
     border-radius: 1.15rem;
     border: 1px solid var(--border);
-    background:
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--surface-soft-muted) 92%, transparent),
-        color-mix(in srgb, var(--surface-soft) 82%, transparent)
-      );
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--surface-soft-muted) 92%, transparent),
+      color-mix(in srgb, var(--surface-soft) 82%, transparent)
+    );
     text-decoration: none;
     color: inherit;
     box-shadow:
@@ -560,12 +565,11 @@
   .related-card:hover {
     transform: translateY(-2px);
     border-color: color-mix(in srgb, var(--primary) 24%, var(--border));
-    background:
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--primary) 9%, var(--surface-soft-muted)),
-        color-mix(in srgb, var(--secondary) 7%, var(--surface-soft))
-      );
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--primary) 9%, var(--surface-soft-muted)),
+      color-mix(in srgb, var(--secondary) 7%, var(--surface-soft))
+    );
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 14%),
       0 18px 30px rgb(15 23 42 / 10%);
@@ -594,12 +598,11 @@
     display: block;
     height: 100%;
     border-radius: inherit;
-    background:
-      linear-gradient(
-        90deg,
-        color-mix(in srgb, var(--warning) 88%, white 8%),
-        color-mix(in srgb, var(--secondary) 22%, var(--warning) 78%)
-      );
+    background: linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--warning) 88%, white 8%),
+      color-mix(in srgb, var(--secondary) 22%, var(--warning) 78%)
+    );
   }
 
   .table-shell {

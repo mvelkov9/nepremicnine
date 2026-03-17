@@ -10,11 +10,11 @@
   const emit = defineEmits(['update:modelValue'])
 
   function getLabel(option) {
-    return typeof option === 'object' ? option?.[props.optionLabel] ?? '' : option
+    return typeof option === 'object' ? (option?.[props.optionLabel] ?? '') : option
   }
 
   function getValue(option) {
-    return typeof option === 'object' ? option?.[props.optionValue] ?? getLabel(option) : option
+    return typeof option === 'object' ? (option?.[props.optionValue] ?? getLabel(option)) : option
   }
 
   function selectOption(option) {
@@ -81,12 +81,11 @@
   }
 
   .p-togglebutton-checked {
-    background:
-      linear-gradient(
-        135deg,
-        color-mix(in srgb, var(--ui-primary) 94%, black 4%),
-        color-mix(in srgb, var(--ui-secondary) 14%, var(--ui-primary) 86%)
-      );
+    background: linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--ui-primary) 94%, black 4%),
+      color-mix(in srgb, var(--ui-secondary) 14%, var(--ui-primary) 86%)
+    );
     box-shadow: 0 18px 34px rgb(15 23 42 / 15%);
   }
 </style>

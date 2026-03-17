@@ -3,14 +3,14 @@
 **Status:** ✅ Complete  
 **Commit:** `153f140`
 
-> Historical note: Phase 5 originally shipped with a Vite-built frontend served by nginx. The current `feat/nuxt-ui-redesign` branch now serves the frontend through Nuxt 3 + Nitro and uses a same-origin `/api/*` proxy instead of an internal nginx frontend layer.
+> Historical note: Phase 5 originally shipped with a Vite-built frontend served by nginx. The current mainline now serves the frontend through Nuxt 4 + Nitro and uses a same-origin `/api/*` proxy instead of an internal nginx frontend layer.
 
 ## Checklist
 
 - [x] Production Dockerfiles (multi-stage builds, non-root `appuser`)
 - [x] Backend health check (httpx self-check on `/api/health`)
 - [x] Production docker-compose overrides (`docker-compose.prod.yml`)
-- [x] Frontend nginx reverse proxy (static + /api/ proxy + gzip + security headers)
+- [x] Frontend Nitro runtime with same-origin `/api/*` proxying to FastAPI
 - [x] GitHub Actions CI: ruff lint, ruff format, pytest, ESLint, pnpm build
 - [x] GitHub Actions: Docker build & push to GHCR on main/tags
 - [x] GitHub Actions: SSH deploy to VPS on `v*` tags
@@ -46,7 +46,7 @@ Tag v*:                                   ┌────▼─────┐
 - **redis** (7-alpine) — port 6379, AOF persistence
 - **backend** — port 8000, source-mounted, `--reload`
 - **worker** — ARQ worker, source-mounted
-- **frontend** — port 3000, Nuxt dev server with HMR
+- **frontend** — optional `container-frontend` profile, Nuxt dev server with HMR when explicitly enabled
 
 ### Production (`docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d`)
 - **postgres** — no exposed port
@@ -60,7 +60,7 @@ Tag v*:                                   ┌────▼─────┐
 - Non-root container users (`appuser`)
 - JWT secrets via environment variables
 - CORS restricted to configured origins
-- Nginx security headers (X-Frame-Options, X-Content-Type-Options, Referrer-Policy, X-XSS-Protection)
+- Backend security headers and host reverse-proxy forwarding for external TLS termination
 - Database passwords via environment variables (never committed)
 - PostgreSQL/Redis not exposed in production
 - SHA-256 file hash deduplication prevents duplicate uploads
