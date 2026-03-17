@@ -90,6 +90,28 @@ async def test_login_success(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_login_sets_auth_cookies(client: AsyncClient):
+    await client.post(
+        "/api/auth/register",
+        json={
+            "email": "cookie-login@test.com",
+            "password": "testpass123",
+            "full_name": "Cookie User",
+        },
+    )
+    resp = await client.post(
+        "/api/auth/login",
+        json={
+            "email": "cookie-login@test.com",
+            "password": "testpass123",
+        },
+    )
+    assert resp.status_code == 200
+    assert client.cookies.get("access_token")
+    assert client.cookies.get("refresh_token")
+
+
+@pytest.mark.asyncio
 async def test_login_wrong_password(client: AsyncClient):
     await client.post(
         "/api/auth/register",
@@ -132,6 +154,30 @@ async def test_me_authenticated(client: AsyncClient):
     assert resp.status_code == 200
     assert resp.json()["email"] == "me@test.com"
     assert resp.json()["avatar_url"] is None
+
+
+@pytest.mark.asyncio
+async def test_me_authenticated_via_cookie(client: AsyncClient):
+    await client.post(
+        "/api/auth/register",
+        json={
+            "email": "cookie-me@test.com",
+            "password": "testpass123",
+            "full_name": "Cookie Me",
+        },
+    )
+    login_resp = await client.post(
+        "/api/auth/login",
+        json={
+            "email": "cookie-me@test.com",
+            "password": "testpass123",
+        },
+    )
+    assert login_resp.status_code == 200
+
+    resp = await client.get("/api/auth/me")
+    assert resp.status_code == 200
+    assert resp.json()["email"] == "cookie-me@test.com"
 
 
 @pytest.mark.asyncio
@@ -249,6 +295,27 @@ async def test_refresh_token_rotation_blacklists_old_token(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_refresh_uses_cookie_and_rotates_tokens(client: AsyncClient):
+    await client.post(
+        "/api/auth/register",
+        json={"email": "cookie-refresh@test.com", "password": "testpass123", "full_name": "Refresh Cookie"},
+    )
+    login_resp = await client.post(
+        "/api/auth/login",
+        json={"email": "cookie-refresh@test.com", "password": "testpass123"},
+    )
+    first_refresh_token = login_resp.json()["refresh_token"]
+
+    refreshed = await client.post("/api/auth/refresh", json={})
+    assert refreshed.status_code == 200
+    assert client.cookies.get("refresh_token")
+    assert client.cookies.get("refresh_token") != first_refresh_token
+
+    reused = await client.post("/api/auth/refresh", json={"refresh_token": first_refresh_token})
+    assert reused.status_code == 401
+
+
+@pytest.mark.asyncio
 async def test_refresh_invalid_token_rejected(client: AsyncClient):
     """A garbage refresh token string must return 401."""
     resp = await client.post(
@@ -279,6 +346,27 @@ async def test_logout_blacklists_access_token(client: AsyncClient):
 
     # Access token should now be blacklisted
     me_resp = await client.get("/api/auth/me", headers=headers)
+    assert me_resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_logout_clears_cookie_auth(client: AsyncClient):
+    await client.post(
+        "/api/auth/register",
+        json={"email": "cookie-logout@test.com", "password": "testpass123", "full_name": "Cookie Logout"},
+    )
+    login_resp = await client.post(
+        "/api/auth/login",
+        json={"email": "cookie-logout@test.com", "password": "testpass123"},
+    )
+    assert login_resp.status_code == 200
+
+    resp = await client.post("/api/auth/logout", json={})
+    assert resp.status_code == 200
+    assert client.cookies.get("access_token") is None
+    assert client.cookies.get("refresh_token") is None
+
+    me_resp = await client.get("/api/auth/me")
     assert me_resp.status_code == 401
 
 

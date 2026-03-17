@@ -1,5 +1,7 @@
 # Deployment Guide
 
+The production frontend is now a Nuxt 3 application served by Nitro on port `3000` inside the container. In the default production compose profile, Docker exposes it as `80:3000`, and browser `/api/*` requests are proxied same-origin through Nitro to the FastAPI backend.
+
 ## Prerequisites
 
 - Linux VPS with Docker Engine 24+ and Docker Compose v2+
@@ -36,9 +38,13 @@ POSTGRES_PASSWORD=<generate strong password>
 JWT_SECRET_KEY=<python3 -c "import secrets; print(secrets.token_urlsafe(64))">
 APP_ENV=production
 CORS_ORIGINS=https://yourdomain.com
+AUTH_COOKIE_SECURE=true
 ```
 
-> **Note:** `JWT_SECRET_KEY` must be at least 32 characters in production.
+> **Notes:**
+> - `JWT_SECRET_KEY` must be at least 32 characters in production.
+> - Set `AUTH_COOKIE_SECURE=true` for any HTTPS deployment so browser auth cookies are sent only over TLS.
+> - `AUTH_COOKIE_SAMESITE=lax` is the current default and is usually appropriate unless your deployment topology requires something stricter or cross-site.
 
 ## Multi-App VPS (Shared Server)
 
@@ -53,10 +59,10 @@ Edit `docker-compose.prod.yml` to use a different port:
 services:
   frontend:
     ports:
-      - "8080:80"  # instead of "80:80"
+      - "8080:3000"  # instead of "80:3000"
   backend:
     ports:
-      - "127.0.0.1:8001:8000"  # instead of 8000
+      - "127.0.0.1:8001:8000"  # only if 127.0.0.1:8000 is already occupied
 ```
 
 Access at `http://your-server-ip:8080`.
@@ -102,11 +108,12 @@ sudo certbot --nginx -d nepremicnine.yourdomain.com
 docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
 
 # View logs
+docker compose -f docker-compose.yml -f docker-compose.prod.yml logs -f frontend
 docker compose -f docker-compose.yml -f docker-compose.prod.yml logs -f backend
 docker compose -f docker-compose.yml -f docker-compose.prod.yml logs -f worker
 
 # Health check
-curl http://localhost:8080/api/health
+curl http://localhost/api/health
 ```
 
 ## Database Backup
@@ -179,7 +186,8 @@ Certbot will auto-configure HTTPS and redirect HTTP → HTTPS.
 In your `.env`:
 
 ```env
-CORS_ORIGINS=https://napoved-nepremicnin.com,https://www.napoved-nepremicnin.com,http://localhost:5173
+CORS_ORIGINS=https://napoved-nepremicnin.com,https://www.napoved-nepremicnin.com,http://localhost:3000
+AUTH_COOKIE_SECURE=true
 ```
 
 Restart the backend:
@@ -194,7 +202,19 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml restart backend
 curl -I https://napoved-nepremicnin.com/api/health
 ```
 
-If uploads still return `413 Request Entity Too Large`, verify both nginx layers:
+If uploads still return `413 Request Entity Too Large`, verify the host nginx config and the Docker stack limits. There is no longer a second nginx layer inside the frontend container.
 
-- Host nginx on the VPS (`/etc/nginx/sites-available/napoved-nepremicnin`)
-- App nginx inside the frontend container (`frontend/nginx.conf`)
+## Runtime Notes
+
+- The backend remains private on `127.0.0.1:8000` by default in production; external traffic should enter through the frontend or your host reverse proxy.
+- Because the frontend proxies `/api/*`, the browser can stay same-origin and still use HttpOnly access/refresh cookies for SSR-friendly authentication.
+- If you expose the frontend on an alternate host port such as `8080`, update any host nginx `proxy_pass` lines to that port.
+
+## Local Verification
+
+If you need to verify the Nuxt build on a machine where old generated folders have restrictive ownership, use temporary output folders:
+
+```bash
+cd frontend
+NUXT_BUILD_DIR=.nuxt-verify NUXT_OUTPUT_DIR=.output-verify corepack pnpm build
+```

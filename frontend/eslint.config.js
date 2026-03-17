@@ -16,6 +16,15 @@ export default [
     },
   },
   {
-    ignores: ["dist/", "node_modules/"],
+    ignores: [
+      ".nuxt/",
+      ".nuxt-app/",
+      ".nuxt-verify/",
+      ".output/",
+      ".output-verify/",
+      ".pnpm-store/",
+      "dist/",
+      "node_modules/",
+    ],
   },
 ];

@@ -35,6 +35,35 @@ from app.tasks.training_worker import _parse_redis_url
 logger = logging.getLogger(__name__)
 
 
+class _InMemoryRedis:
+    """Minimal async Redis replacement for tests and isolated local checks."""
+
+    def __init__(self) -> None:
+        self._store: dict[str, str] = {}
+
+    async def get(self, key: str) -> str | None:
+        return self._store.get(key)
+
+    async def set(self, key: str, value: str, ex: int | None = None) -> None:
+        self._store[key] = value
+
+    async def scan(self, cursor=0, match: str | None = None, count: int | None = None):
+        prefix = (match or "").rstrip("*")
+        keys = [key for key in self._store if key.startswith(prefix)] if prefix else list(self._store)
+        return 0, keys
+
+    async def delete(self, *keys: str) -> int:
+        deleted = 0
+        for key in keys:
+            if key in self._store:
+                deleted += 1
+                self._store.pop(key, None)
+        return deleted
+
+    async def close(self) -> None:
+        pass
+
+
 def configure_logging():
     """Configure logging: JSON in production, simple format in development."""
     settings = get_settings()
@@ -83,11 +112,20 @@ async def lifespan(app: FastAPI):
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
     await _seed_region_lookup_if_empty()
-    # Redis pool for token blacklist
-    app.state.redis = await create_pool(_parse_redis_url(settings.redis_url))
+
+    created_redis = False
+    if getattr(app.state, "redis", None) is None:
+        if settings.app_env == "test":
+            app.state.redis = _InMemoryRedis()
+        else:
+            # Redis pool for token blacklist
+            app.state.redis = await create_pool(_parse_redis_url(settings.redis_url))
+        created_redis = True
+
     yield
     # Shutdown
-    await app.state.redis.close()
+    if created_redis and getattr(app.state, "redis", None) is not None:
+        await app.state.redis.close()
     await engine.dispose()
 
 

@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 from sqlalchemy import func, select, text
@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.database import get_db
-from app.dependencies.auth import get_current_user, security
+from app.dependencies.auth import ACCESS_COOKIE_NAME, REFRESH_COOKIE_NAME, get_current_user, security
 from app.models.user import User, UserRole
 from app.rate_limit import limiter
 from app.schemas.auth import (
@@ -32,6 +32,33 @@ from app.services.auth_service import (
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+def _set_auth_cookie(response: Response, name: str, value: str, max_age: int, settings) -> None:
+    response.set_cookie(
+        key=name,
+        value=value,
+        max_age=max_age,
+        expires=max_age,
+        httponly=True,
+        secure=settings.auth_cookie_secure,
+        samesite=settings.auth_cookie_samesite,
+        path="/",
+    )
+
+
+def _clear_auth_cookie(response: Response, name: str, settings) -> None:
+    response.delete_cookie(
+        key=name,
+        httponly=True,
+        secure=settings.auth_cookie_secure,
+        samesite=settings.auth_cookie_samesite,
+        path="/",
+    )
+
+
+def _read_refresh_token(body_token: str | None, cookie_token: str | None) -> str | None:
+    return body_token or cookie_token
 
 
 def _normalize_avatar_url(raw_value: str | None) -> str | None:
@@ -76,7 +103,7 @@ async def register(request: Request, body: RegisterRequest, db: AsyncSession = D
 
 @router.post("/login", response_model=TokenResponse)
 @limiter.limit("5/minute")
-async def login(request: Request, body: LoginRequest, db: AsyncSession = Depends(get_db)):
+async def login(request: Request, response: Response, body: LoginRequest, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).where(User.email == body.email))
     user = result.scalar_one_or_none()
 
@@ -86,19 +113,34 @@ async def login(request: Request, body: LoginRequest, db: AsyncSession = Depends
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Account disabled")
 
+    settings = get_settings()
+    access_token = create_access_token(user.id)
+    refresh_token = create_refresh_token(user.id)
+    _set_auth_cookie(response, ACCESS_COOKIE_NAME, access_token, settings.access_token_expire_minutes * 60, settings)
+    _set_auth_cookie(response, REFRESH_COOKIE_NAME, refresh_token, settings.refresh_token_expire_days * 24 * 60 * 60, settings)
+
     return TokenResponse(
-        access_token=create_access_token(user.id),
-        refresh_token=create_refresh_token(user.id),
+        access_token=access_token,
+        refresh_token=refresh_token,
     )
 
 
 @router.post("/refresh", response_model=TokenResponse)
 @limiter.limit("10/minute")
-async def refresh(request: Request, body: RefreshRequest, db: AsyncSession = Depends(get_db)):
+async def refresh(
+    request: Request,
+    response: Response,
+    body: RefreshRequest,
+    db: AsyncSession = Depends(get_db),
+    refresh_token_cookie: str | None = Cookie(default=None, alias=REFRESH_COOKIE_NAME),
+):
     settings = get_settings()
+    refresh_token = _read_refresh_token(body.refresh_token, refresh_token_cookie)
+    if not refresh_token:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
     try:
         payload = jwt.decode(
-            body.refresh_token,
+            refresh_token,
             settings.jwt_secret_key,
             algorithms=[settings.jwt_algorithm],
         )
@@ -110,7 +152,7 @@ async def refresh(request: Request, body: RefreshRequest, db: AsyncSession = Dep
         raise HTTPException(status_code=401, detail="Invalid refresh token") from None
 
     # Reject blacklisted refresh tokens
-    if await is_token_blacklisted(request.app.state.redis, body.refresh_token):
+    if await is_token_blacklisted(request.app.state.redis, refresh_token):
         raise HTTPException(status_code=401, detail="Refresh token has been revoked")
 
     result = await db.execute(select(User).where(User.id == int(user_id)))
@@ -120,11 +162,22 @@ async def refresh(request: Request, body: RefreshRequest, db: AsyncSession = Dep
 
     # Invalidate the consumed refresh token (token rotation)
     old_ttl = max(0, int(payload["exp"] - datetime.now(UTC).timestamp()))
-    await blacklist_token(request.app.state.redis, body.refresh_token, old_ttl)
+    await blacklist_token(request.app.state.redis, refresh_token, old_ttl)
+
+    access_token = create_access_token(user.id)
+    next_refresh_token = create_refresh_token(user.id)
+    _set_auth_cookie(response, ACCESS_COOKIE_NAME, access_token, settings.access_token_expire_minutes * 60, settings)
+    _set_auth_cookie(
+        response,
+        REFRESH_COOKIE_NAME,
+        next_refresh_token,
+        settings.refresh_token_expire_days * 24 * 60 * 60,
+        settings,
+    )
 
     return TokenResponse(
-        access_token=create_access_token(user.id),
-        refresh_token=create_refresh_token(user.id),
+        access_token=access_token,
+        refresh_token=next_refresh_token,
     )
 
 
@@ -159,37 +212,46 @@ async def update_profile(
 @router.post("/logout")
 async def logout(
     request: Request,
+    response: Response,
     body: LogoutRequest,
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+    access_token_cookie: str | None = Cookie(default=None, alias=ACCESS_COOKIE_NAME),
+    refresh_token_cookie: str | None = Cookie(default=None, alias=REFRESH_COOKIE_NAME),
     _user: User = Depends(get_current_user),
 ):
     """Blacklist the access token (and optionally the refresh token)."""
     settings = get_settings()
+    access_token = credentials.credentials if credentials and credentials.credentials else access_token_cookie
+    refresh_token = _read_refresh_token(body.refresh_token, refresh_token_cookie)
 
     # Blacklist access token using its own exp claim for accurate TTL
-    try:
-        access_payload = jwt.decode(
-            credentials.credentials,
-            settings.jwt_secret_key,
-            algorithms=[settings.jwt_algorithm],
-        )
-        access_ttl = max(0, int(access_payload["exp"] - datetime.now(UTC).timestamp()))
-    except JWTError:
-        access_ttl = settings.access_token_expire_minutes * 60
-    await blacklist_token(request.app.state.redis, credentials.credentials, access_ttl)
+    if access_token:
+        try:
+            access_payload = jwt.decode(
+                access_token,
+                settings.jwt_secret_key,
+                algorithms=[settings.jwt_algorithm],
+            )
+            access_ttl = max(0, int(access_payload["exp"] - datetime.now(UTC).timestamp()))
+        except JWTError:
+            access_ttl = settings.access_token_expire_minutes * 60
+        await blacklist_token(request.app.state.redis, access_token, access_ttl)
 
     # Blacklist refresh token if provided
-    if body.refresh_token:
+    if refresh_token:
         try:
             ref_payload = jwt.decode(
-                body.refresh_token,
+                refresh_token,
                 settings.jwt_secret_key,
                 algorithms=[settings.jwt_algorithm],
             )
             if ref_payload.get("type") == "refresh":
                 ref_ttl = max(0, int(ref_payload["exp"] - datetime.now(UTC).timestamp()))
-                await blacklist_token(request.app.state.redis, body.refresh_token, ref_ttl)
+                await blacklist_token(request.app.state.redis, refresh_token, ref_ttl)
         except JWTError:
             pass  # invalid refresh token — nothing to revoke
+
+    _clear_auth_cookie(response, ACCESS_COOKIE_NAME, settings)
+    _clear_auth_cookie(response, REFRESH_COOKIE_NAME, settings)
 
     return {"detail": "Logged out"}

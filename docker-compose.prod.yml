@@ -2,7 +2,7 @@
 # Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 #
 # This removes dev volume mounts, uses built images, runs as non-root,
-# and serves the frontend via nginx (not Vite dev server).
+# and serves the frontend via Nuxt/Nitro.
 
 services:
   postgres:
@@ -39,8 +39,10 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-      # No target override — uses full multi-stage (builder → nginx)
     command: !reset []
     volumes: !reset []
+    environment:
+      BACKEND_URL: http://backend:8000
+      APP_VERSION: ${APP_VERSION:-0.11.0}
     ports:
-      - "80:80"
+      - "80:3000"

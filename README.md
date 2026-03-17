@@ -32,10 +32,10 @@
 | Task Queue | ARQ + Redis 7 |
 | ML | scikit-learn HistGradientBoostingRegressor (per property type) |
 | Security | slowapi rate limiting, security headers, input validation |
-| Frontend | Vue 3 (Composition API) + Pinia + Vite 6 + PrimeVue 4 |
+| Frontend | Nuxt 3 + @nuxt/ui + Tailwind 4 + Pinia + vue-i18n |
 | Charts | Chart.js + vue-chartjs |
 | Maps | Leaflet 1.9 |
-| Auth | JWT (access + refresh) with bcrypt |
+| Auth | JWT (access + refresh) with bcrypt + HttpOnly cookie support |
 | i18n | vue-i18n (Slovenian + English) |
 | Lint | ruff (backend) + ESLint (frontend) |
 | CI/CD | GitHub Actions → GHCR → VPS (SSH deploy) |
@@ -54,12 +54,14 @@ cp .env.example .env
 docker compose up --build
 
 # Access the application
-# Frontend:  http://localhost:5173
+# Frontend:  http://localhost:3000
 # Backend:   http://localhost:8000
 # API docs:  http://localhost:8000/docs
 ```
 
 Development startup applies pending Alembic migrations automatically before the backend begins serving requests.
+
+The frontend now runs as a Nuxt 3 app and proxies browser `/api/*` requests to the FastAPI backend through Nitro, so the browser stays same-origin in both development and production.
 
 The first registered user is automatically assigned the **admin** role.
 
@@ -141,19 +143,20 @@ nepremicnine/
 │   └── tests/                  # pytest suites for API, ML, security, and stats
 │
 └── frontend/
-    ├── Dockerfile              # Multi-stage: node build → nginx
-    ├── nginx.conf              # Reverse proxy + SPA + security headers
-    ├── eslint.config.js        # ESLint flat config
-    ├── src/
-    │   ├── views/              # Viewer pages + admin workbench
-    │   ├── components/         # App shell, shared UI, empty states
-    │   ├── constants/          # Navigation and shared labels
-    │   ├── stores/             # Pinia (auth, data, model, stats)
-    │   ├── composables/        # useApi (axios + JWT refresh)
-    │   ├── theme/              # PrimeVue custom theme preset
-    │   ├── locales/            # i18n (sl.json, en.json)
-    │   └── router/             # Vue Router with auth guards
-    └── index.html
+    ├── Dockerfile              # Multi-stage: Nuxt build → Nitro node runtime
+    ├── nuxt.config.js          # Nuxt + Nitro + @nuxt/ui runtime config
+    ├── app.vue                 # Root app shell bootstrap
+    ├── layouts/                # Auth/default layouts
+    ├── pages/                  # File-based Nuxt routes for viewer + admin areas
+    ├── middleware/             # Auth/admin/guest route middleware
+    ├── server/
+    │   └── routes/api/         # Same-origin API proxy to FastAPI
+    ├── components/
+    │   └── primevue/           # Compatibility shims used by migrated legacy views
+    ├── assets/css/             # Shared design tokens and app styles
+    ├── plugins/                # Nuxt plugin registration (i18n)
+    ├── legacy/                 # Migrated view/stores/i18n layer still being moved into Nuxt-native structure
+    └── tsconfig.json
 ```
 
 ## API Reference
@@ -163,10 +166,11 @@ nepremicnine/
 | GET | `/api/health` | — | Health check |
 | **Auth** | | | |
 | POST | `/api/auth/register` | — | Register (first user → admin) |
-| POST | `/api/auth/login` | — | Login (returns JWT pair) |
-| POST | `/api/auth/refresh` | token | Refresh access token |
-| GET | `/api/auth/me` | token | Current user profile |
+| POST | `/api/auth/login` | — | Login (returns JWT pair and sets HttpOnly access/refresh cookies) |
+| POST | `/api/auth/refresh` | token/cookie | Rotate refresh token, issue a new access token, and refresh HttpOnly cookies |
+| GET | `/api/auth/me` | token/cookie | Current user profile |
 | PATCH | `/api/auth/me` | token | Update name/avatar profile fields |
+| POST | `/api/auth/logout` | token/cookie | Blacklist active tokens and clear auth cookies |
 | **Data** | | | |
 | POST | `/api/data/upload` | admin | Upload ETN CSV files |
 | GET | `/api/data/datasets` | token | List uploaded datasets |
@@ -232,10 +236,16 @@ docker compose exec backend ruff format .
 docker compose exec backend pytest -v
 
 # Frontend lint
-docker compose exec frontend npx eslint src/
+docker compose exec frontend corepack pnpm lint
+
+# Frontend format check
+docker compose exec frontend corepack pnpm format:check
+
+# Frontend typecheck
+docker compose exec frontend corepack pnpm typecheck
 
 # Frontend build check
-docker compose exec frontend pnpm build
+docker compose exec frontend corepack pnpm build
 ```
 
 ## Troubleshooting
@@ -267,6 +277,20 @@ For this repo specifically:
 - The development `worker` now reuses the same backend image as the API service, which avoids creating a second full-size Python image on every rebuild.
 - The biggest remaining source of growth is stale superseded images after repeated `docker compose up --build` runs, so `docker image prune -af` is the primary cleanup command when disk pressure returns.
 
+### Nuxt build fails with `EACCES` on `.nuxt-app` or `.output`
+
+If older generated Nuxt/Nitro folders were created by a different user or container, local source verification can fail with permission errors such as:
+
+- `EACCES: permission denied, unlink frontend/.nuxt-app/...`
+- `EACCES: permission denied, unlink frontend/.output/...`
+
+Use temporary writable output folders for verification:
+
+```bash
+cd frontend
+NUXT_BUILD_DIR=.nuxt-verify NUXT_OUTPUT_DIR=.output-verify corepack pnpm build
+```
+
 ## Documentation
 
 - [Master Tracking](docs/MASTER.md) — project overview and phase progress
@@ -281,6 +305,7 @@ For this repo specifically:
 - [Phase 8–20: v0.8.4–v0.8.16 Upgrades](docs/PHASE_8_14_PLAN.md)
 - [Phase 21: v0.10.0 Market UX & Training Reliability Reset](docs/MASTER.md#v0100)
 - [Phase 22: v0.11.0 Data Quality, Map UX, and PrimeVue Modernization](docs/MASTER.md#v0110)
+- [Phase 23: Nuxt Migration, SSR Auth Alignment, and Premium Redesign Branch](docs/MASTER.md#current-branch--featnuxt-ui-redesign)
 - [Deployment Guide](docs/DEPLOYMENT.md)
 
 ## License

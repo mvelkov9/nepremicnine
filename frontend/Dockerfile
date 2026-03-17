@@ -3,22 +3,25 @@ FROM node:24-alpine AS builder
 
 WORKDIR /app
 
-# Install pnpm
 RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
 
-# Install dependencies first (layer cache)
 COPY package.json pnpm-lock.yaml* ./
 RUN pnpm install --frozen-lockfile 2>/dev/null || pnpm install
 
-# Copy source and build
 COPY . .
 RUN pnpm build
 
 # ── Production stage ───────────────────────
-FROM nginx:alpine
+FROM node:24-alpine AS runner
 
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-COPY --from=builder /app/dist /usr/share/nginx/html
+WORKDIR /app
 
-EXPOSE 80
-CMD ["nginx", "-g", "daemon off;"]
+ENV NODE_ENV=production
+ENV NITRO_HOST=0.0.0.0
+ENV NITRO_PORT=3000
+ENV PORT=3000
+
+COPY --from=builder /app/.output /app/.output
+
+EXPOSE 3000
+CMD ["node", ".output/server/index.mjs"]

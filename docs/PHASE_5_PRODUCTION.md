@@ -3,6 +3,8 @@
 **Status:** ✅ Complete  
 **Commit:** `153f140`
 
+> Historical note: Phase 5 originally shipped with a Vite-built frontend served by nginx. The current `feat/nuxt-ui-redesign` branch now serves the frontend through Nuxt 3 + Nitro and uses a same-origin `/api/*` proxy instead of an internal nginx frontend layer.
+
 ## Checklist
 
 - [x] Production Dockerfiles (multi-stage builds, non-root `appuser`)
@@ -44,14 +46,14 @@ Tag v*:                                   ┌────▼─────┐
 - **redis** (7-alpine) — port 6379, AOF persistence
 - **backend** — port 8000, source-mounted, `--reload`
 - **worker** — ARQ worker, source-mounted
-- **frontend** — port 5173, Vite dev server with HMR
+- **frontend** — port 3000, Nuxt dev server with HMR
 
 ### Production (`docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d`)
 - **postgres** — no exposed port
 - **redis** — no exposed port
 - **backend** — `127.0.0.1:8000`, non-root user, 2 workers
 - **worker** — non-root user
-- **frontend** — port 80, nginx serving static build + reverse proxy
+- **frontend** — port 80, Nuxt/Nitro Node server exposed as `80:3000`
 
 ## Security
 

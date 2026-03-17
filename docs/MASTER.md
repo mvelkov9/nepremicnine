@@ -9,9 +9,9 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 | **Version** | 0.11.0 |
 | **Repo** | [github.com/mvelkov9/nepremicnine](https://github.com/mvelkov9/nepremicnine) |
 | **Backend** | FastAPI + Python 3.13 + PostgreSQL 17 + SQLAlchemy 2.x async |
-| **Frontend** | Vue 3 Composition API + Pinia + pnpm 9, Vite 6 |
+| **Frontend** | Nuxt 3 + @nuxt/ui + Tailwind 4 + Pinia + vue-i18n |
 | **ML** | scikit-learn HistGradientBoostingRegressor (per-type) |
-| **Auth** | JWT (access 15 min + refresh 7 days), admin/viewer roles |
+| **Auth** | JWT (access 15 min + refresh 7 days) + HttpOnly cookies, admin/viewer roles |
 | **i18n** | Slovenian (default) + English |
 | **CI/CD** | GitHub Actions → GHCR → VPS (SSH) |
 | **Infra** | Docker Compose (dev + prod profiles), cloud VPS |
@@ -34,6 +34,15 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 | [Phase 20](PHASE_8_14_PLAN.md#phase-20--diagnostics-focus--locale-formatting-v0816) | Diagnostics focus workflow and locale-aware formatting polish | ✅ Complete | `4c58881` |
 | Phase 21 | Market UX and training reliability reset: structured progress, map legend/drawer, PrimeVue admin/viewer polish | ✅ Complete | `22c90cf` |
 | Phase 22 | Data quality, map UX, and PrimeVue modernization: canonical municipality coverage, direct portal links, centered map modal, cached analytics, admin quality summary | ✅ Complete | working tree |
+| Phase 23 | Nuxt migration, SSR auth cookie alignment, backend stats cache regression fix, premium redesign branch | 🚧 In Progress | `feat/nuxt-ui-redesign` |
+
+## Current Branch — feat/nuxt-ui-redesign
+
+- **Frontend runtime reset**: the app is now served by Nuxt 3 + Nitro instead of the old Vite SPA + nginx container pairing, and browser `/api/*` traffic stays same-origin through a Nitro proxy route
+- **Auth alignment for SSR**: login, refresh, and logout now set, rotate, and clear HttpOnly auth cookies while bearer-token compatibility remains in place during the migration
+- **Backend reliability**: the prepared-data cache path in `stats.py` now rebuilds correctly when raw-source `mtime` is unavailable, which fixes the failing property-type and map/stat regression tests
+- **Design migration**: the redesign is still in progress; the app shell and multiple pages already run through the Nuxt structure, while some migrated legacy screens still use compatibility shims under `frontend/legacy` and `frontend/components/primevue`
+- **Runtime implications**: production frontend traffic is served by a Node/Nitro server on port `3000` behind Docker Compose, not by an internal nginx layer
 
 ## Changelog
 
@@ -330,8 +339,8 @@ Complete rebuild of the Slovenian real estate price prediction application — f
                   └────────┬─────────┘
                            │
                   ┌────────▼─────────┐
-                  │   Nginx (:80)    │  Static assets + SPA
-                  │   Vue 3 SPA      │  reverse-proxy /api/
+                  │ Nuxt/Nitro (:80) │  SSR app + same-origin
+                  │   Nuxt 3 UI      │  /api/ proxy
                   └────────┬─────────┘
                            │
                   ┌────────▼─────────┐
@@ -364,9 +373,10 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 | ML | scikit-learn (HistGBR) | 1.6+ |
 | Rate Limiting | slowapi | 0.1.9+ |
 | Data | pandas + numpy | — |
-| Frontend | Vue 3 (Composition API) | 3.5+ |
+| Frontend | Nuxt 3 + Vue 3 | 3.21+ / 3.5+ |
 | State | Pinia | 2.3+ |
-| Build | Vite | 6.x |
+| UI | @nuxt/ui + Tailwind CSS | 3.x / 4.x |
+| Build / Runtime | Nitro | bundled with Nuxt 3 |
 | Charts | Chart.js + vue-chartjs | — |
 | Maps | Leaflet | 1.9.4 |
 | i18n | vue-i18n | 11.x |

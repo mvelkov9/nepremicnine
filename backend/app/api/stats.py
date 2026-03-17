@@ -213,7 +213,15 @@ def _prepare_market_df(property_type: str | None = None) -> pd.DataFrame | None:
     if df is None or df.empty:
         return None
     mtime = _RAW_DF_CACHE["mtime"]
-    if _PREPARED_DF_CACHE["mtime"] != mtime or _PREPARED_DF_CACHE["df"] is None:
+    raw_cached_df = _RAW_DF_CACHE.get("df")
+    raw_cache_matches = (
+        isinstance(raw_cached_df, pd.DataFrame)
+        and raw_cached_df.shape == df.shape
+        and list(raw_cached_df.columns) == list(df.columns)
+        and raw_cached_df.equals(df)
+    )
+    use_prepared_cache = mtime is not None and raw_cache_matches
+    if not use_prepared_cache or _PREPARED_DF_CACHE["mtime"] != mtime or _PREPARED_DF_CACHE["df"] is None:
         frame = _ensure_regions(df.copy())
 
         if "municipality" in frame.columns:
@@ -254,10 +262,18 @@ def _prepare_market_df(property_type: str | None = None) -> pd.DataFrame | None:
         else:
             frame["_sale_date"] = pd.NaT
 
-        _PREPARED_DF_CACHE["mtime"] = mtime
-        _PREPARED_DF_CACHE["df"] = frame
+        if use_prepared_cache:
+            _PREPARED_DF_CACHE["mtime"] = mtime
+            _PREPARED_DF_CACHE["df"] = frame
+        else:
+            _PREPARED_DF_CACHE["mtime"] = None
+            _PREPARED_DF_CACHE["df"] = None
 
-    cached = _PREPARED_DF_CACHE["df"]
+    if not use_prepared_cache:
+        cached = frame
+    else:
+        cached = _PREPARED_DF_CACHE["df"]
+
     if not isinstance(cached, pd.DataFrame):
         return None
 

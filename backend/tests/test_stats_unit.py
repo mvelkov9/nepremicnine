@@ -113,6 +113,59 @@ async def test_regions_stats_property_type_filter_scopes_region_counts(monkeypat
 
 
 @pytest.mark.asyncio
+async def test_market_prepared_cache_rebuilds_when_raw_mtime_is_missing(monkeypatch: pytest.MonkeyPatch):
+    first_df = _build_market_df().copy()
+    second_df = _build_market_df().copy()
+    second_df["statistical_region"] = [
+        "goriska",
+        "goriska",
+        "goriska",
+        "podravska",
+        "savinjska",
+    ]
+    second_df["property_type"] = ["stanovanje", "stanovanje", "stanovanje", "stanovanje", "hisa"]
+
+    state = {"calls": 0}
+
+    def fake_load_df(property_type=None):
+        state["calls"] += 1
+        return first_df.copy() if state["calls"] == 1 else second_df.copy()
+
+    monkeypatch.setattr("app.api.stats._load_df", fake_load_df)
+    monkeypatch.setattr("app.api.stats._RAW_DF_CACHE", {"mtime": None, "df": object()})
+    monkeypatch.setattr("app.api.stats._PREPARED_DF_CACHE", {"mtime": None, "df": first_df.copy()})
+
+    first = await market_home(_fake_request(), _user=object())
+    second = await market_home(_fake_request(), property_type="Stanovanje", _user=object())
+
+    assert first["region_snapshot"][0]["region"] == "Osrednjeslovenska"
+    assert {item["region"] for item in second["region_snapshot"]} >= {"Goriška", "Podravska"}
+    assert second["headline"]["total_records"] == 4
+
+
+@pytest.mark.asyncio
+async def test_market_prepared_cache_rebuilds_when_raw_cache_metadata_is_stale(monkeypatch: pytest.MonkeyPatch):
+    stale_df = _build_market_df().copy()
+    fresh_df = _build_market_df().copy()
+    fresh_df["statistical_region"] = [
+        "goriska",
+        "goriska",
+        "osrednjeslovenska",
+        "podravska",
+        "savinjska",
+    ]
+
+    monkeypatch.setattr("app.api.stats._load_df", lambda property_type=None: fresh_df.copy())
+    monkeypatch.setattr("app.api.stats._RAW_DF_CACHE", {"mtime": 123.0, "df": stale_df.copy()})
+    monkeypatch.setattr("app.api.stats._PREPARED_DF_CACHE", {"mtime": 123.0, "df": stale_df.copy()})
+
+    result = await market_home(_fake_request(), _user=object())
+
+    assert {item["region"] for item in result["region_snapshot"]} >= {"Goriška", "Podravska"}
+    assert result["headline"]["total_records"] == len(fresh_df)
+
+
+@pytest.mark.asyncio
 async def test_trend_property_type_filter_returns_only_selected_type_rows(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(
         "app.api.stats._load_df",

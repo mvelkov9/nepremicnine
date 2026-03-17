@@ -11,6 +11,11 @@ venv/
 # Node
 node_modules/
 frontend/dist/
+frontend/.nuxt/
+frontend/.nuxt-app/
+frontend/.nuxt-verify/
+frontend/.output/
+frontend/.output-verify/
 
 # Environment
 .env

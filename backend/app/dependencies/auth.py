@@ -1,6 +1,6 @@
 """Authentication dependencies: JWT validation, current user, role checks."""
 
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Cookie, Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from sqlalchemy import select
@@ -11,16 +11,31 @@ from app.database import get_db
 from app.models.user import User, UserRole
 from app.services.auth_service import is_token_blacklisted
 
-security = HTTPBearer()
+ACCESS_COOKIE_NAME = "access_token"
+REFRESH_COOKIE_NAME = "refresh_token"
+security = HTTPBearer(auto_error=False)
+
+
+def get_request_access_token(
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+    access_token_cookie: str | None = Cookie(default=None, alias=ACCESS_COOKIE_NAME),
+) -> str:
+    if credentials and credentials.credentials:
+        return credentials.credentials
+    if access_token_cookie:
+        return access_token_cookie
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Not authenticated",
+    )
 
 
 async def get_current_user(
     request: Request,
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    token: str = Depends(get_request_access_token),
     db: AsyncSession = Depends(get_db),
 ) -> User:
     settings = get_settings()
-    token = credentials.credentials
     try:
         payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
         user_id: int | None = payload.get("sub")
