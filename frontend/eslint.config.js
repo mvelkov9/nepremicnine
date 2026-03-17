@@ -32,6 +32,7 @@ export default [
       '.output-local/',
       '.output-typecheck/',
       '.output-verify/',
+      '.vite-cache/',
       '.pnpm-store/',
       'dist/',
       'node_modules/',

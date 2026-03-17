@@ -306,7 +306,7 @@ For this repo specifically:
 
 ### Nuxt local dev hits `EACCES` or port conflicts
 
-The frontend package scripts now write to isolated local directories such as `.nuxt-dev`, `.nuxt-build`, and `.output-build`, so normal `corepack pnpm dev` and `corepack pnpm build` runs should avoid old container-owned `.nuxt-app` or `.output` folders.
+The frontend package scripts now write to isolated local directories such as `.nuxt-dev`, `.nuxt-build`, `.output-build`, and `.vite-cache`, so normal `corepack pnpm dev` and `corepack pnpm build` runs should avoid old container-owned `.nuxt-app`, `.output`, or `node_modules/.cache/vite` folders.
 
 If port `3000` is already occupied, either stop the optional `container-frontend` profile or run:
 

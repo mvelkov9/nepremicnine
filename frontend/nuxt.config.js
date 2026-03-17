@@ -28,6 +28,7 @@ export default defineNuxtConfig({
     },
   },
   vite: {
+    cacheDir: process.env.VITE_CACHE_DIR || '.vite-cache',
     resolve: {
       alias: {
         'primevue/autocomplete': local('./components/primevue/AutoComplete.vue'),

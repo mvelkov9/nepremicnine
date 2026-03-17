@@ -25,6 +25,7 @@ frontend/.output-dev/
 frontend/.output-local/
 frontend/.output-typecheck/
 frontend/.output-verify/
+frontend/.vite-cache/
 
 # Environment
 .env
