@@ -1,3 +1,15 @@
+@import 'tailwindcss';
+
+@theme inline {
+  --font-sans: var(--font-body);
+  --font-serif: var(--font-display);
+  --color-brand: var(--primary);
+  --color-brand-strong: var(--primary-strong);
+  --color-app-bg: var(--bg);
+  --color-app-surface: var(--surface-strong);
+  --color-app-border: var(--border);
+}
+
 :root {
   --bg: #eef3f7;
   --bg-accent:
@@ -127,7 +139,7 @@ body,
 body {
   margin: 0;
   font-family: var(--font-body);
-  font-size: 14px;
+  font-size: 13px;
   background: var(--bg-accent);
   color: var(--text);
   line-height: 1.5;
@@ -171,7 +183,7 @@ button {
 }
 
 .p-button:not(.p-button-text):not(.p-button-link) {
-  min-height: 2.85rem;
+  min-height: 2.65rem;
 }
 
 .p-button:hover {
@@ -185,6 +197,11 @@ button {
   color: var(--text);
 }
 
+.p-button.p-button-text,
+.p-button.p-button-link {
+  color: var(--primary);
+}
+
 .p-inputtext,
 .p-inputnumber-input,
 .p-select-label,
@@ -194,7 +211,7 @@ button {
   background: var(--surface-soft) !important;
   border-color: var(--border) !important;
   color: var(--text) !important;
-  min-height: 2.85rem;
+  min-height: 2.65rem;
 }
 
 .p-inputtext::placeholder,
@@ -499,7 +516,7 @@ button {
 .page-heading {
   margin: 0;
   font-family: var(--font-display);
-  font-size: clamp(1.35rem, 2.2vw, 1.85rem);
+  font-size: clamp(1.2rem, 1.9vw, 1.62rem);
   line-height: 1.08;
   letter-spacing: -0.03em;
 }
@@ -746,7 +763,7 @@ button:disabled {
 .page-title,
 .card h2 {
   margin: 0 0 1rem;
-  font-size: 1.35rem;
+  font-size: 1.18rem;
   line-height: 1.1;
 }
 
@@ -771,7 +788,7 @@ button:disabled {
 .login-panel h2 {
   margin: 0.45rem 0 0.65rem;
   font-family: var(--font-display);
-  font-size: clamp(1.5rem, 2.5vw, 2rem);
+  font-size: clamp(1.34rem, 2.2vw, 1.72rem);
   line-height: 1.06;
   letter-spacing: -0.04em;
 }
@@ -908,7 +925,7 @@ button:disabled {
 }
 
 .kpi-value {
-  font-size: clamp(1.1rem, 2.2vw, 1.55rem);
+  font-size: clamp(1rem, 1.8vw, 1.32rem);
   font-weight: 900;
   letter-spacing: -0.04em;
 }
@@ -1526,7 +1543,7 @@ a:focus-visible {
   }
 
   .page-heading {
-    font-size: 1.6rem;
+    font-size: 1.34rem;
   }
 
   .profile-copy {

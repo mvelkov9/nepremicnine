@@ -84,7 +84,9 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       target: builder
-    command: sh -c "corepack enable && corepack prepare pnpm@9.15.4 --activate && pnpm install && pnpm dev"
+    command:
+      sh -c "corepack enable && corepack prepare pnpm@9.15.4 --activate &&
+      pnpm install --frozen-lockfile --force && pnpm dev --host 0.0.0.0"
     volumes:
       - ./frontend:/app
       - /app/node_modules

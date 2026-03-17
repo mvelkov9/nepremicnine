@@ -36,7 +36,7 @@
   const isAdminArea = computed(() => route.path.startsWith('/admin'))
   const currentNavItems = computed(() => (isAdminArea.value ? adminNavigation : viewerNavigation))
   const shellStyle = computed(() => ({
-    '--sidebar-width': sidebarCollapsed.value ? '6.2rem' : '18.5rem',
+    '--sidebar-width': sidebarCollapsed.value ? '5.4rem' : '16.8rem',
   }))
 
   const currentItem = computed(
@@ -254,7 +254,7 @@
       class="shell-sidebar"
       :class="{ 'mobile-open': mobileMenuOpen, collapsed: sidebarCollapsed }"
     >
-      <div class="sidebar-pane">
+      <div class="sidebar-pane flex min-h-full flex-col gap-4">
         <RouterLink to="/" class="shell-brand">
           <span class="brand-mark">
             <AppIcon name="brand" :size="24" :stroke="1.95" />
@@ -303,12 +303,6 @@
               <strong>{{ switchLink.label }}</strong>
             </span>
           </RouterLink>
-
-          <div class="sidebar-status">
-            <Tag :value="workspaceTag" severity="contrast" rounded />
-            <Tag :value="userRoleLabel" severity="secondary" rounded />
-            <Tag v-if="versionBadge" :value="versionBadge" rounded />
-          </div>
         </div>
       </div>
     </aside>
@@ -336,15 +330,13 @@
               <div class="page-meta">
                 <div class="page-meta-row">
                   <span class="page-kicker">{{ workspaceLabel }}</span>
-                  <Tag :value="workspaceTag" severity="contrast" rounded />
-                  <Tag v-if="versionBadge" :value="versionBadge" rounded />
                 </div>
                 <h1 class="page-heading">{{ currentTitle }}</h1>
                 <p class="page-description">{{ currentDescription }}</p>
               </div>
             </div>
 
-            <div class="shell-header-actions">
+            <div class="shell-header-actions flex flex-wrap items-center gap-2 xl:justify-end">
               <RouterLink v-if="switchLink" :to="switchLink.to" class="shell-link-pill">
                 <AppIcon :name="switchLink.icon" :size="16" />
                 <span>{{ switchLink.label }}</span>
@@ -394,7 +386,9 @@
       </main>
 
       <footer class="shell-footer-bar">
-        <div class="shell-footer-inner">
+        <div
+          class="shell-footer-inner gap-4 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_auto] lg:items-center"
+        >
           <div class="footer-brand-block">
             <span class="brand-mark footer-brand-mark">
               <AppIcon name="brand" :size="18" :stroke="1.95" />
@@ -500,7 +494,7 @@
     display: flex;
     flex-direction: column;
     gap: 1rem;
-    padding: 1.35rem 1rem 1rem;
+    padding: 1.1rem 0.85rem 0.9rem;
   }
 
   .shell-brand {
@@ -513,8 +507,8 @@
   }
 
   .brand-mark {
-    width: 3rem;
-    height: 3rem;
+    width: 2.7rem;
+    height: 2.7rem;
     flex-shrink: 0;
     display: inline-flex;
     align-items: center;
@@ -534,21 +528,21 @@
 
   .brand-copy strong {
     color: var(--shell-text);
-    font-size: 1rem;
+    font-size: 0.93rem;
     font-weight: 800;
     letter-spacing: 0.01em;
   }
 
   .brand-copy small {
     color: var(--shell-text-soft);
-    font-size: 0.82rem;
+    font-size: 0.74rem;
   }
 
   .sidebar-context {
     display: grid;
     gap: 0.3rem;
-    padding: 1rem;
-    border-radius: 1.2rem;
+    padding: 0.9rem;
+    border-radius: 1.05rem;
     border: 1px solid var(--shell-panel-border);
     background: var(--shell-panel-bg);
     box-shadow: inset 0 1px 0 rgb(255 255 255 / 4%);
@@ -556,19 +550,19 @@
 
   .sidebar-context strong {
     color: var(--shell-text);
-    font-size: 1rem;
+    font-size: 0.92rem;
   }
 
   .sidebar-context p {
     margin: 0;
     color: var(--shell-text-soft);
-    font-size: 0.84rem;
+    font-size: 0.78rem;
     line-height: 1.45;
   }
 
   .sidebar-section-label {
     color: var(--shell-text-muted);
-    font-size: 0.72rem;
+    font-size: 0.68rem;
     font-weight: 800;
     letter-spacing: 0.14em;
     text-transform: uppercase;
@@ -585,8 +579,8 @@
     align-items: center;
     gap: 0.85rem;
     min-width: 0;
-    padding: 0.78rem 0.86rem;
-    border-radius: 1.05rem;
+    padding: 0.68rem 0.72rem;
+    border-radius: 0.95rem;
     border: 1px solid transparent;
     text-decoration: none;
     color: var(--shell-text-soft);
@@ -607,8 +601,8 @@
   }
 
   .shell-nav-icon {
-    width: 2.65rem;
-    height: 2.65rem;
+    width: 2.35rem;
+    height: 2.35rem;
     flex-shrink: 0;
     display: inline-flex;
     align-items: center;
@@ -620,8 +614,8 @@
   }
 
   .shell-nav-icon.subtle {
-    width: 2.3rem;
-    height: 2.3rem;
+    width: 2.15rem;
+    height: 2.15rem;
   }
 
   .shell-nav-copy {
@@ -634,22 +628,16 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 0.93rem;
+    font-size: 0.86rem;
     font-weight: 700;
   }
 
   .sidebar-footer {
     margin-top: auto;
     display: grid;
-    gap: 0.8rem;
-    padding-top: 0.95rem;
+    gap: 0.65rem;
+    padding-top: 0.85rem;
     border-top: 1px solid var(--shell-divider);
-  }
-
-  .sidebar-status {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
   }
 
   .shell-workspace {
@@ -698,27 +686,27 @@
   .shell-topbar-inner,
   .shell-footer-inner {
     width: 100%;
-    padding: 1.05rem 1.5rem;
+    padding: 0.9rem 1.25rem;
   }
 
   .shell-heading-row {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    gap: 1.2rem;
+    gap: 1rem;
   }
 
   .shell-heading-main {
     display: flex;
     align-items: flex-start;
-    gap: 0.95rem;
+    gap: 0.8rem;
     min-width: 0;
   }
 
   .page-meta {
     min-width: 0;
     display: grid;
-    gap: 0.3rem;
+    gap: 0.22rem;
   }
 
   .page-meta-row {
@@ -730,7 +718,7 @@
 
   .page-kicker {
     color: var(--shell-text-muted);
-    font-size: 0.72rem;
+    font-size: 0.68rem;
     font-weight: 800;
     letter-spacing: 0.16em;
     text-transform: uppercase;
@@ -740,7 +728,7 @@
     margin: 0;
     color: var(--shell-text);
     font-family: var(--font-display);
-    font-size: clamp(1.45rem, 2.2vw, 1.95rem);
+    font-size: clamp(1.28rem, 2vw, 1.72rem);
     line-height: 1.04;
     letter-spacing: -0.03em;
   }
@@ -749,14 +737,14 @@
     margin: 0;
     max-width: 62ch;
     color: var(--shell-text-soft);
-    font-size: 0.92rem;
+    font-size: 0.84rem;
   }
 
   .shell-header-actions {
     display: flex;
     align-items: center;
     justify-content: flex-end;
-    gap: 0.7rem;
+    gap: 0.55rem;
     flex-wrap: wrap;
   }
 
@@ -764,10 +752,11 @@
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 0.72rem 0.95rem;
+    padding: 0.6rem 0.82rem;
     border-radius: 999px;
     text-decoration: none;
     font-weight: 700;
+    font-size: 0.83rem;
     color: var(--shell-text);
     background: var(--shell-control-bg);
     border: 1px solid var(--shell-control-border);
@@ -777,7 +766,7 @@
     position: relative;
     z-index: 1;
     flex: 1;
-    padding: 1.2rem 1.5rem 1.7rem;
+    padding: 1rem 1.25rem 1.5rem;
   }
 
   .shell-footer-bar {
@@ -800,22 +789,22 @@
   }
 
   .footer-brand-mark {
-    width: 2.5rem;
-    height: 2.5rem;
-    border-radius: 0.95rem;
+    width: 2.3rem;
+    height: 2.3rem;
+    border-radius: 0.85rem;
   }
 
   .footer-brand-block strong {
     display: block;
     color: var(--shell-text);
-    font-size: 0.95rem;
+    font-size: 0.88rem;
   }
 
   .footer-brand-block p,
   .footer-summary {
     margin: 0;
     color: var(--shell-text-soft);
-    font-size: 0.85rem;
+    font-size: 0.78rem;
   }
 
   .footer-meta {
@@ -873,17 +862,17 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 0.92rem;
+    font-size: 0.86rem;
   }
 
   .profile-copy small {
     color: var(--shell-text-soft);
-    font-size: 0.76rem;
+    font-size: 0.72rem;
   }
 
   .avatar-frame {
-    width: 2.45rem;
-    height: 2.45rem;
+    width: 2.3rem;
+    height: 2.3rem;
     border-radius: 999px;
     display: inline-flex;
     align-items: center;
@@ -962,8 +951,7 @@
 
   .collapsed .sidebar-context,
   .collapsed .shell-nav-copy,
-  .collapsed .brand-copy,
-  .collapsed .sidebar-footer :deep(.p-tag-label) {
+  .collapsed .brand-copy {
     display: none;
   }
 
@@ -974,15 +962,6 @@
   .collapsed .shell-brand,
   .collapsed .shell-nav-link,
   .collapsed .shell-switch-link {
-    justify-content: center;
-  }
-
-  .collapsed .sidebar-status {
-    justify-content: center;
-  }
-
-  .collapsed .sidebar-footer :deep(.p-tag) {
-    min-width: 2.65rem;
     justify-content: center;
   }
 
@@ -1030,16 +1009,14 @@
     color: var(--shell-text);
   }
 
-  :deep(.sidebar-status .p-tag),
-  :deep(.page-meta-row .p-tag),
   :deep(.footer-meta .p-tag) {
     background: var(--shell-control-bg);
     border: 1px solid var(--shell-control-border);
     color: var(--shell-text);
   }
 
-  :deep(.page-meta-row .p-tag) {
-    font-size: 0.74rem;
+  :deep(.footer-meta .p-tag) {
+    font-size: 0.72rem;
   }
 
   :deep(.profile-dialog) {
@@ -1120,8 +1097,7 @@
 
     .collapsed .brand-copy,
     .collapsed .shell-nav-copy,
-    .collapsed .sidebar-context,
-    .collapsed .sidebar-footer :deep(.p-tag-label) {
+    .collapsed .sidebar-context {
       display: initial;
     }
   }
@@ -1165,7 +1141,7 @@
     }
 
     .shell-main {
-      padding-top: 1rem;
+      padding-top: 0.85rem;
     }
 
     :deep(.profile-dialog) {
