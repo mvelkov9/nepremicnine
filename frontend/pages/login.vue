@@ -91,6 +91,11 @@
     mode.value = Number(payload) === 0 ? 'login' : 'register'
     error.value = ''
   }
+
+  function toggleAuthMode() {
+    mode.value = mode.value === 'login' ? 'register' : 'login'
+    error.value = ''
+  }
 </script>
 
 <template>
@@ -249,15 +254,7 @@
 
         <p class="login-footer">
           {{ mode === 'login' ? t('auth.noAccount') : t('auth.hasAccount') }}
-          <UButton
-            variant="link"
-            size="sm"
-            :padded="false"
-            @click="
-              mode = mode === 'login' ? 'register' : 'login'
-              error = ''
-            "
-          >
+          <UButton variant="link" size="sm" :padded="false" @click="toggleAuthMode">
             {{ mode === 'login' ? t('auth.registerButton') : t('auth.loginButton') }}
           </UButton>
         </p>
