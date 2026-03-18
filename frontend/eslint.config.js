@@ -1,8 +1,29 @@
 import pluginVue from 'eslint-plugin-vue'
+import vueParser from 'vue-eslint-parser'
+import tsParser from '@typescript-eslint/parser'
 
 export default [
+  {
+    ignores: [
+      '.nuxt*/',
+      '.output*/',
+      '.vite-cache/',
+      '.pnpm-store/',
+      'dist/',
+      'node_modules/',
+    ],
+  },
   ...pluginVue.configs['flat/recommended'],
   {
+    files: ['**/*.vue'],
+    languageOptions: {
+      parser: vueParser,
+      parserOptions: {
+        parser: tsParser,
+        ecmaVersion: 'latest',
+        sourceType: 'module',
+      },
+    },
     rules: {
       'vue/multi-word-component-names': 'off',
       'vue/no-unused-vars': 'warn',
@@ -14,28 +35,7 @@ export default [
       'vue/html-closing-bracket-newline': 'off',
       'vue/first-attribute-linebreak': 'off',
       'vue/attributes-order': 'off',
+      'no-unused-vars': 'off',
     },
-  },
-  {
-    ignores: [
-      '.nuxt/',
-      '.nuxt-app/',
-      '.nuxt-build/',
-      '.nuxt-dev/',
-      '.nuxt-local/',
-      '.nuxt-preview/',
-      '.nuxt-typecheck/',
-      '.nuxt-verify/',
-      '.output/',
-      '.output-build/',
-      '.output-dev/',
-      '.output-local/',
-      '.output-typecheck/',
-      '.output-verify/',
-      '.vite-cache/',
-      '.pnpm-store/',
-      'dist/',
-      'node_modules/',
-    ],
   },
 ]

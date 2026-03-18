@@ -11,7 +11,7 @@ dependencies = [
     "python-multipart>=0.0.18",
 
     # Database
-    "sqlalchemy[asyncio]>=2.0.36",
+    "sqlalchemy[asyncio]>=2.0.41",
     "asyncpg>=0.30.0",
     "psycopg2-binary>=2.9.0",
     "alembic>=1.14.0",
@@ -22,7 +22,7 @@ dependencies = [
     "bcrypt>=4.2.0",
 
     # Validation & settings
-    "pydantic>=2.10.0",
+    "pydantic>=2.11.0",
     "pydantic-settings>=2.7.0",
     "email-validator>=2.2.0",
 

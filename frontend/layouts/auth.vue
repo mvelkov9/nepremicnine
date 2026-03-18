@@ -1,15 +1,15 @@
-<script setup>
-  import ToastStack from '~/components/shell/ToastStack.vue'
+<script setup lang="ts">
+  // Auth layout — full-screen atmospheric login stage
 </script>
 
 <template>
   <div class="shell-surface auth-stage">
-    <ToastStack />
     <div class="auth-atmosphere" aria-hidden="true">
-      <span class="auth-orb auth-orb-primary"></span>
-      <span class="auth-orb auth-orb-secondary"></span>
-      <span class="auth-grid"></span>
+      <span class="auth-orb auth-orb-primary" />
+      <span class="auth-orb auth-orb-secondary" />
+      <span class="auth-grid" />
     </div>
+
     <main class="auth-main">
       <slot />
     </main>

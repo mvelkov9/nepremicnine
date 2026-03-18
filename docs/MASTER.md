@@ -6,10 +6,10 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 
 | Item | Value |
 |------|-------|
-| **Version** | 0.11.0 |
+| **Version** | 0.12.0 |
 | **Repo** | [github.com/mvelkov9/nepremicnine](https://github.com/mvelkov9/nepremicnine) |
 | **Backend** | FastAPI + Python 3.13 + PostgreSQL 17 + SQLAlchemy 2.x async |
-| **Frontend** | Nuxt 4 + @nuxt/ui + Tailwind 4 + Pinia + vue-i18n |
+| **Frontend** | Nuxt 4 + @nuxt/ui v4 + Tailwind 4 + Pinia 3 + @nuxtjs/i18n + @vueuse/nuxt + Vitest |
 | **ML** | scikit-learn HistGradientBoostingRegressor (per-type) |
 | **Auth** | JWT (access 15 min + refresh 7 days) + HttpOnly cookies, admin/viewer roles |
 | **i18n** | Slovenian (default) + English |
@@ -34,19 +34,34 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 | [Phase 20](PHASE_8_14_PLAN.md#phase-20--diagnostics-focus--locale-formatting-v0816) | Diagnostics focus workflow and locale-aware formatting polish | ✅ Complete | `4c58881` |
 | Phase 21 | Market UX and training reliability reset: structured progress, map legend/drawer, PrimeVue admin/viewer polish | ✅ Complete | `22c90cf` |
 | Phase 22 | Data quality, map UX, and PrimeVue modernization: canonical municipality coverage, direct portal links, centered map modal, cached analytics, admin quality summary | ✅ Complete | working tree |
-| Phase 23 | Nuxt 4 migration, SSR auth cookie alignment, backend stats cache regression fix, premium redesign mainline | 🚧 In Progress | `main` |
+| Phase 23 | Nuxt 4 migration, SSR auth cookie alignment, backend stats cache regression fix, premium redesign mainline | ✅ Complete | `main` |
+| Phase 24 | Complete UI overhaul: PrimeVue → Nuxt UI, TypeScript throughout, @nuxtjs/i18n, @vueuse/nuxt, Vitest, legacy cleanup | ✅ Complete | `main` |
 
 ## Current Mainline State
 
-- **Frontend runtime reset**: the app is now served by Nuxt 4 + Nitro instead of the old Vite SPA + nginx container pairing, and browser `/api/*` traffic stays same-origin through a Nitro proxy route
-- **Auth alignment for SSR**: login, refresh, and logout now set, rotate, and clear HttpOnly auth cookies while bearer-token compatibility remains in place during the migration
-- **Backend reliability**: the prepared-data cache path in `stats.py` now rebuilds correctly when raw-source `mtime` is unavailable, which fixes the failing property-type and map/stat regression tests
-- **Developer workflow reset**: local frontend development now defaults to `pnpm dev` against Dockerized backend services, while the frontend container is kept as an optional compose profile for parity/debugging instead of the default path
-- **Generated-dir cleanup**: frontend scripts now use isolated writable output folders such as `.nuxt-dev`, `.nuxt-build`, and `.output-build`, which avoids stale root-owned artifacts from older container runs
-- **Design migration**: the redesign is still in progress; the app shell and multiple pages already run through the Nuxt structure, while some migrated legacy screens still use compatibility shims under `frontend/legacy` and `frontend/components/primevue`
-- **Runtime implications**: production frontend traffic is served by a Node/Nitro server on port `3000` behind Docker Compose, not by an internal nginx layer
+- **Frontend fully migrated**: All pages and components use Nuxt UI v4, TypeScript `<script setup lang="ts">`, and Nuxt auto-imports. Zero PrimeVue or legacy code remains.
+- **Module stack**: `@nuxt/ui` (components + color mode), `@nuxtjs/i18n` (replacing custom vue-i18n plugin), `@vueuse/nuxt` (composables like useLocalStorage, useWindowSize, useIntervalFn), `@pinia/nuxt` (state management)
+- **API layer**: All HTTP calls use a typed `useApi()` composable built on `$fetch` with automatic token refresh, SSR awareness via `useRequestFetch()`, and error normalization
+- **Testing**: Vitest 3 + @nuxt/test-utils + @vue/test-utils with happy-dom; utility tests cover format, municipality, propertyType, and apiError modules
+- **Docker build fixed**: Multi-stage Dockerfile correctly runs `nuxt prepare` with `NUXT_BUILD_DIR=.nuxt-dev` in the builder stage, and runner copies from `.output-build`
+- **Auth**: HttpOnly cookie-based JWT with token refresh flow, SSR-compatible
+- **CI/CD**: GitHub Actions pipeline includes frontend-test job alongside lint, backend-test, and docker-build
 
 ## Changelog
+
+### v0.12.0
+
+- **UI overhaul**: Replaced all PrimeVue components with Nuxt UI v4 — UButton, UInput, UTable, USelectMenu, UBadge, UAlert, UDropdownMenu, UModal, UTabs, UCheckbox, UAvatar, UIcon, UNotifications across every page and layout
+- **TypeScript migration**: Every page, store, composable, utility, and middleware converted to `<script setup lang="ts">` with full interface definitions and typed API calls
+- **Module modernization**: Added `@nuxtjs/i18n` module (replacing custom vue-i18n plugin with browser detection and `no_prefix` strategy), `@vueuse/nuxt` for composables (useLocalStorage, useWindowSize, useIntervalFn), removed redundant `@nuxtjs/color-mode` (bundled in @nuxt/ui)
+- **API client rewrite**: Replaced axios with a `$fetch`-based `useApi()` composable featuring automatic token refresh with retry logic, SSR-aware `useRequestFetch()`, typed generic methods (`get<T>`, `post<T>`, `patch<T>`, `delete<T>`), and error normalization with toast notifications
+- **Pinia stores rewrite**: All 5 stores (auth, stats, model, data, ui) fully typed with TypeScript interfaces, composition API style, and `useApi()` integration
+- **All pages rewritten**: dashboard (index.vue), prediction (napoved.vue), map (zemljevid.vue), analysis (analiza.vue), municipality detail (obcine/[slug].vue), login, and all admin pages (index, model, diagnostika, uporabniki, priprava, podatki) — each with full TypeScript, Nuxt UI components, and scoped CSS
+- **Testing**: Added Vitest 3 with @nuxt/test-utils and @vue/test-utils (happy-dom), unit tests for format, municipality, propertyType, and apiError utilities, CI pipeline includes frontend-test job
+- **Docker fix**: Fixed TSConfck build error — added explicit `nuxt prepare` with correct `NUXT_BUILD_DIR` in builder stage and fixed runner to copy from `.output-build`
+- **Legacy cleanup**: Deleted entire `frontend/legacy/` directory, `components/primevue/` shims (16 files), `plugins/i18n.js`, and `components/shell/ToastStack.vue`
+- **Config**: Converted `nuxt.config.js` to TypeScript, removed 16 PrimeVue Vite resolve aliases, added experimental typed pages
+- **Version**: 0.11.0 → 0.12.0
 
 ### v0.11.0
 
@@ -381,10 +396,12 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 | Build / Runtime | Nitro | bundled with Nuxt 4 |
 | Charts | Chart.js + vue-chartjs | — |
 | Maps | Leaflet | 1.9.4 |
-| i18n | vue-i18n | 11.x |
+| i18n | @nuxtjs/i18n + vue-i18n | 9.x / 11.x |
+| Composables | @vueuse/nuxt | 13.x |
+| Testing | Vitest + @nuxt/test-utils | 3.x |
 | Lint (BE) | ruff | 0.8+ |
 | Lint (FE) | ESLint (flat config) | 10.x |
-| Package Mgr | pnpm | 9.15.4 |
+| Package Mgr | pnpm | 10.32+ |
 | CI/CD | GitHub Actions | — |
 | Registry | GHCR | — |
 | Containers | Docker Compose | v2 |

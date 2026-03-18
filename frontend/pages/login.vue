@@ -1,63 +1,86 @@
-<script setup>
-  import { computed, ref } from 'vue'
-  import { useI18n } from 'vue-i18n'
-  import AppIcon from '~/legacy/components/AppIcon.vue'
-  import { setLocale } from '~/legacy/i18n'
-  import api from '~/legacy/composables/useApi'
-  import { useAuthStore } from '~/legacy/stores/auth'
-  import { getApiErrorMessage } from '~/legacy/utils/apiError'
+<script setup lang="ts">
+  definePageMeta({ layout: 'auth', middleware: 'guest' })
 
-  definePageMeta({
-    layout: 'auth',
-    middleware: ['guest'],
-  })
-
-  const route = useRoute()
-  const router = useRouter()
-  const auth = useAuthStore()
-  const colorMode = useColorMode()
   const { t, locale } = useI18n()
+  const auth = useAuthStore()
+  const route = useRoute()
+  const colorMode = useColorMode()
+  const toast = useToast()
+  const api = useApi()
 
-  const isLogin = ref(true)
-  const email = ref('')
-  const password = ref('')
-  const fullName = ref('')
+  const mode = ref<'login' | 'register'>('login')
+  const form = reactive({ email: '', password: '', full_name: '' })
   const loading = ref(false)
   const error = ref('')
 
   const marketCards = computed(() => [
-    { icon: 'map', title: t('auth.marketMap'), value: t('auth.marketMapValue') },
-    { icon: 'trend', title: t('auth.marketTrend'), value: t('auth.marketTrendValue') },
-    { icon: 'prediction', title: t('auth.marketEstimate'), value: t('auth.marketEstimateValue') },
+    {
+      icon: 'i-lucide-map',
+      title: t('auth.marketMap'),
+      value: t('auth.marketMapValue'),
+      featured: true,
+    },
+    {
+      icon: 'i-lucide-trending-up',
+      title: t('auth.marketTrend'),
+      value: t('auth.marketTrendValue'),
+      featured: false,
+    },
+    {
+      icon: 'i-lucide-bolt',
+      title: t('auth.marketEstimate'),
+      value: t('auth.marketEstimateValue'),
+      featured: false,
+    },
   ])
 
-  async function submit() {
+  async function handleLogin() {
     loading.value = true
     error.value = ''
-
     try {
-      if (isLogin.value) {
-        await auth.login(email.value, password.value)
-      } else {
-        await api.post('/api/auth/register', {
-          email: email.value,
-          password: password.value,
-          full_name: fullName.value,
-        })
-        await auth.login(email.value, password.value)
-      }
-
-      await router.push(typeof route.query.redirect === 'string' ? route.query.redirect : '/')
-    } catch (err) {
-      error.value = getApiErrorMessage(err, t)
+      await auth.login(form.email, form.password)
+      const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/'
+      await navigateTo(redirect)
+    } catch (e) {
+      error.value = getApiErrorMessage(e, t)
     } finally {
       loading.value = false
     }
   }
 
-  function switchLocale(nextLocale) {
-    locale.value = nextLocale
-    setLocale(nextLocale)
+  async function handleRegister() {
+    loading.value = true
+    error.value = ''
+    try {
+      await api.post('/api/auth/register', {
+        email: form.email,
+        password: form.password,
+        full_name: form.full_name,
+      })
+      mode.value = 'login'
+      form.password = ''
+      toast.add({
+        title: t('auth.registerSuccess') || 'Account created! Please log in.',
+        color: 'success',
+        icon: 'i-lucide-check-circle',
+      })
+    } catch (e) {
+      error.value = getApiErrorMessage(e, t)
+    } finally {
+      loading.value = false
+    }
+  }
+
+  function handleSubmit() {
+    if (mode.value === 'login') {
+      handleLogin()
+    } else {
+      handleRegister()
+    }
+  }
+
+  function switchLocale(next: string) {
+    locale.value = next
   }
 
   function toggleTheme() {
@@ -68,11 +91,12 @@
 <template>
   <div class="page-frame auth-shell py-8 lg:py-12">
     <div class="login-page">
+      <!-- Showcase side -->
       <section class="login-showcase">
         <div class="showcase-head">
           <div class="showcase-brand">
             <span class="brand-mark">
-              <AppIcon name="brand" :size="24" />
+              <UIcon name="i-lucide-building-2" class="w-5 h-5" />
             </span>
             <div class="brand-copy">
               <strong>{{ t('app.title') }}</strong>
@@ -95,7 +119,7 @@
           >
             <div class="market-card-head">
               <span class="market-icon">
-                <AppIcon :name="card.icon" :size="18" />
+                <UIcon :name="card.icon" class="w-4 h-4" />
               </span>
               <strong>{{ card.title }}</strong>
             </div>
@@ -104,13 +128,14 @@
         </div>
       </section>
 
+      <!-- Login/Register panel -->
       <section class="login-panel">
         <div class="login-panel-top">
           <div>
             <p class="eyebrow">{{ t('app.title') }}</p>
-            <h2>{{ isLogin ? t('auth.loginButton') : t('auth.registerButton') }}</h2>
+            <h2>{{ mode === 'login' ? t('auth.loginButton') : t('auth.registerButton') }}</h2>
             <p class="muted">
-              {{ isLogin ? t('auth.noAccount') : t('auth.hasAccount') }}
+              {{ mode === 'login' ? t('auth.noAccount') : t('auth.hasAccount') }}
             </p>
           </div>
 
@@ -140,63 +165,93 @@
               :aria-label="colorMode.value === 'dark' ? t('ui.lightMode') : t('ui.darkMode')"
               @click="toggleTheme"
             >
-              <AppIcon :name="colorMode.value === 'dark' ? 'sun' : 'moon'" :size="16" />
+              <UIcon
+                :name="colorMode.value === 'dark' ? 'i-lucide-sun' : 'i-lucide-moon'"
+                class="w-4 h-4"
+              />
             </button>
           </div>
         </div>
 
-        <div class="auth-switch">
-          <button
-            type="button"
-            class="auth-switch-btn"
-            :class="{ active: isLogin }"
-            @click="isLogin = true"
-          >
-            {{ t('auth.loginButton') }}
-          </button>
-          <button
-            type="button"
-            class="auth-switch-btn"
-            :class="{ active: !isLogin }"
-            @click="isLogin = false"
-          >
-            {{ t('auth.registerButton') }}
-          </button>
-        </div>
+        <!-- Mode switcher -->
+        <UTabs
+          :items="[
+            { label: t('auth.loginButton'), value: 'login' },
+            { label: t('auth.registerButton'), value: 'register' },
+          ]"
+          :model-value="mode === 'login' ? 0 : 1"
+          @update:model-value="(idx: number) => { mode = idx === 0 ? 'login' : 'register'; error = '' }"
+        />
 
-        <form class="auth-form" @submit.prevent="submit">
-          <label v-if="!isLogin" class="field">
+        <!-- Form -->
+        <form class="auth-form" novalidate @submit.prevent="handleSubmit">
+          <label v-if="mode === 'register'" class="field">
             <span>{{ t('auth.fullName') }}</span>
-            <input v-model="fullName" type="text" class="form-input" autocomplete="name" />
+            <UInput
+              v-model="form.full_name"
+              type="text"
+              :placeholder="t('auth.fullName')"
+              autocomplete="name"
+              size="xl"
+            />
           </label>
 
           <label class="field">
             <span>{{ t('auth.email') }}</span>
-            <input v-model="email" type="email" class="form-input" autocomplete="username" />
+            <UInput
+              v-model="form.email"
+              type="email"
+              :placeholder="t('auth.email')"
+              autocomplete="username"
+              size="xl"
+            />
           </label>
 
           <label class="field">
             <span>{{ t('auth.password') }}</span>
-            <input
-              v-model="password"
+            <UInput
+              v-model="form.password"
               type="password"
-              class="form-input"
+              :placeholder="t('auth.password')"
               autocomplete="current-password"
+              size="xl"
             />
           </label>
 
-          <p v-if="error" class="error-text auth-error">{{ error }}</p>
+          <UAlert
+            v-if="error"
+            :description="error"
+            color="error"
+            variant="soft"
+            icon="i-lucide-alert-circle"
+            class="auth-error"
+          />
 
-          <UButton type="submit" block size="xl" :loading="loading">
-            {{ isLogin ? t('auth.loginButton') : t('auth.registerButton') }}
-          </UButton>
+          <UButton
+            type="submit"
+            block
+            size="xl"
+            :loading="loading"
+            :label="
+              loading
+                ? t('common.loading')
+                : mode === 'login'
+                  ? t('auth.loginButton')
+                  : t('auth.registerButton')
+            "
+          />
         </form>
 
         <p class="login-footer">
-          {{ isLogin ? t('auth.noAccount') : t('auth.hasAccount') }}
-          <button type="button" class="inline-link" @click="isLogin = !isLogin">
-            {{ isLogin ? t('auth.registerButton') : t('auth.loginButton') }}
-          </button>
+          {{ mode === 'login' ? t('auth.noAccount') : t('auth.hasAccount') }}
+          <UButton
+            variant="link"
+            size="sm"
+            :padded="false"
+            @click="mode = mode === 'login' ? 'register' : 'login'; error = ''"
+          >
+            {{ mode === 'login' ? t('auth.registerButton') : t('auth.loginButton') }}
+          </UButton>
         </p>
       </section>
     </div>
