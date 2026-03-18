@@ -5,13 +5,14 @@
   import { Bar } from 'vue-chartjs'
   import { BarElement, CategoryScale, Chart as ChartJS, LinearScale, Tooltip } from 'chart.js'
   import Button from 'primevue/button'
-  import Column from 'primevue/column'
-  import DataTable from 'primevue/datatable'
   import ProgressBar from 'primevue/progressbar'
   import Select from 'primevue/select'
   import Tag from 'primevue/tag'
+  import AppDataTable from '../components/AppDataTable.vue'
+  import LoadingSpinner from '../components/LoadingSpinner.vue'
   import MetricCard from '../components/MetricCard.vue'
   import PageHeader from '../components/PageHeader.vue'
+  import { useToast } from '../composables/useToast'
   import { useAuthStore } from '../stores/auth'
   import { useDataStore } from '../stores/data'
   import { useModelStore } from '../stores/model'
@@ -24,15 +25,52 @@
   const auth = useAuthStore()
   const dataStore = useDataStore()
   const model = useModelStore()
+  const { showToast } = useToast()
 
   const selectedCsv = ref('')
   const pollTimer = ref(null)
+  const pageLoading = ref(false)
 
   const isAdmin = computed(() => auth.user?.role === 'admin')
   const trainingDataset = computed(() => dataStore.trainingDataset)
   const recentJobs = computed(() => model.jobHistory.slice(0, 6))
   const recentRuns = computed(() => model.modelRuns.slice(0, 6))
   const trainingLocked = computed(() => model.training)
+  const perTypeRows = computed(() =>
+    Object.entries(model.info?.per_type_metrics || {}).map(([propertyType, metrics]) => ({
+      propertyType,
+      ...metrics,
+    })),
+  )
+
+  const perTypeColumns = computed(() => [
+    { key: 'propertyType', label: t('model.propertyType'), sortable: true },
+    { key: 'mae', label: 'MAE', sortable: true },
+    { key: 'rmse', label: 'RMSE', sortable: true },
+    { key: 'r2', label: 'R²', sortable: true },
+    { key: 'mape', label: 'MAPE', sortable: true },
+    { key: 'n_train', label: 'N', sortable: true },
+  ])
+
+  const jobColumns = computed(() => [
+    { key: 'created_at', label: t('predict.date'), sortable: true },
+    { key: 'status', label: t('model.trainingStatus'), sortable: true },
+    { key: 'stage', label: t('model.trainingStage'), sortable: true },
+    { key: 'progress', label: t('model.trainingProgress'), sortable: true },
+    { key: 'current_model', label: t('model.currentModel'), sortable: true },
+    { key: 'elapsed_sec', label: t('model.elapsed'), sortable: true },
+  ])
+
+  const runColumns = computed(() => [
+    { key: 'created_at', label: t('predict.date'), sortable: true },
+    { key: 'source_csv_path', label: t('model.currentSource'), sortable: true },
+    { key: 'rows', label: t('data.rows'), sortable: true },
+    { key: 'mae', label: 'MAE', sortable: true },
+    { key: 'rmse', label: 'RMSE', sortable: true },
+    { key: 'mape', label: 'MAPE', sortable: true },
+    { key: 'duration_sec', label: t('diag.duration'), sortable: true },
+    { key: 'per_type_count', label: t('model.perTypeModels'), sortable: true },
+  ])
 
   const uploadOptions = computed(() =>
     (Array.isArray(dataStore.datasets) ? dataStore.datasets : [])
@@ -225,6 +263,9 @@
   async function train() {
     if (!selectedCsv.value || trainingLocked.value) return
     const result = await model.startTraining(selectedCsv.value)
+    if (result?.job_id) {
+      showToast(t('model.trainingQueued'), 'success')
+    }
     await Promise.all([model.fetchJobs(), model.fetchRuns()])
     if (result?.job_id) {
       startPolling(result.job_id)
@@ -272,17 +313,26 @@
     }
   }
 
+  async function loadModelView() {
+    pageLoading.value = true
+    try {
+      await Promise.all([
+        model.fetchInfo(),
+        model.fetchImportance(),
+        model.fetchDiagnostics(),
+        model.fetchJobs(),
+        model.fetchRuns(),
+        dataStore.fetchDatasets(),
+        dataStore.fetchTrainingDataset(),
+      ])
+      await syncExistingTraining()
+    } finally {
+      pageLoading.value = false
+    }
+  }
+
   onMounted(async () => {
-    await Promise.all([
-      model.fetchInfo(),
-      model.fetchImportance(),
-      model.fetchDiagnostics(),
-      model.fetchJobs(),
-      model.fetchRuns(),
-      dataStore.fetchDatasets(),
-      dataStore.fetchTrainingDataset(),
-    ])
-    await syncExistingTraining()
+    await loadModelView()
   })
 
   onUnmounted(() => {
@@ -292,6 +342,10 @@
 
 <template>
   <div class="model-page">
+    <section v-if="pageLoading" class="card loading-card">
+      <LoadingSpinner :label="t('common.loading')" />
+    </section>
+
     <section v-if="isAdmin" class="card model-hero">
       <PageHeader
         :eyebrow="t('model.trainModel')"
@@ -444,36 +498,20 @@
         :description="t('model.propertyTypeBreakdownHint')"
       />
 
-      <DataTable
-        :value="
-          Object.entries(model.info.per_type_metrics).map(([propertyType, metrics]) => ({
-            propertyType,
-            ...metrics,
-          }))
-        "
-        size="small"
-        striped-rows
-        table-style="min-width: 100%"
+      <AppDataTable
+        :rows="perTypeRows"
+        :columns="perTypeColumns"
+        row-key="propertyType"
+        :page-size="8"
+        :empty-message="t('empty.noResults')"
       >
-        <Column field="propertyType" :header="t('model.propertyType')">
-          <template #body="{ data }">{{ formatType(data.propertyType) }}</template>
-        </Column>
-        <Column field="mae" header="MAE">
-          <template #body="{ data }">{{ fmtCurrency(data.mae) }}</template>
-        </Column>
-        <Column field="rmse" header="RMSE">
-          <template #body="{ data }">{{ fmtCurrency(data.rmse) }}</template>
-        </Column>
-        <Column field="r2" header="R²">
-          <template #body="{ data }">{{ formatScore(data.r2) }}</template>
-        </Column>
-        <Column field="mape" header="MAPE">
-          <template #body="{ data }">{{ fmtPercent(data.mape) }}</template>
-        </Column>
-        <Column field="n_train" header="N">
-          <template #body="{ data }">{{ fmt(data.n_train) }}</template>
-        </Column>
-      </DataTable>
+        <template #cell-propertyType="{ row }">{{ formatType(row.propertyType) }}</template>
+        <template #cell-mae="{ row }">{{ fmtCurrency(row.mae) }}</template>
+        <template #cell-rmse="{ row }">{{ fmtCurrency(row.rmse) }}</template>
+        <template #cell-r2="{ row }">{{ formatScore(row.r2) }}</template>
+        <template #cell-mape="{ row }">{{ fmtPercent(row.mape) }}</template>
+        <template #cell-n_train="{ row }">{{ fmt(row.n_train) }}</template>
+      </AppDataTable>
     </section>
 
     <section v-if="model.importance.length" class="card">
@@ -498,42 +536,26 @@
           :description="t('model.trainingHistoryHint')"
         />
 
-        <DataTable
-          :value="recentJobs"
-          size="small"
-          striped-rows
-          table-style="min-width: 100%"
-          responsive-layout="scroll"
+        <AppDataTable
+          :rows="recentJobs"
+          :columns="jobColumns"
+          row-key="job_id"
+          :page-size="6"
+          :empty-message="t('model.noTrainingHistory')"
         >
-          <Column field="created_at" :header="t('predict.date')">
-            <template #body="{ data }">{{ formatDate(data.created_at) }}</template>
-          </Column>
-          <Column field="status" :header="t('model.trainingStatus')">
-            <template #body="{ data }">
-              <Tag :severity="jobSeverity(data.status)" :value="jobStatusLabel(data.status)" />
-            </template>
-          </Column>
-          <Column field="stage" :header="t('model.trainingStage')">
-            <template #body="{ data }">{{ stageLabel(data.stage) }}</template>
-          </Column>
-          <Column field="progress" :header="t('model.trainingProgress')">
-            <template #body="{ data }">{{ data.progress || 0 }}%</template>
-          </Column>
-          <Column field="current_model" :header="t('model.currentModel')">
-            <template #body="{ data }">
-              {{
-                data.current_model === 'global'
-                  ? t('model.globalModel')
-                  : formatType(data.current_model) || '—'
-              }}
-            </template>
-          </Column>
-          <Column field="elapsed_sec" :header="t('model.elapsed')">
-            <template #body="{ data }">
-              {{ formatDuration(data.elapsed_sec || data.duration_sec) }}
-            </template>
-          </Column>
-        </DataTable>
+          <template #cell-created_at="{ row }">{{ formatDate(row.created_at) }}</template>
+          <template #cell-status="{ row }">
+            <Tag :severity="jobSeverity(row.status)" :value="jobStatusLabel(row.status)"></Tag>
+          </template>
+          <template #cell-stage="{ row }">{{ stageLabel(row.stage) }}</template>
+          <template #cell-progress="{ row }">{{ row.progress || 0 }}%</template>
+          <template #cell-current_model="{ row }">
+            {{ row.current_model === 'global' ? t('model.globalModel') : formatType(row.current_model) || '—' }}
+          </template>
+          <template #cell-elapsed_sec="{ row }">
+            {{ formatDuration(row.elapsed_sec || row.duration_sec) }}
+          </template>
+        </AppDataTable>
 
         <p v-if="!model.jobsLoading && !recentJobs.length" class="muted history-empty">
           {{ t('model.noTrainingHistory') }}
@@ -548,36 +570,21 @@
           :description="t('model.completedRunsHint')"
         />
 
-        <DataTable
-          :value="recentRuns"
-          size="small"
-          striped-rows
-          table-style="min-width: 100%"
-          responsive-layout="scroll"
+        <AppDataTable
+          :rows="recentRuns"
+          :columns="runColumns"
+          row-key="id"
+          :page-size="6"
+          :empty-message="t('model.noCompletedRuns')"
         >
-          <Column field="created_at" :header="t('predict.date')">
-            <template #body="{ data }">{{ formatDate(data.created_at) }}</template>
-          </Column>
-          <Column field="source_csv_path" :header="t('model.currentSource')" />
-          <Column field="rows" :header="t('data.rows')">
-            <template #body="{ data }">{{ fmt(data.rows) }}</template>
-          </Column>
-          <Column field="mae" header="MAE">
-            <template #body="{ data }">{{ fmtCurrency(data.mae) }}</template>
-          </Column>
-          <Column field="rmse" header="RMSE">
-            <template #body="{ data }">{{ fmtCurrency(data.rmse) }}</template>
-          </Column>
-          <Column field="mape" header="MAPE">
-            <template #body="{ data }">{{ fmtPercent(data.mape) }}</template>
-          </Column>
-          <Column field="duration_sec" :header="t('diag.duration')">
-            <template #body="{ data }">{{ formatDuration(data.duration_sec) }}</template>
-          </Column>
-          <Column field="per_type_count" :header="t('model.perTypeModels')">
-            <template #body="{ data }">{{ fmt(data.per_type_count) }}</template>
-          </Column>
-        </DataTable>
+          <template #cell-created_at="{ row }">{{ formatDate(row.created_at) }}</template>
+          <template #cell-rows="{ row }">{{ fmt(row.rows) }}</template>
+          <template #cell-mae="{ row }">{{ fmtCurrency(row.mae) }}</template>
+          <template #cell-rmse="{ row }">{{ fmtCurrency(row.rmse) }}</template>
+          <template #cell-mape="{ row }">{{ fmtPercent(row.mape) }}</template>
+          <template #cell-duration_sec="{ row }">{{ formatDuration(row.duration_sec) }}</template>
+          <template #cell-per_type_count="{ row }">{{ fmt(row.per_type_count) }}</template>
+        </AppDataTable>
 
         <p v-if="!model.runsLoading && !recentRuns.length" class="muted history-empty">
           {{ t('model.noCompletedRuns') }}
@@ -585,7 +592,7 @@
       </article>
     </section>
 
-    <div v-if="!model.loading && !model.info" class="card empty-card">
+    <div v-if="!pageLoading && !model.loading && !model.info" class="card empty-card">
       <p class="muted">{{ t('model.noModel') }}</p>
       <RouterLink v-if="isAdmin" to="/admin/priprava" class="ghost-link">
         {{ t('model.prepareDatasetCta') }}
@@ -603,6 +610,12 @@
 
   .history-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .loading-card {
+    display: grid;
+    place-items: center;
+    min-height: 12rem;
   }
 
   .model-hero,

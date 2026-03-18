@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import math
 
@@ -87,7 +88,7 @@ async def score_listings(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    artifact = load_model()
+    artifact = await asyncio.to_thread(load_model)
     if artifact is None:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "No trained model. Train first.")
 
@@ -97,7 +98,7 @@ async def score_listings(
     for i, listing in enumerate(req.listings):
         features = listing.model_dump(exclude={"asking_price"}, exclude_none=True)
         try:
-            result = predict_one(features)
+            result = await asyncio.to_thread(predict_one, features)
             predicted = result["predicted_price_eur"]
         except (RuntimeError, ValueError):
             logger.warning("Prediction failed for listing %d, skipping", i, exc_info=True)

@@ -44,14 +44,14 @@ export const useStatsStore = defineStore('stats', () => {
     return data
   }
 
-  async function fetchMunicipalityDetail(slug) {
-    const { data } = await api.get(`/api/stats/municipality/${slug}`)
+  async function fetchMunicipalityDetail(slug, requestConfig = {}) {
+    const { data } = await api.get(`/api/stats/municipality/${slug}`, requestConfig)
     municipalityDetail.value = data
     return data
   }
 
-  async function fetchComparables(params) {
-    const { data } = await api.get('/api/stats/comparables', { params })
+  async function fetchComparables(params, requestConfig = {}) {
+    const { data } = await api.get('/api/stats/comparables', { params, ...requestConfig })
     comparables.value = data
     return data
   }

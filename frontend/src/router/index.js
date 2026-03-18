@@ -1,6 +1,8 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { i18n } from '../i18n'
+import { pinia } from '../stores'
 import { useAuthStore } from '../stores/auth'
+import { useUiStore } from '../stores/ui'
 
 const routes = [
   {
@@ -177,24 +179,37 @@ const router = createRouter({
 })
 
 router.beforeEach((to) => {
-  const auth = useAuthStore()
+  const auth = useAuthStore(pinia)
+  const ui = useUiStore(pinia)
 
-  if (to.meta.requiresAuth && !auth.isAuthenticated) {
-    return { name: 'login', query: { redirect: to.fullPath } }
-  }
+  ui.beginNavigation()
 
-  if (to.meta.requiresAdmin && !auth.isAdmin) {
-    return { name: 'dashboard' }
-  }
+  return auth.init().then(() => {
+    if (to.meta.requiresAuth && !auth.isAuthenticated) {
+      return { name: 'login', query: { redirect: to.fullPath } }
+    }
 
-  if (to.meta.guest && auth.isAuthenticated) {
-    return { name: 'dashboard' }
-  }
+    if (to.meta.requiresAdmin && !auth.isAdmin) {
+      return { name: 'dashboard' }
+    }
+
+    if (to.meta.guest && auth.isAuthenticated) {
+      return { name: 'dashboard' }
+    }
+  })
 })
 
 router.afterEach((to) => {
+  const ui = useUiStore(pinia)
+  ui.endNavigation()
+
   const base = 'Nepremičnine'
   document.title = to.meta.titleKey ? `${i18n.global.t(to.meta.titleKey)} | ${base}` : base
+})
+
+router.onError(() => {
+  const ui = useUiStore(pinia)
+  ui.endNavigation()
 })
 
 export default router

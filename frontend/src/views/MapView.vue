@@ -1,15 +1,15 @@
 <script setup>
   import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+  import { watchDebounced } from '@vueuse/core'
   import { useI18n } from 'vue-i18n'
   import { useRoute, useRouter } from 'vue-router'
   import Button from 'primevue/button'
-  import Column from 'primevue/column'
-  import DataTable from 'primevue/datatable'
   import Dialog from 'primevue/dialog'
   import Select from 'primevue/select'
   import Tag from 'primevue/tag'
   import L from 'leaflet'
   import 'leaflet/dist/leaflet.css'
+  import AppDataTable from '../components/AppDataTable.vue'
   import EmptyState from '../components/EmptyState.vue'
   import LoadingSpinner from '../components/LoadingSpinner.vue'
   import MetricCard from '../components/MetricCard.vue'
@@ -28,6 +28,9 @@
   const mapContainer = ref(null)
   let map = null
   let markersLayer = null
+  let mapRequestController = null
+  let detailRequestController = null
+  let latestMapRequestId = 0
 
   const initialized = ref(false)
   const loading = ref(false)
@@ -109,6 +112,27 @@
     clusterTransactions(transactions.value, mapZoom.value),
   )
 
+  const requestParams = computed(() => {
+    const params = {}
+    if (selectedType.value) params.property_type = selectedType.value
+    if (selectedRegion.value) params.statistical_region = selectedRegion.value
+    if (selectedYear.value) params.year = selectedYear.value
+    if (selectedMunicipality.value) params.municipality = selectedMunicipality.value
+    if (selectedPriceBand.value) params.price_band = selectedPriceBand.value
+    return params
+  })
+
+  const routeQueryState = computed(() => {
+    const query = {}
+    if (selectedType.value) query.property_type = selectedType.value
+    if (selectedRegion.value) query.region = selectedRegion.value
+    if (selectedYear.value) query.year = selectedYear.value
+    if (selectedPriceBand.value) query.price_band = selectedPriceBand.value
+    if (selectedMunicipality.value) query.municipality = selectedMunicipality.value
+    if (viewMode.value !== 'transactions') query.view = viewMode.value
+    return query
+  })
+
   const bandOptions = computed(() => [
     { label: t('map.allBands'), value: '', count: totalCount.value },
     ...(mapLegend.value
@@ -132,6 +156,14 @@
   const regionOptions = computed(() => [
     { label: t('map.allRegions'), value: '' },
     ...regionStats.value.map((item) => ({ label: item.region, value: item.region })),
+  ])
+
+  const regionStatsColumns = computed(() => [
+    { key: 'region', label: t('map.region'), sortable: true },
+    { key: 'count', label: t('map.transactions'), sortable: true },
+    { key: 'avg_price', label: t('map.avgPrice'), sortable: true },
+    { key: 'median_price', label: t('map.medianPrice'), sortable: true },
+    { key: 'avg_price_per_m2', label: t('map.avgPricePerM2'), sortable: true },
   ])
 
   const yearOptions = computed(() => [
@@ -303,10 +335,17 @@
     detailComparables.value = []
     focusMapItem(item)
 
+    if (detailRequestController) {
+      detailRequestController.abort()
+      detailRequestController = null
+    }
+
     if (mode === 'transaction' && item?.municipality && item?.property_type && item?.size_m2) {
       detailLoading.value = true
+      detailRequestController = new AbortController()
       try {
         const { data } = await api.get('/api/stats/comparables', {
+          signal: detailRequestController.signal,
           params: {
             municipality: item.municipality,
             property_type: item.property_type,
@@ -317,10 +356,14 @@
           },
         })
         detailComparables.value = data.items || []
-      } catch {
+      } catch (error) {
+        if (error?.code === 'ERR_CANCELED') {
+          return
+        }
         detailComparables.value = []
       } finally {
         detailLoading.value = false
+        detailRequestController = null
       }
     }
   }
@@ -377,29 +420,21 @@
     }
   }
 
-  async function fetchTransactions() {
-    const params = {}
-    if (selectedType.value) params.property_type = selectedType.value
-    if (selectedRegion.value) params.statistical_region = selectedRegion.value
-    if (selectedYear.value) params.year = selectedYear.value
-    if (selectedMunicipality.value) params.municipality = selectedMunicipality.value
-    if (selectedPriceBand.value) params.price_band = selectedPriceBand.value
-
-    const { data } = await api.get('/api/stats/map-transactions', { params })
+  async function fetchTransactions(signal) {
+    const { data } = await api.get('/api/stats/map-transactions', {
+      signal,
+      params: requestParams.value,
+    })
     mapMetaReason.value = data.meta?.reason || null
     mapLegend.value = data.meta?.legend || null
     transactions.value = data.transactions || []
   }
 
-  async function fetchOverviewMarkers() {
-    const params = {}
-    if (selectedType.value) params.property_type = selectedType.value
-    if (selectedRegion.value) params.statistical_region = selectedRegion.value
-    if (selectedYear.value) params.year = selectedYear.value
-    if (selectedMunicipality.value) params.municipality = selectedMunicipality.value
-    if (selectedPriceBand.value) params.price_band = selectedPriceBand.value
-
-    const { data } = await api.get('/api/stats/map-overview', { params })
+  async function fetchOverviewMarkers(signal) {
+    const { data } = await api.get('/api/stats/map-overview', {
+      signal,
+      params: requestParams.value,
+    })
     mapMetaReason.value = data.meta?.reason || null
     mapLegend.value = data.meta?.legend || null
     municipalities.value = data.municipalities || []
@@ -426,25 +461,62 @@
   }
 
   async function fetchData() {
+    const requestId = ++latestMapRequestId
+
+    if (mapRequestController) {
+      mapRequestController.abort()
+    }
+    mapRequestController = new AbortController()
+
     loading.value = true
     error.value = ''
     mapMetaReason.value = null
 
     try {
       if (viewMode.value === 'transactions') {
-        await fetchTransactions()
+        await fetchTransactions(mapRequestController.signal)
       } else {
-        await fetchOverviewMarkers()
+        await fetchOverviewMarkers(mapRequestController.signal)
+      }
+
+      if (requestId !== latestMapRequestId) {
+        return
       }
 
       await nextTick()
       map?.invalidateSize()
       renderMarkers()
     } catch (err) {
+      if (err?.code === 'ERR_CANCELED') {
+        return
+      }
       error.value = getApiErrorMessage(err, t)
     } finally {
-      loading.value = false
+      if (requestId === latestMapRequestId) {
+        loading.value = false
+      }
+      if (mapRequestController?.signal?.aborted || requestId === latestMapRequestId) {
+        mapRequestController = null
+      }
     }
+  }
+
+  async function syncRouteQuery() {
+    const nextQuery = routeQueryState.value
+    const currentQuery = {
+      ...(route.query.property_type ? { property_type: String(route.query.property_type) } : {}),
+      ...(route.query.region ? { region: String(route.query.region) } : {}),
+      ...(route.query.year ? { year: String(route.query.year) } : {}),
+      ...(route.query.price_band ? { price_band: String(route.query.price_band) } : {}),
+      ...(route.query.municipality ? { municipality: String(route.query.municipality) } : {}),
+      ...(route.query.view ? { view: String(route.query.view) } : {}),
+    }
+
+    if (JSON.stringify(currentQuery) === JSON.stringify(nextQuery)) {
+      return
+    }
+
+    await router.replace({ query: nextQuery })
   }
 
   function clearFilters() {
@@ -486,11 +558,26 @@
     viewMode.value = route.query.view === 'overview' ? 'overview' : 'transactions'
   }
 
-  watch(
+  watch(selectedRegion, (nextRegion) => {
+    if (!selectedMunicipality.value) return
+    const stillVisible = allMunicipalities.value.some(
+      (item) =>
+        item.municipality === selectedMunicipality.value &&
+        (!nextRegion || item.region === nextRegion),
+    )
+    if (!stillVisible) {
+      selectedMunicipality.value = ''
+    }
+  })
+
+  watchDebounced(
     [selectedType, selectedRegion, selectedYear, selectedMunicipality, selectedPriceBand, viewMode],
-    () => {
-      if (initialized.value) fetchData()
+    async () => {
+      if (!initialized.value) return
+      await syncRouteQuery()
+      await fetchData()
     },
+    { debounce: 220, maxWait: 800 },
   )
 
   onMounted(async () => {
@@ -506,6 +593,14 @@
   })
 
   onBeforeUnmount(() => {
+    if (mapRequestController) {
+      mapRequestController.abort()
+      mapRequestController = null
+    }
+    if (detailRequestController) {
+      detailRequestController.abort()
+      detailRequestController = null
+    }
     if (map) {
       map.remove()
       map = null
@@ -721,29 +816,18 @@
         :description="t('map.regionSnapshotHint')"
       />
 
-      <DataTable
-        :value="regionStats"
-        paginator
-        :rows="8"
-        size="small"
-        striped-rows
-        responsive-layout="scroll"
-        table-style="min-width: 100%"
+      <AppDataTable
+        :rows="regionStats"
+        :columns="regionStatsColumns"
+        row-key="region"
+        :page-size="8"
+        :empty-message="t('empty.noResults')"
       >
-        <Column field="region" :header="t('map.region')" sortable />
-        <Column field="count" :header="t('map.count')" sortable>
-          <template #body="{ data }">{{ fmt(data.count) }}</template>
-        </Column>
-        <Column field="avg_price" :header="t('map.avgPrice')" sortable>
-          <template #body="{ data }">{{ fmtCurrency(data.avg_price) }}</template>
-        </Column>
-        <Column field="median_price" :header="t('map.medianPrice')" sortable>
-          <template #body="{ data }">{{ fmtCurrency(data.median_price) }}</template>
-        </Column>
-        <Column field="avg_price_per_m2" header="€/m²" sortable>
-          <template #body="{ data }">{{ fmtCurrency(data.avg_price_per_m2) }}</template>
-        </Column>
-      </DataTable>
+        <template #cell-count="{ row }">{{ fmt(row.count) }}</template>
+        <template #cell-avg_price="{ row }">{{ fmtCurrency(row.avg_price) }}</template>
+        <template #cell-median_price="{ row }">{{ fmtCurrency(row.median_price) }}</template>
+        <template #cell-avg_price_per_m2="{ row }">{{ fmtCurrency(row.avg_price_per_m2) }}</template>
+      </AppDataTable>
     </section>
 
     <Dialog

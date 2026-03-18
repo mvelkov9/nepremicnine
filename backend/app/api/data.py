@@ -1,5 +1,7 @@
 """Data management routes: upload, list, delete, preview, ETN prepare."""
 
+import asyncio
+
 import hashlib
 import json
 import logging
@@ -37,7 +39,7 @@ from app.services.data_processing_service import (
     prepare_training_csv_from_etn_kpp_bulk,
     read_csv_flexible,
 )
-from app.services.regions_service import CANONICAL_REGION_ROWS
+from app.services.regions_service import CANONICAL_REGION_ROWS, invalidate_region_cache
 from app.utils.cache import invalidate_request_caches
 from app.utils.municipality import normalize_municipality_name
 from app.utils.slovenian_labels import format_municipality_label, is_unknown_label
@@ -52,6 +54,7 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 MAX_UPLOAD_SIZE = get_settings().max_upload_size_mb * 1024 * 1024
 ALLOWED_EXTENSIONS = {".csv", ".zip"}
+UPLOAD_CHUNK_SIZE = 1024 * 1024
 
 
 def _resolve_data_path(raw_path: str) -> str:
@@ -74,6 +77,36 @@ def _serialize_dataset(record: DatasetFile) -> DatasetFileResponse:
         file_hash=record.file_hash,
         uploaded_at=record.uploaded_at,
     )
+
+
+async def _write_upload_to_temp_file(upload: UploadFile) -> tuple[str, str, int]:
+    hasher = hashlib.sha256()
+    size = 0
+    temp_name = f"tmp_{uuid.uuid4().hex}.upload"
+    temp_path = os.path.join(UPLOAD_DIR, temp_name)
+
+    try:
+        with open(temp_path, "wb") as temp_file:
+            while True:
+                chunk = await upload.read(UPLOAD_CHUNK_SIZE)
+                if not chunk:
+                    break
+                size += len(chunk)
+                if size > MAX_UPLOAD_SIZE:
+                    raise HTTPException(
+                        status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        f"File exceeds {MAX_UPLOAD_SIZE // (1024 * 1024)} MB limit",
+                    )
+                hasher.update(chunk)
+                temp_file.write(chunk)
+    except Exception:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+        raise
+    finally:
+        await upload.close()
+
+    return temp_path, hasher.hexdigest(), size
 
 
 def _get_training_dataset_metadata() -> TrainingDatasetResponse:
@@ -185,20 +218,12 @@ async def upload_files(
                 status.HTTP_400_BAD_REQUEST, f"File type '{ext}' not allowed. Only .csv and .zip accepted."
             )
 
-        content = await file.read()
-
-        # Validate file size
-        if len(content) > MAX_UPLOAD_SIZE:
-            raise HTTPException(
-                status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                f"File exceeds {MAX_UPLOAD_SIZE // (1024 * 1024)} MB limit",
-            )
-
-        file_hash = hashlib.sha256(content).hexdigest()
+        temp_path, file_hash, _file_size = await _write_upload_to_temp_file(file)
 
         # Dedup check
         existing = await db.execute(select(DatasetFile).where(DatasetFile.file_hash == file_hash))
         if existing.scalar_one_or_none():
+            os.remove(temp_path)
             skipped.append(file.filename or "unknown")
             continue
 
@@ -207,13 +232,12 @@ async def upload_files(
         safe_filename = re.sub(r"[^\w.\-]", "_", safe_filename)[:200] or "upload"
         stored_name = f"{uuid.uuid4().hex}_{safe_filename}"
         stored_path = os.path.join(UPLOAD_DIR, stored_name)
-        with open(stored_path, "wb") as f:
-            f.write(content)
+        os.replace(temp_path, stored_path)
 
         # Handle ZIP files: extract CSVs
         if ext == ".zip":
             try:
-                csv_paths = extract_zip_csvs(stored_path, UPLOAD_DIR)
+                csv_paths = await asyncio.to_thread(extract_zip_csvs, stored_path, UPLOAD_DIR)
             except Exception as exc:
                 os.remove(stored_path)
                 raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Bad ZIP: {exc}") from exc
@@ -231,7 +255,7 @@ async def upload_files(
                 row_count = None
                 columns_json = None
                 try:
-                    df = read_csv_flexible(csv_path)
+                    df = await asyncio.to_thread(read_csv_flexible, csv_path)
                     columns_json = json.dumps(list(df.columns))
                     row_count = len(df)
                 except (pd.errors.ParserError, pd.errors.EmptyDataError, ValueError, UnicodeDecodeError, OSError):
@@ -257,7 +281,7 @@ async def upload_files(
         columns_json = None
         if ext == ".csv":
             try:
-                df = read_csv_flexible(stored_path)
+                df = await asyncio.to_thread(read_csv_flexible, stored_path)
                 columns_json = json.dumps(list(df.columns))
                 row_count = len(df)
             except (pd.errors.ParserError, pd.errors.EmptyDataError, ValueError, UnicodeDecodeError, OSError):
@@ -413,7 +437,7 @@ async def prepare_etn_kpp(
     posli = _validate_path_within_data_dir(req.posli_csv_path)
     delistavb = _validate_path_within_data_dir(req.delistavb_csv_path)
     try:
-        result = prepare_training_csv_from_etn_kpp(posli, delistavb, TRAIN_CSV)
+        result = await asyncio.to_thread(prepare_training_csv_from_etn_kpp, posli, delistavb, TRAIN_CSV)
     except ValueError as exc:
         logger.warning("ETN KPP preparation rejected: %s", exc)
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
@@ -456,7 +480,7 @@ async def prepare_etn_kpp_bulk(
             resolved_pair["zemljisca_csv_path"] = _validate_path_within_data_dir(pair.zemljisca_csv_path)
         pairs_dicts.append(resolved_pair)
     try:
-        result = prepare_training_csv_from_etn_kpp_bulk(pairs_dicts, TRAIN_CSV)
+        result = await asyncio.to_thread(prepare_training_csv_from_etn_kpp_bulk, pairs_dicts, TRAIN_CSV)
     except ValueError as exc:
         logger.warning("ETN KPP bulk preparation rejected: %s", exc)
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
@@ -489,7 +513,7 @@ async def import_rpe_rn_endpoint(
     rn_path = _validate_path_within_data_dir(req.rn_csv_path)
     stat_path = _validate_path_within_data_dir(req.stat_regije_csv_path) if req.stat_regije_csv_path else None
     try:
-        result = import_rpe_rn(rn_path, stat_path, UPLOAD_DIR)
+        result = await asyncio.to_thread(import_rpe_rn, rn_path, stat_path, UPLOAD_DIR)
     except Exception as exc:
         logger.error("RPE/RN import failed: %s", exc, exc_info=True)
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Region import failed. Check server logs.") from exc
@@ -513,6 +537,7 @@ async def import_rpe_rn_endpoint(
         )
         db.add(record)
     await db.commit()
+    invalidate_region_cache()
 
     await invalidate_request_caches(request)
     return {"imported": result["count"], "regije": result["regije"]}
@@ -532,7 +557,7 @@ async def inspect_dataset(
     if not os.path.exists(dataset.stored_path):
         raise HTTPException(status_code=404, detail="File not found on disk")
     try:
-        return inspect_csv(dataset.stored_path)
+        return await asyncio.to_thread(inspect_csv, dataset.stored_path)
     except (pd.errors.ParserError, pd.errors.EmptyDataError, ValueError, UnicodeDecodeError, OSError):
         logger.exception("Cannot inspect dataset file %s", dataset.stored_path)
         raise HTTPException(status_code=500, detail="Cannot inspect the dataset file") from None
@@ -552,7 +577,7 @@ async def prepare_train(
     """Prepare training CSV from a source CSV with custom column mapping."""
     source = _validate_path_within_data_dir(req.source_csv_path)
     try:
-        result = prepare_training_csv(source, req.column_map, TRAIN_CSV)
+        result = await asyncio.to_thread(prepare_training_csv, source, req.column_map, TRAIN_CSV)
     except ValueError as exc:
         logger.warning("Training CSV preparation rejected: %s", exc)
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc

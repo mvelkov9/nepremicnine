@@ -1,6 +1,7 @@
 <script setup>
-  import { computed, onMounted, ref, watch } from 'vue'
+  import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
   import { useRoute, useRouter } from 'vue-router'
+  import { watchDebounced } from '@vueuse/core'
   import { useI18n } from 'vue-i18n'
   import AutoComplete from 'primevue/autocomplete'
   import Button from 'primevue/button'
@@ -8,15 +9,17 @@
   import Select from 'primevue/select'
   import ToggleSwitch from 'primevue/toggleswitch'
   import api from '../composables/useApi'
+  import { useMunicipalityLookup } from '../composables/useMunicipalityLookup'
   import EmptyState from '../components/EmptyState.vue'
   import LoadingSpinner from '../components/LoadingSpinner.vue'
   import PageHeader from '../components/PageHeader.vue'
   import { useExport } from '../composables/useExport'
+  import { useToast } from '../composables/useToast'
   import { useStatsStore } from '../stores/stats'
   import { buildNepremicnineSearchUrl } from '../utils/externalSearch'
   import { getApiErrorMessage } from '../utils/apiError'
   import { formatCurrency, formatDateTime, formatNumber } from '../utils/format'
-  import { municipalitySlug, normalizeMunicipalityName } from '../utils/municipality'
+  import { municipalitySlug } from '../utils/municipality'
   import { getPropertyTypeLabel } from '../utils/propertyType'
 
   const { t } = useI18n()
@@ -24,26 +27,37 @@
   const router = useRouter()
   const stats = useStatsStore()
   const { exportToCSV } = useExport()
+  const { showToast } = useToast()
+  const {
+    municipalitySuggestions,
+    fetchMunicipalities,
+    searchMunicipalities,
+    findMunicipalityMeta,
+  } = useMunicipalityLookup()
 
-  const form = ref({
-    size_m2: null,
-    rooms: null,
-    year_built: null,
-    floor: null,
-    latitude: null,
-    longitude: null,
-    municipality: '',
-    property_type: 'stanovanje',
-    uporabna_povrsina: null,
-    lega_v_stavbi: '',
-    novogradnja: 0,
-    has_garaza: 0,
-    has_klet: 0,
-    has_shramba: 0,
-    has_terasa: 0,
-    stavba_je_dokoncana: 1,
-    ddv_vkljucen: 0,
-  })
+  function createDefaultForm() {
+    return {
+      size_m2: null,
+      rooms: null,
+      year_built: null,
+      floor: null,
+      latitude: null,
+      longitude: null,
+      municipality: '',
+      property_type: 'stanovanje',
+      uporabna_povrsina: null,
+      lega_v_stavbi: '',
+      novogradnja: 0,
+      has_garaza: 0,
+      has_klet: 0,
+      has_shramba: 0,
+      has_terasa: 0,
+      stavba_je_dokoncana: 1,
+      ddv_vkljucen: 0,
+    }
+  }
+
+  const form = ref(createDefaultForm())
 
   const propertyTypes = [
     'stanovanje',
@@ -57,8 +71,6 @@
   ]
 
   const legaOptions = ['pritlicje', 'nadstropje', 'klet', 'unknown']
-  const allMunicipalities = ref([])
-  const municipalitySuggestions = ref([])
   const showAdvancedLocation = ref(false)
   const result = ref(null)
   const history = ref([])
@@ -66,23 +78,20 @@
   const contextLoading = ref(false)
   const error = ref('')
   const formErrors = ref({})
+  const lastPredictionSignature = ref('')
 
   const municipalityContext = computed(() => stats.municipalityDetail)
   const comparables = computed(() => stats.comparables)
   const comparableRows = computed(() => comparables.value?.items || [])
-  const municipalityIndex = computed(
-    () =>
-      new Map(
-        allMunicipalities.value.map((item) => [normalizeMunicipalityName(item.municipality), item]),
-      ),
-  )
   const comparablesCountLabel = computed(
     () => `${comparables.value?.summary?.count || 0} ${t('dashboard.transactions')}`,
   )
   const effectiveSize = computed(() => form.value.uporabna_povrsina || form.value.size_m2)
-  const selectedMunicipalityMeta = computed(() =>
-    municipalityIndex.value.get(normalizeMunicipalityName(form.value.municipality)),
+  const hasContextInputs = computed(
+    () =>
+      !!form.value.municipality?.trim() && !!form.value.property_type && Number(effectiveSize.value) > 0,
   )
+  const selectedMunicipalityMeta = computed(() => findMunicipalityMeta(form.value.municipality))
   const comparisonUrl = computed(() =>
     buildNepremicnineSearchUrl({
       municipality: form.value.municipality,
@@ -90,6 +99,43 @@
       propertyType: form.value.property_type,
     }),
   )
+  const routeQueryState = computed(() => ({
+    municipality: form.value.municipality?.trim() || undefined,
+    property_type: form.value.property_type || undefined,
+    size_m2: form.value.size_m2 || undefined,
+    uporabna_povrsina: form.value.uporabna_povrsina || undefined,
+    rooms: form.value.rooms || undefined,
+    year_built: form.value.year_built || undefined,
+    floor: form.value.floor || undefined,
+  }))
+  const predictionSignature = computed(() => JSON.stringify(buildPredictionPayload()))
+  const estimateMetrics = computed(() => {
+    if (!result.value) {
+      return []
+    }
+
+    return [
+      {
+        label: t('predict.predictedPricePerM2'),
+        value:
+          effectiveSize.value && result.value.predicted_price_eur
+            ? formatCurrency(result.value.predicted_price_eur / effectiveSize.value)
+            : '—',
+      },
+      {
+        label: t('predict.marketMedian'),
+        value: formatCurrency(municipalityContext.value?.overview?.median_price),
+      },
+      {
+        label: t('predict.availableComparables'),
+        value: fmt(comparables.value?.summary?.count || 0),
+      },
+    ]
+  })
+
+  let applyingRouteQuery = false
+  let contextRequestId = 0
+  let contextController = null
 
   function fmt(value, decimals = 0) {
     return formatNumber(value, { maximumFractionDigits: decimals })
@@ -99,32 +145,16 @@
     return getPropertyTypeLabel(value, t)
   }
 
-  async function fetchMunicipalities() {
-    try {
-      const { data } = await api.get('/api/regions/municipalities')
-      allMunicipalities.value = data || []
-    } catch {
-      allMunicipalities.value = []
-    }
-  }
-
   async function fetchHistory() {
     try {
-      const { data } = await api.get('/api/predict/history', { params: { per_page: 12 } })
+      const { data } = await api.get('/api/predict/history', {
+        params: { per_page: 12 },
+        skipErrorToast: true,
+      })
       history.value = data.items || []
     } catch {
       history.value = []
     }
-  }
-
-  function searchMunicipalities(event) {
-    const query = normalizeMunicipalityName(event.query || '')
-    municipalitySuggestions.value = query
-      ? allMunicipalities.value
-          .filter((item) => normalizeMunicipalityName(item.municipality).includes(query))
-          .map((item) => item.municipality)
-          .slice(0, 12)
-      : allMunicipalities.value.map((item) => item.municipality).slice(0, 12)
   }
 
   function validateForm() {
@@ -139,17 +169,35 @@
     return Object.keys(errors).length === 0
   }
 
+  function buildPredictionPayload() {
+    const payload = {}
+    for (const [key, value] of Object.entries(form.value)) {
+      if (value !== null && value !== '' && value !== undefined) {
+        payload[key] = value
+      }
+    }
+    return payload
+  }
+
   async function loadContext(estimatedPrice = null) {
-    if (!form.value.municipality || !form.value.property_type || !effectiveSize.value) {
+    if (!hasContextInputs.value) {
+      contextController?.abort()
       stats.resetComparables()
       stats.resetMunicipalityDetail()
       return
     }
 
+    const requestId = ++contextRequestId
+    contextController?.abort()
+    contextController = new AbortController()
     contextLoading.value = true
+
     try {
       await Promise.all([
-        stats.fetchMunicipalityDetail(municipalitySlug(form.value.municipality)),
+        stats.fetchMunicipalityDetail(municipalitySlug(form.value.municipality), {
+          signal: contextController.signal,
+          skipErrorToast: true,
+        }),
         stats.fetchComparables({
           municipality: form.value.municipality,
           property_type: form.value.property_type,
@@ -157,13 +205,22 @@
           year_built: form.value.year_built || undefined,
           price_eur: estimatedPrice || undefined,
           limit: 8,
+        }, {
+          signal: contextController.signal,
+          skipErrorToast: true,
         }),
       ])
-    } catch {
+    } catch (err) {
+      if (contextController.signal.aborted || err.code === 'ERR_CANCELED') {
+        return
+      }
+
       stats.resetComparables()
       stats.resetMunicipalityDetail()
     } finally {
-      contextLoading.value = false
+      if (requestId === contextRequestId) {
+        contextLoading.value = false
+      }
     }
   }
 
@@ -175,15 +232,11 @@
     result.value = null
 
     try {
-      const payload = {}
-      for (const [key, value] of Object.entries(form.value)) {
-        if (value !== null && value !== '' && value !== undefined) {
-          payload[key] = value
-        }
-      }
-
-      const { data } = await api.post('/api/predict', payload)
+      const payload = buildPredictionPayload()
+      const { data } = await api.post('/api/predict', payload, { skipErrorToast: true })
       result.value = data
+      lastPredictionSignature.value = predictionSignature.value
+      showToast(t('predict.predictionReady'), 'success')
       await Promise.all([fetchHistory(), loadContext(data.predicted_price_eur)])
     } catch (err) {
       error.value = getApiErrorMessage(err, t)
@@ -193,30 +246,38 @@
   }
 
   function applyRouteQuery(query) {
-    const numericFields = ['size_m2', 'year_built', 'price_eur']
+    const defaults = createDefaultForm()
+    applyingRouteQuery = true
 
-    for (const field of ['municipality', 'property_type']) {
-      if (query[field]) {
-        form.value[field] = String(query[field])
+    form.value.municipality = query.municipality ? String(query.municipality) : defaults.municipality
+    form.value.property_type = query.property_type
+      ? String(query.property_type)
+      : defaults.property_type
+
+    for (const field of ['size_m2', 'uporabna_povrsina', 'rooms', 'year_built', 'floor']) {
+      const rawValue = query[field]
+      if (rawValue === undefined || rawValue === null || rawValue === '') {
+        form.value[field] = defaults[field]
+        continue
       }
+
+      const numericValue = Number(rawValue)
+      form.value[field] = Number.isNaN(numericValue) ? defaults[field] : numericValue
     }
 
-    for (const field of numericFields) {
-      if (query[field]) {
-        const numericValue = Number(query[field])
-        if (!Number.isNaN(numericValue)) {
-          if (field === 'price_eur') {
-            result.value = result.value || {
-              predicted_price_eur: numericValue,
-              model_used: 'prefill',
-              features_used: {},
-            }
-          } else {
-            form.value[field] = numericValue
-          }
-        }
-      }
+    applyingRouteQuery = false
+  }
+
+  async function syncRouteQuery(query) {
+    const cleanQuery = Object.fromEntries(
+      Object.entries(query).filter(([, value]) => value !== undefined && value !== null && value !== ''),
+    )
+
+    if (JSON.stringify(cleanQuery) === JSON.stringify(route.query)) {
+      return
     }
+
+    await router.replace({ name: 'prediction', query: cleanQuery })
   }
 
   function exportHistoryRows() {
@@ -249,11 +310,52 @@
     { immediate: true },
   )
 
+  watchDebounced(
+    routeQueryState,
+    (query) => {
+      if (applyingRouteQuery) {
+        return
+      }
+
+      void syncRouteQuery(query)
+    },
+    { debounce: 350, maxWait: 1000, deep: true },
+  )
+
+  watchDebounced(
+    () => [
+      form.value.municipality,
+      form.value.property_type,
+      form.value.size_m2,
+      form.value.uporabna_povrsina,
+      form.value.rooms,
+      form.value.year_built,
+      form.value.floor,
+    ],
+    () => {
+      if (result.value && predictionSignature.value !== lastPredictionSignature.value) {
+        result.value = null
+      }
+
+      const estimatedPrice =
+        result.value && predictionSignature.value === lastPredictionSignature.value
+          ? result.value.predicted_price_eur
+          : null
+
+      void loadContext(estimatedPrice)
+    },
+    { debounce: 400, maxWait: 1200 },
+  )
+
   onMounted(async () => {
     await Promise.all([fetchHistory(), fetchMunicipalities()])
-    if (form.value.municipality && effectiveSize.value) {
-      await loadContext(result.value?.predicted_price_eur || null)
+    if (hasContextInputs.value) {
+      await loadContext(null)
     }
+  })
+
+  onBeforeUnmount(() => {
+    contextController?.abort()
   })
 </script>
 
@@ -513,6 +615,13 @@
             </a>
           </div>
 
+          <section class="estimate-metrics">
+            <article v-for="metric in estimateMetrics" :key="metric.label" class="metric-pill">
+              <span>{{ metric.label }}</span>
+              <strong>{{ metric.value }}</strong>
+            </article>
+          </section>
+
           <section class="story-block">
             <div class="story-head">
               <h3>{{ t('predict.featuresUsed') }}</h3>
@@ -647,6 +756,34 @@
 
   .story-actions {
     margin: 0.9rem 0 0.25rem;
+  }
+
+  .estimate-metrics {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.75rem;
+    margin-top: 0.9rem;
+  }
+
+  .metric-pill {
+    display: grid;
+    gap: 0.3rem;
+    padding: 0.85rem 0.95rem;
+    border: 1px solid var(--border);
+    border-radius: 1rem;
+    background: var(--surface-soft-subtle);
+  }
+
+  .metric-pill span {
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .metric-pill strong {
+    font-size: 1rem;
   }
 
   .action-link {
@@ -914,7 +1051,8 @@
 
   @media (max-width: 720px) {
     .form-grid,
-    .context-metrics {
+    .context-metrics,
+    .estimate-metrics {
       grid-template-columns: 1fr;
     }
 

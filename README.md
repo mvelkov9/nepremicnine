@@ -63,6 +63,43 @@ Development startup applies pending Alembic migrations automatically before the 
 
 The first registered user is automatically assigned the **admin** role.
 
+## Development Workflows
+
+### Recommended: Hybrid Local Dev
+
+Run infrastructure in Docker, then run the frontend and backend natively for a much faster feedback loop.
+
+```bash
+# 1. Start infrastructure only
+docker compose up -d postgres redis
+
+# 2. Backend (new terminal)
+cd backend
+python -m venv .venv
+. .venv/bin/activate
+pip install -e .[dev]
+export DATABASE_URL=postgresql+asyncpg://nepremicnine:changeme_in_production@localhost:5432/nepremicnine
+export REDIS_URL=redis://localhost:6379/0
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+# 3. Frontend (new terminal)
+cd frontend
+pnpm install
+VITE_API_PROXY_TARGET=http://localhost:8000 pnpm dev
+```
+
+This keeps Postgres and Redis containerized while avoiding a full Docker rebuild/restart loop for normal UI and API work.
+
+### Full Docker Dev
+
+If you want parity with the current containerized workflow, keep using:
+
+```bash
+docker compose up --build
+```
+
+The frontend dev server now reuses dependencies installed in the image instead of forcing a fresh `pnpm install` on every container start.
+
 ### Typical Workflow
 
 1. Register an account (first user → admin)
@@ -224,6 +261,9 @@ Full interactive API documentation available at `/docs` (Swagger UI).
 ## Development
 
 ```bash
+# Recommended frontend native test run
+cd frontend && pnpm test
+
 # Backend lint + format
 docker compose exec backend ruff check .
 docker compose exec backend ruff format .
@@ -232,7 +272,7 @@ docker compose exec backend ruff format .
 docker compose exec backend pytest -v
 
 # Frontend lint
-docker compose exec frontend npx eslint src/
+docker compose exec frontend pnpm lint
 
 # Frontend build check
 docker compose exec frontend pnpm build
@@ -269,6 +309,7 @@ For this repo specifically:
 
 ## Documentation
 
+- [Modernization Progress](docs/MODERNIZATION_PROGRESS.md) — implementation log of completed work and remaining tasks
 - [Master Tracking](docs/MASTER.md) — project overview and phase progress
 - [Phase 0: Foundation](docs/PHASE_0_FOUNDATION.md)
 - [Phase 1: Backend Core](docs/PHASE_1_BACKEND.md)

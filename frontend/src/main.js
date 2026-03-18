@@ -1,16 +1,18 @@
 import { createApp } from 'vue'
-import { createPinia } from 'pinia'
+import ConfirmationService from 'primevue/confirmationservice'
 import PrimeVue from 'primevue/config'
+import ToastService from 'primevue/toastservice'
 import Tooltip from 'primevue/tooltip'
 import App from './App.vue'
 import router from './router'
 import { i18n } from './i18n'
+import { pinia } from './stores'
 import MarketPreset from './theme/preset'
 import 'primeicons/primeicons.css'
 import './styles/main.css'
 
 const app = createApp(App)
-app.use(createPinia())
+app.use(pinia)
 app.use(PrimeVue, {
   ripple: false,
   inputVariant: 'filled',
@@ -21,6 +23,8 @@ app.use(PrimeVue, {
     },
   },
 })
+app.use(ToastService)
+app.use(ConfirmationService)
 app.use(router)
 app.use(i18n)
 app.directive('tooltip', Tooltip)

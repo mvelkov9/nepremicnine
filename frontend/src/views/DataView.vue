@@ -2,15 +2,16 @@
   import { computed, onMounted, ref } from 'vue'
   import { useI18n } from 'vue-i18n'
   import Button from 'primevue/button'
-  import Column from 'primevue/column'
-  import DataTable from 'primevue/datatable'
   import Dialog from 'primevue/dialog'
   import InputText from 'primevue/inputtext'
   import Tag from 'primevue/tag'
+  import AppDataTable from '../components/AppDataTable.vue'
   import EmptyState from '../components/EmptyState.vue'
   import LoadingSpinner from '../components/LoadingSpinner.vue'
   import MetricCard from '../components/MetricCard.vue'
   import PageHeader from '../components/PageHeader.vue'
+  import { useConfirmDialog } from '../composables/useConfirmDialog'
+  import { useToast } from '../composables/useToast'
   import { useAuthStore } from '../stores/auth'
   import { useDataStore } from '../stores/data'
   import { getApiErrorMessage } from '../utils/apiError'
@@ -19,6 +20,8 @@
   const { t } = useI18n()
   const auth = useAuthStore()
   const dataStore = useDataStore()
+  const { confirmAction } = useConfirmDialog()
+  const { showToast } = useToast()
 
   const fileInput = ref(null)
   const previewData = ref(null)
@@ -27,6 +30,29 @@
   const uploadResult = ref(null)
   const error = ref('')
   const datasetFilter = ref('')
+
+  const unresolvedColumns = computed(() => [
+    { key: 'label', label: t('dashboard.municipality'), sortable: true },
+    { key: 'count', label: t('dashboard.transactions'), sortable: true },
+  ])
+
+  const aliasColumns = computed(() => [
+    { key: 'canonical', label: t('data.canonicalLabel'), sortable: true },
+    { key: 'variant_count', label: t('data.variantCount'), sortable: true },
+    { key: 'variants', label: t('data.variants') },
+  ])
+
+  const datasetColumns = computed(() => [
+    { key: 'original_name', label: t('data.fileName'), sortable: true },
+    { key: 'relative_path', label: t('data.relativePath'), sortable: true },
+    { key: 'row_count', label: t('data.rows'), sortable: true },
+    { key: 'uploaded_at', label: t('data.uploaded'), sortable: true },
+    { key: 'actions', label: t('data.actions') },
+  ])
+
+  const previewColumns = computed(() =>
+    (previewData.value?.columns || []).map((column) => ({ key: column, label: column })),
+  )
 
   const qualitySummary = computed(() => dataStore.qualitySummary)
   const filteredDatasets = computed(() => {
@@ -100,6 +126,13 @@
       uploadResult.value = result
       fileInput.value.value = ''
       await Promise.all([dataStore.fetchTrainingDataset(), dataStore.fetchQualitySummary()])
+      showToast(
+        t('data.uploadSuccess', {
+          uploaded: result.uploaded?.length || 0,
+          skipped: result.skipped?.length || 0,
+        }),
+        'success',
+      )
     } catch (e) {
       error.value = getApiErrorMessage(e, t)
     }
@@ -117,10 +150,18 @@
   }
 
   async function handleDelete(id) {
-    if (!confirm(t('data.confirmDelete'))) return
+    error.value = ''
+    const confirmed = await confirmAction({
+      header: t('common.confirm'),
+      message: t('data.confirmDelete'),
+      acceptLabel: t('common.delete'),
+      rejectLabel: t('common.cancel'),
+    })
+    if (!confirmed) return
     try {
       await dataStore.deleteDataset(id)
       await Promise.all([dataStore.fetchTrainingDataset(), dataStore.fetchQualitySummary()])
+      showToast(t('data.deleteSuccess'), 'success')
     } catch (e) {
       error.value = getApiErrorMessage(e, t)
     }
@@ -128,10 +169,19 @@
 
   async function handleDeleteAll() {
     if (!dataStore.datasets.length) return
-    if (!confirm(t('data.confirmDeleteAll'))) return
+    error.value = ''
+    const datasetCount = dataStore.datasets.length
+    const confirmed = await confirmAction({
+      header: t('common.confirm'),
+      message: t('data.confirmDeleteAll'),
+      acceptLabel: t('data.deleteAll'),
+      rejectLabel: t('common.cancel'),
+    })
+    if (!confirmed) return
     try {
       await dataStore.deleteAllDatasets()
       await Promise.all([dataStore.fetchTrainingDataset(), dataStore.fetchQualitySummary()])
+      showToast(t('data.deleteAllSuccess', { count: datasetCount }), 'success')
     } catch (e) {
       error.value = getApiErrorMessage(e, t)
     }
@@ -217,17 +267,13 @@
           :description="t('data.unresolvedHint')"
         />
 
-        <DataTable
-          :value="qualitySummary?.unresolved_labels || []"
-          paginator
-          :rows="6"
-          size="small"
-          striped-rows
-          responsive-layout="scroll"
-        >
-          <Column field="label" :header="t('dashboard.municipality')" sortable />
-          <Column field="count" :header="t('dashboard.transactions')" sortable />
-        </DataTable>
+        <AppDataTable
+          :rows="qualitySummary?.unresolved_labels || []"
+          :columns="unresolvedColumns"
+          row-key="label"
+          :page-size="6"
+          :empty-message="t('empty.noResults')"
+        />
       </article>
 
       <article class="card">
@@ -238,22 +284,17 @@
           :description="t('data.aliasHint')"
         />
 
-        <DataTable
-          :value="qualitySummary?.alias_collisions || []"
-          paginator
-          :rows="6"
-          size="small"
-          striped-rows
-          responsive-layout="scroll"
+        <AppDataTable
+          :rows="qualitySummary?.alias_collisions || []"
+          :columns="aliasColumns"
+          row-key="canonical"
+          :page-size="6"
+          :empty-message="t('empty.noResults')"
         >
-          <Column field="canonical" :header="t('data.canonicalLabel')" sortable />
-          <Column field="variant_count" :header="t('data.variantCount')" sortable />
-          <Column :header="t('data.variants')">
-            <template #body="{ data }">
-              {{ data.variants?.join(', ') || '—' }}
-            </template>
-          </Column>
-        </DataTable>
+          <template #cell-variants="{ row }">
+            {{ row.variants?.join(', ') || '—' }}
+          </template>
+        </AppDataTable>
       </article>
     </section>
 
@@ -288,47 +329,38 @@
         icon="📁"
         :message="t('empty.noDatasets')"
       />
-      <DataTable
+      <AppDataTable
         v-else
-        :value="filteredDatasets"
-        paginator
-        :rows="10"
-        size="small"
-        striped-rows
-        responsive-layout="scroll"
+        :rows="filteredDatasets"
+        :columns="datasetColumns"
+        row-key="id"
+        :page-size="10"
+        :empty-message="t('empty.noDatasets')"
       >
-        <Column field="original_name" :header="t('data.fileName')" sortable />
-        <Column field="relative_path" :header="t('data.relativePath')" sortable />
-        <Column field="row_count" :header="t('data.rows')" sortable>
-          <template #body="{ data }">{{ formatSize(data.row_count) }}</template>
-        </Column>
-        <Column field="uploaded_at" :header="t('data.uploaded')" sortable>
-          <template #body="{ data }">{{ formatDate(data.uploaded_at) }}</template>
-        </Column>
-        <Column :header="t('data.actions')">
-          <template #body="{ data }">
-            <div class="row-actions">
-              <Button
-                size="small"
-                severity="secondary"
-                outlined
-                icon="pi pi-eye"
-                :label="t('data.preview')"
-                @click="showPreview(data)"
-              />
-              <Button
-                v-if="auth.isAdmin"
-                size="small"
-                severity="danger"
-                outlined
-                icon="pi pi-trash"
-                :label="t('common.delete')"
-                @click="handleDelete(data.id)"
-              />
-            </div>
-          </template>
-        </Column>
-      </DataTable>
+        <template #cell-row_count="{ row }">{{ formatSize(row.row_count) }}</template>
+        <template #cell-uploaded_at="{ row }">{{ formatDate(row.uploaded_at) }}</template>
+        <template #cell-actions="{ row }">
+          <div class="row-actions">
+            <Button
+              size="small"
+              severity="secondary"
+              outlined
+              icon="pi pi-eye"
+              :label="t('data.preview')"
+              @click="showPreview(row)"
+            />
+            <Button
+              v-if="auth.isAdmin"
+              size="small"
+              severity="danger"
+              outlined
+              icon="pi pi-trash"
+              :label="t('common.delete')"
+              @click="handleDelete(row.id)"
+            />
+          </div>
+        </template>
+      </AppDataTable>
     </section>
 
     <p v-if="error" class="error-text">{{ error }}</p>
@@ -343,18 +375,13 @@
     >
       <div v-if="previewData" class="preview-dialog">
         <p class="muted">{{ t('data.columns') }}: {{ previewData.columns?.join(', ') }}</p>
-        <DataTable
-          :value="previewData.rows || []"
-          scrollable
-          scroll-height="420px"
-          size="small"
-          striped-rows
-          responsive-layout="scroll"
-        >
-          <Column v-for="col in previewData.columns" :key="col" :field="col" :header="col">
-            <template #body="{ data }">{{ data[col] ?? '—' }}</template>
-          </Column>
-        </DataTable>
+        <AppDataTable
+          :rows="previewData.rows || []"
+          :columns="previewColumns"
+          row-key="__previewIndex"
+          :page-size="12"
+          :empty-message="t('empty.noResults')"
+        />
       </div>
     </Dialog>
   </div>

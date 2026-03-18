@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import math
@@ -34,7 +35,7 @@ async def predict(
     """Predict property price."""
     features = req.model_dump(exclude_none=True)
     try:
-        result = predict_one(features)
+        result = await asyncio.to_thread(predict_one, features)
     except RuntimeError as exc:
         logger.error("Prediction failed: %s", exc, exc_info=True)
         raise HTTPException(

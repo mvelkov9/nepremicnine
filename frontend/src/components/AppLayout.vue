@@ -1,5 +1,6 @@
 <script setup>
   import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+  import { useLocalStorage } from '@vueuse/core'
   import { RouterLink, useRoute, useRouter } from 'vue-router'
   import { useI18n } from 'vue-i18n'
   import Button from 'primevue/button'
@@ -27,7 +28,7 @@
   const profileSaving = ref(false)
   const isScrolled = ref(false)
   const appVersion = ref('')
-  const sidebarCollapsed = ref(localStorage.getItem('sidebar_collapsed') === '1')
+  const sidebarCollapsed = useLocalStorage('sidebar_collapsed', false)
   const profileForm = ref({
     full_name: '',
     avatar_url: '',
@@ -125,10 +126,6 @@
   function sidebarTooltip(label) {
     return sidebarCollapsed.value ? { value: label, showDelay: 120, autoHide: true } : null
   }
-
-  watch(sidebarCollapsed, (collapsed) => {
-    localStorage.setItem('sidebar_collapsed', collapsed ? '1' : '0')
-  })
 
   watch(
     () => auth.user,

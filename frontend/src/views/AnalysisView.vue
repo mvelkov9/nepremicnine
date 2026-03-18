@@ -3,8 +3,6 @@
   import { useI18n } from 'vue-i18n'
   import AutoComplete from 'primevue/autocomplete'
   import Button from 'primevue/button'
-  import DataTable from 'primevue/datatable'
-  import Column from 'primevue/column'
   import InputNumber from 'primevue/inputnumber'
   import InputText from 'primevue/inputtext'
   import Select from 'primevue/select'
@@ -12,44 +10,59 @@
   import Textarea from 'primevue/textarea'
   import ToggleSwitch from 'primevue/toggleswitch'
   import api from '../composables/useApi'
+  import { useMunicipalityLookup } from '../composables/useMunicipalityLookup'
+  import { useToast } from '../composables/useToast'
+  import AppDataTable from '../components/AppDataTable.vue'
+  import EmptyState from '../components/EmptyState.vue'
+  import LoadingSpinner from '../components/LoadingSpinner.vue'
+  import PageHeader from '../components/PageHeader.vue'
   import { useAuthStore } from '../stores/auth'
   import { useExport } from '../composables/useExport'
   import { buildNepremicnineSearchUrl } from '../utils/externalSearch'
   import { getApiErrorMessage } from '../utils/apiError'
   import { formatCurrency, formatNumber } from '../utils/format'
-  import { normalizeMunicipalityName } from '../utils/municipality'
   import { getPropertyTypeLabel } from '../utils/propertyType'
 
   const { t } = useI18n()
   const auth = useAuthStore()
   const { exportToCSV } = useExport()
+  const { showToast } = useToast()
+  const {
+    municipalitySuggestions,
+    fetchMunicipalities,
+    findMunicipalityMeta,
+    searchMunicipalities,
+  } = useMunicipalityLookup()
 
-  const guidedForm = ref({
-    municipality: '',
-    property_type: 'stanovanje',
-    size_m2: 65,
-    uporabna_povrsina: null,
-    rooms: 2.5,
-    year_built: null,
-    floor: null,
-    lega_v_stavbi: '',
-    novogradnja: 0,
-    has_garaza: 0,
-    has_klet: 0,
-    has_shramba: 0,
-    has_terasa: 0,
-    stavba_je_dokoncana: 1,
-    ddv_vkljucen: 0,
-    asking_price: null,
-    notes: '',
-  })
+  function createDefaultGuidedForm() {
+    return {
+      municipality: '',
+      property_type: 'stanovanje',
+      size_m2: 65,
+      uporabna_povrsina: null,
+      rooms: 2.5,
+      year_built: null,
+      floor: null,
+      lega_v_stavbi: '',
+      novogradnja: 0,
+      has_garaza: 0,
+      has_klet: 0,
+      has_shramba: 0,
+      has_terasa: 0,
+      stavba_je_dokoncana: 1,
+      ddv_vkljucen: 0,
+      asking_price: null,
+      notes: '',
+    }
+  }
+
+  const guidedForm = ref(createDefaultGuidedForm())
   const threshold = ref(15)
   const loading = ref(false)
   const error = ref('')
   const result = ref(null)
   const advancedJson = ref('')
-  const municipalities = ref([])
-  const municipalitySuggestions = ref([])
+  const formErrors = ref({})
 
   const propertyTypes = [
     'stanovanje',
@@ -70,15 +83,37 @@
   )
 
   const primaryListing = computed(() => result.value?.listings?.[0] || null)
-  const municipalityIndex = computed(
-    () =>
-      new Map(
-        municipalities.value.map((item) => [normalizeMunicipalityName(item.municipality), item]),
-      ),
-  )
-  const selectedMunicipalityMeta = computed(() =>
-    municipalityIndex.value.get(normalizeMunicipalityName(guidedForm.value.municipality)),
-  )
+  const selectedMunicipalityMeta = computed(() => findMunicipalityMeta(guidedForm.value.municipality))
+  const resultColumns = computed(() => [
+    { key: 'municipality', label: t('dashboard.municipality'), sortable: true },
+    { key: 'property_type', label: t('predict.propertyType'), sortable: true },
+    { key: 'size', label: t('predict.size'), sortable: true, value: (row) => row.uporabna_povrsina || row.size_m2 },
+    { key: 'floor', label: t('predict.floor'), sortable: true },
+    { key: 'asking_price', label: t('analysis.askingPrice'), sortable: true },
+    { key: 'predicted_price', label: t('analysis.predictedPrice'), sortable: true },
+    { key: 'deviation_percent', label: t('analysis.deviation'), sortable: true },
+    { key: 'label', label: t('analysis.label'), sortable: true },
+  ])
+  const summaryCards = computed(() => {
+    const listings = result.value?.listings || []
+    const counts = listings.reduce(
+      (accumulator, item) => {
+        accumulator.total += 1
+        if (item.label === 'overpriced') accumulator.overpriced += 1
+        if (item.label === 'underpriced') accumulator.underpriced += 1
+        if (item.label === 'market_aligned') accumulator.marketAligned += 1
+        return accumulator
+      },
+      { total: 0, overpriced: 0, underpriced: 0, marketAligned: 0 },
+    )
+
+    return [
+      { label: t('analysis.total'), value: fmt(counts.total) },
+      { label: t('analysis.overpriced'), value: fmt(counts.overpriced) },
+      { label: t('analysis.underpriced'), value: fmt(counts.underpriced) },
+      { label: t('analysis.marketAligned'), value: fmt(counts.marketAligned) },
+    ]
+  })
 
   function fmt(value, decimals = 0) {
     return formatNumber(value, { maximumFractionDigits: decimals })
@@ -111,36 +146,34 @@
     )
   }
 
-  async function fetchMunicipalities() {
-    try {
-      const { data } = await api.get('/api/regions/municipalities')
-      municipalities.value = data || []
-    } catch {
-      municipalities.value = []
+  function validateGuidedForm() {
+    const nextErrors = {}
+    if (!guidedForm.value.municipality?.trim()) {
+      nextErrors.municipality = t('validation.required')
     }
+    if (!guidedForm.value.size_m2 || guidedForm.value.size_m2 <= 0) {
+      nextErrors.size_m2 = t('validation.minSize')
+    }
+    if (!guidedForm.value.asking_price || guidedForm.value.asking_price <= 0) {
+      nextErrors.asking_price = t('validation.minValue')
+    }
+
+    formErrors.value = nextErrors
+    return Object.keys(nextErrors).length === 0
   }
 
-  function searchMunicipalities(event) {
-    const query = normalizeMunicipalityName(event.query || '')
-    municipalitySuggestions.value = query
-      ? municipalities.value
-          .filter((item) => normalizeMunicipalityName(item.municipality).includes(query))
-          .map((item) => item.municipality)
-          .slice(0, 12)
-      : municipalities.value.map((item) => item.municipality).slice(0, 12)
-  }
-
-  async function analyzeGuided() {
+  async function analyzeListings(listings, successMessage) {
     loading.value = true
     error.value = ''
     result.value = null
 
     try {
       const { data } = await api.post('/api/analysis/score', {
-        listings: [buildGuidedPayload()],
+        listings,
         threshold: threshold.value,
-      })
+      }, { skipErrorToast: true })
       result.value = data
+      showToast(t(successMessage, { count: data.listings?.length || 0 }), 'success')
     } catch (e) {
       error.value = getApiErrorMessage(e, t)
     } finally {
@@ -148,23 +181,21 @@
     }
   }
 
-  async function analyzeAdvanced() {
-    loading.value = true
-    error.value = ''
-    result.value = null
+  async function analyzeGuided() {
+    if (!validateGuidedForm()) {
+      return
+    }
 
+    await analyzeListings([buildGuidedPayload()], 'analysis.guidedCompleted')
+  }
+
+  async function analyzeAdvanced() {
     try {
       const parsed = JSON.parse(advancedJson.value)
       const listings = Array.isArray(parsed) ? parsed : [parsed]
-      const { data } = await api.post('/api/analysis/score', {
-        listings,
-        threshold: threshold.value,
-      })
-      result.value = data
+      await analyzeListings(listings, 'analysis.bulkCompleted')
     } catch (e) {
       error.value = e instanceof SyntaxError ? t('analysis.invalidJson') : getApiErrorMessage(e, t)
-    } finally {
-      loading.value = false
     }
   }
 
@@ -215,11 +246,11 @@
 <template>
   <div class="analysis-page">
     <section class="hero-shell">
-      <div>
-        <p class="eyebrow">{{ t('analysis.consumerKicker') }}</p>
-        <h1>{{ t('analysis.consumerTitle') }}</h1>
-        <p class="muted">{{ t('analysis.consumerBody') }}</p>
-      </div>
+      <PageHeader
+        :eyebrow="t('analysis.consumerKicker')"
+        :title="t('analysis.consumerTitle')"
+        :description="t('analysis.consumerBody')"
+      />
 
       <a :href="comparisonUrl" target="_blank" rel="noreferrer" class="hero-link">
         <Button
@@ -253,8 +284,11 @@
             :placeholder="t('predict.municipalityPlaceholder')"
             dropdown
             fluid
+            :invalid="!!formErrors.municipality"
             @complete="searchMunicipalities"
+            @update:model-value="formErrors.municipality = null"
           />
+          <small v-if="formErrors.municipality" class="field-error">{{ formErrors.municipality }}</small>
         </label>
 
         <label class="field">
@@ -269,7 +303,14 @@
 
         <label class="field">
           <span>{{ t('predict.size') }}</span>
-          <InputNumber v-model="guidedForm.size_m2" :min="1" suffix=" m²" />
+          <InputNumber
+            v-model="guidedForm.size_m2"
+            :min="1"
+            suffix=" m²"
+            :invalid="!!formErrors.size_m2"
+            @update:model-value="formErrors.size_m2 = null"
+          />
+          <small v-if="formErrors.size_m2" class="field-error">{{ formErrors.size_m2 }}</small>
         </label>
 
         <label class="field">
@@ -315,13 +356,28 @@
             mode="currency"
             currency="EUR"
             locale="sl-SI"
+            :invalid="!!formErrors.asking_price"
+            @update:model-value="formErrors.asking_price = null"
           />
+          <small v-if="formErrors.asking_price" class="field-error">{{ formErrors.asking_price }}</small>
         </label>
 
         <label class="field notes-field">
           <span>{{ t('analysis.contextNotes') }}</span>
           <InputText v-model="guidedForm.notes" />
         </label>
+
+        <div class="field municipality-chip">
+          <span>{{ t('analysis.marketContext') }}</span>
+          <strong>{{ selectedMunicipalityMeta?.region || '—' }}</strong>
+          <small class="muted">
+            {{
+              selectedMunicipalityMeta?.region
+                ? t('predict.coordsAutoHint')
+                : t('predict.pickMunicipalityHint')
+            }}
+          </small>
+        </div>
       </div>
 
       <div class="flag-row">
@@ -408,7 +464,22 @@
 
     <p v-if="error" class="error-text">{{ error }}</p>
 
-    <template v-if="result">
+    <section v-if="loading" class="panel state-panel">
+      <LoadingSpinner :label="t('common.loading')" />
+    </section>
+
+    <section v-else-if="!result" class="panel state-panel">
+      <EmptyState icon="📈" :message="t('analysis.emptyState')" />
+    </section>
+
+    <template v-else>
+      <section class="result-band">
+        <article v-for="card in summaryCards" :key="card.label" class="result-card summary-card">
+          <span>{{ card.label }}</span>
+          <strong>{{ card.value }}</strong>
+        </article>
+      </section>
+
       <section v-if="primaryListing" class="result-band">
         <article class="result-card">
           <span>{{ t('analysis.askingPrice') }}</span>
@@ -448,44 +519,24 @@
           />
         </div>
 
-        <DataTable
-          :value="result.listings || []"
-          paginator
-          :rows="10"
-          size="small"
-          striped-rows
-          responsive-layout="scroll"
-          table-style="min-width: 100%"
+        <AppDataTable
+          :rows="result.listings || []"
+          :columns="resultColumns"
+          row-key="municipality"
+          :page-size="10"
+          :empty-message="t('empty.noResults')"
         >
-          <Column :header="t('dashboard.municipality')">
-            <template #body="{ data }">{{ data.municipality || '—' }}</template>
-          </Column>
-          <Column :header="t('predict.propertyType')">
-            <template #body="{ data }">{{ formatType(data.property_type) }}</template>
-          </Column>
-          <Column :header="t('predict.size')">
-            <template #body="{ data }">
-              {{ fmt(data.uporabna_povrsina || data.size_m2, 1) }} m²
-            </template>
-          </Column>
-          <Column :header="t('predict.floor')">
-            <template #body="{ data }">{{ data.floor ?? '—' }}</template>
-          </Column>
-          <Column :header="t('analysis.askingPrice')">
-            <template #body="{ data }">{{ fmtCurrency(data.asking_price) }}</template>
-          </Column>
-          <Column :header="t('analysis.predictedPrice')">
-            <template #body="{ data }">{{ fmtCurrency(data.predicted_price) }}</template>
-          </Column>
-          <Column :header="t('analysis.deviation')">
-            <template #body="{ data }">{{ fmt(data.deviation_percent, 1) }}%</template>
-          </Column>
-          <Column :header="t('analysis.label')">
-            <template #body="{ data }">
-              <Tag :severity="labelSeverity(data.label)" :value="labelText(data.label)" />
-            </template>
-          </Column>
-        </DataTable>
+          <template #cell-municipality="{ row }">{{ row.municipality || '—' }}</template>
+          <template #cell-property_type="{ row }">{{ formatType(row.property_type) }}</template>
+          <template #cell-size="{ row }">{{ fmt(row.uporabna_povrsina || row.size_m2, 1) }} m²</template>
+          <template #cell-floor="{ row }">{{ row.floor ?? '—' }}</template>
+          <template #cell-asking_price="{ row }">{{ fmtCurrency(row.asking_price) }}</template>
+          <template #cell-predicted_price="{ row }">{{ fmtCurrency(row.predicted_price) }}</template>
+          <template #cell-deviation_percent="{ row }">{{ fmt(row.deviation_percent, 1) }}%</template>
+          <template #cell-label="{ row }">
+            <Tag :severity="labelSeverity(row.label)" :value="labelText(row.label)" />
+          </template>
+        </AppDataTable>
       </section>
     </template>
   </div>
@@ -558,8 +609,25 @@
     display: grid;
   }
 
+  .field-error,
+  .error-text {
+    color: var(--danger);
+  }
+
   .notes-field {
     grid-column: span 2;
+  }
+
+  .municipality-chip {
+    align-content: flex-start;
+    padding: 0.9rem 1rem;
+    border: 1px solid var(--border);
+    border-radius: 1rem;
+    background: var(--surface-soft);
+  }
+
+  .municipality-chip strong {
+    font-size: 1rem;
   }
 
   .actions-row {
@@ -595,10 +663,20 @@
     gap: 0.85rem;
   }
 
+  .state-panel {
+    display: grid;
+    place-items: center;
+    min-height: 14rem;
+  }
+
   .result-card {
     padding: 1rem;
     display: grid;
     gap: 0.35rem;
+  }
+
+  .summary-card {
+    background: var(--surface-soft);
   }
 
   .result-card span {

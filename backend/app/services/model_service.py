@@ -112,6 +112,7 @@ MODEL_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file_
 
 _MIN_FILL_RATE = 0.10
 _model_cache: dict | None = None
+_model_cache_mtime_ns: int | None = None
 
 
 def _filter_features(
@@ -538,20 +539,25 @@ def train_from_csv(
 
 
 def load_model() -> dict | None:
-    global _model_cache
-    if _model_cache is not None:
-        return _model_cache
+    global _model_cache, _model_cache_mtime_ns
     model_path = os.path.join(MODEL_DIR, "price_model.joblib")
     if not os.path.exists(model_path):
+        _model_cache = None
+        _model_cache_mtime_ns = None
         return None
+    model_mtime_ns = os.stat(model_path).st_mtime_ns
+    if _model_cache is not None and _model_cache_mtime_ns == model_mtime_ns:
+        return _model_cache
     _model_cache = joblib.load(model_path)
+    _model_cache_mtime_ns = model_mtime_ns
     return _model_cache
 
 
 def invalidate_model_cache() -> None:
     """Clear the in-process model cache (call after training a new model)."""
-    global _model_cache
+    global _model_cache, _model_cache_mtime_ns
     _model_cache = None
+    _model_cache_mtime_ns = None
 
 
 def _coerce_binary(value: Any, default: int = 0) -> int:

@@ -10,7 +10,11 @@
     LinearScale,
     Tooltip,
   } from 'chart.js'
+  import Select from 'primevue/select'
   import EmptyState from '../components/EmptyState.vue'
+  import LoadingSpinner from '../components/LoadingSpinner.vue'
+  import MetricCard from '../components/MetricCard.vue'
+  import PageHeader from '../components/PageHeader.vue'
   import { useModelStore } from '../stores/model'
   import { formatCurrency, formatDateTime, formatNumber, formatPercent } from '../utils/format'
   import { getPropertyTypeLabel } from '../utils/propertyType'
@@ -23,6 +27,14 @@
   const selectedMetric = ref('r2')
   const selectedType = ref('all')
   const metrics = ['mae', 'rmse', 'r2', 'mape', 'median_ae']
+  const pageLoading = ref(false)
+
+  const metricOptions = computed(() =>
+    metrics.map((metric) => ({
+      label: metric === 'median_ae' ? t('diag.medianError') : metric.toUpperCase(),
+      value: metric,
+    })),
+  )
 
   function formatType(value) {
     return getPropertyTypeLabel(value, t)
@@ -41,6 +53,7 @@
   }
 
   const availableTypes = computed(() => Object.keys(model.info?.per_type_metrics || {}))
+  const noModelState = computed(() => !pageLoading.value && !model.info)
 
   const selectedTypeMetrics = computed(() => {
     if (selectedType.value === 'all') return model.info?.global_metrics || null
@@ -148,24 +161,54 @@
     ]
   })
 
+  async function loadDiagnostics() {
+    pageLoading.value = true
+    try {
+      await Promise.all([model.fetchInfo(), model.fetchDiagnostics(), model.fetchImportance()])
+    } finally {
+      pageLoading.value = false
+    }
+  }
+
   onMounted(async () => {
-    await Promise.all([model.fetchInfo(), model.fetchDiagnostics(), model.fetchImportance()])
+    await loadDiagnostics()
   })
 </script>
 
 <template>
-  <div>
-    <h1 class="page-title">{{ t('nav.diagnostics') }}</h1>
+  <div class="diagnostics-page">
+    <section class="card hero-card">
+      <PageHeader
+        :eyebrow="t('nav.diagnostics')"
+        :title="t('diag.pageTitle')"
+        :description="t('diag.pageBody')"
+      >
+        <template #actions>
+          <Select
+            v-model="selectedMetric"
+            :options="metricOptions"
+            option-label="label"
+            option-value="value"
+            class="metric-select"
+          />
+        </template>
+      </PageHeader>
+    </section>
 
-    <div v-if="!model.info" class="card">
-      <p class="muted">{{ t('diag.noModel') }}</p>
-    </div>
+    <section v-if="pageLoading" class="card state-card">
+      <LoadingSpinner :label="t('common.loading')" />
+    </section>
+
+    <section v-else-if="noModelState" class="card state-card">
+      <EmptyState icon="📉" :message="t('diag.noModel')" />
+    </section>
 
     <template v-else>
-      <div class="card" style="margin-bottom: 1.5rem">
+      <section class="card section-card">
         <div class="focus-head">
           <div>
-            <h2>{{ t('diag.focusType') }}</h2>
+            <span class="eyebrow">{{ t('diag.focusType') }}</span>
+            <h2>{{ t('diag.focusTitle') }}</h2>
             <p class="muted">
               {{
                 selectedType === 'all'
@@ -196,28 +239,41 @@
           </div>
         </div>
 
-        <div class="kpi-grid" style="margin-top: 1rem">
-          <div v-for="item in focusMetrics" :key="item.label" class="kpi-card">
-            <span class="kpi-label">{{ item.label }}</span>
-            <span class="kpi-value">{{ item.value }}</span>
-            <span class="muted" style="font-size: 11px">{{ item.desc }}</span>
-          </div>
-        </div>
-      </div>
-
-      <div v-if="combinedMetrics.length" class="card" style="margin-bottom: 1.5rem">
-        <h2>{{ t('diag.combinedMetrics') }}</h2>
-        <p class="muted" style="margin-bottom: 0.75rem">{{ t('diag.combinedDesc') }}</p>
         <div class="kpi-grid">
-          <div v-for="item in combinedMetrics" :key="item.label" class="kpi-card">
-            <span class="kpi-label">{{ item.label }}</span>
-            <span class="kpi-value">{{ item.value }}</span>
-          </div>
+          <MetricCard
+            v-for="item in focusMetrics"
+            :key="item.label"
+            :label="item.label"
+            :value="item.value"
+            :meta="item.desc"
+          />
         </div>
-      </div>
+      </section>
 
-      <div class="card" style="margin-bottom: 1.5rem">
-        <h2>{{ t('diag.modelDetails') }}</h2>
+      <section v-if="combinedMetrics.length" class="card section-card">
+        <PageHeader
+          compact
+          :eyebrow="t('diag.combinedMetrics')"
+          :title="t('diag.combinedTitle')"
+          :description="t('diag.combinedDesc')"
+        />
+        <div class="kpi-grid">
+          <MetricCard
+            v-for="item in combinedMetrics"
+            :key="item.label"
+            :label="item.label"
+            :value="item.value"
+          />
+        </div>
+      </section>
+
+      <section class="card section-card">
+        <PageHeader
+          compact
+          :eyebrow="t('diag.modelDetails')"
+          :title="t('diag.snapshotTitle')"
+          :description="t('diag.snapshotBody')"
+        />
         <div class="table-wrap">
           <table>
             <tbody>
@@ -264,39 +320,40 @@
             </tbody>
           </table>
         </div>
-      </div>
+      </section>
 
-      <div class="card" style="margin-bottom: 1.5rem">
+      <section class="card section-card chart-card">
         <div class="focus-head">
-          <div>
-            <h2 style="margin: 0">{{ t('diag.compareMetrics') }}</h2>
-            <p class="muted">{{ t('diag.byPropertyType') }} / {{ t('diag.byRegion') }}</p>
-          </div>
-          <select v-model="selectedMetric" class="form-input" style="width: auto; min-width: 120px">
-            <option v-for="metric in metrics" :key="metric" :value="metric">
-              {{ metric.toUpperCase() }}
-            </option>
-          </select>
+          <PageHeader
+            compact
+            :eyebrow="t('diag.compareMetrics')"
+            :title="t('diag.chartTitle')"
+            :description="`${t('diag.byPropertyType')} / ${t('diag.byRegion')}`"
+          />
         </div>
 
-        <div v-if="perTypeChart" style="margin-bottom: 2rem">
+        <div v-if="perTypeChart" class="chart-block">
           <h3>{{ t('diag.byPropertyType') }}</h3>
-          <div style="height: 300px">
+          <div class="chart-frame">
             <Bar :data="perTypeChart" :options="chartOptions" />
           </div>
         </div>
 
         <div v-if="perRegionChart">
           <h3>{{ t('diag.byRegion') }}</h3>
-          <div style="height: 300px">
+          <div class="chart-frame">
             <Bar :data="perRegionChart" :options="chartOptions" />
           </div>
         </div>
-      </div>
+      </section>
 
-      <div v-if="featureHighlights.length" class="card" style="margin-bottom: 1.5rem">
-        <h2>{{ t('diag.topFeatures') }}</h2>
-        <p class="muted" style="margin-bottom: 0.75rem">{{ t('diag.topFeaturesDesc') }}</p>
+      <section v-if="featureHighlights.length" class="card section-card">
+        <PageHeader
+          compact
+          :eyebrow="t('diag.topFeatures')"
+          :title="t('diag.featureTitle')"
+          :description="t('diag.topFeaturesDesc')"
+        />
         <div class="feature-list">
           <div v-for="item in featureHighlights" :key="item.feature" class="feature-row">
             <div class="feature-copy">
@@ -309,10 +366,15 @@
             <strong>{{ formatMetric(item.importance) }}</strong>
           </div>
         </div>
-      </div>
+      </section>
 
-      <div v-if="model.info.per_type_metrics" class="card" style="margin-bottom: 1.5rem">
-        <h2>{{ t('diag.perTypeTable') }}</h2>
+      <section v-if="model.info.per_type_metrics" class="card section-card">
+        <PageHeader
+          compact
+          :eyebrow="t('diag.perTypeTable')"
+          :title="t('diag.perTypeTitle')"
+          :description="t('diag.perTypeBody')"
+        />
         <EmptyState
           v-if="!Object.keys(model.info.per_type_metrics).length"
           icon="📊"
@@ -362,10 +424,15 @@
             </tbody>
           </table>
         </div>
-      </div>
+      </section>
 
-      <div v-if="model.info.per_region_metrics" class="card">
-        <h2>{{ t('diag.perRegionTable') }}</h2>
+      <section v-if="model.info.per_region_metrics" class="card section-card">
+        <PageHeader
+          compact
+          :eyebrow="t('diag.perRegionTable')"
+          :title="t('diag.perRegionTitle')"
+          :description="t('diag.perRegionBody')"
+        />
         <EmptyState
           v-if="!Object.keys(model.info.per_region_metrics).length"
           icon="🗺️"
@@ -399,12 +466,29 @@
             </tbody>
           </table>
         </div>
-      </div>
+      </section>
     </template>
   </div>
 </template>
 
 <style scoped>
+  .diagnostics-page {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .hero-card,
+  .section-card {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .state-card {
+    display: grid;
+    place-items: center;
+    min-height: 14rem;
+  }
+
   .focus-head {
     display: flex;
     gap: 1rem;
@@ -413,10 +497,49 @@
     flex-wrap: wrap;
   }
 
+  .eyebrow {
+    display: inline-flex;
+    margin-bottom: 0.45rem;
+    color: var(--primary);
+    font-size: 0.74rem;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+
+  .focus-head h2,
+  .chart-block h3 {
+    margin: 0;
+    font-family: var(--font-display);
+  }
+
+  .metric-select {
+    min-width: 10rem;
+  }
+
   .focus-chips {
     display: flex;
     gap: 0.55rem;
     flex-wrap: wrap;
+  }
+
+  .kpi-grid {
+    display: grid;
+    gap: 0.9rem;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  }
+
+  .chart-card {
+    gap: 1.25rem;
+  }
+
+  .chart-block {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .chart-frame {
+    height: 300px;
   }
 
   .focus-chip {
@@ -473,5 +596,11 @@
 
   .active-focus-row {
     background: rgb(37 99 235 / 6%);
+  }
+
+  @media (max-width: 720px) {
+    .metric-select {
+      width: 100%;
+    }
   }
 </style>

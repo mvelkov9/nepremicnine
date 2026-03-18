@@ -361,6 +361,12 @@ def lookup_region_by_code(code: int | str) -> str | None:
 _sifra_cache: dict[int, str] | None = None
 
 
+def invalidate_region_cache() -> None:
+    """Clear the in-process sifra -> region cache after imports."""
+    global _sifra_cache
+    _sifra_cache = None
+
+
 def _get_sync_database_url() -> str:
     """Convert the async database URL to a synchronous one for batch operations."""
     from app.config import get_settings

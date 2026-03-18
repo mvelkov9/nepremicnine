@@ -9,10 +9,54 @@ const api = axios.create({
   timeout: 30000,
 })
 
+let refreshPromise = null
+let loginRedirectScheduled = false
+
+function clearStoredSession() {
+  localStorage.removeItem('access_token')
+  localStorage.removeItem('refresh_token')
+}
+
+function redirectToLogin() {
+  if (loginRedirectScheduled) {
+    return
+  }
+
+  loginRedirectScheduled = true
+  window.location.assign('/login')
+}
+
+async function refreshAccessToken(refreshToken) {
+  if (!refreshPromise) {
+    refreshPromise = axios
+      .post('/api/auth/refresh', {
+        refresh_token: refreshToken,
+      })
+      .then(({ data }) => {
+        localStorage.setItem('access_token', data.access_token)
+        if (data.refresh_token) {
+          localStorage.setItem('refresh_token', data.refresh_token)
+        }
+        return data.access_token
+      })
+      .catch((error) => {
+        clearStoredSession()
+        redirectToLogin()
+        throw error
+      })
+      .finally(() => {
+        refreshPromise = null
+      })
+  }
+
+  return refreshPromise
+}
+
 // Request interceptor: attach JWT
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('access_token')
   if (token) {
+    config.headers = config.headers || {}
     config.headers.Authorization = `Bearer ${token}`
   }
   return config
@@ -22,32 +66,36 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
-    const original = error.config
-    if (error.response?.status === 401 && !original._retry) {
+    const original = error.config || {}
+    const status = error.response?.status
+    const isCanceled = error.code === 'ERR_CANCELED'
+    const isRefreshRequest = String(original.url || '').includes('/api/auth/refresh')
+
+    if (status === 401 && !original._retry && !original.skipAuthRefresh && !isRefreshRequest) {
       original._retry = true
       const refreshToken = localStorage.getItem('refresh_token')
       if (refreshToken) {
         try {
-          const { data } = await axios.post('/api/auth/refresh', {
-            refresh_token: refreshToken,
-          })
-          localStorage.setItem('access_token', data.access_token)
-          original.headers.Authorization = `Bearer ${data.access_token}`
+          const accessToken = await refreshAccessToken(refreshToken)
+          original.headers = original.headers || {}
+          original.headers.Authorization = `Bearer ${accessToken}`
           return api(original)
         } catch {
-          localStorage.removeItem('access_token')
-          localStorage.removeItem('refresh_token')
-          window.location.href = '/login'
+          return Promise.reject(error)
         }
       }
+
+      clearStoredSession()
+      redirectToLogin()
     }
-    // Show error toast for non-401 HTTP errors
-    const status = error.response?.status
-    if (status && status !== 401) {
+
+    const skipErrorToast = original.skipErrorToast || original.meta?.skipErrorToast
+    if (!skipErrorToast && !isCanceled && status !== 401) {
       const { showToast } = useToast()
       const message = getApiErrorMessage(error, i18n.global.t)
       showToast(message, 'error')
     }
+
     return Promise.reject(error)
   },
 )

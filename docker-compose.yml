@@ -84,9 +84,9 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       target: builder
-    command:
-      sh -c "corepack enable && corepack prepare pnpm@9.15.4 --activate &&
-      pnpm install --frozen-lockfile --force && pnpm dev --host 0.0.0.0"
+    environment:
+      VITE_API_PROXY_TARGET: http://backend:8000
+    command: sh -c "pnpm dev --host 0.0.0.0"
     volumes:
       - ./frontend:/app
       - /app/node_modules

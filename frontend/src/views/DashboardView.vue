@@ -3,11 +3,10 @@
   import { RouterLink } from 'vue-router'
   import { useI18n } from 'vue-i18n'
   import Button from 'primevue/button'
-  import DataTable from 'primevue/datatable'
-  import Column from 'primevue/column'
   import InputText from 'primevue/inputtext'
   import SelectButton from 'primevue/selectbutton'
   import Tag from 'primevue/tag'
+  import AppDataTable from '../components/AppDataTable.vue'
   import MetricCard from '../components/MetricCard.vue'
   import PageHeader from '../components/PageHeader.vue'
   import LoadingSpinner from '../components/LoadingSpinner.vue'
@@ -204,6 +203,28 @@
       matchesSearch(item.municipality, propertyTypeLabel(item.property_type), item.year),
     ),
   )
+
+  const largestMarketsColumns = computed(() => [
+    { key: 'municipality', label: t('dashboard.municipality'), sortable: true },
+    { key: 'count', label: t('dashboard.transactions'), sortable: true },
+    { key: 'median_price', label: t('dashboard.medianPrice'), sortable: true },
+    { key: 'median_price_per_m2', label: '€/m²', sortable: true },
+  ])
+
+  const regionSnapshotColumns = computed(() => [
+    { key: 'region', label: t('map.region'), sortable: true },
+    { key: 'count', label: t('dashboard.transactions'), sortable: true },
+    { key: 'median_price_per_m2', label: t('dashboard.pricePerM2'), sortable: true },
+  ])
+
+  const latestSalesColumns = computed(() => [
+    { key: 'municipality', label: t('dashboard.municipality'), sortable: true },
+    { key: 'property_type', label: t('predict.propertyType'), sortable: true },
+    { key: 'size_m2', label: t('predict.size'), sortable: true },
+    { key: 'price_eur', label: t('dashboard.medianPrice'), sortable: true },
+    { key: 'price_per_m2', label: '€/m²', sortable: true },
+    { key: 'year', label: t('map.year'), sortable: true },
+  ])
 </script>
 
 <template>
@@ -337,32 +358,22 @@
             </div>
           </div>
 
-          <DataTable
-            :value="largestMarketsRows"
-            paginator
-            :rows="8"
-            size="small"
-            striped-rows
-            responsive-layout="scroll"
-            table-style="min-width: 100%"
+          <AppDataTable
+            :rows="largestMarketsRows"
+            :columns="largestMarketsColumns"
+            row-key="slug"
+            :page-size="8"
+            :empty-message="t('empty.noResults')"
           >
-            <Column field="municipality" :header="t('dashboard.municipality')" sortable>
-              <template #body="{ data }">
-                <RouterLink :to="`/obcine/${data.slug}`" class="table-link">
-                  {{ data.municipality }}
-                </RouterLink>
-              </template>
-            </Column>
-            <Column field="count" :header="t('dashboard.transactions')" sortable>
-              <template #body="{ data }">{{ fmt(data.count) }}</template>
-            </Column>
-            <Column field="median_price" :header="t('dashboard.medianPrice')" sortable>
-              <template #body="{ data }">{{ fmtCurrency(data.median_price) }}</template>
-            </Column>
-            <Column field="median_price_per_m2" header="€/m²" sortable>
-              <template #body="{ data }">{{ fmtCurrency(data.median_price_per_m2) }}</template>
-            </Column>
-          </DataTable>
+            <template #cell-municipality="{ row }">
+              <RouterLink :to="`/obcine/${row.slug}`" class="table-link">
+                {{ row.municipality }}
+              </RouterLink>
+            </template>
+            <template #cell-count="{ row }">{{ fmt(row.count) }}</template>
+            <template #cell-median_price="{ row }">{{ fmtCurrency(row.median_price) }}</template>
+            <template #cell-median_price_per_m2="{ row }">{{ fmtCurrency(row.median_price_per_m2) }}</template>
+          </AppDataTable>
         </article>
 
         <article class="panel">
@@ -373,23 +384,16 @@
             </div>
           </div>
 
-          <DataTable
-            :value="regionSnapshotRows"
-            paginator
-            :rows="8"
-            size="small"
-            striped-rows
-            responsive-layout="scroll"
-            table-style="min-width: 100%"
+          <AppDataTable
+            :rows="regionSnapshotRows"
+            :columns="regionSnapshotColumns"
+            row-key="region"
+            :page-size="8"
+            :empty-message="t('empty.noResults')"
           >
-            <Column field="region" :header="t('map.region')" sortable />
-            <Column field="count" :header="t('dashboard.transactions')" sortable>
-              <template #body="{ data }">{{ fmt(data.count) }}</template>
-            </Column>
-            <Column field="median_price_per_m2" :header="t('dashboard.pricePerM2')" sortable>
-              <template #body="{ data }">{{ fmtCurrency(data.median_price_per_m2) }}</template>
-            </Column>
-          </DataTable>
+            <template #cell-count="{ row }">{{ fmt(row.count) }}</template>
+            <template #cell-median_price_per_m2="{ row }">{{ fmtCurrency(row.median_price_per_m2) }}</template>
+          </AppDataTable>
         </article>
       </section>
 
@@ -452,38 +456,24 @@
           </div>
         </div>
 
-        <DataTable
-          :value="latestSalesRows"
-          paginator
-          :rows="10"
-          size="small"
-          striped-rows
-          responsive-layout="scroll"
-          table-style="min-width: 100%"
+        <AppDataTable
+          :rows="latestSalesRows"
+          :columns="latestSalesColumns"
+          row-key="slug"
+          :page-size="10"
+          :empty-message="t('empty.noResults')"
         >
-          <Column field="municipality" :header="t('dashboard.municipality')" sortable>
-            <template #body="{ data }">
-              <RouterLink :to="`/obcine/${data.slug}`" class="table-link">
-                {{ data.municipality }}
-              </RouterLink>
-            </template>
-          </Column>
-          <Column field="property_type" :header="t('predict.propertyType')" sortable>
-            <template #body="{ data }">{{ propertyTypeLabel(data.property_type) }}</template>
-          </Column>
-          <Column field="size_m2" :header="t('predict.size')" sortable>
-            <template #body="{ data }">{{ fmt(data.size_m2, 1) }} m²</template>
-          </Column>
-          <Column field="price_eur" :header="t('dashboard.medianPrice')" sortable>
-            <template #body="{ data }">{{ fmtCurrency(data.price_eur) }}</template>
-          </Column>
-          <Column field="price_per_m2" header="€/m²" sortable>
-            <template #body="{ data }">{{ fmtCurrency(data.price_per_m2) }}</template>
-          </Column>
-          <Column field="year" :header="t('map.year')" sortable>
-            <template #body="{ data }">{{ data.year || '—' }}</template>
-          </Column>
-        </DataTable>
+          <template #cell-municipality="{ row }">
+            <RouterLink :to="`/obcine/${row.slug}`" class="table-link">
+              {{ row.municipality }}
+            </RouterLink>
+          </template>
+          <template #cell-property_type="{ row }">{{ propertyTypeLabel(row.property_type) }}</template>
+          <template #cell-size_m2="{ row }">{{ fmt(row.size_m2, 1) }} m²</template>
+          <template #cell-price_eur="{ row }">{{ fmtCurrency(row.price_eur) }}</template>
+          <template #cell-price_per_m2="{ row }">{{ fmtCurrency(row.price_per_m2) }}</template>
+          <template #cell-year="{ row }">{{ row.year || '—' }}</template>
+        </AppDataTable>
       </section>
     </template>
   </div>
