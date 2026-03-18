@@ -43,17 +43,20 @@ function translateDetail(detail: string, t: TranslateFunction): string {
   return detail
 }
 
-export function getApiErrorMessage(error: ApiError, t: TranslateFunction): string {
-  const status = error?.response?.status
-  const detail = error?.response?.data?.detail
+export function getApiErrorMessage(error: unknown, t: TranslateFunction): string {
+  const apiError = (error ?? {}) as ApiError
+  const status = apiError.response?.status
+  const detail = apiError.response?.data?.detail
 
   if (detail) return translateDetail(detail, t)
-  if (error?.code === 'ECONNABORTED') return t('error.timeout')
+  if (apiError.code === 'ECONNABORTED') return t('error.timeout')
   if (status === 401) return t('error.unauthorized')
   if (status === 403) return t('error.forbidden')
   if (status === 404) return t('error.notFound')
   if (status === 413) return t('errorDetail.fileTooLarge', { limit: '?' })
   if (status === 429) return t('error.rateLimited')
   if (status && status >= 500) return t('error.server')
-  return error?.message || t('common.error')
+  return apiError.message || t('common.error')
 }
+
+export type { ApiError }

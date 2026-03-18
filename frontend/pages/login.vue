@@ -79,12 +79,17 @@
     }
   }
 
-  function switchLocale(next: string) {
+  function switchLocale(next: 'sl' | 'en') {
     locale.value = next
   }
 
   function toggleTheme() {
     colorMode.preference = colorMode.value === 'dark' ? 'light' : 'dark'
+  }
+
+  function setAuthMode(payload: string | number) {
+    mode.value = Number(payload) === 0 ? 'login' : 'register'
+    error.value = ''
   }
 </script>
 
@@ -180,12 +185,7 @@
             { label: t('auth.registerButton'), value: 'register' },
           ]"
           :model-value="mode === 'login' ? 0 : 1"
-          @update:model-value="
-            (idx: number) => {
-              mode = idx === 0 ? 'login' : 'register'
-              error = ''
-            }
-          "
+          @update:model-value="setAuthMode"
         />
 
         <!-- Form -->

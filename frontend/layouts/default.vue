@@ -1,5 +1,5 @@
 <script setup lang="ts">
-  import { useWindowSize, useLocalStorage } from '@vueuse/core'
+  import { useWindowSize, useLocalStorage } from '#imports'
 
   // ─── Stores & composables ────────────────────────────────────────────────────
   const auth = useAuthStore()

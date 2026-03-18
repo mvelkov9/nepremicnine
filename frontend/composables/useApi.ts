@@ -16,6 +16,26 @@ interface NormalizedError extends Error {
   }
 }
 
+type RawFetchError = FetchError & {
+  response?: {
+    status?: number
+    data?: unknown
+    _data?: unknown
+  }
+  data?: unknown
+  statusCode?: number
+}
+
+interface RequestOptions {
+  method?: string
+  body?: BodyInit | Record<string, any> | null
+  query?: Record<string, unknown>
+  headers?: HeadersInit | Record<string, string>
+  credentials?: RequestCredentials
+}
+
+type RequestFetch = <T>(url: string, options?: RequestOptions) => Promise<T>
+
 function normalizePayload(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(normalizePayload)
   if (value && typeof value === 'object') {
@@ -27,12 +47,10 @@ function normalizePayload(value: unknown): unknown {
 }
 
 function normalizeApiError(error: unknown): NormalizedError {
-  const raw = error as FetchError & {
-    response?: { status: number; _data?: unknown }
-    data?: unknown
-    statusCode?: number
-  }
-  if ((raw as NormalizedError).response?.status) return raw as NormalizedError
+  const raw = error as RawFetchError
+  const normalizedData = normalizePayload(
+    raw.data ?? raw.response?.data ?? raw.response?._data ?? { detail: raw.message || 'Unknown API error' },
+  )
 
   const wrapped = new Error(
     (raw.data as Record<string, string>)?.detail || raw.message || 'API request failed',
@@ -40,17 +58,23 @@ function normalizeApiError(error: unknown): NormalizedError {
   wrapped.code = raw.name === 'AbortError' ? 'ECONNABORTED' : raw.name
   wrapped.response = {
     status: raw.response?.status || raw.statusCode || 500,
-    data: normalizePayload(
-      raw.data || raw.response?._data || { detail: raw.message || 'Unknown API error' },
-    ),
+    data: normalizedData,
   }
   return wrapped
+}
+
+function getRequestFetch(): RequestFetch {
+  if (import.meta.server) {
+    const requestFetch = useRequestFetch()
+    return ((url, options) => requestFetch(url, options as any)) as RequestFetch
+  }
+  return ((url, options) => $fetch(url, options as any)) as RequestFetch
 }
 
 async function refreshAuthCookie(): Promise<void> {
   if (!refreshPromise) {
     refreshPromise = (async () => {
-      const requestFetch = import.meta.server ? useRequestFetch() : $fetch
+      const requestFetch = getRequestFetch()
       await requestFetch('/api/auth/refresh', {
         method: 'POST',
         body: {},
@@ -70,9 +94,10 @@ async function request<T = unknown>(
   config: ApiConfig = {},
   retried = false,
 ): Promise<{ data: T }> {
-  const requestFetch = import.meta.server ? useRequestFetch() : $fetch
+  const requestFetch = getRequestFetch()
 
   const headers: Record<string, string> = { ...(config.headers || {}) }
+  const requestBody = payload as BodyInit | Record<string, any> | null | undefined
   if (payload instanceof FormData) {
     delete headers['Content-Type']
   }
@@ -80,7 +105,7 @@ async function request<T = unknown>(
   try {
     const data = await requestFetch<T>(url, {
       method,
-      body: payload,
+      body: requestBody,
       query: config.params,
       headers,
       credentials: 'include',

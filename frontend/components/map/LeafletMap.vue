@@ -1,4 +1,6 @@
 <script setup lang="ts">
+  import type { LayerGroup, Map as LeafletMap } from 'leaflet'
+
   interface Transaction {
     lat: number
     lng: number
@@ -20,8 +22,8 @@
   }>()
 
   const mapContainer = ref<HTMLElement | null>(null)
-  let map: unknown = null
-  let markersLayer: unknown = null
+  let map: LeafletMap | null = null
+  let markersLayer: LayerGroup | null = null
 
   function getBandColor(pricePerM2: number, thresholds: { low: number; high: number }): string {
     if (pricePerM2 < thresholds.low) return '#22c55e' // green = low
@@ -30,7 +32,7 @@
   }
 
   onMounted(async () => {
-    const L = (await import('leaflet')).default
+    const L = await import('leaflet')
     await import('leaflet/dist/leaflet.css')
     if (!mapContainer.value) return
 
@@ -39,23 +41,23 @@
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors',
       maxZoom: 18,
-    }).addTo(map as L.Map)
+    }).addTo(map)
 
-    markersLayer = L.layerGroup().addTo(map as L.Map)
+    markersLayer = L.layerGroup().addTo(map)
     updateMarkers(L)
   })
 
   watch(
     () => props.transactions,
     async () => {
-      const L = (await import('leaflet')).default
+      const L = await import('leaflet')
       updateMarkers(L)
     },
   )
 
-  function updateMarkers(L: typeof import('leaflet').default) {
+  function updateMarkers(L: typeof import('leaflet')) {
     if (!map || !markersLayer) return
-    ;(markersLayer as L.LayerGroup).clearLayers()
+    markersLayer.clearLayers()
     if (!props.transactions.length) return
 
     const prices = props.transactions.map((t) => t.price_per_m2).sort((a, b) => a - b)
@@ -72,7 +74,7 @@
         color: '#fff',
         weight: 1.5,
         fillOpacity: 0.85,
-      }).addTo(markersLayer as L.LayerGroup)
+      }).addTo(markersLayer)
 
       marker.on('click', () => emit('select', t))
     }
@@ -80,7 +82,7 @@
 
   onUnmounted(() => {
     if (map) {
-      ;(map as L.Map).remove()
+      map.remove()
       map = null
     }
   })

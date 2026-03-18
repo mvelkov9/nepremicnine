@@ -1,4 +1,6 @@
 <script setup lang="ts">
+  const NONE = '_none' as const
+
   definePageMeta({ middleware: ['admin'] })
 
   const { t } = useI18n()
@@ -12,8 +14,10 @@
   const error = ref('')
   const result = ref<PrepareResult | null>(null)
 
+  // Dataset path options for Select
   // ETN mode
   type EtnMode = 'bulk' | 'single' | 'manual'
+  const etnModes: EtnMode[] = ['bulk', 'single', 'manual']
   const etnMode = ref<EtnMode>('bulk')
 
   // Single-pair form
@@ -163,9 +167,6 @@
     { accessorKey: 'rows', header: t('data.rows') },
     { accessorKey: 'detail', header: t('prepare.reportDetail'), enableSorting: false },
   ])
-
-  // Dataset path options for Select
-  const NONE = '_none'
 
   const datasetPathOptions = computed(() => [
     { label: t('prepare.selectFile'), value: NONE },
@@ -329,6 +330,17 @@
     navigateTo('/admin/model')
   }
 
+  function setEtnMode(payload: string | number): void {
+    const nextMode =
+      typeof payload === 'number'
+        ? etnModes[payload]
+        : etnModes.find((mode) => mode === payload)
+
+    if (nextMode) {
+      etnMode.value = nextMode
+    }
+  }
+
   // --- Init ---
 
   useLazyAsyncData('admin-priprava', () =>
@@ -382,9 +394,7 @@
     <!-- Mode tabs -->
     <UTabs
       :items="tabItems"
-      @update:model-value="
-        (idx: number) => (etnMode = (['bulk', 'single', 'manual'] as const)[idx])
-      "
+      @update:model-value="setEtnMode"
     >
       <!-- Bulk ETN -->
       <template #bulk>

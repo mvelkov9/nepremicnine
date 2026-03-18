@@ -38,7 +38,7 @@
     try {
       const { data } = await api.get<UsersResponse>('/api/admin/users')
       users.value = data.items || []
-    } catch (e) {
+    } catch (e: any) {
       error.value = getApiErrorMessage(e, t)
     } finally {
       loading.value = false
@@ -51,7 +51,7 @@
       const { data } = await api.patch<User>(`/api/admin/users/${user.id}`, { role: newRole })
       const idx = users.value.findIndex((u) => u.id === user.id)
       if (idx !== -1) users.value[idx] = data
-    } catch (e) {
+    } catch (e: any) {
       error.value = getApiErrorMessage(e, t)
     }
   }
@@ -63,7 +63,7 @@
       })
       const idx = users.value.findIndex((u) => u.id === user.id)
       if (idx !== -1) users.value[idx] = data
-    } catch (e) {
+    } catch (e: any) {
       error.value = getApiErrorMessage(e, t)
     }
   }
@@ -73,7 +73,7 @@
     try {
       await api.delete(`/api/admin/users/${user.id}`)
       users.value = users.value.filter((u) => u.id !== user.id)
-    } catch (e) {
+    } catch (e: any) {
       error.value = getApiErrorMessage(e, t)
     }
   }

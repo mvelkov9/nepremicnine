@@ -1,7 +1,7 @@
 <script setup lang="ts">
   import { Bar } from 'vue-chartjs'
   import { BarElement, CategoryScale, Chart as ChartJS, LinearScale, Tooltip } from 'chart.js'
-  import { useIntervalFn } from '@vueuse/core'
+  import { useIntervalFn } from '#imports'
 
   ChartJS.register(BarElement, CategoryScale, LinearScale, Tooltip)
 

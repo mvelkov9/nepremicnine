@@ -137,7 +137,7 @@
         threshold: threshold.value,
       })
       result.value = data
-    } catch (e) {
+    } catch (e: any) {
       error.value = getApiErrorMessage(e, t)
     } finally {
       loading.value = false
@@ -156,7 +156,7 @@
         threshold: threshold.value,
       })
       result.value = data
-    } catch (e) {
+    } catch (e: any) {
       error.value = e instanceof SyntaxError ? t('analysis.invalidJson') : getApiErrorMessage(e, t)
     } finally {
       loading.value = false
@@ -406,7 +406,7 @@
         </div>
 
         <div class="table-wrap">
-          <UTable :columns="resultColumns" :data="result.listings ?? []">
+          <UTable :columns="resultColumns" :data="(result.listings ?? []) as Record<string, any>[]">
             <template #property_type-cell="{ row }">
               {{ getPropertyTypeLabel(row.original.property_type, t) }}
             </template>

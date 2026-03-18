@@ -12,20 +12,20 @@
   const segmentHome = ref<Record<string, any> | null>(null)
   const availablePropertyTypes = ref<string[]>([])
 
-  function fmt(value: unknown, decimals = 0) {
+  function fmt(value: any, decimals = 0) {
     return formatNumber(value, { maximumFractionDigits: decimals })
   }
 
-  function fmtCurrency(value: unknown) {
+  function fmtCurrency(value: any) {
     return formatCurrency(value, { minimumFractionDigits: 0, maximumFractionDigits: 0 })
   }
 
-  function fmtPercent(value: unknown) {
+  function fmtPercent(value: any) {
     return formatPercent(value)
   }
 
-  function propertyTypeLabel(value: string) {
-    return getPropertyTypeLabel(value, t)
+  function propertyTypeLabel(value: unknown) {
+    return getPropertyTypeLabel(typeof value === 'string' ? value : '', t)
   }
 
   async function loadDashboard() {
@@ -35,7 +35,7 @@
       availablePropertyTypes.value = (marketHomeData?.property_type_mix || []).map(
         (item: any) => item.property_type,
       )
-    } catch (err) {
+    } catch (err: any) {
       pageError.value = getApiErrorMessage(err, t)
     }
   }

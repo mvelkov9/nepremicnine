@@ -82,7 +82,7 @@
         dataStore.fetchTrainingDataset(),
         dataStore.fetchQualitySummary(),
       ])
-    } catch (e) {
+    } catch (e: any) {
       error.value = getApiErrorMessage(e, t)
     }
   }
@@ -97,7 +97,7 @@
       uploadResult.value = result
       if (fileInput.value) fileInput.value.value = ''
       await Promise.all([dataStore.fetchTrainingDataset(), dataStore.fetchQualitySummary()])
-    } catch (e) {
+    } catch (e: any) {
       error.value = getApiErrorMessage(e, t)
     }
   }
@@ -108,7 +108,7 @@
     try {
       previewData.value = await dataStore.fetchPreview(dataset.id)
       previewOpen.value = true
-    } catch (e) {
+    } catch (e: any) {
       error.value = getApiErrorMessage(e, t)
     }
   }
@@ -118,7 +118,7 @@
     try {
       await dataStore.deleteDataset(id)
       await Promise.all([dataStore.fetchTrainingDataset(), dataStore.fetchQualitySummary()])
-    } catch (e) {
+    } catch (e: any) {
       error.value = getApiErrorMessage(e, t)
     }
   }
@@ -129,7 +129,7 @@
     try {
       await dataStore.deleteAllDatasets()
       await Promise.all([dataStore.fetchTrainingDataset(), dataStore.fetchQualitySummary()])
-    } catch (e) {
+    } catch (e: any) {
       error.value = getApiErrorMessage(e, t)
     }
   }

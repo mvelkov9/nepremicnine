@@ -13,7 +13,7 @@ function activeLocale(): string {
 }
 
 export function formatNumber(
-  value: number | null | undefined,
+  value: unknown,
   options: {
     minimumFractionDigits?: number
     maximumFractionDigits?: number
@@ -29,7 +29,7 @@ export function formatNumber(
 }
 
 export function formatCurrency(
-  value: number | null | undefined,
+  value: unknown,
   options: {
     minimumFractionDigits?: number
     maximumFractionDigits?: number
@@ -47,7 +47,7 @@ export function formatCurrency(
 }
 
 export function formatPercent(
-  value: number | null | undefined,
+  value: unknown,
   options: {
     minimumFractionDigits?: number
     maximumFractionDigits?: number

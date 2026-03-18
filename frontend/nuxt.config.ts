@@ -30,13 +30,6 @@ export default defineNuxtConfig({
       cookieKey: 'i18n_redirected',
       fallbackLocale: 'sl',
     },
-    bundle: {
-      optimizeTranslationDirective: false,
-    },
-  },
-
-  experimental: {
-    typedPages: true,
   },
 
   runtimeConfig: {
