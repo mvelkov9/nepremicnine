@@ -332,9 +332,7 @@
 
   function setEtnMode(payload: string | number): void {
     const nextMode =
-      typeof payload === 'number'
-        ? etnModes[payload]
-        : etnModes.find((mode) => mode === payload)
+      typeof payload === 'number' ? etnModes[payload] : etnModes.find((mode) => mode === payload)
 
     if (nextMode) {
       etnMode.value = nextMode
@@ -392,10 +390,7 @@
     </section>
 
     <!-- Mode tabs -->
-    <UTabs
-      :items="tabItems"
-      @update:model-value="setEtnMode"
-    >
+    <UTabs :items="tabItems" @update:model-value="setEtnMode">
       <!-- Bulk ETN -->
       <template #bulk>
         <section class="card tab-panel">

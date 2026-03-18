@@ -49,7 +49,9 @@ function normalizePayload(value: unknown): unknown {
 function normalizeApiError(error: unknown): NormalizedError {
   const raw = error as RawFetchError
   const normalizedData = normalizePayload(
-    raw.data ?? raw.response?.data ?? raw.response?._data ?? { detail: raw.message || 'Unknown API error' },
+    raw.data ??
+      raw.response?.data ??
+      raw.response?._data ?? { detail: raw.message || 'Unknown API error' },
   )
 
   const wrapped = new Error(
