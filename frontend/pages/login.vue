@@ -88,7 +88,7 @@
   }
 
   function setAuthMode(payload: string | number) {
-    mode.value = Number(payload) === 0 ? 'login' : 'register'
+    mode.value = payload === 'register' || payload === 1 ? 'register' : 'login'
     error.value = ''
   }
 
@@ -189,7 +189,8 @@
             { label: t('auth.loginButton'), value: 'login' },
             { label: t('auth.registerButton'), value: 'register' },
           ]"
-          :model-value="mode === 'login' ? 0 : 1"
+          v-model="mode"
+          :content="false"
           @update:model-value="setAuthMode"
         />
 

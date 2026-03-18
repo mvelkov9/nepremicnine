@@ -148,12 +148,16 @@
   const toast = useToast()
   const profileOpen = ref(false)
   const profileName = ref(auth.user?.full_name ?? '')
+  const profileAvatarUrl = ref(auth.user?.avatar_url ?? '')
   const profileSaving = ref(false)
 
   async function saveProfile(): Promise<void> {
     profileSaving.value = true
     try {
-      await auth.updateProfile({ full_name: profileName.value })
+      await auth.updateProfile({
+        full_name: profileName.value.trim(),
+        avatar_url: profileAvatarUrl.value.trim() || null,
+      })
       profileOpen.value = false
       toast.add({
         title: t('layout.profileSaved'),
@@ -173,9 +177,10 @@
         icon: 'i-lucide-user',
         onSelect() {
           profileName.value = auth.user?.full_name ?? ''
-          setTimeout(() => {
+          profileAvatarUrl.value = auth.user?.avatar_url ?? ''
+          requestAnimationFrame(() => {
             profileOpen.value = true
-          }, 150)
+          })
         },
       },
     ],
@@ -387,7 +392,7 @@
               </button>
 
               <!-- User profile dropdown -->
-              <UDropdownMenu :items="userMenuItems" :ui="{ content: 'w-52' }">
+              <UDropdownMenu :items="userMenuItems" :modal="false" :content="{ sideOffset: 12 }">
                 <button type="button" class="profile-pill" :aria-label="userDisplayName">
                   <UAvatar
                     :src="auth.user?.avatar_url ?? undefined"
@@ -430,8 +435,7 @@
     >
       <template #body>
         <form class="auth-form" @submit.prevent="saveProfile">
-          <div class="field">
-            <label for="profile-name" class="form-label">{{ t('layout.profile') }}</label>
+          <UFormField :label="t('layout.profile')" name="profile-name">
             <UInput
               id="profile-name"
               v-model="profileName"
@@ -439,7 +443,22 @@
               :placeholder="t('layout.profilePlaceholder')"
               size="lg"
             />
-          </div>
+          </UFormField>
+
+          <UFormField
+            :label="t('layout.avatarUrl')"
+            name="profile-avatar"
+            :help="t('layout.avatarHint')"
+          >
+            <UInput
+              id="profile-avatar"
+              v-model="profileAvatarUrl"
+              type="url"
+              :placeholder="t('layout.avatarPlaceholder')"
+              autocomplete="url"
+              size="lg"
+            />
+          </UFormField>
 
           <div class="actions-row">
             <UButton
@@ -449,7 +468,7 @@
               :disabled="profileSaving"
               icon="i-lucide-check"
             >
-              {{ profileSaving ? t('layout.savingProfile') : t('auth.loginButton', 'Save') }}
+              {{ profileSaving ? t('layout.savingProfile') : t('common.save', 'Save') }}
             </UButton>
             <UButton type="button" color="neutral" variant="soft" @click="profileOpen = false">
               {{ t('auth.cancel', 'Cancel') }}

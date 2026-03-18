@@ -11,6 +11,13 @@
   const previewOpen = ref(false)
   const previewData = ref<any>(null)
   const previewName = ref('')
+  const uploadSummary = computed(() => {
+    const files = fileInput.value?.files
+    if (!files?.length) return ''
+    return Array.from(files)
+      .map((file) => file.name)
+      .join(', ')
+  })
 
   // Computed
   const qualitySummary = computed(() => dataStore.qualitySummary)
@@ -100,6 +107,10 @@
     } catch (e: any) {
       error.value = getApiErrorMessage(e, t)
     }
+  }
+
+  function triggerFilePicker() {
+    fileInput.value?.click()
   }
 
   async function showPreview(dataset: any) {
@@ -214,6 +225,16 @@
           class="file-input"
           :aria-label="t('data.upload')"
         />
+        <div class="upload-picker">
+          <UButton
+            icon="i-lucide-files"
+            color="neutral"
+            variant="soft"
+            :label="t('data.upload')"
+            @click="triggerFilePicker"
+          />
+          <span class="muted upload-summary">{{ uploadSummary || t('data.uploadHint') }}</span>
+        </div>
         <UButton
           icon="i-lucide-upload"
           :loading="dataStore.uploading"
@@ -411,39 +432,36 @@
   }
 
   .upload-shell {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.75rem;
+    align-items: center;
+  }
+
+  .upload-picker {
     display: flex;
     align-items: center;
     gap: 0.75rem;
-    flex-wrap: wrap;
+    min-width: 0;
   }
 
   .file-input {
-    flex: 1;
-    min-width: min(100%, 28rem);
-    padding: 0.85rem 1rem;
-    border-radius: 1.25rem;
-    border: 1px dashed color-mix(in srgb, var(--border) 88%, transparent);
-    background: linear-gradient(
-      145deg,
-      color-mix(in srgb, var(--surface-soft-strong) 92%, transparent),
-      color-mix(in srgb, var(--primary) 6%, transparent)
-    );
-    transition: border-color 180ms ease;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
 
-  .file-input:hover {
-    border-color: color-mix(in srgb, var(--primary) 28%, var(--border));
-  }
-
-  .file-input::file-selector-button {
-    margin-right: 0.9rem;
-    padding: 0.5rem 0.85rem;
-    border-radius: 999px;
-    border: 1px solid color-mix(in srgb, var(--primary) 22%, transparent);
-    background: color-mix(in srgb, var(--primary) 10%, transparent);
-    color: var(--primary);
-    font-weight: 700;
-    cursor: pointer;
+  .upload-summary {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .upload-result {
@@ -479,6 +497,15 @@
     .section-head {
       flex-direction: column;
       align-items: stretch;
+    }
+
+    .upload-shell {
+      grid-template-columns: 1fr;
+    }
+
+    .upload-picker {
+      flex-direction: column;
+      align-items: flex-start;
     }
   }
 </style>

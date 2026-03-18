@@ -48,9 +48,9 @@
 
   // ---- Municipality autocomplete ----
   const allMunicipalities = ref<any[]>([])
-  const municipalityQuery = ref(form.municipality)
+  const municipalitySearchTerm = ref(form.municipality)
   const municipalityOptions = computed(() => {
-    const q = municipalityQuery.value.trim().toLowerCase()
+    const q = municipalitySearchTerm.value.trim().toLowerCase()
     const list = q
       ? allMunicipalities.value.filter((m: any) => m.municipality.toLowerCase().includes(q))
       : allMunicipalities.value
@@ -60,9 +60,12 @@
     }))
   })
 
-  watch(municipalityQuery, (v) => {
-    form.municipality = v
-  })
+  watch(
+    () => form.municipality,
+    (value) => {
+      municipalitySearchTerm.value = value
+    },
+  )
 
   // ---- Derived ----
   const municipalityIndex = computed(
@@ -322,7 +325,8 @@
               <label class="field">
                 <span class="form-label">{{ t('predict.municipality') }} *</span>
                 <USelectMenu
-                  v-model="municipalityQuery"
+                  v-model="form.municipality"
+                  v-model:search-term="municipalitySearchTerm"
                   :items="municipalityOptions"
                   :search-input="{ placeholder: t('predict.municipalityPlaceholder') }"
                   value-key="value"

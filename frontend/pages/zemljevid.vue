@@ -163,6 +163,10 @@
     detailOpen.value = true
   }
 
+  function openTransaction(tx: any) {
+    onMarkerSelect(tx)
+  }
+
   function openMunicipality() {
     if (!selectedRecord.value?.municipality) return
     const slug = selectedRecord.value.municipality.toLowerCase().replace(/\s+/g, '-')
@@ -271,53 +275,60 @@
       </ClientOnly>
     </section>
 
-    <!-- Detail slide panel -->
-    <Transition name="slide-panel">
-      <section v-if="detailOpen && selectedRecord" class="detail-panel">
-        <div class="detail-head">
-          <div>
-            <p class="eyebrow">{{ t('map.transactionDetail') }}</p>
-            <h2>{{ selectedRecord.municipality }}</h2>
-            <p class="muted">
-              {{ getPropertyTypeLabel(selectedRecord.property_type, t) }}
-              <span v-if="selectedRecord.year"> · {{ selectedRecord.year }}</span>
-            </p>
+    <UModal
+      v-model:open="detailOpen"
+      :title="selectedRecord?.municipality || t('map.transactionDetail')"
+      :description="
+        selectedRecord
+          ? `${getPropertyTypeLabel(selectedRecord.property_type, t)}${selectedRecord.year ? ` · ${selectedRecord.year}` : ''}`
+          : t('map.transactionDetail')
+      "
+      :ui="{ content: 'sm:max-w-3xl' }"
+    >
+      <template #body>
+        <div v-if="selectedRecord" class="detail-panel modal-detail-panel">
+          <div class="detail-kpis">
+            <KpiCard
+              :label="t('dashboard.medianPrice')"
+              :value="formatCurrency(selectedRecord.price_eur)"
+            />
+            <KpiCard
+              :label="t('dashboard.pricePerM2')"
+              :value="formatCurrency(selectedRecord.price_per_m2)"
+            />
+            <KpiCard
+              :label="t('predict.size')"
+              :value="`${formatNumber(selectedRecord.size_m2, { maximumFractionDigits: 1 })} m²`"
+            />
+            <KpiCard
+              v-if="selectedRecord.year"
+              :label="t('map.yearFilter')"
+              :value="selectedRecord.year"
+            />
           </div>
-          <UButton
-            icon="i-lucide-x"
-            color="neutral"
-            variant="ghost"
-            size="sm"
-            :aria-label="t('common.close')"
-            @click="detailOpen = false"
-          />
-        </div>
 
-        <div class="detail-kpis">
-          <KpiCard
-            :label="t('dashboard.medianPrice')"
-            :value="formatCurrency(selectedRecord.price_eur)"
-          />
-          <KpiCard
-            :label="t('dashboard.pricePerM2')"
-            :value="formatCurrency(selectedRecord.price_per_m2)"
-          />
-          <KpiCard
-            :label="t('predict.size')"
-            :value="`${formatNumber(selectedRecord.size_m2, { maximumFractionDigits: 1 })} m²`"
-          />
-          <KpiCard
-            v-if="selectedRecord.year"
-            :label="t('map.yearFilter')"
-            :value="selectedRecord.year"
-          />
+          <div class="detail-meta-grid">
+            <div class="detail-meta-item">
+              <span class="muted">{{ t('dashboard.municipality') }}</span>
+              <strong>{{ selectedRecord.municipality }}</strong>
+            </div>
+            <div v-if="selectedRecord.region" class="detail-meta-item">
+              <span class="muted">{{ t('map.region') }}</span>
+              <strong>{{ selectedRecord.region }}</strong>
+            </div>
+            <div class="detail-meta-item">
+              <span class="muted">{{ t('predict.propertyType') }}</span>
+              <strong>{{ getPropertyTypeLabel(selectedRecord.property_type, t) }}</strong>
+            </div>
+            <div v-if="selectedRecord.year" class="detail-meta-item">
+              <span class="muted">{{ t('map.yearFilter') }}</span>
+              <strong>{{ selectedRecord.year }}</strong>
+            </div>
+          </div>
         </div>
+      </template>
 
-        <div v-if="selectedRecord.region" class="detail-meta">
-          <span class="muted">{{ t('map.region') }}:</span>
-          <strong>{{ selectedRecord.region }}</strong>
-        </div>
-
+      <template #footer>
         <div class="detail-actions">
           <UButton
             icon="i-lucide-bolt"
@@ -331,9 +342,16 @@
             :label="t('municipality.openMunicipality')"
             @click="openMunicipality"
           />
+          <UButton
+            icon="i-lucide-x"
+            variant="ghost"
+            color="neutral"
+            :label="t('common.close')"
+            @click="detailOpen = false"
+          />
         </div>
-      </section>
-    </Transition>
+      </template>
+    </UModal>
 
     <!-- Activity feed -->
     <section class="panel">
@@ -376,6 +394,17 @@
           </template>
           <template #price_per_m2-cell="{ row }">
             {{ formatCurrency(row.original.price_per_m2) }}
+          </template>
+          <template #year-cell="{ row }">
+            <UButton
+              variant="ghost"
+              color="neutral"
+              icon="i-lucide-eye"
+              size="sm"
+              @click="openTransaction(row.original)"
+            >
+              {{ row.original.year }}
+            </UButton>
           </template>
         </UTable>
       </div>
@@ -523,49 +552,38 @@
       var(--shadow-sm);
   }
 
-  .detail-head {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 1rem;
-  }
-
-  .detail-head h2 {
-    margin: 0.25rem 0 0;
-    font-family: var(--font-display);
-    font-size: 1.5rem;
-  }
-
   .detail-kpis {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 0.75rem;
   }
 
-  .detail-meta {
-    display: flex;
-    gap: 0.5rem;
-    align-items: center;
-    font-size: 0.88rem;
+  .modal-detail-panel {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .detail-meta-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.85rem;
+  }
+
+  .detail-meta-item {
+    display: grid;
+    gap: 0.25rem;
+    padding: 0.95rem 1rem;
+    border-radius: 1rem;
+    border: 1px solid var(--border);
+    background: color-mix(in srgb, var(--surface-soft) 92%, transparent);
   }
 
   .detail-actions {
     display: flex;
     gap: 0.75rem;
     flex-wrap: wrap;
-  }
-
-  .slide-panel-enter-active,
-  .slide-panel-leave-active {
-    transition:
-      opacity 200ms ease,
-      transform 200ms ease;
-  }
-
-  .slide-panel-enter-from,
-  .slide-panel-leave-to {
-    opacity: 0;
-    transform: translateY(-8px);
   }
 
   @media (max-width: 900px) {
@@ -575,6 +593,10 @@
 
     .detail-kpis {
       grid-template-columns: 1fr 1fr;
+    }
+
+    .detail-meta-grid {
+      grid-template-columns: 1fr;
     }
   }
 </style>

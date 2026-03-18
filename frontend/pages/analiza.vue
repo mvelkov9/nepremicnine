@@ -40,17 +40,13 @@
 
   // Municipality autocomplete
   const allMunicipalities = ref<any[]>([])
-  const municipalityQuery = ref('')
+  const municipalitySearchTerm = ref('')
   const municipalityOptions = computed(() => {
-    const q = municipalityQuery.value.trim().toLowerCase()
+    const q = municipalitySearchTerm.value.trim().toLowerCase()
     const list = q
       ? allMunicipalities.value.filter((m: any) => m.municipality.toLowerCase().includes(q))
       : allMunicipalities.value
     return list.slice(0, 14).map((m: any) => ({ label: m.municipality, value: m.municipality }))
-  })
-
-  watch(municipalityQuery, (v) => {
-    guidedForm.municipality = v
   })
 
   // Property types
@@ -228,7 +224,8 @@
             <label class="field">
               <span class="form-label">{{ t('predict.municipality') }}</span>
               <USelectMenu
-                v-model="municipalityQuery"
+                v-model="guidedForm.municipality"
+                v-model:search-term="municipalitySearchTerm"
                 :items="municipalityOptions"
                 :search-input="{ placeholder: t('predict.municipalityPlaceholder') }"
                 value-key="value"
@@ -288,27 +285,18 @@
 
           <!-- Flags -->
           <div class="flag-row">
-            <label
+            <div
               v-for="flag in flags"
               :key="flag.key"
               class="focus-chip"
               :class="{ active: (guidedForm as any)[flag.key] === 1 }"
             >
-              <input
-                type="checkbox"
-                class="sr-only"
-                :checked="(guidedForm as any)[flag.key] === 1"
-                @change="
-                  (guidedForm as any)[flag.key] = (guidedForm as any)[flag.key] === 1 ? 0 : 1
-                "
-              />
-              <span
-                class="toggle-indicator"
-                :class="{ on: (guidedForm as any)[flag.key] === 1 }"
-                aria-hidden="true"
+              <USwitch
+                :model-value="(guidedForm as any)[flag.key] === 1"
+                @update:model-value="(v: boolean) => ((guidedForm as any)[flag.key] = v ? 1 : 0)"
               />
               <span>{{ t(`predict.${flag.label}`) }}</span>
-            </label>
+            </div>
           </div>
 
           <div class="actions-row">
