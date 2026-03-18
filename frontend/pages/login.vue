@@ -180,7 +180,12 @@
             { label: t('auth.registerButton'), value: 'register' },
           ]"
           :model-value="mode === 'login' ? 0 : 1"
-          @update:model-value="(idx: number) => { mode = idx === 0 ? 'login' : 'register'; error = '' }"
+          @update:model-value="
+            (idx: number) => {
+              mode = idx === 0 ? 'login' : 'register'
+              error = ''
+            }
+          "
         />
 
         <!-- Form -->
@@ -248,7 +253,10 @@
             variant="link"
             size="sm"
             :padded="false"
-            @click="mode = mode === 'login' ? 'register' : 'login'; error = ''"
+            @click="
+              mode = mode === 'login' ? 'register' : 'login'
+              error = ''
+            "
           >
             {{ mode === 'login' ? t('auth.registerButton') : t('auth.loginButton') }}
           </UButton>

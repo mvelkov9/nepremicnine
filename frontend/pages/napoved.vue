@@ -461,11 +461,7 @@
           <section class="story-block">
             <div class="story-head">
               <h3>{{ t('predict.featuresUsed') }}</h3>
-              <UButton
-                variant="link"
-                size="xs"
-                @click="loadContext(result.predicted_price_eur)"
-              >
+              <UButton variant="link" size="xs" @click="loadContext(result.predicted_price_eur)">
                 {{ t('common.retry') }}
               </UButton>
             </div>
@@ -721,7 +717,6 @@
       0 18px 30px rgb(15 23 42 / 12%);
   }
 
-
   .form-actions {
     display: flex;
     justify-content: flex-start;
@@ -760,7 +755,6 @@
     font-family: var(--font-display);
     font-size: 1rem;
   }
-
 
   .estimate-card {
     padding: 1.25rem;
@@ -904,7 +898,6 @@
     display: block;
     font-size: 1.05rem;
   }
-
 
   .empty-state {
     display: flex;

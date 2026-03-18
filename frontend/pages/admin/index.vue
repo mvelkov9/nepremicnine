@@ -156,7 +156,15 @@
         <USkeleton v-for="n in 4" :key="n" class="h-24 w-full rounded-xl" />
       </template>
       <template v-else>
-        <KpiCard v-for="card in statCards" :key="card.label" :label="card.label" :value="card.value" :meta="card.meta" :icon="card.icon" :color-class="card.colorClass" />
+        <KpiCard
+          v-for="card in statCards"
+          :key="card.label"
+          :label="card.label"
+          :value="card.value"
+          :meta="card.meta"
+          :icon="card.icon"
+          :color-class="card.colorClass"
+        />
       </template>
     </section>
 

@@ -139,7 +139,11 @@
           </template>
 
           <template #role-cell="{ row }">
-            <UBadge :label="row.original.role" :color="roleBadgeColor(row.original.role)" variant="soft" />
+            <UBadge
+              :label="row.original.role"
+              :color="roleBadgeColor(row.original.role)"
+              variant="soft"
+            />
           </template>
 
           <template #is_active-cell="{ row }">
@@ -161,7 +165,9 @@
                 variant="outline"
                 color="neutral"
                 :aria-label="`${row.original.role === 'admin' ? t('admin.makeViewer') : t('admin.makeAdmin')} - ${row.original.full_name}`"
-                :label="row.original.role === 'admin' ? t('admin.makeViewer') : t('admin.makeAdmin')"
+                :label="
+                  row.original.role === 'admin' ? t('admin.makeViewer') : t('admin.makeAdmin')
+                "
                 @click="toggleRole(row.original)"
               />
               <UButton

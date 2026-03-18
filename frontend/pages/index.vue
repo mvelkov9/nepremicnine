@@ -272,7 +272,13 @@
       </div>
 
       <div class="hero-summary">
-        <KpiCard v-for="card in summaryCards" :key="card.label" :label="card.label" :value="card.value" :meta="card.meta" />
+        <KpiCard
+          v-for="card in summaryCards"
+          :key="card.label"
+          :label="card.label"
+          :value="card.value"
+          :meta="card.meta"
+        />
       </div>
     </section>
 
@@ -348,7 +354,13 @@
 
         <template v-else-if="segmentHome">
           <div class="segment-kpi-grid">
-            <KpiCard v-for="card in segmentCards" :key="card.label" :label="card.label" :value="card.value" :meta="card.meta" />
+            <KpiCard
+              v-for="card in segmentCards"
+              :key="card.label"
+              :label="card.label"
+              :value="card.value"
+              :meta="card.meta"
+            />
           </div>
 
           <div v-if="segmentHome.largest_markets?.length" class="leader-list">
@@ -399,7 +411,11 @@
                 {{ fmtCurrency(row.original.median_price_per_m2) }}
               </template>
             </UTable>
-            <p v-if="!largestMarketsRows.length" class="muted" style="text-align: center; padding: 2rem">
+            <p
+              v-if="!largestMarketsRows.length"
+              class="muted"
+              style="text-align: center; padding: 2rem"
+            >
               {{ t('common.noData') }}
             </p>
           </div>
@@ -421,7 +437,11 @@
                 {{ fmtCurrency(row.original.median_price_per_m2) }}
               </template>
             </UTable>
-            <p v-if="!regionSnapshotRows.length" class="muted" style="text-align: center; padding: 2rem">
+            <p
+              v-if="!regionSnapshotRows.length"
+              class="muted"
+              style="text-align: center; padding: 2rem"
+            >
               {{ t('common.noData') }}
             </p>
           </div>
@@ -504,9 +524,7 @@
             <template #property_type-cell="{ row }">
               {{ propertyTypeLabel(row.original.property_type) }}
             </template>
-            <template #size_m2-cell="{ row }">
-              {{ fmt(row.original.size_m2, 1) }} m²
-            </template>
+            <template #size_m2-cell="{ row }"> {{ fmt(row.original.size_m2, 1) }} m² </template>
             <template #price_eur-cell="{ row }">
               {{ fmtCurrency(row.original.price_eur) }}
             </template>

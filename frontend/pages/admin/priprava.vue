@@ -370,7 +370,13 @@
 
     <!-- Highlights -->
     <section class="highlights-grid">
-      <KpiCard v-for="card in prepareHighlights" :key="card.label" :label="card.label" :value="card.value" :meta="card.meta" />
+      <KpiCard
+        v-for="card in prepareHighlights"
+        :key="card.label"
+        :label="card.label"
+        :value="card.value"
+        :meta="card.meta"
+      />
     </section>
 
     <!-- Mode tabs -->
@@ -482,7 +488,14 @@
             <UButton
               icon="i-lucide-cog"
               :loading="loading"
-              :disabled="loading || trainingLocked || !singlePosli || singlePosli === NONE || !singleDelistavb || singleDelistavb === NONE"
+              :disabled="
+                loading ||
+                trainingLocked ||
+                !singlePosli ||
+                singlePosli === NONE ||
+                !singleDelistavb ||
+                singleDelistavb === NONE
+              "
               :label="loading ? t('common.loading') : t('prepare.prepareButton')"
               @click="prepareEtnSingle"
             />
@@ -520,7 +533,9 @@
             <UButton
               icon="i-lucide-cog"
               :loading="loading"
-              :disabled="loading || trainingLocked || !manualCsvPath || manualCsvPath === NONE || !columnMap"
+              :disabled="
+                loading || trainingLocked || !manualCsvPath || manualCsvPath === NONE || !columnMap
+              "
               :label="loading ? t('common.loading') : t('prepare.prepareButton')"
               @click="prepareManual"
             />
@@ -549,9 +564,20 @@
 
       <!-- KPI summary -->
       <div class="kpi-grid">
-        <KpiCard :label="t('prepare.outputRows')" :value="fmt(result.rows || result.total_rows || 0)" />
-        <KpiCard v-if="result.columns" :label="t('prepare.outputColumns')" :value="fmt(result.columns?.length || 0)" />
-        <KpiCard v-if="result.per_year" :label="t('prepare.yearsCovered')" :value="fmt(Object.keys(result.per_year).length)" />
+        <KpiCard
+          :label="t('prepare.outputRows')"
+          :value="fmt(result.rows || result.total_rows || 0)"
+        />
+        <KpiCard
+          v-if="result.columns"
+          :label="t('prepare.outputColumns')"
+          :value="fmt(result.columns?.length || 0)"
+        />
+        <KpiCard
+          v-if="result.per_year"
+          :label="t('prepare.yearsCovered')"
+          :value="fmt(Object.keys(result.per_year).length)"
+        />
       </div>
 
       <!-- Per-year breakdown -->

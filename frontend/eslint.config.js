@@ -4,14 +4,7 @@ import tsParser from '@typescript-eslint/parser'
 
 export default [
   {
-    ignores: [
-      '.nuxt*/',
-      '.output*/',
-      '.vite-cache/',
-      '.pnpm-store/',
-      'dist/',
-      'node_modules/',
-    ],
+    ignores: ['.nuxt*/', '.output*/', '.vite-cache/', '.pnpm-store/', 'dist/', 'node_modules/'],
   },
   ...pluginVue.configs['flat/recommended'],
   {

@@ -164,7 +164,13 @@
 
       <!-- KPI cards -->
       <div class="kpi-grid">
-        <KpiCard v-for="card in kpiCards" :key="card.label" :label="card.label" :value="card.value" :meta="card.meta" />
+        <KpiCard
+          v-for="card in kpiCards"
+          :key="card.label"
+          :label="card.label"
+          :value="card.value"
+          :meta="card.meta"
+        />
       </div>
 
       <!-- Training dataset status -->
@@ -358,7 +364,9 @@
             </p>
             <div class="table-wrap" style="max-height: 420px; overflow-y: auto">
               <UTable
-                :columns="(previewData.columns ?? []).map((c: string) => ({ accessorKey: c, header: c }))"
+                :columns="
+                  (previewData.columns ?? []).map((c: string) => ({ accessorKey: c, header: c }))
+                "
                 :data="previewData.rows ?? []"
               />
             </div>

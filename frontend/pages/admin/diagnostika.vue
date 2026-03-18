@@ -488,7 +488,11 @@
         <div v-else class="table-wrap">
           <UTable :columns="perTypeColumns" :data="perTypeRows">
             <template #r2-cell="{ row }">
-              <UBadge :label="row.original.r2" :color="r2Color(row.original.r2_raw)" variant="soft" />
+              <UBadge
+                :label="row.original.r2"
+                :color="r2Color(row.original.r2_raw)"
+                variant="soft"
+              />
             </template>
           </UTable>
         </div>

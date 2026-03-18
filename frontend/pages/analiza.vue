@@ -412,7 +412,9 @@
             </template>
             <template #size_m2-cell="{ row }">
               {{
-                formatNumber(row.original.uporabna_povrsina || row.original.size_m2, { maximumFractionDigits: 1 })
+                formatNumber(row.original.uporabna_povrsina || row.original.size_m2, {
+                  maximumFractionDigits: 1,
+                })
               }}
               m²
             </template>
@@ -429,7 +431,11 @@
               {{ formatNumber(row.original.deviation_percent, { maximumFractionDigits: 1 }) }}%
             </template>
             <template #label-cell="{ row }">
-              <UBadge :label="labelText(row.original.label)" :color="labelColor(row.original.label)" variant="soft" />
+              <UBadge
+                :label="labelText(row.original.label)"
+                :color="labelColor(row.original.label)"
+                variant="soft"
+              />
             </template>
           </UTable>
         </div>

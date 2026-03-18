@@ -11,7 +11,9 @@
   const selectedYear = ref(route.query.year ? String(route.query.year) : ALL)
   const selectedRegion = ref(route.query.region ? String(route.query.region) : ALL)
   const selectedType = ref(route.query.type ? String(route.query.type) : ALL)
-  const selectedMunicipality = ref(route.query.municipality ? String(route.query.municipality) : ALL)
+  const selectedMunicipality = ref(
+    route.query.municipality ? String(route.query.municipality) : ALL,
+  )
 
   // Data
   const loading = ref(false)
@@ -66,9 +68,10 @@
   ])
 
   const municipalityOptions = computed(() => {
-    const base = selectedRegion.value && selectedRegion.value !== ALL
-      ? allMunicipalities.value.filter((m) => m.region === selectedRegion.value)
-      : allMunicipalities.value
+    const base =
+      selectedRegion.value && selectedRegion.value !== ALL
+        ? allMunicipalities.value.filter((m) => m.region === selectedRegion.value)
+        : allMunicipalities.value
     return [
       { label: t('map.allMunicipalities'), value: ALL },
       ...base.map((m) => ({ label: m.municipality, value: m.municipality })),
@@ -121,7 +124,9 @@
       if (selectedYear.value === ALL && availableYears.value.length) {
         const currentYear = new Date().getFullYear()
         selectedYear.value =
-          availableYears.value.find((y) => Number(y) < currentYear) ?? availableYears.value[0] ?? ALL
+          availableYears.value.find((y) => Number(y) < currentYear) ??
+          availableYears.value[0] ??
+          ALL
       }
 
       metaLoaded.value = true
@@ -136,9 +141,12 @@
     try {
       const params: Record<string, string> = {}
       if (selectedYear.value && selectedYear.value !== ALL) params.year = selectedYear.value
-      if (selectedRegion.value && selectedRegion.value !== ALL) params.statistical_region = selectedRegion.value
-      if (selectedType.value && selectedType.value !== ALL) params.property_type = selectedType.value
-      if (selectedMunicipality.value && selectedMunicipality.value !== ALL) params.municipality = selectedMunicipality.value
+      if (selectedRegion.value && selectedRegion.value !== ALL)
+        params.statistical_region = selectedRegion.value
+      if (selectedType.value && selectedType.value !== ALL)
+        params.property_type = selectedType.value
+      if (selectedMunicipality.value && selectedMunicipality.value !== ALL)
+        params.municipality = selectedMunicipality.value
 
       const txRes = await api.get('/api/stats/map-transactions', { params })
       transactions.value = (txRes.data as any)?.transactions ?? []
@@ -219,7 +227,11 @@
         </label>
         <label class="filter-field">
           <span>{{ t('dashboard.municipality') }}</span>
-          <USelectMenu v-model="selectedMunicipality" :items="municipalityOptions" value-key="value" />
+          <USelectMenu
+            v-model="selectedMunicipality"
+            :items="municipalityOptions"
+            value-key="value"
+          />
         </label>
       </div>
     </section>
@@ -282,10 +294,23 @@
         </div>
 
         <div class="detail-kpis">
-          <KpiCard :label="t('dashboard.medianPrice')" :value="formatCurrency(selectedRecord.price_eur)" />
-          <KpiCard :label="t('dashboard.pricePerM2')" :value="formatCurrency(selectedRecord.price_per_m2)" />
-          <KpiCard :label="t('predict.size')" :value="`${formatNumber(selectedRecord.size_m2, { maximumFractionDigits: 1 })} m²`" />
-          <KpiCard v-if="selectedRecord.year" :label="t('map.yearFilter')" :value="selectedRecord.year" />
+          <KpiCard
+            :label="t('dashboard.medianPrice')"
+            :value="formatCurrency(selectedRecord.price_eur)"
+          />
+          <KpiCard
+            :label="t('dashboard.pricePerM2')"
+            :value="formatCurrency(selectedRecord.price_per_m2)"
+          />
+          <KpiCard
+            :label="t('predict.size')"
+            :value="`${formatNumber(selectedRecord.size_m2, { maximumFractionDigits: 1 })} m²`"
+          />
+          <KpiCard
+            v-if="selectedRecord.year"
+            :label="t('map.yearFilter')"
+            :value="selectedRecord.year"
+          />
         </div>
 
         <div v-if="selectedRecord.region" class="detail-meta">
