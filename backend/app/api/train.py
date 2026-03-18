@@ -20,6 +20,7 @@ from app.database import get_db
 from app.dependencies.auth import get_current_user, require_admin
 from app.models.training_job import JobStatus, TrainingJob
 from app.models.user import User
+from app.rate_limit import limiter
 from app.schemas.model import TrainJobResponse, TrainRequest, TrainStatusResponse
 from app.tasks.training_worker import JOB_PREFIX, _parse_redis_url
 from app.utils.cache import invalidate_request_caches
@@ -166,7 +167,9 @@ async def _reconcile_active_job(db: AsyncSession, redis) -> tuple[TrainingJob | 
 
 
 @router.post("/start", response_model=TrainStatusResponse)
+@limiter.limit("3/hour")
 async def start_training(
+    request: Request,
     req: TrainRequest,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_admin),
@@ -283,38 +286,39 @@ async def list_jobs(
     _user: User = Depends(get_current_user),
 ):
     """List all training jobs (most recent first)."""
-    # Count total
-    count_result = await db.execute(select(func.count(TrainingJob.id)))
-    total = count_result.scalar() or 0
+    offset = (page - 1) * per_page
+    stmt = (
+        select(TrainingJob, func.count(TrainingJob.id).over().label("total_count"))
+        .order_by(TrainingJob.created_at.desc())
+        .offset(offset)
+        .limit(per_page)
+    )
+    rows = (await db.execute(stmt)).all()
+    total = rows[0].total_count if rows else 0
     pages = math.ceil(total / per_page) if total > 0 else 0
 
-    offset = (page - 1) * per_page
-    result = await db.execute(
-        select(TrainingJob).order_by(TrainingJob.created_at.desc()).offset(offset).limit(per_page)
-    )
-    jobs = result.scalars().all()
     items = [
         TrainJobResponse(
-            id=j.id,
-            job_id=j.job_id,
-            status=j.status.value if isinstance(j.status, JobStatus) else j.status,
-            stage=j.stage,
-            progress=j.progress,
-            rows=j.rows,
-            current_model=j.current_model,
-            current_model_index=j.current_model_index,
-            total_models=j.total_models,
-            current_model_progress=j.current_model_progress,
-            fitted_trees=j.fitted_trees,
-            total_trees=j.total_trees,
-            elapsed_sec=j.elapsed_sec,
-            eta_sec=j.eta_sec,
-            duration_sec=j.duration_sec,
-            error=j.error,
-            created_at=j.created_at.isoformat(),
-            updated_at=j.updated_at.isoformat(),
+            id=r.TrainingJob.id,
+            job_id=r.TrainingJob.job_id,
+            status=r.TrainingJob.status.value if isinstance(r.TrainingJob.status, JobStatus) else r.TrainingJob.status,
+            stage=r.TrainingJob.stage,
+            progress=r.TrainingJob.progress,
+            rows=r.TrainingJob.rows,
+            current_model=r.TrainingJob.current_model,
+            current_model_index=r.TrainingJob.current_model_index,
+            total_models=r.TrainingJob.total_models,
+            current_model_progress=r.TrainingJob.current_model_progress,
+            fitted_trees=r.TrainingJob.fitted_trees,
+            total_trees=r.TrainingJob.total_trees,
+            elapsed_sec=r.TrainingJob.elapsed_sec,
+            eta_sec=r.TrainingJob.eta_sec,
+            duration_sec=r.TrainingJob.duration_sec,
+            error=r.TrainingJob.error,
+            created_at=r.TrainingJob.created_at.isoformat(),
+            updated_at=r.TrainingJob.updated_at.isoformat(),
         )
-        for j in jobs
+        for r in rows
     ]
     return {
         "items": items,

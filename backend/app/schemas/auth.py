@@ -1,16 +1,16 @@
 """Auth request/response schemas."""
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, SecretStr
 
 
 class LoginRequest(BaseModel):
     email: EmailStr
-    password: str = Field(max_length=128)
+    password: SecretStr = Field(max_length=128)
 
 
 class RegisterRequest(BaseModel):
     email: EmailStr
-    password: str = Field(min_length=8, max_length=128)
+    password: SecretStr = Field(min_length=8, max_length=128)
     full_name: str = Field(min_length=1, max_length=200)
 
 

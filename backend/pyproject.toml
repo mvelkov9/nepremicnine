@@ -1,6 +1,6 @@
 [project]
 name = "nepremicnine-backend"
-version = "0.11.0"
+version = "0.12.0"
 description = "Slovenian real estate price analysis & prediction API"
 requires-python = ">=3.13"
 
@@ -38,6 +38,9 @@ dependencies = [
     # Rate limiting
     "slowapi>=0.1.9",
 
+    # Monitoring
+    "prometheus-fastapi-instrumentator>=7.0.0",
+
     # Utils
     "httpx>=0.28.0",
     "python-dotenv>=1.0.1",
@@ -50,11 +53,23 @@ dev = [
     "pytest-cov>=6.0.0",
     "httpx>=0.28.0",
     "ruff>=0.8.0",
+    "aiosqlite>=0.20.0",
 ]
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["app*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["app/tasks/*"]
+
+[tool.coverage.report]
+fail_under = 70
 
 [tool.ruff]
 target-version = "py313"

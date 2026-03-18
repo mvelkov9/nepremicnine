@@ -6,7 +6,7 @@ from collections.abc import Iterable
 
 import numpy as np
 import pandas as pd
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 
 from app.dependencies.auth import get_current_user
 from app.models.user import User
@@ -437,9 +437,11 @@ def _find_municipality_frame(df: pd.DataFrame, slug_or_name: str) -> pd.DataFram
 @router.get("/overview")
 async def overview(
     request: Request,
+    response: Response,
     property_type: str | None = None,
     _user: User = Depends(get_current_user),
 ):
+    response.headers["Cache-Control"] = "private, max-age=300"
     cache_key = f"cache:stats:overview:{property_type or 'all'}"
     cached = await cache_get(request, cache_key)
     if cached is not None:
@@ -516,9 +518,11 @@ async def overview(
 @router.get("/regions")
 async def regions_stats(
     request: Request,
+    response: Response,
     property_type: str | None = None,
     _user: User = Depends(get_current_user),
 ):
+    response.headers["Cache-Control"] = "private, max-age=300"
     cache_key = f"cache:stats:regions:{property_type or 'all'}"
     cached = await cache_get(request, cache_key)
     if cached is not None:
@@ -666,9 +670,11 @@ async def trend(
 @router.get("/market-home")
 async def market_home(
     request: Request,
+    response: Response,
     property_type: str | None = None,
     _user: User = Depends(get_current_user),
 ):
+    response.headers["Cache-Control"] = "private, max-age=300"
     cache_key = f"cache:stats:market-home:{property_type or 'all'}"
     cached = await cache_get(request, cache_key)
     if cached is not None:

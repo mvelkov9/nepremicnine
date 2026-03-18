@@ -40,23 +40,27 @@ async def list_users(
 ):
     import math
 
-    count_result = await db.execute(select(func.count(User.id)))
-    total = count_result.scalar() or 0
+    offset = (page - 1) * per_page
+    stmt = (
+        select(User, func.count(User.id).over().label("total_count"))
+        .order_by(User.created_at.desc())
+        .offset(offset)
+        .limit(per_page)
+    )
+    rows = (await db.execute(stmt)).all()
+    total = rows[0].total_count if rows else 0
     pages = math.ceil(total / per_page) if total > 0 else 0
 
-    offset = (page - 1) * per_page
-    result = await db.execute(select(User).order_by(User.created_at.desc()).offset(offset).limit(per_page))
-    users = result.scalars().all()
     items = [
         UserListItem(
-            id=u.id,
-            email=u.email,
-            full_name=u.full_name,
-            role=u.role.value if isinstance(u.role, UserRole) else u.role,
-            is_active=u.is_active,
-            created_at=u.created_at.isoformat(),
+            id=u.User.id,
+            email=u.User.email,
+            full_name=u.User.full_name,
+            role=u.User.role.value if isinstance(u.User.role, UserRole) else u.User.role,
+            is_active=u.User.is_active,
+            created_at=u.User.created_at.isoformat(),
         )
-        for u in users
+        for u in rows
     ]
     return {"items": items, "total": total, "page": page, "per_page": per_page, "pages": pages}
 

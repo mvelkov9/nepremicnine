@@ -1,4 +1,4 @@
-export function normalizeMunicipalityName(value) {
+export function normalizeMunicipalityName(value: string | null | undefined): string {
   return String(value || '')
     .trim()
     .normalize('NFD')
@@ -9,6 +9,6 @@ export function normalizeMunicipalityName(value) {
     .trim()
 }
 
-export function municipalitySlug(value) {
+export function municipalitySlug(value: string | null | undefined): string {
   return normalizeMunicipalityName(value).replace(/\s+/g, '-')
 }

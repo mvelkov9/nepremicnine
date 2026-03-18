@@ -1,4 +1,4 @@
-# Nepremičnine v0.11.0
+# Nepremičnine v0.12.0
 
 > Slovenian real estate valuation platform for buyers, sellers, investors, and companies — powered by machine learning on official ETN transaction data.
 
@@ -31,32 +31,55 @@
 | Cache | Redis 7 (caching + task queue + token blacklist) |
 | Task Queue | ARQ + Redis 7 |
 | ML | scikit-learn HistGradientBoostingRegressor (per property type) |
-| Security | slowapi rate limiting, security headers, input validation |
-| Frontend | Vue 3 (Composition API) + Pinia + Vite 6 + PrimeVue 4 |
+| Security | slowapi rate limiting, security headers, SecretStr passwords, input validation |
+| Frontend | Vue 3 (Composition API) + TypeScript + Pinia + VueUse + Vite 8 + PrimeVue 4 |
+| Testing | Vitest (unit) + Playwright (E2E) + pytest (backend) |
 | Charts | Chart.js + vue-chartjs |
 | Maps | Leaflet 1.9 |
 | Auth | JWT (access + refresh) with bcrypt |
 | i18n | vue-i18n (Slovenian + English) |
+| Monitoring | Prometheus metrics (`/metrics`), structured JSON logging |
 | Lint | ruff (backend) + ESLint (frontend) |
-| CI/CD | GitHub Actions → GHCR → VPS (SSH deploy) |
+| CI/CD | GitHub Actions → GHCR → VPS (SSH deploy), Trivy scan, Dependabot |
 | Deploy | Docker Compose (dev + prod profiles) |
 
 ## Quick Start
+
+### Option A — Fast Local Dev (recommended)
+
+Run infra in Docker, frontend directly with `pnpm dev` for instant HMR:
 
 ```bash
 # Clone and configure
 git clone https://github.com/mvelkov9/nepremicnine.git
 cd nepremicnine
-cp .env.example .env
-# Edit .env — set JWT_SECRET_KEY to a real secret
+cp .env.local.example .env          # uses localhost DB/Redis URLs
+# Edit .env — set a real JWT_SECRET_KEY
 
-# Start all services
-docker compose up --build
+# Start postgres, redis, backend, worker in Docker
+docker compose -f docker-compose.dev.yml up -d --build
+
+# Run frontend locally (instant hot-reload, no Docker rebuild)
+cd frontend
+pnpm install
+pnpm dev
 
 # Access the application
 # Frontend:  http://localhost:5173
 # Backend:   http://localhost:8000
 # API docs:  http://localhost:8000/docs
+```
+
+### Option B — Full Docker
+
+```bash
+cp .env.example .env
+# Edit .env — set JWT_SECRET_KEY to a real secret
+
+docker compose up --build
+
+# Frontend:  http://localhost:5173
+# Backend:   http://localhost:8000
 ```
 
 Development startup applies pending Alembic migrations automatically before the backend begins serving requests.
@@ -99,9 +122,18 @@ See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for detailed deployment instruction
 
 ### CI/CD
 
-On every push to `main`: lint → test → build → push Docker images to GHCR.
+On every push to `main`:
 
-On git tag (`v*`): all of the above + SSH deploy to VPS.
+1. **backend-lint** → **backend-test** (pytest + coverage → Codecov)
+2. **frontend-lint** → **frontend-test** (Vitest + coverage → Codecov) → **frontend-build**
+3. **security-scan** (Trivy vulnerability scan for CRITICAL/HIGH)
+4. **e2e-test** (Playwright, on PRs only)
+5. **docker** (build + push images to GHCR)
+6. **deploy** (SSH deploy to VPS)
+
+On git tag (`v*`): all of the above.
+
+Dependabot automatically opens PRs for outdated dependencies (pip weekly, npm weekly, Docker monthly, Actions monthly).
 
 Production deployment is handled through git-based CI/CD; normal releases no longer require manual SSH update steps on the VPS.
 
@@ -118,41 +150,59 @@ Required GitHub Actions secrets:
 
 ```
 nepremicnine/
-├── .github/workflows/ci.yml    # CI/CD (lint, test, build, deploy)
-├── docker-compose.yml          # Development stack (5 services)
+├── .github/
+│   ├── workflows/ci.yml        # CI/CD (lint, test, build, security scan, E2E, deploy)
+│   └── dependabot.yml          # Automated dependency updates
+├── docker-compose.yml          # Full development stack (5 services)
+├── docker-compose.dev.yml      # Backend-only stack (no frontend container)
 ├── docker-compose.prod.yml     # Production overrides
 ├── .env.example                # Environment template
 │
 ├── backend/
 │   ├── Dockerfile              # Multi-stage: builder → slim runtime
-│   ├── pyproject.toml          # Python deps + ruff config
+│   ├── entrypoint.sh           # Alembic migrations → app startup
+│   ├── pyproject.toml          # Python deps + ruff + pytest + coverage config
 │   ├── alembic/                # Database migrations
 │   ├── app/
-│   │   ├── main.py             # FastAPI app factory
-│   │   ├── config.py           # Pydantic settings
-│   │   ├── database.py         # Async SQLAlchemy engine
+│   │   ├── main.py             # FastAPI app factory + security headers + Prometheus
+│   │   ├── config.py           # Pydantic settings + production guards
+│   │   ├── database.py         # Async SQLAlchemy engine + pool tuning
 │   │   ├── models/             # 7 ORM models (User, Dataset, ModelRun, ...)
-│   │   ├── schemas/            # Pydantic request/response schemas
+│   │   ├── schemas/            # Pydantic request/response schemas (SecretStr)
 │   │   ├── api/                # Route modules (auth, data, stats, predict, ...)
-│   │   ├── dependencies/       # Auth dependencies (JWT verification)
+│   │   ├── dependencies/       # Auth dependencies (JWT verification + hardening)
 │   │   ├── services/           # Business logic (data processing, ML, regions)
 │   │   └── tasks/              # ARQ async workers (model training)
 │   ├── models/                 # Trained model artifacts (*.joblib)
-│   └── tests/                  # pytest suites for API, ML, security, and stats
+│   └── tests/
+│       ├── test_*.py           # pytest suites for API, ML, security, and stats
+│       └── load/k6_smoke.js    # k6 load test script
 │
 └── frontend/
     ├── Dockerfile              # Multi-stage: node build → nginx
     ├── nginx.conf              # Reverse proxy + SPA + security headers
-    ├── eslint.config.js        # ESLint flat config
+    ├── tsconfig.json            # TypeScript configuration
+    ├── playwright.config.ts     # Playwright E2E test config
+    ├── .lighthouserc.json       # Lighthouse CI performance budgets
+    ├── eslint.config.js         # ESLint flat config
     ├── src/
     │   ├── views/              # Viewer pages + admin workbench
-    │   ├── components/         # App shell, shared UI, empty states
+    │   ├── components/         # App shell, shared UI, loading spinners
     │   ├── constants/          # Navigation and shared labels
-    │   ├── stores/             # Pinia (auth, data, model, stats)
-    │   ├── composables/        # useApi (axios + JWT refresh)
+    │   ├── stores/             # Pinia (auth, data, model, stats, ui, tokens)
+    │   ├── composables/        # useApi, useDarkMode, useExport, useToast
+    │   ├── types/              # TypeScript domain types (api.ts) + auto-generated
     │   ├── theme/              # PrimeVue custom theme preset
     │   ├── locales/            # i18n (sl.json, en.json)
-    │   └── router/             # Vue Router with auth guards
+    │   ├── router/             # Vue Router with auth guards + route announcements
+    │   ├── styles/             # Global CSS (skip-link, sr-only, transitions)
+    │   └── tests/
+    │       ├── e2e/            # Playwright E2E tests (auth, navigation)
+    │       ├── api/            # API contract tests
+    │       ├── stores/         # Pinia store unit tests
+    │       ├── composables/    # Composable unit tests
+    │       ├── components/     # Component unit tests
+    │       └── utils/          # Utility function unit tests
     └── index.html
 ```
 
@@ -225,17 +275,31 @@ Full interactive API documentation available at `/docs` (Swagger UI).
 
 ```bash
 # Backend lint + format
-docker compose exec backend ruff check .
-docker compose exec backend ruff format .
+cd backend && ruff check . && ruff format --check .
 
-# Backend tests
-docker compose exec backend pytest -v
+# Backend tests (uses SQLite + fake Redis, no infra needed)
+cd backend && pytest -v --cov=app
 
-# Frontend lint
-docker compose exec frontend npx eslint src/
+# Frontend lint + format check
+cd frontend && pnpm lint && pnpm format:check
 
-# Frontend build check
-docker compose exec frontend pnpm build
+# Frontend unit tests (Vitest, 46 tests)
+cd frontend && pnpm test
+
+# Frontend unit tests with coverage
+cd frontend && pnpm test:coverage
+
+# TypeScript check
+cd frontend && pnpm exec vue-tsc --noEmit
+
+# Frontend build
+cd frontend && pnpm build
+
+# E2E tests (requires running frontend + backend)
+cd frontend && pnpm test:e2e
+
+# k6 load test (requires k6 installed + running backend)
+k6 run backend/tests/load/k6_smoke.js
 ```
 
 ## Troubleshooting
@@ -281,6 +345,7 @@ For this repo specifically:
 - [Phase 8–20: v0.8.4–v0.8.16 Upgrades](docs/PHASE_8_14_PLAN.md)
 - [Phase 21: v0.10.0 Market UX & Training Reliability Reset](docs/MASTER.md#v0100)
 - [Phase 22: v0.11.0 Data Quality, Map UX, and PrimeVue Modernization](docs/MASTER.md#v0110)
+- [Phase 23: v0.12.0 Architecture Modernization](docs/PHASE_23_MODERNIZATION.md)
 - [Deployment Guide](docs/DEPLOYMENT.md)
 
 ## License

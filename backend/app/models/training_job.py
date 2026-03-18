@@ -3,7 +3,7 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, Integer, String, Text, func
+from sqlalchemy import DateTime, Float, Index, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -18,6 +18,14 @@ class JobStatus(enum.StrEnum):
 
 class TrainingJob(Base):
     __tablename__ = "training_jobs"
+    __table_args__ = (
+        Index(
+            "ix_training_jobs_active",
+            "updated_at",
+            postgresql_where="status IN ('queued', 'running')",
+        ),
+        Index("ix_training_jobs_created_at", "created_at"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     job_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)

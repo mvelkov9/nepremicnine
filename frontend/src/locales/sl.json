@@ -641,5 +641,9 @@
     "invalidAvatarUrl": "URL avatarja mora uporabljati HTTPS, lokalno pot ali data URL.",
     "fileTooLarge": "Datoteka je večja od dovoljene omejitve ({limit} MB).",
     "unsupportedFileType": "Podprte so samo CSV in ZIP datoteke."
+  },
+  "a11y": {
+    "skipToContent": "Preskoči na vsebino",
+    "loading": "Nalaganje"
   }
 }

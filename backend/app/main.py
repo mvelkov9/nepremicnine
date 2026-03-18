@@ -176,6 +176,14 @@ def create_app() -> FastAPI:
         response.headers["X-Request-ID"] = request_id
         return response
 
+    # Prometheus metrics
+    try:
+        from prometheus_fastapi_instrumentator import Instrumentator
+
+        Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
+    except ImportError:
+        logger.warning("prometheus_fastapi_instrumentator not installed — /metrics endpoint disabled")
+
     # Routers
     app.include_router(health_router, prefix="/api")
     app.include_router(auth_router, prefix="/api")

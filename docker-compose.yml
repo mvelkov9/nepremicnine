@@ -39,12 +39,8 @@ services:
     env_file: .env
     # Dev overrides: mount source, run as root, enable reload
     user: root
-    command:
-      [
-        "sh",
-        "-c",
-        "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload",
-      ]
+    entrypoint: ["/app/entrypoint.sh"]
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     volumes:
       - ./backend:/app
       - backend-data:/app/data
@@ -87,6 +83,8 @@ services:
     command:
       sh -c "corepack enable && corepack prepare pnpm@9.15.4 --activate &&
       pnpm install --frozen-lockfile --force && pnpm dev --host 0.0.0.0"
+    environment:
+      - VITE_API_URL=http://backend:8000
     volumes:
       - ./frontend:/app
       - /app/node_modules

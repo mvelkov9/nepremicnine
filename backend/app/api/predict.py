@@ -61,29 +61,28 @@ async def prediction_history(
     user: User = Depends(get_current_user),
 ):
     """Get recent prediction history for the current user."""
-    # Count total for this user
-    count_result = await db.execute(select(func.count(PredictionLog.id)).where(PredictionLog.user_id == user.id))
-    total = count_result.scalar() or 0
-    pages = math.ceil(total / per_page) if total > 0 else 0
-
     offset = (page - 1) * per_page
-    result = await db.execute(
-        select(PredictionLog)
+
+    # Single query: fetch rows AND total count via window function
+    stmt = (
+        select(PredictionLog, func.count(PredictionLog.id).over().label("total_count"))
         .where(PredictionLog.user_id == user.id)
         .order_by(PredictionLog.created_at.desc())
         .offset(offset)
         .limit(per_page)
     )
-    logs = result.scalars().all()
+    rows = (await db.execute(stmt)).all()
+    total = rows[0].total_count if rows else 0
+    pages = math.ceil(total / per_page) if total > 0 else 0
 
     items = [
         {
-            "id": log.id,
-            "payload": json.loads(log.payload_json),
-            "predicted_price_eur": log.predicted_price_eur,
-            "created_at": log.created_at.isoformat(),
+            "id": row.PredictionLog.id,
+            "payload": json.loads(row.PredictionLog.payload_json),
+            "predicted_price_eur": row.PredictionLog.predicted_price_eur,
+            "created_at": row.PredictionLog.created_at.isoformat(),
         }
-        for log in logs
+        for row in rows
     ]
     return {
         "items": items,

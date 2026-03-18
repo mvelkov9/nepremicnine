@@ -1,7 +1,8 @@
 <script setup>
-  import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+  import { computed, onMounted, ref, watch } from 'vue'
   import { RouterLink, useRoute, useRouter } from 'vue-router'
   import { useI18n } from 'vue-i18n'
+  import { useLocalStorage, useWindowScroll } from '@vueuse/core'
   import Button from 'primevue/button'
   import Dialog from 'primevue/dialog'
   import InputText from 'primevue/inputtext'
@@ -22,12 +23,14 @@
   const { showToast } = useToast()
   const { isDark, toggleDark } = useDarkMode()
 
+  const { y: scrollY } = useWindowScroll()
+  const isScrolled = computed(() => scrollY.value > 16)
+
   const mobileMenuOpen = ref(false)
   const profileOpen = ref(false)
   const profileSaving = ref(false)
-  const isScrolled = ref(false)
   const appVersion = ref('')
-  const sidebarCollapsed = ref(localStorage.getItem('sidebar_collapsed') === '1')
+  const sidebarCollapsed = useLocalStorage('sidebar_collapsed', false)
   const profileForm = ref({
     full_name: '',
     avatar_url: '',
@@ -118,17 +121,9 @@
       .slice(0, 2)
   })
 
-  function updateScrollState() {
-    isScrolled.value = window.scrollY > 16
-  }
-
   function sidebarTooltip(label) {
     return sidebarCollapsed.value ? { value: label, showDelay: 120, autoHide: true } : null
   }
-
-  watch(sidebarCollapsed, (collapsed) => {
-    localStorage.setItem('sidebar_collapsed', collapsed ? '1' : '0')
-  })
 
   watch(
     () => auth.user,
@@ -149,9 +144,6 @@
   )
 
   onMounted(async () => {
-    updateScrollState()
-    window.addEventListener('scroll', updateScrollState, { passive: true })
-
     try {
       const res = await fetch('/api/health')
       if (res.ok) {
@@ -161,10 +153,6 @@
     } catch {
       /* no-op */
     }
-  })
-
-  onBeforeUnmount(() => {
-    window.removeEventListener('scroll', updateScrollState)
   })
 
   function changeLocale(nextLocale) {
@@ -317,6 +305,7 @@
                 text
                 rounded
                 @click="toggleSidebar"
+                :aria-label="sidebarCollapsed ? t('layout.expandSidebar') : t('layout.collapseSidebar')"
                 v-tooltip.bottom="
                   sidebarCollapsed ? t('layout.expandSidebar') : t('layout.collapseSidebar')
                 "
@@ -352,7 +341,7 @@
                 :aria-label="t('layout.language')"
               />
 
-              <Button class="shell-action-button" rounded @click="toggleDark">
+              <Button class="shell-action-button" rounded @click="toggleDark" :aria-label="isDark ? t('ui.lightMode') : t('ui.darkMode')">
                 <AppIcon :name="isDark ? 'sun' : 'moon'" :size="16" />
                 <span>{{ isDark ? t('ui.lightMode') : t('ui.darkMode') }}</span>
               </Button>
@@ -381,7 +370,7 @@
         </div>
       </header>
 
-      <main class="shell-main">
+      <main id="main-content" class="shell-main">
         <slot />
       </main>
 

@@ -14,7 +14,7 @@ class Settings(BaseSettings):
 
     # App
     app_env: str = "development"
-    app_version: str = "0.11.0"
+    app_version: str = "0.12.0"
     max_upload_size_mb: int = 1024
 
     # Postgres
@@ -47,4 +47,6 @@ def get_settings() -> Settings:
             )
         if len(s.jwt_secret_key) < 32:
             raise RuntimeError("JWT_SECRET_KEY must be at least 32 characters in production.")
+        if "*" in s.cors_origins:
+            raise RuntimeError("Wildcard CORS origins are not allowed in production.")
     return s

@@ -95,6 +95,47 @@ sudo apt install certbot python3-certbot-nginx
 sudo certbot --nginx -d nepremicnine.yourdomain.com
 ```
 
+## Local Development
+
+For frontend hot-reload without Docker overhead:
+
+```bash
+# 1. Start backend infrastructure only (postgres + redis + backend + worker)
+docker compose -f docker-compose.dev.yml up -d
+
+# 2. Run frontend locally with Vite dev server
+cd frontend
+pnpm install
+pnpm dev
+```
+
+The Vite proxy forwards `/api` requests to `http://localhost:8000` (configurable via `VITE_API_URL` env var). The backend inside Docker exposes port 8000.
+
+To switch back to full Docker:
+
+```bash
+docker compose up --build
+```
+
+### Running tests
+
+```bash
+# Backend
+cd backend && pip install -e ".[dev]" && pytest -v --cov=app
+
+# Frontend unit tests
+cd frontend && pnpm test
+
+# Frontend E2E (requires running backend)
+cd frontend && pnpm test:e2e
+
+# TypeScript check
+cd frontend && pnpm exec vue-tsc --noEmit
+
+# k6 load test (requires k6 installed)
+k6 run backend/tests/load/k6_smoke.js
+```
+
 ## Monitoring
 
 ```bash
@@ -107,6 +148,9 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml logs -f worker
 
 # Health check
 curl http://localhost:8080/api/health
+
+# Prometheus metrics (when prometheus-fastapi-instrumentator is installed)
+curl http://localhost:8000/metrics
 ```
 
 ## Database Backup

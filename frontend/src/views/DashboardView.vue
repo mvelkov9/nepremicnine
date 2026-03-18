@@ -10,7 +10,6 @@
   import Tag from 'primevue/tag'
   import MetricCard from '../components/MetricCard.vue'
   import PageHeader from '../components/PageHeader.vue'
-  import LoadingSpinner from '../components/LoadingSpinner.vue'
   import api from '../composables/useApi'
   import { useStatsStore } from '../stores/stats'
   import { getApiErrorMessage } from '../utils/apiError'
@@ -276,8 +275,8 @@
       </div>
     </section>
 
-    <div v-if="loading" class="state-card">
-      <LoadingSpinner :label="t('common.loading')" />
+    <div v-if="loading" class="kpi-skeleton-grid">
+      <Skeleton v-for="n in 6" :key="n" height="5rem" border-radius="1.2rem" />
     </div>
     <p v-else-if="pageError" class="state-card error-text">{{ pageError }}</p>
 
@@ -292,8 +291,8 @@
           :description="t('dashboard.segmentTopMarketsTitle')"
         />
 
-        <div v-if="segmentLoading" class="state-card compact">
-          <LoadingSpinner :label="t('common.loading')" />
+        <div v-if="segmentLoading" class="kpi-skeleton-grid">
+          <Skeleton v-for="n in 4" :key="n" height="4.5rem" border-radius="1.2rem" />
         </div>
 
         <template v-else-if="segmentHome">

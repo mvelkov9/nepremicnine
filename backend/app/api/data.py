@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.database import get_db
 from app.dependencies.auth import get_current_user, require_admin
+from app.rate_limit import limiter
 from app.models.dataset import DatasetFile
 from app.models.user import User
 from app.schemas.dataset import (
@@ -168,7 +169,9 @@ def _build_quality_summary() -> dict:
 
 
 @router.post("/upload", response_model=DatasetUploadResponse)
+@limiter.limit("5/minute")
 async def upload_files(
+    request: Request,
     files: list[UploadFile],
     source_type: Literal["csv", "etn", "rpe"] = "csv",
     db: AsyncSession = Depends(get_db),
@@ -294,16 +297,18 @@ async def list_datasets(
 ):
     import math
 
-    # Count total
-    count_result = await db.execute(select(func.count(DatasetFile.id)))
-    total = count_result.scalar() or 0
+    offset = (page - 1) * per_page
+    stmt = (
+        select(DatasetFile, func.count(DatasetFile.id).over().label("total_count"))
+        .order_by(DatasetFile.uploaded_at.desc())
+        .offset(offset)
+        .limit(per_page)
+    )
+    rows = (await db.execute(stmt)).all()
+    total = rows[0].total_count if rows else 0
     pages = math.ceil(total / per_page) if total > 0 else 0
 
-    offset = (page - 1) * per_page
-    result = await db.execute(
-        select(DatasetFile).order_by(DatasetFile.uploaded_at.desc()).offset(offset).limit(per_page)
-    )
-    items = [_serialize_dataset(r) for r in result.scalars().all()]
+    items = [_serialize_dataset(r.DatasetFile) for r in rows]
     return {
         "items": items,
         "total": total,

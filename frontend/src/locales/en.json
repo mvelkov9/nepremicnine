@@ -641,5 +641,9 @@
     "invalidAvatarUrl": "Avatar URL must use HTTPS, a local path, or a data URL.",
     "fileTooLarge": "The file is larger than the allowed limit ({limit} MB).",
     "unsupportedFileType": "Only CSV and ZIP files are supported."
+  },
+  "a11y": {
+    "skipToContent": "Skip to main content",
+    "loading": "Loading"
   }
 }

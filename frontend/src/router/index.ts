@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { i18n } from '../i18n'
 import { useAuthStore } from '../stores/auth'
+import { useUiStore } from '../stores/ui'
 
 const routes = [
   {
@@ -178,6 +179,8 @@ const router = createRouter({
 
 router.beforeEach((to) => {
   const auth = useAuthStore()
+  const ui = useUiStore()
+  ui.routeTransitioning = true
 
   if (to.meta.requiresAuth && !auth.isAuthenticated) {
     return { name: 'login', query: { redirect: to.fullPath } }
@@ -193,8 +196,13 @@ router.beforeEach((to) => {
 })
 
 router.afterEach((to) => {
+  const ui = useUiStore()
+  ui.routeTransitioning = false
+
   const base = 'Nepremičnine'
-  document.title = to.meta.titleKey ? `${i18n.global.t(to.meta.titleKey)} | ${base}` : base
+  const pageTitle = to.meta.titleKey ? i18n.global.t(to.meta.titleKey) : base
+  document.title = to.meta.titleKey ? `${pageTitle} | ${base}` : base
+  ui.routeTitle = pageTitle
 })
 
 export default router

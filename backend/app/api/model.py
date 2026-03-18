@@ -7,7 +7,7 @@ import logging
 import math
 import os
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,8 +35,10 @@ def _relative_data_path(path: str | None) -> str | None:
 
 
 @router.get("/info", response_model=ModelInfoResponse)
-async def model_info(request: Request, _user: User = Depends(get_current_user)):
+async def model_info(request: Request, response: Response, _user: User = Depends(get_current_user)):
     """Get current trained model metadata."""
+    response.headers["Cache-Control"] = "private, max-age=60"
+
     cache_key = "cache:model:info"
     cached = await cache_get(request, cache_key)
     if cached is not None:
@@ -45,9 +47,9 @@ async def model_info(request: Request, _user: User = Depends(get_current_user)):
     info = get_model_info()
     if info is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No trained model found")
-    response = ModelInfoResponse(**{**info, "source_csv_path": _relative_data_path(info.get("csv_path"))})
-    await cache_set(request, cache_key, response.model_dump())
-    return response
+    result = ModelInfoResponse(**{**info, "source_csv_path": _relative_data_path(info.get("csv_path"))})
+    await cache_set(request, cache_key, result.model_dump())
+    return result
 
 
 @router.get("/importance")
@@ -103,33 +105,36 @@ async def model_runs(
     _user: User = Depends(require_admin),
 ):
     """Get model training run history."""
-    # Count total
-    count_result = await db.execute(select(func.count(ModelRun.id)))
-    total = count_result.scalar() or 0
+    offset = (page - 1) * per_page
+    stmt = (
+        select(ModelRun, func.count(ModelRun.id).over().label("total_count"))
+        .order_by(ModelRun.created_at.desc())
+        .offset(offset)
+        .limit(per_page)
+    )
+    rows = (await db.execute(stmt)).all()
+    total = rows[0].total_count if rows else 0
     pages = math.ceil(total / per_page) if total > 0 else 0
 
-    offset = (page - 1) * per_page
-    result = await db.execute(select(ModelRun).order_by(ModelRun.created_at.desc()).offset(offset).limit(per_page))
-    runs = result.scalars().all()
     items = [
         {
-            "id": r.id,
-            "source_csv_path": _relative_data_path(r.source_csv_path),
-            "rows": r.rows,
-            "mae": r.mae,
-            "rmse": r.rmse,
-            "r2": r.r2,
-            "mape": r.mape,
-            "median_ae": r.median_ae,
-            "duration_sec": r.duration_sec,
-            "per_type_count": r.per_type_count,
-            "model_type": r.model_type,
-            "features": json.loads(r.features_json) if r.features_json else None,
-            "importance": json.loads(r.importance_json) if r.importance_json else None,
-            "combined_metrics": json.loads(r.combined_metrics_json) if r.combined_metrics_json else None,
-            "created_at": r.created_at.isoformat(),
+            "id": row.ModelRun.id,
+            "source_csv_path": _relative_data_path(row.ModelRun.source_csv_path),
+            "rows": row.ModelRun.rows,
+            "mae": row.ModelRun.mae,
+            "rmse": row.ModelRun.rmse,
+            "r2": row.ModelRun.r2,
+            "mape": row.ModelRun.mape,
+            "median_ae": row.ModelRun.median_ae,
+            "duration_sec": row.ModelRun.duration_sec,
+            "per_type_count": row.ModelRun.per_type_count,
+            "model_type": row.ModelRun.model_type,
+            "features": json.loads(row.ModelRun.features_json) if row.ModelRun.features_json else None,
+            "importance": json.loads(row.ModelRun.importance_json) if row.ModelRun.importance_json else None,
+            "combined_metrics": json.loads(row.ModelRun.combined_metrics_json) if row.ModelRun.combined_metrics_json else None,
+            "created_at": row.ModelRun.created_at.isoformat(),
         }
-        for r in runs
+        for row in rows
     ]
     return {
         "items": items,

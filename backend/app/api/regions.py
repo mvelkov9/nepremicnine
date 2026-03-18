@@ -1,6 +1,6 @@
 """Region and municipality reference data routes."""
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy import distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,10 +22,12 @@ router = APIRouter(tags=["regions"])
 
 @router.get("/regions", response_model=RegionListResponse)
 async def get_regions(
+    response: Response,
     stats: bool = Query(False, description="Include fallback data"),
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
+    response.headers["Cache-Control"] = "public, max-age=3600"
     result = await db.execute(select(RegionLookup).order_by(RegionLookup.regija_naziv, RegionLookup.obcina_naziv))
     rows = result.scalars().all()
 

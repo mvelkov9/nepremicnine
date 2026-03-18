@@ -64,7 +64,7 @@ async def register(request: Request, body: RegisterRequest, db: AsyncSession = D
 
         user = User(
             email=body.email,
-            hashed_password=hash_password(body.password),
+            hashed_password=hash_password(body.password.get_secret_value()),
             full_name=body.full_name,
             role=UserRole.admin if is_first else UserRole.viewer,
         )
@@ -80,7 +80,7 @@ async def login(request: Request, body: LoginRequest, db: AsyncSession = Depends
     result = await db.execute(select(User).where(User.email == body.email))
     user = result.scalar_one_or_none()
 
-    if not user or not verify_password(body.password, user.hashed_password):
+    if not user or not verify_password(body.password.get_secret_value(), user.hashed_password):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     if not user.is_active:

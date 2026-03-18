@@ -6,14 +6,16 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 
 | Item | Value |
 |------|-------|
-| **Version** | 0.11.0 |
+| **Version** | 0.12.0 |
 | **Repo** | [github.com/mvelkov9/nepremicnine](https://github.com/mvelkov9/nepremicnine) |
 | **Backend** | FastAPI + Python 3.13 + PostgreSQL 17 + SQLAlchemy 2.x async |
-| **Frontend** | Vue 3 Composition API + Pinia + pnpm 9, Vite 6 |
+| **Frontend** | Vue 3 Composition API + TypeScript + Pinia + VueUse + pnpm 9, Vite 8 |
+| **Testing** | Backend: pytest (async) · Frontend: Vitest + Playwright E2E |
 | **ML** | scikit-learn HistGradientBoostingRegressor (per-type) |
-| **Auth** | JWT (access 15 min + refresh 7 days), admin/viewer roles |
+| **Auth** | JWT (access 15 min + refresh 7 days, SecretStr passwords), admin/viewer roles |
 | **i18n** | Slovenian (default) + English |
-| **CI/CD** | GitHub Actions → GHCR → VPS (SSH) |
+| **CI/CD** | GitHub Actions → GHCR → VPS (SSH), Trivy security scanning, Dependabot |
+| **Monitoring** | Prometheus metrics (`/metrics`), structured JSON logging, correlation IDs |
 | **Infra** | Docker Compose (dev + prod profiles), cloud VPS |
 
 ## Phase Progress
@@ -34,8 +36,26 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 | [Phase 20](PHASE_8_14_PLAN.md#phase-20--diagnostics-focus--locale-formatting-v0816) | Diagnostics focus workflow and locale-aware formatting polish | ✅ Complete | `4c58881` |
 | Phase 21 | Market UX and training reliability reset: structured progress, map legend/drawer, PrimeVue admin/viewer polish | ✅ Complete | `22c90cf` |
 | Phase 22 | Data quality, map UX, and PrimeVue modernization: canonical municipality coverage, direct portal links, centered map modal, cached analytics, admin quality summary | ✅ Complete | working tree |
+| [Phase 23](PHASE_23_MODERNIZATION.md) | Architecture modernization: TypeScript, VueUse, Vitest, Playwright E2E, DB optimization, API security hardening, performance benchmarking, accessibility audit, CI/CD overhaul, Prometheus monitoring | ✅ Complete | working tree |
 
 ## Changelog
+
+### v0.12.0
+
+- **TypeScript**: Migrated stores, composables, and utilities to TypeScript; added `tsconfig.json`, `env.d.ts`, domain types in `src/types/api.ts`; build now runs `vue-tsc --noEmit` before `vite build`
+- **VueUse**: Replaced manual localStorage/scroll/debounce patterns with `useLocalStorage`, `useWindowScroll`, `useDark`, `useDebounceFn`; token storage extracted to `stores/tokens.ts` to break circular deps
+- **Vitest**: 46 frontend unit tests across stores, composables, utils, and components; coverage via `@vitest/coverage-v8`
+- **Playwright E2E**: 8 end-to-end tests (auth flow, protected route redirects, page title, boot loader, console error checks); Playwright config with webServer auto-start
+- **Auto-imports**: PrimeVue component resolver + Vue/Router/Pinia/VueUse API auto-imports via `unplugin-vue-components` and `unplugin-auto-import`
+- **DB optimization**: Alembic migration adding indexes on `dataset_files.uploaded_by`, `model_runs.trained_by`, `training_jobs.created_at`; partial index for active jobs; FK constraints with `ondelete="SET NULL"`; N+1 COUNT+SELECT eliminated in 5 paginated endpoints via `func.count().over()` window functions; connection pool tuning (`pool_size=10`, `max_overflow=20`, `pool_pre_ping=True`)
+- **API security**: Security headers middleware (CSP, X-Frame-Options, HSTS, Permissions-Policy); JWT decode hardening with `require: ["exp", "sub"]`; rate limiting on login (5/min), upload (5/min), training (3/hour); CORS wildcard guard in production; `SecretStr` for password fields (never logged/serialized)
+- **Performance**: Bundle splitting via `manualChunks` (vendor, primevue, vueuse); Lighthouse CI config with budgets (performance ≥ 0.85, accessibility ≥ 0.9); k6 load test script; Cache-Control headers on regions (1hr public), model info (60s private), stats (5min private)
+- **Accessibility**: Skip navigation link; `aria-label` on all icon-only buttons; `aria-live="polite"` route title announcements for screen readers; `.sr-only` utility class; translation keys for `a11y.*`
+- **CI/CD**: Enhanced GitHub Actions with Codecov coverage, Trivy security scan, Playwright E2E job; Dependabot for pip/npm/Docker/Actions; Prometheus metrics via `prometheus-fastapi-instrumentator`
+- **Local dev**: `docker-compose.dev.yml` for backend-only Docker (no frontend container); Vite proxy env-configurable via `VITE_API_URL`
+- **Bug fixes**: Fixed hard `window.location.href` redirect → `router.push`; fixed boot loading overlay with proper spinner; Prometheus import made fault-tolerant (graceful fallback when package not installed)
+- **API contract tests**: TypeScript-based contract tests validating all 7 domain types match expected API response shapes
+- **Version**: 0.11.0 → 0.12.0
 
 ### v0.11.0
 
@@ -359,20 +379,25 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 | ORM | SQLAlchemy (async) | 2.0+ |
 | Migrations | Alembic | 1.14+ |
 | DB Driver | asyncpg | 0.30+ |
-| Auth | python-jose (JWT) + bcrypt | — |
+| Auth | python-jose (JWT, SecretStr) + bcrypt | — |
 | Task Queue | ARQ | 0.26+ |
 | ML | scikit-learn (HistGBR) | 1.6+ |
 | Rate Limiting | slowapi | 0.1.9+ |
+| Monitoring | prometheus-fastapi-instrumentator | 7.0+ |
 | Data | pandas + numpy | — |
-| Frontend | Vue 3 (Composition API) | 3.5+ |
-| State | Pinia | 2.3+ |
-| Build | Vite | 6.x |
+| Frontend | Vue 3 (Composition API) + TypeScript | 3.5+ |
+| Reactivity | VueUse | 14.0+ |
+| State | Pinia | 3.0+ |
+| Build | Vite | 8.x |
+| Unit Tests | Vitest + @vue/test-utils | 4.1+ |
+| E2E Tests | Playwright | 1.52+ |
 | Charts | Chart.js + vue-chartjs | — |
 | Maps | Leaflet | 1.9.4 |
 | i18n | vue-i18n | 11.x |
 | Lint (BE) | ruff | 0.8+ |
-| Lint (FE) | ESLint (flat config) | 9.x |
+| Lint (FE) | ESLint (flat config) | 10.x |
 | Package Mgr | pnpm | 9.15.4 |
-| CI/CD | GitHub Actions | — |
+| CI/CD | GitHub Actions + Dependabot | — |
+| Security Scan | Trivy | — |
 | Registry | GHCR | — |
 | Containers | Docker Compose | v2 |
