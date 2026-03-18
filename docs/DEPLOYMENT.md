@@ -2,6 +2,8 @@
 
 The production frontend is now a Nuxt 4 application served by Nitro on port `3000` inside the container. In the default production compose profile, Docker exposes it as `80:3000`, and browser `/api/*` requests are proxied same-origin through Nitro to the FastAPI backend.
 
+Production host port bindings are controlled via `.env` so a VPS can keep server-specific ports without editing tracked compose files.
+
 ## Prerequisites
 
 - Linux VPS with Docker Engine 24+ and Docker Compose v2+
@@ -39,6 +41,9 @@ JWT_SECRET_KEY=<python3 -c "import secrets; print(secrets.token_urlsafe(64))">
 APP_ENV=production
 CORS_ORIGINS=https://yourdomain.com
 AUTH_COOKIE_SECURE=true
+FRONTEND_PORT=80
+BACKEND_BIND_IP=127.0.0.1
+BACKEND_PORT=8000
 ```
 
 > **Notes:**
@@ -53,16 +58,12 @@ different port and optionally set up domain-based routing.
 
 ### Option 1: Port Separation (Quick)
 
-Edit `docker-compose.prod.yml` to use a different port:
+Keep `docker-compose.prod.yml` tracked and change only `.env` on the server:
 
-```yaml
-services:
-  frontend:
-    ports:
-      - "8080:3000"  # instead of "80:3000"
-  backend:
-    ports:
-      - "127.0.0.1:8001:8000"  # only if 127.0.0.1:8000 is already occupied
+```env
+FRONTEND_PORT=8080
+BACKEND_BIND_IP=127.0.0.1
+BACKEND_PORT=8000
 ```
 
 Access at `http://your-server-ip:8080`.
@@ -130,9 +131,9 @@ cat backup_20250101.sql | docker compose exec -T postgres psql -U nepremicnine n
 
 ```bash
 cd /path/to/nepremicnine
-git pull origin main
+git pull --ff-only origin main
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
-docker compose exec backend alembic upgrade head
+docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T backend alembic upgrade head
 docker image prune -f
 ```
 
@@ -208,8 +209,9 @@ If uploads still return `413 Request Entity Too Large`, verify the host nginx co
 
 - The backend remains private on `127.0.0.1:8000` by default in production; external traffic should enter through the frontend or your host reverse proxy.
 - Because the frontend proxies `/api/*`, the browser can stay same-origin and still use HttpOnly access/refresh cookies for SSR-friendly authentication.
-- If you expose the frontend on an alternate host port such as `8080`, update any host nginx `proxy_pass` lines to that port.
+- If you expose the frontend on an alternate host port such as `8080`, set `FRONTEND_PORT=8080` in `.env` and update any host nginx `proxy_pass` lines to that port.
 - `docker-compose.prod.yml` explicitly clears the dev-only `container-frontend` profile so the production Nitro frontend still starts by default on the VPS.
+- `docker-compose.prod.yml` also overrides the frontend build target to `runner`, so production does not inherit the dev container stage from the base compose file.
 
 ## Local Verification
 

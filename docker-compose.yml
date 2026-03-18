@@ -88,6 +88,7 @@ services:
     command: ["pnpm", "dev", "--host", "0.0.0.0", "--port", "3000"]
     environment:
       BACKEND_URL: http://backend:8000
+      NUXT_BACKEND_URL: http://backend:8000
       APP_VERSION: ${APP_VERSION:-0.11.0}
       NUXT_BUILD_DIR: /tmp/.nuxt-app
       NUXT_OUTPUT_DIR: /tmp/.output
