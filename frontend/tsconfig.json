@@ -15,7 +15,8 @@
     },
     "verbatimModuleSyntax": true,
     "resolveJsonModule": true,
-    "isolatedModules": true
+    "isolatedModules": true,
+    "skipLibCheck": true
   },
   "include": ["src/**/*", "env.d.ts"],
   "exclude": ["node_modules", "dist"]

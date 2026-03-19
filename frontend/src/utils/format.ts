@@ -45,9 +45,20 @@ export function formatPercent(
   }).format(Number(value) * scale)
 }
 
-export function formatDate(value, { dateStyle = 'medium', timeStyle, fallback = FALLBACK } = {}) {
+export function formatDate(
+  value: unknown,
+  {
+    dateStyle = 'medium' as Intl.DateTimeFormatOptions['dateStyle'],
+    timeStyle = undefined as Intl.DateTimeFormatOptions['timeStyle'],
+    fallback = FALLBACK,
+  }: {
+    dateStyle?: Intl.DateTimeFormatOptions['dateStyle']
+    timeStyle?: Intl.DateTimeFormatOptions['timeStyle']
+    fallback?: string
+  } = {},
+) {
   if (!value) return fallback
-  const date = new Date(value)
+  const date = new Date(value as string | number | Date)
   if (Number.isNaN(date.getTime())) return fallback
   return new Intl.DateTimeFormat(activeLocale(), {
     dateStyle,
@@ -56,8 +67,16 @@ export function formatDate(value, { dateStyle = 'medium', timeStyle, fallback = 
 }
 
 export function formatDateTime(
-  value,
-  { dateStyle = 'medium', timeStyle = 'short', fallback = FALLBACK } = {},
+  value: unknown,
+  {
+    dateStyle = 'medium' as Intl.DateTimeFormatOptions['dateStyle'],
+    timeStyle = 'short' as Intl.DateTimeFormatOptions['timeStyle'],
+    fallback = FALLBACK,
+  }: {
+    dateStyle?: Intl.DateTimeFormatOptions['dateStyle']
+    timeStyle?: Intl.DateTimeFormatOptions['timeStyle']
+    fallback?: string
+  } = {},
 ) {
   return formatDate(value, { dateStyle, timeStyle, fallback })
 }

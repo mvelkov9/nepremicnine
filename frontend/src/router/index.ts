@@ -1,9 +1,9 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { i18n } from '../i18n'
 import { useAuthStore } from '../stores/auth'
 import { useUiStore } from '../stores/ui'
 
-const routes = [
+const routes: RouteRecordRaw[] = [
   {
     path: '/login',
     name: 'login',
@@ -200,7 +200,7 @@ router.afterEach((to) => {
   ui.routeTransitioning = false
 
   const base = 'Nepremičnine'
-  const pageTitle = to.meta.titleKey ? i18n.global.t(to.meta.titleKey) : base
+  const pageTitle = to.meta.titleKey ? i18n.global.t(to.meta.titleKey as string) : base
   document.title = to.meta.titleKey ? `${pageTitle} | ${base}` : base
   ui.routeTitle = pageTitle
 })
