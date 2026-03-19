@@ -260,7 +260,7 @@
     const summary = preparationMetadata.value?.filter_summary
     if (!summary) return []
     return Object.entries(summary).flatMap(([group, stages]) =>
-      (stages || []).map((stage) => ({
+      ((stages as any[]) || []).map((stage) => ({
         group,
         groupLabel: group === 'building' ? t('diag.buildingFlow') : t('diag.landFlow'),
         stage: stage.stage,
@@ -354,8 +354,8 @@
           <SelectButton
             v-model="selectedType"
             :options="typeOptions"
-            optionLabel="label"
-            optionValue="value"
+            option-label="label"
+            option-value="value"
           />
         </div>
 
@@ -416,8 +416,8 @@
           <Select
             v-model="selectedSegmentGroup"
             :options="segmentGroupOptions"
-            optionLabel="label"
-            optionValue="value"
+            option-label="label"
+            option-value="value"
           />
         </div>
 
@@ -476,8 +476,8 @@
           <Select
             v-model="selectedMetric"
             :options="metricOptions"
-            optionLabel="label"
-            optionValue="value"
+            option-label="label"
+            option-value="value"
           />
         </div>
 
@@ -525,7 +525,7 @@
         <DataTable
           v-else
           :value="perTypeRows"
-          :rowClass="perTypeRowClass"
+          :row-class="perTypeRowClass"
           size="small"
           striped-rows
           table-style="min-width: 100%"

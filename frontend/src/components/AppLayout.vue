@@ -256,7 +256,7 @@
               <Button
                 class="shell-action-button"
                 rounded
-                @click="toggleDark"
+                @click="() => toggleDark()"
                 :aria-label="isDark ? t('ui.lightMode') : t('ui.darkMode')"
               >
                 <AppIcon :name="isDark ? 'sun' : 'moon'" :size="16" />

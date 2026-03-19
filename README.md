@@ -1,4 +1,4 @@
-# Nepremičnine v0.12.0
+# Nepremičnine v0.13.0
 
 > Slovenian real estate valuation platform for buyers, sellers, investors, and companies — powered by machine learning on official ETN transaction data.
 
@@ -32,7 +32,7 @@
 | Task Queue | ARQ + Redis 7 |
 | ML | scikit-learn HistGradientBoostingRegressor (per property type) |
 | Security | slowapi rate limiting, security headers, SecretStr passwords, input validation |
-| Frontend | Vue 3 (Composition API) + TypeScript + Pinia + VueUse + Vite 8 + PrimeVue 4 |
+| Frontend | Vue 3 (Composition API) + TypeScript + Pinia + VueUse + Vite 8 + PrimeVue 4 + Tailwind CSS 4 |
 | Testing | Vitest (unit) + Playwright (E2E) + pytest (backend) |
 | Charts | Chart.js + vue-chartjs |
 | Maps | Leaflet 1.9 |
@@ -188,6 +188,7 @@ nepremicnine/
     ├── src/
     │   ├── views/              # Viewer pages + admin workbench
     │   ├── components/         # App shell, shared UI, loading spinners
+    │   │   └── layout/         # AppSidebar, ProfileDialog sub-components
     │   ├── constants/          # Navigation and shared labels
     │   ├── stores/             # Pinia (auth, data, model, stats, ui, tokens)
     │   ├── composables/        # useApi, useDarkMode, useExport, useToast
@@ -352,6 +353,7 @@ For this repo specifically:
 - [Phase 21: v0.10.0 Market UX & Training Reliability Reset](docs/MASTER.md#v0100)
 - [Phase 22: v0.11.0 Data Quality, Map UX, and PrimeVue Modernization](docs/MASTER.md#v0110)
 - [Phase 23: v0.12.0 Architecture Modernization](docs/PHASE_23_MODERNIZATION.md)
+- [Phase 24: v0.13.0 Full Frontend Redesign](docs/PHASE_24_REDESIGN.md)
 - [Deployment Guide](docs/DEPLOYMENT.md)
 
 ## License

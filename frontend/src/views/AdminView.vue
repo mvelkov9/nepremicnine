@@ -94,7 +94,7 @@
       <DataTable
         :value="users"
         :loading="loading"
-        stripedRows
+        striped-rows
         responsive-layout="scroll"
       >
         <template #empty>

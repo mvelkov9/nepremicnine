@@ -6,7 +6,7 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 
 | Item | Value |
 |------|-------|
-| **Version** | 0.12.0 |
+| **Version** | 0.13.0 |
 | **Repo** | [github.com/mvelkov9/nepremicnine](https://github.com/mvelkov9/nepremicnine) |
 | **Backend** | FastAPI + Python 3.13 + PostgreSQL 17 + SQLAlchemy 2.x async |
 | **Frontend** | Vue 3 Composition API + TypeScript + Pinia + VueUse + pnpm 9, Vite 8 |
@@ -37,6 +37,7 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 | Phase 21 | Market UX and training reliability reset: structured progress, map legend/drawer, PrimeVue admin/viewer polish | ✅ Complete | `22c90cf` |
 | Phase 22 | Data quality, map UX, and PrimeVue modernization: canonical municipality coverage, direct portal links, centered map modal, cached analytics, admin quality summary | ✅ Complete | working tree |
 | [Phase 23](PHASE_23_MODERNIZATION.md) | Architecture modernization: TypeScript, VueUse, Vitest, Playwright E2E, DB optimization, API security hardening, performance benchmarking, accessibility audit, CI/CD overhaul, Prometheus monitoring | ✅ Complete | working tree |
+| [Phase 24](PHASE_24_REDESIGN.md) | Full frontend redesign: PrimeVue component migration, layout decomposition, dark mode fixes, CSS cleanup | ✅ Complete | working tree |
 
 ## Changelog
 
