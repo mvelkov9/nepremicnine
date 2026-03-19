@@ -67,12 +67,23 @@ Removed ~450 lines of deprecated CSS from `main.css`:
 - `.auth-switch`, `.inline-link` (replaced by PrimeVue components)
 - Cleaned responsive media queries of dead class references
 
+### Visual Overhaul (Phase 5)
+
+- **Sidebar grouping**: Added `group` field to `NavItem` interface, grouped viewer nav (Overview / Tools / Insights) and admin nav (Overview / Pipeline / Monitor) with section labels and dividers
+- **AdminView**: Added global search filter, pagination, sortable columns, user count display
+- **ModelView**: Sortable columns, R² severity Tags, theme-aware Chart.js colors via `getComputedStyle()`, icons on all buttons, replaced `model-source-pill` with PrimeVue Tag
+- **DashboardView**: Added Analysis quick-action button, region column in largest markets table
+- **MunicipalityView**: Year trend data as DataTable, improved color consistency, icons on all buttons
+- **PrepareView**: Enhanced result display with detected pairs DataTable, icons on all action buttons
+- **DiagnosticsView**: Fixed last hardcoded gradient color (`#7dd3fc` → `color-mix()`)
+
 ### Dark Mode Fixes
 
 - Replaced hardcoded colors in PredictionView (`.estimate-card`, `.submit-btn`, `.context-card`) with CSS variables
 - Replaced hardcoded colors in MapView (`.legend-chip.active`, `.flag-chip.active`) with `color-mix()` using CSS variables
 - Fixed `.feature-bar` in DiagnosticsView: `rgb(15 23 42 / 8%)` → `var(--surface-muted)`
 - Fixed `.active-focus-row`: hardcoded blue → `color-mix(in srgb, var(--primary) 8%, transparent)`
+- Fixed `.feature-bar span` gradient: hardcoded `#7dd3fc` → `color-mix(in srgb, var(--primary) 40%, white)`
 
 ---
 

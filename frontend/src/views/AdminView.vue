@@ -1,5 +1,5 @@
 <script setup lang="ts">
-  import { ref, onMounted } from 'vue'
+  import { ref, computed, onMounted } from 'vue'
   import { useI18n } from 'vue-i18n'
   import { useConfirm } from 'primevue/useconfirm'
   import api from '../composables/useApi'
@@ -13,6 +13,19 @@
   const users = ref([])
   const loading = ref(false)
   const error = ref(null)
+  const userFilter = ref('')
+
+  const filteredUsers = computed(() => {
+    const query = userFilter.value.trim().toLowerCase()
+    if (!query) return users.value
+    return users.value.filter((user: any) =>
+      [user.full_name, user.email].some((value) =>
+        String(value || '')
+          .toLowerCase()
+          .includes(query),
+      ),
+    )
+  })
 
   async function fetchUsers() {
     loading.value = true
@@ -85,15 +98,33 @@
 
 <template>
   <div>
-    <PageHeader :title="t('nav.admin')" />
+    <PageHeader
+      :title="t('admin.userManagement')"
+      :description="t('admin.description')"
+    >
+      <template #actions>
+        <Tag
+          severity="secondary"
+          :value="t('admin.totalUsers', { count: users.length })"
+        />
+      </template>
+    </PageHeader>
 
-    <div class="card">
-      <h2>{{ t('admin.userManagement') }}</h2>
+    <div class="card mt-3">
       <p v-if="error" class="error-text mb-3">{{ error }}</p>
 
+      <div class="table-actions mb-3">
+        <IconField>
+          <InputIcon class="pi pi-search" />
+          <InputText v-model="userFilter" :placeholder="t('common.search')" />
+        </IconField>
+      </div>
+
       <DataTable
-        :value="users"
+        :value="filteredUsers"
         :loading="loading"
+        paginator
+        :rows="10"
         striped-rows
         responsive-layout="scroll"
       >
@@ -103,17 +134,17 @@
           </div>
         </template>
 
-        <Column field="id" header="ID" />
-        <Column field="full_name" :header="t('admin.name')" />
-        <Column field="email" :header="t('admin.email')" />
+        <Column field="id" header="ID" sortable />
+        <Column field="full_name" :header="t('admin.name')" sortable />
+        <Column field="email" :header="t('admin.email')" sortable />
 
-        <Column field="role" :header="t('admin.role')">
+        <Column field="role" :header="t('admin.role')" sortable>
           <template #body="{ data }">
             <Tag :value="data.role" :severity="roleSeverity(data.role)" />
           </template>
         </Column>
 
-        <Column field="is_active" :header="t('admin.status')">
+        <Column field="is_active" :header="t('admin.status')" sortable>
           <template #body="{ data }">
             <Tag
               :value="data.is_active ? t('admin.active') : t('admin.disabled')"
@@ -122,7 +153,7 @@
           </template>
         </Column>
 
-        <Column field="created_at" :header="t('admin.created')">
+        <Column field="created_at" :header="t('admin.created')" sortable>
           <template #body="{ data }">
             {{ formatCreatedAt(data.created_at) }}
           </template>
@@ -132,23 +163,29 @@
           <template #body="{ data }">
             <div class="flex gap-2 flex-wrap">
               <Button
+                :icon="data.role === 'admin' ? 'pi pi-user' : 'pi pi-shield'"
                 :label="data.role === 'admin' ? t('admin.makeViewer') : t('admin.makeAdmin')"
                 severity="secondary"
                 size="small"
+                outlined
                 :aria-label="`${data.role === 'admin' ? t('admin.makeViewer') : t('admin.makeAdmin')} - ${data.full_name}`"
                 @click="toggleRole(data)"
               />
               <Button
+                :icon="data.is_active ? 'pi pi-times-circle' : 'pi pi-check-circle'"
                 :label="data.is_active ? t('admin.disable') : t('admin.enable')"
                 :severity="data.is_active ? 'danger' : undefined"
                 size="small"
+                outlined
                 :aria-label="`${data.is_active ? t('admin.disable') : t('admin.enable')} - ${data.full_name}`"
                 @click="toggleActive(data)"
               />
               <Button
+                icon="pi pi-trash"
                 :label="t('common.delete')"
                 severity="danger"
                 size="small"
+                outlined
                 :aria-label="`${t('common.delete')} – ${data.full_name}`"
                 @click="deleteUser(data)"
               />
@@ -163,6 +200,17 @@
 <style scoped>
   .mb-3 {
     margin-bottom: 1rem;
+  }
+
+  .mt-3 {
+    margin-top: 1rem;
+  }
+
+  .table-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
   }
 
   .empty-message {

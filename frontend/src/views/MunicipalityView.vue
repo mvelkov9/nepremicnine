@@ -54,6 +54,15 @@
 
   const detail = computed(() => stats.municipalityDetail)
 
+  const yearTrendRows = computed(() =>
+    (detail.value?.year_trend || []).map((item: any) => ({
+      year: item.year,
+      count: item.count,
+      median_price: item.median_price,
+      median_price_per_m2: item.median_price_per_m2,
+    })),
+  )
+
   const heroMetrics = computed(() => [
     {
       label: t('dashboard.transactions'),
@@ -160,14 +169,24 @@
             </div>
           </div>
 
-          <div v-if="detail.year_trend?.length" class="year-grid">
-            <div v-for="item in detail.year_trend" :key="item.year" class="year-card">
-              <strong>{{ item.year }}</strong>
-              <span>{{ fmt(item.count) }} {{ t('dashboard.transactions') }}</span>
-              <small>{{ formatCurrency(item.median_price) }}</small>
-              <small>{{ formatCurrency(item.median_price_per_m2) }}/m²</small>
-            </div>
-          </div>
+          <DataTable
+            v-if="yearTrendRows.length"
+            :value="yearTrendRows"
+            size="small"
+            striped-rows
+            responsive-layout="scroll"
+          >
+            <Column field="year" :header="t('map.yearFilter')" sortable />
+            <Column field="count" :header="t('dashboard.transactions')" sortable>
+              <template #body="{ data }">{{ fmt(data.count) }}</template>
+            </Column>
+            <Column field="median_price" :header="t('dashboard.medianPrice')" sortable>
+              <template #body="{ data }">{{ formatCurrency(data.median_price) }}</template>
+            </Column>
+            <Column field="median_price_per_m2" :header="t('dashboard.pricePerM2')" sortable>
+              <template #body="{ data }">{{ formatCurrency(data.median_price_per_m2) }}</template>
+            </Column>
+          </DataTable>
           <p v-else class="empty-text">{{ t('common.noData') }}</p>
         </article>
 
@@ -231,6 +250,7 @@
                   size="small"
                   severity="secondary"
                   outlined
+                  icon="pi pi-calculator"
                   :label="t('municipality.useForPrediction')"
                   @click="openPrediction(data)"
                 />
@@ -255,13 +275,17 @@
               :to="`/obcine/${item.slug}`"
               class="related-card"
             >
-              <div>
+              <div class="related-info">
                 <strong>{{ item.municipality }}</strong>
                 <small>{{ item.region || '—' }}</small>
+                <span class="related-count">{{ fmt(item.count) }} {{ t('dashboard.transactions') }}</span>
               </div>
-              <div class="related-metric">
-                <strong>{{ formatCurrency(item.median_price_per_m2) }}</strong>
-                <small>{{ fmt(item.count) }} {{ t('dashboard.transactions') }}</small>
+              <div class="related-right">
+                <div class="related-metric">
+                  <strong>{{ formatCurrency(item.median_price_per_m2) }}</strong>
+                  <small>/m²</small>
+                </div>
+                <i class="pi pi-arrow-right related-arrow"></i>
               </div>
             </RouterLink>
           </div>
@@ -312,8 +336,6 @@
 
   .municipality-hero p,
   .metric-card p,
-  .year-card span,
-  .year-card small,
   .mix-copy small,
   .related-card small,
   .empty-text {
@@ -367,13 +389,13 @@
   }
 
   .metric-card.accent {
-    background: linear-gradient(135deg, rgb(15 23 42 / 94%), rgb(26 38 61 / 94%));
-    color: #eff6ff;
+    background: linear-gradient(135deg, var(--surface-dark), color-mix(in srgb, var(--surface-dark) 80%, var(--primary) 20%));
+    color: var(--shell-text);
   }
 
   .metric-card.accent span,
   .metric-card.accent p {
-    color: rgb(255 255 255 / 72%);
+    color: var(--shell-text-soft);
   }
 
   .content-grid {
@@ -392,24 +414,6 @@
 
   .panel-head {
     margin-bottom: 0.95rem;
-  }
-
-  .year-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-    gap: 0.75rem;
-  }
-
-  .year-card,
-  .related-card {
-    display: grid;
-    gap: 0.2rem;
-    padding: 0.9rem;
-    border-radius: 1.15rem;
-    border: 1px solid var(--border);
-    background: var(--surface-soft-muted);
-    text-decoration: none;
-    color: inherit;
   }
 
   .mix-row {
@@ -435,7 +439,7 @@
     display: block;
     height: 100%;
     border-radius: inherit;
-    background: linear-gradient(90deg, #f59e0b, #facc15);
+    background: linear-gradient(90deg, var(--warning), var(--secondary));
   }
 
   .related-card {
@@ -443,10 +447,58 @@
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
+    padding: 0.9rem;
+    border-radius: 1.15rem;
+    border: 1px solid var(--border);
+    background: var(--surface-soft-muted);
+    text-decoration: none;
+    color: inherit;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+
+  .related-card:hover {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 1px var(--primary);
+  }
+
+  .related-info {
+    display: grid;
+    gap: 0.1rem;
+  }
+
+  .related-count {
+    display: inline-flex;
+    align-items: center;
+    margin-top: 0.25rem;
+    padding: 0.15rem 0.55rem;
+    border-radius: 999px;
+    background: var(--surface-muted);
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    font-weight: 600;
+    width: fit-content;
+  }
+
+  .related-right {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    flex-shrink: 0;
   }
 
   .related-metric {
     text-align: right;
+  }
+
+  .related-arrow {
+    color: var(--text-soft);
+    font-size: 0.85rem;
+    transition: transform 0.15s;
+  }
+
+  .related-card:hover .related-arrow {
+    transform: translateX(3px);
+    color: var(--primary);
   }
 
   .state-card {

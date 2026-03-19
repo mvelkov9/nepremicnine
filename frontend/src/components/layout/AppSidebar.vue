@@ -17,6 +17,26 @@
 
   const { t } = useI18n()
 
+  interface NavGroup {
+    key: string
+    items: NavItem[]
+  }
+
+  const navGroups = computed<NavGroup[]>(() => {
+    const groups: NavGroup[] = []
+    let currentKey = ''
+    for (const item of props.navItems) {
+      const key = item.group ?? ''
+      if (key !== currentKey || groups.length === 0) {
+        currentKey = key
+        groups.push({ key, items: [item] })
+      } else {
+        groups[groups.length - 1].items.push(item)
+      }
+    }
+    return groups
+  })
+
   function sidebarTooltip(label: string) {
     return props.collapsed ? { value: label, showDelay: 120, autoHide: true } : null
   }
@@ -45,21 +65,28 @@
       </section>
 
       <nav class="shell-nav" :aria-label="t('layout.navigation')">
-        <RouterLink
-          v-for="item in navItems"
-          :key="item.to"
-          :to="item.to"
-          class="shell-nav-link"
-          :class="{ active: isActiveRoute(item) }"
-          v-tooltip.right="sidebarTooltip(t(item.label))"
+        <div
+          v-for="(group, gi) in navGroups"
+          :key="group.key || gi"
+          class="shell-nav-group"
         >
-          <span class="shell-nav-icon">
-            <AppIcon :name="item.icon" :size="18" />
-          </span>
-          <span class="shell-nav-copy">
-            <strong>{{ t(item.label) }}</strong>
-          </span>
-        </RouterLink>
+          <span v-if="group.key && !collapsed" class="sidebar-section-label">{{ t(group.key) }}</span>
+          <RouterLink
+            v-for="item in group.items"
+            :key="item.to"
+            :to="item.to"
+            class="shell-nav-link"
+            :class="{ active: isActiveRoute(item) }"
+            v-tooltip.right="sidebarTooltip(t(item.label))"
+          >
+            <span class="shell-nav-icon">
+              <AppIcon :name="item.icon" :size="18" />
+            </span>
+            <span class="shell-nav-copy">
+              <strong>{{ t(item.label) }}</strong>
+            </span>
+          </RouterLink>
+        </div>
       </nav>
 
       <div class="sidebar-footer">
@@ -178,7 +205,22 @@
 
   .shell-nav {
     display: grid;
+    gap: 0.65rem;
+  }
+
+  .shell-nav-group {
+    display: grid;
     gap: 0.4rem;
+  }
+
+  .shell-nav-group + .shell-nav-group {
+    padding-top: 0.55rem;
+    border-top: 1px solid var(--shell-divider);
+  }
+
+  .shell-nav-group > .sidebar-section-label {
+    padding-inline: 0.72rem;
+    padding-bottom: 0.1rem;
   }
 
   .shell-nav-link,

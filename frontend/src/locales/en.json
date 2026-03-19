@@ -13,7 +13,12 @@
     "diagnostics": "Diagnostics",
     "analysis": "Analysis",
     "admin": "Admin",
-    "logout": "Logout"
+    "logout": "Logout",
+    "groupOverview": "Overview",
+    "groupTools": "Tools",
+    "groupInsights": "Insights",
+    "groupPipeline": "Pipeline",
+    "groupMonitor": "Monitor"
   },
   "auth": {
     "login": "Login",
@@ -492,7 +497,14 @@
     "readyForModel": "Ready for model training",
     "openModel": "Open model view",
     "reportStatus": "Status",
-    "reportDetail": "Detail"
+    "reportDetail": "Detail",
+    "selectAll": "Select All",
+    "deselectAll": "Deselect All",
+    "pairStatus": "Status",
+    "status_complete": "Complete",
+    "status_ready": "Ready",
+    "status_incomplete": "Incomplete",
+    "datasetPath": "Dataset path"
   },
   "diag": {
     "noModel": "No model trained yet. Upload data and start training.",
@@ -594,7 +606,9 @@
     "enable": "Enable",
     "confirmDelete": "Are you sure you want to delete user {name}?",
     "makeAdmin": "→ admin",
-    "makeViewer": "→ viewer"
+    "makeViewer": "→ viewer",
+    "description": "Manage registered users, assign roles, and enable or disable access to the platform.",
+    "totalUsers": "{count} users"
   },
   "ui": {
     "toggleTheme": "Toggle theme",

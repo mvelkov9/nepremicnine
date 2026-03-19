@@ -629,7 +629,7 @@
     display: block;
     height: 100%;
     border-radius: inherit;
-    background: linear-gradient(90deg, var(--primary), #7dd3fc);
+    background: linear-gradient(90deg, var(--primary), color-mix(in srgb, var(--primary) 40%, white));
   }
 
   :deep(.active-focus-row) {

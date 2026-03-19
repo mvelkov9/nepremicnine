@@ -184,6 +184,7 @@
         <Button
           type="submit"
           :loading="loading"
+          :icon="isLogin ? 'pi pi-sign-in' : 'pi pi-user-plus'"
           :label="isLogin ? t('auth.loginButton') : t('auth.registerButton')"
           class="auth-submit"
         />

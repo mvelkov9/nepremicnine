@@ -141,31 +141,43 @@
     ]
   })
 
+  function getChartColors() {
+    const style = getComputedStyle(document.documentElement)
+    return {
+      bar: style.getPropertyValue('--primary').trim() || '#2d8479',
+      tick: style.getPropertyValue('--text-soft').trim() || '#94a3b8',
+    }
+  }
+
   const importanceChart = computed(() => {
     const items = model.importance.slice(0, 15)
+    const colors = getChartColors()
     return {
       labels: items.map((item) => item.label),
       datasets: [
         {
           label: t('model.importance'),
           data: items.map((item) => item.importance),
-          backgroundColor: '#3b82f6',
+          backgroundColor: colors.bar,
           borderRadius: 10,
         },
       ],
     }
   })
 
-  const importanceOptions = {
-    indexAxis: 'y',
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: { legend: { display: false } },
-    scales: {
-      x: { beginAtZero: true, ticks: { color: '#94a3b8' } },
-      y: { ticks: { color: '#94a3b8' } },
-    },
-  }
+  const importanceOptions = computed(() => {
+    const colors = getChartColors()
+    return {
+      indexAxis: 'y' as const,
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { beginAtZero: true, ticks: { color: colors.tick } },
+        y: { ticks: { color: colors.tick } },
+      },
+    }
+  })
 
   watch(
     trainingDataset,
@@ -300,7 +312,7 @@
       >
         <template #actions>
           <RouterLink v-if="!trainingDataset?.exists" to="/admin/priprava">
-            <Button severity="contrast" outlined :label="t('model.goToPrepare')" />
+            <Button severity="contrast" outlined icon="pi pi-arrow-right" :label="t('model.goToPrepare')" />
           </RouterLink>
         </template>
       </PageHeader>
@@ -420,9 +432,9 @@
         :description="`${t('model.trainedAt')}: ${formatDate(model.info.trained_at)} · ${fmt(model.info.rows)} ${t('data.rows')} · ${formatDuration(model.info.duration_sec)}`"
       >
         <template #actions>
-          <span v-if="model.info.source_csv_path" class="model-source-pill">
+          <Tag v-if="model.info.source_csv_path" severity="secondary">
             {{ t('model.currentSource') }}: {{ model.info.source_csv_path }}
-          </span>
+          </Tag>
         </template>
       </PageHeader>
 
@@ -455,22 +467,24 @@
         striped-rows
         table-style="min-width: 100%"
       >
-        <Column field="propertyType" :header="t('model.propertyType')">
+        <Column field="propertyType" :header="t('model.propertyType')" sortable>
           <template #body="{ data }">{{ formatType(data.propertyType) }}</template>
         </Column>
-        <Column field="mae" header="MAE">
+        <Column field="mae" header="MAE" sortable>
           <template #body="{ data }">{{ fmtCurrency(data.mae) }}</template>
         </Column>
-        <Column field="rmse" header="RMSE">
+        <Column field="rmse" header="RMSE" sortable>
           <template #body="{ data }">{{ fmtCurrency(data.rmse) }}</template>
         </Column>
-        <Column field="r2" header="R²">
-          <template #body="{ data }">{{ formatScore(data.r2) }}</template>
+        <Column field="r2" header="R²" sortable>
+          <template #body="{ data }">
+            <Tag :severity="data.r2 >= 0.7 ? 'success' : data.r2 >= 0.4 ? 'warn' : 'danger'" :value="formatScore(data.r2)" />
+          </template>
         </Column>
-        <Column field="mape" header="MAPE">
+        <Column field="mape" header="MAPE" sortable>
           <template #body="{ data }">{{ fmtPercent(data.mape) }}</template>
         </Column>
-        <Column field="n_train" header="N">
+        <Column field="n_train" header="N" sortable>
           <template #body="{ data }">{{ fmt(data.n_train) }}</template>
         </Column>
       </DataTable>
@@ -587,8 +601,8 @@
 
     <div v-if="!model.loading && !model.info" class="card empty-card">
       <p class="muted">{{ t('model.noModel') }}</p>
-      <RouterLink v-if="isAdmin" to="/admin/priprava" class="ghost-link">
-        {{ t('model.prepareDatasetCta') }}
+      <RouterLink v-if="isAdmin" to="/admin/priprava" style="text-decoration: none">
+        <Button severity="secondary" text icon="pi pi-arrow-right" :label="t('model.prepareDatasetCta')" />
       </RouterLink>
     </div>
   </div>

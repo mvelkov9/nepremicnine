@@ -13,7 +13,12 @@
     "diagnostics": "Diagnostika",
     "analysis": "Analiza",
     "admin": "Administracija",
-    "logout": "Odjava"
+    "logout": "Odjava",
+    "groupOverview": "Pregled",
+    "groupTools": "Orodja",
+    "groupInsights": "Vpogledi",
+    "groupPipeline": "Podatki",
+    "groupMonitor": "Nadzor"
   },
   "auth": {
     "login": "Prijava",
@@ -492,7 +497,14 @@
     "readyForModel": "Pripravljeno za model",
     "openModel": "Odpri pogled Model",
     "reportStatus": "Status",
-    "reportDetail": "Podrobnost"
+    "reportDetail": "Podrobnost",
+    "selectAll": "Izberi vse",
+    "deselectAll": "Odznači vse",
+    "pairStatus": "Status",
+    "status_complete": "Kompletno",
+    "status_ready": "Pripravljeno",
+    "status_incomplete": "Nepopolno",
+    "datasetPath": "Pot do nabora"
   },
   "diag": {
     "noModel": "Model še ni naučen. Naložite podatke in začnite treniranje modela.",
@@ -594,7 +606,9 @@
     "enable": "Omogoči",
     "confirmDelete": "Ali ste prepričani, da želite izbrisati uporabnika {name}?",
     "makeAdmin": "→ admin",
-    "makeViewer": "→ viewer"
+    "makeViewer": "→ viewer",
+    "description": "Upravljajte registrirane uporabnike, dodeljujte vloge in omogočite ali onemogočite dostop do platforme.",
+    "totalUsers": "{count} uporabnikov"
   },
   "ui": {
     "toggleTheme": "Preklopi temo",

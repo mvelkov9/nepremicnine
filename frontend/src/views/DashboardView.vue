@@ -225,6 +225,14 @@
               :label="t('dashboard.quickMap')"
             />
           </RouterLink>
+          <RouterLink to="/analiza" class="hero-link">
+            <Button
+              severity="secondary"
+              outlined
+              icon="pi pi-chart-line"
+              :label="t('nav.analysis')"
+            />
+          </RouterLink>
           <RouterLink v-if="spotlight?.slug" :to="`/obcine/${spotlight.slug}`" class="hero-link">
             <Button
               severity="contrast"
@@ -352,6 +360,7 @@
                 </RouterLink>
               </template>
             </Column>
+            <Column field="region" :header="t('map.region')" sortable />
             <Column field="count" :header="t('dashboard.transactions')" sortable>
               <template #body="{ data }">{{ fmt(data.count) }}</template>
             </Column>

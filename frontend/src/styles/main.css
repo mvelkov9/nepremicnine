@@ -702,15 +702,6 @@ button:disabled {
   margin: 0;
 }
 
-.model-source-pill,
-.ghost-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  color: var(--primary);
-  font-weight: 700;
-  text-decoration: none;
-}
 
 .empty-card {
   display: flex;
