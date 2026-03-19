@@ -35,10 +35,10 @@ export default defineConfig(({ mode }) => {
       chunkSizeWarningLimit: 600,
       rollupOptions: {
         output: {
-          manualChunks: {
-            'vendor': ['vue', 'vue-router', 'pinia', 'vue-i18n'],
-            'primevue': ['primevue'],
-            'vueuse': ['@vueuse/core'],
+          manualChunks(id) {
+            if (['vue', 'vue-router', 'pinia', 'vue-i18n'].some(pkg => id.includes(`/node_modules/${pkg}/`) || id.includes(`/node_modules/.pnpm/${pkg}`))) return 'vendor'
+            if (id.includes('/node_modules/primevue/') || id.includes('/node_modules/.pnpm/primevue')) return 'primevue'
+            if (id.includes('/node_modules/@vueuse/') || id.includes('/node_modules/.pnpm/@vueuse')) return 'vueuse'
           },
         },
       },
