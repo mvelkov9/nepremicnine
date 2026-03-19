@@ -51,7 +51,7 @@
     "vite": "^8.0.0",
     "vitest": "^4.1.0",
     "@playwright/test": "^1.52.0",
-    "vue-eslint-parser": "^10.0.0",
+    "vue-eslint-parser": "^10.4.0",
     "vue-tsc": "^3.0.0"
   },
   "packageManager": "pnpm@9.15.4"
