@@ -1,7 +1,16 @@
 import pluginVue from "eslint-plugin-vue";
+import tsParser from "@typescript-eslint/parser";
 
 export default [
   ...pluginVue.configs["flat/recommended"],
+  {
+    files: ["**/*.vue"],
+    languageOptions: {
+      parserOptions: {
+        parser: tsParser,
+      },
+    },
+  },
   {
     rules: {
       "vue/multi-word-component-names": "off",
