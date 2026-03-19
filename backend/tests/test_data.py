@@ -8,6 +8,7 @@ import pytest
 from httpx import AsyncClient
 
 from app.api.data import DATA_DIR
+from app.schemas.dataset import TrainingDatasetResponse
 from app.services.data_processing_service import prepare_training_csv_from_etn_kpp_bulk
 
 
@@ -297,3 +298,37 @@ def test_prepare_etn_bulk_uses_stable_source_keys_for_dedup_and_reports_per_year
     assert len(saved_df) == 3
     assert result["deduplicated_rows"] == 1
     assert result["per_year"] == {"2024": 3}
+    assert "filter_summary" in result
+    assert output_csv.with_name("train.csv.metadata.json").exists()
+
+
+@pytest.mark.asyncio
+async def test_training_dataset_endpoint_includes_preparation_metadata(client: AsyncClient, monkeypatch: pytest.MonkeyPatch):
+    token = await _get_admin_token(client)
+
+    monkeypatch.setattr(
+        "app.api.data._get_training_dataset_metadata",
+        lambda: TrainingDatasetResponse(
+            exists=True,
+            relative_path="raw/train.csv",
+            rows=12,
+            columns=["price_eur"],
+            preparation_metadata={
+                "source": "etn_kpp_bulk",
+                "filter_summary": {
+                    "building": [{"stage": "building_merged_rows", "rows": 20, "dropped_since_previous": 0}],
+                    "land": [{"stage": "land_final_rows", "rows": 5, "dropped_since_previous": 1}],
+                },
+            },
+        ),
+    )
+
+    resp = await client.get(
+        "/api/data/training-dataset",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["preparation_metadata"]["source"] == "etn_kpp_bulk"
+    assert data["preparation_metadata"]["filter_summary"]["building"][0]["stage"] == "building_merged_rows"

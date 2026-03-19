@@ -37,3 +37,4 @@ class TrainingDatasetResponse(BaseModel):
     columns: list[str] = Field(default_factory=list)
     updated_at: datetime | None = None
     size_bytes: int | None = None
+    preparation_metadata: dict | None = None

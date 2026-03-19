@@ -91,9 +91,12 @@ async def model_diagnostics(_user: User = Depends(get_current_user)):
         "global_metrics": info.get("global_metrics"),
         "combined_metrics": info.get("combined_metrics"),
         "per_type_metrics": info.get("per_type_metrics", {}),
+        "per_type_features": info.get("per_type_features", {}),
         "per_region_metrics": info.get("per_region_metrics", {}),
         "per_type_count": info.get("per_type_count", 0),
         "type_models_trained": info.get("type_models_trained", []),
+        "data_preparation": info.get("data_preparation"),
+        "segment_diagnostics": info.get("segment_diagnostics"),
     }
 
 

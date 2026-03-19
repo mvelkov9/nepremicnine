@@ -1,12 +1,7 @@
-<script setup>
+<script setup lang="ts">
   import { computed, onMounted, ref } from 'vue'
   import { useI18n } from 'vue-i18n'
-  import Button from 'primevue/button'
-  import Column from 'primevue/column'
-  import DataTable from 'primevue/datatable'
-  import Dialog from 'primevue/dialog'
-  import InputText from 'primevue/inputtext'
-  import Tag from 'primevue/tag'
+  import { useConfirm } from 'primevue/useconfirm'
   import EmptyState from '../components/EmptyState.vue'
   import LoadingSpinner from '../components/LoadingSpinner.vue'
   import MetricCard from '../components/MetricCard.vue'
@@ -19,6 +14,7 @@
   const { t } = useI18n()
   const auth = useAuthStore()
   const dataStore = useDataStore()
+  const confirmDialog = useConfirm()
 
   const fileInput = ref(null)
   const previewData = ref(null)
@@ -90,15 +86,15 @@
     }
   })
 
-  async function handleUpload() {
-    const files = fileInput.value?.files
+  async function handleUpload(event: any) {
+    const files = event.files
     if (!files?.length) return
     error.value = ''
     uploadResult.value = null
     try {
       const result = await dataStore.uploadFiles(files)
       uploadResult.value = result
-      fileInput.value.value = ''
+      fileInput.value?.clear()
       await Promise.all([dataStore.fetchTrainingDataset(), dataStore.fetchQualitySummary()])
     } catch (e) {
       error.value = getApiErrorMessage(e, t)
@@ -116,25 +112,41 @@
     }
   }
 
-  async function handleDelete(id) {
-    if (!confirm(t('data.confirmDelete'))) return
-    try {
-      await dataStore.deleteDataset(id)
-      await Promise.all([dataStore.fetchTrainingDataset(), dataStore.fetchQualitySummary()])
-    } catch (e) {
-      error.value = getApiErrorMessage(e, t)
-    }
+  function handleDelete(id: number) {
+    confirmDialog.require({
+      message: t('data.confirmDelete'),
+      header: t('common.delete'),
+      icon: 'pi pi-exclamation-triangle',
+      rejectProps: { label: t('common.cancel'), severity: 'secondary', outlined: true },
+      acceptProps: { label: t('common.delete'), severity: 'danger' },
+      accept: async () => {
+        try {
+          await dataStore.deleteDataset(id)
+          await Promise.all([dataStore.fetchTrainingDataset(), dataStore.fetchQualitySummary()])
+        } catch (e) {
+          error.value = getApiErrorMessage(e, t)
+        }
+      },
+    })
   }
 
-  async function handleDeleteAll() {
+  function handleDeleteAll() {
     if (!dataStore.datasets.length) return
-    if (!confirm(t('data.confirmDeleteAll'))) return
-    try {
-      await dataStore.deleteAllDatasets()
-      await Promise.all([dataStore.fetchTrainingDataset(), dataStore.fetchQualitySummary()])
-    } catch (e) {
-      error.value = getApiErrorMessage(e, t)
-    }
+    confirmDialog.require({
+      message: t('data.confirmDeleteAll'),
+      header: t('data.deleteAll'),
+      icon: 'pi pi-exclamation-triangle',
+      rejectProps: { label: t('common.cancel'), severity: 'secondary', outlined: true },
+      acceptProps: { label: t('data.deleteAll'), severity: 'danger' },
+      accept: async () => {
+        try {
+          await dataStore.deleteAllDatasets()
+          await Promise.all([dataStore.fetchTrainingDataset(), dataStore.fetchQualitySummary()])
+        } catch (e) {
+          error.value = getApiErrorMessage(e, t)
+        }
+      },
+    })
   }
 
   function formatDate(iso) {
@@ -169,18 +181,16 @@
       </PageHeader>
 
       <div class="upload-shell">
-        <input
+        <FileUpload
           ref="fileInput"
-          type="file"
+          mode="basic"
           multiple
           accept=".csv,.zip"
+          :auto="false"
+          choose-icon="pi pi-upload"
+          :choose-label="t('data.uploadButton')"
           :aria-label="t('data.upload')"
-        />
-        <Button
-          icon="pi pi-upload"
-          :loading="dataStore.uploading"
-          :label="dataStore.uploading ? t('common.loading') : t('data.uploadButton')"
-          @click="handleUpload"
+          @select="handleUpload"
         />
       </div>
 
@@ -266,10 +276,10 @@
       >
         <template #actions>
           <div class="table-actions">
-            <span class="p-input-icon-left">
-              <i class="pi pi-search"></i>
+            <IconField>
+              <InputIcon class="pi pi-search" />
               <InputText v-model="datasetFilter" :placeholder="t('common.search')" />
-            </span>
+            </IconField>
             <Button
               v-if="auth.isAdmin && dataStore.datasets.length"
               severity="danger"

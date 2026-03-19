@@ -1,17 +1,43 @@
 <script setup lang="ts">
-  import { onMounted, ref } from 'vue'
+  import { onMounted, ref, watch } from 'vue'
   import { RouterView, useRoute } from 'vue-router'
+  import { useToast as usePrimeToast } from 'primevue/usetoast'
   import AppLayout from './components/AppLayout.vue'
-  import ToastContainer from './components/ToastContainer.vue'
   import LoadingSpinner from './components/LoadingSpinner.vue'
   import FullPageSpinner from './components/FullPageSpinner.vue'
   import { useAuthStore } from './stores/auth'
   import { useUiStore } from './stores/ui'
+  import { usePendingToasts, type ToastType } from './composables/useToast'
 
   const auth = useAuthStore()
   const route = useRoute()
   const ui = useUiStore()
   const ready = ref(false)
+  const primeToast = usePrimeToast()
+  const { pending } = usePendingToasts()
+
+  const severityMap: Record<ToastType, string> = {
+    info: 'info',
+    success: 'success',
+    warning: 'warn',
+    error: 'error',
+  }
+
+  // Bridge module-level toast queue → PrimeVue Toast
+  watch(
+    pending,
+    (items) => {
+      while (items.length) {
+        const item = items.shift()!
+        primeToast.add({
+          severity: severityMap[item.type] ?? 'info',
+          detail: item.message,
+          life: item.life,
+        })
+      }
+    },
+    { deep: true },
+  )
 
   onMounted(async () => {
     await auth.init()
@@ -40,5 +66,6 @@
       </Transition>
     </RouterView>
   </template>
-  <ToastContainer />
+  <Toast />
+  <ConfirmDialog />
 </template>

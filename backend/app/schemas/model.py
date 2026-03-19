@@ -67,6 +67,18 @@ class PredictRequest(BaseModel):
     num_prostori: int | None = None
     transaction_year: int | None = None
     uporabna_povrsina: float | None = None
+    parcela_m2: float | None = Field(default=None, ge=0)
+    prodani_delez_parcele: float | None = Field(default=None, ge=0)
+    prodani_delez_dela_stavbe: float | None = Field(default=None, ge=0)
+    gradbena_faza: int | None = Field(default=None, ge=1, le=6)
+    stopnja_ddv: float | None = Field(default=None, ge=0, le=100)
+    evidentiranost_dela_stavbe: int | None = Field(default=None, ge=0, le=1)
+    atrij: int | None = Field(default=None, ge=0, le=1)
+    ime_ko: str | None = None
+    naselje: str | None = None
+    vrsta_dela_stavbe: str | None = None
+    vrsta_zemljisca: str | None = None
+    vrsta_kupoprodajnega_posla: str | None = None
     lega_v_stavbi: str | None = None
     stavba_je_dokoncana: int | None = None
     ddv_vkljucen: int | None = None
@@ -90,6 +102,7 @@ class ModelInfoResponse(BaseModel):
     per_region_metrics: dict | None = None
     global_importance: dict | None = None
     feature_labels: dict | None = None
+    per_type_features: dict | None = None
     per_type_count: int = 0
     coords_by_municipality: dict[str, dict] | None = None
     combined_metrics: dict | None = None
@@ -97,3 +110,5 @@ class ModelInfoResponse(BaseModel):
     used_features: list[str] | None = None
     model_type: str | None = None
     source_csv_path: str | None = None
+    data_preparation: dict | None = None
+    segment_diagnostics: dict | None = None

@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
   import { computed, onMounted, ref } from 'vue'
   import { useI18n } from 'vue-i18n'
   import { Bar } from 'vue-chartjs'
@@ -10,7 +10,15 @@
     LinearScale,
     Tooltip,
   } from 'chart.js'
+  import DataTable from 'primevue/datatable'
+  import Column from 'primevue/column'
+  import Select from 'primevue/select'
+  import SelectButton from 'primevue/selectbutton'
+  import Tag from 'primevue/tag'
   import EmptyState from '../components/EmptyState.vue'
+  import MetricCard from '../components/MetricCard.vue'
+  import PageHeader from '../components/PageHeader.vue'
+  import { useDataStore } from '../stores/data'
   import { useModelStore } from '../stores/model'
   import { formatCurrency, formatDateTime, formatNumber, formatPercent } from '../utils/format'
   import { getPropertyTypeLabel } from '../utils/propertyType'
@@ -19,9 +27,11 @@
 
   const { t } = useI18n()
   const model = useModelStore()
+  const dataStore = useDataStore()
 
   const selectedMetric = ref('r2')
   const selectedType = ref('all')
+  const selectedSegmentGroup = ref('property_type')
   const metrics = ['mae', 'rmse', 'r2', 'mape', 'median_ae']
 
   function formatType(value) {
@@ -29,6 +39,7 @@
   }
 
   function formatMetric(value, digits = 4) {
+    if (value == null || Number.isNaN(Number(value))) return '—'
     return formatNumber(value, {
       minimumFractionDigits: digits,
       maximumFractionDigits: digits,
@@ -40,7 +51,40 @@
     return `${formatNumber(value, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}s`
   }
 
+  function humanizeStage(stage) {
+    if (!stage) return '—'
+    return String(stage)
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (char) => char.toUpperCase())
+  }
+
+  function segmentGroupLabel(group) {
+    const labels = {
+      property_type: t('diag.byPropertyType'),
+      sale_type: t('diag.saleTypeSegments'),
+      transaction_year: t('diag.yearSegments'),
+      parcel_land_type: t('diag.parcelLandTypeSegments'),
+    }
+    return labels[group] || group
+  }
+
   const availableTypes = computed(() => Object.keys(model.info?.per_type_metrics || {}))
+
+  const typeOptions = computed(() => [
+    { label: t('diag.allTypes'), value: 'all' },
+    ...availableTypes.value.map((type) => ({ label: formatType(type), value: type })),
+  ])
+
+  const metricOptions = computed(() =>
+    metrics.map((m) => ({ label: m.toUpperCase(), value: m })),
+  )
+
+  const segmentGroupOptions = computed(() =>
+    Object.keys(model.diagnostics?.segment_diagnostics || {}).map((key) => ({
+      label: segmentGroupLabel(key),
+      value: key,
+    })),
+  )
 
   const selectedTypeMetrics = computed(() => {
     if (selectedType.value === 'all') return model.info?.global_metrics || null
@@ -148,20 +192,153 @@
     ]
   })
 
+  const modelDetailsRows = computed(() => {
+    if (!model.info) return []
+    const rows = [
+      { key: t('diag.version'), val: model.info.version },
+      { key: t('diag.trainedAt'), val: formatDateTime(model.info.trained_at) },
+      { key: t('diag.rows'), val: formatNumber(model.info.rows) },
+    ]
+    if (model.diagnostics?.train_rows) {
+      rows.push({ key: t('diag.trainRows'), val: formatNumber(model.diagnostics.train_rows) })
+    }
+    if (model.diagnostics?.test_rows) {
+      rows.push({ key: t('diag.testRows'), val: formatNumber(model.diagnostics.test_rows) })
+    }
+    rows.push(
+      { key: t('diag.duration'), val: formatDuration(model.info.duration_sec) },
+      { key: t('diag.perTypeModels'), val: formatNumber(model.info.per_type_count) },
+    )
+    if (model.diagnostics?.model_type) {
+      rows.push({ key: t('diag.modelType'), val: model.diagnostics.model_type })
+    }
+    if (model.diagnostics?.type_models_trained?.length) {
+      rows.push({
+        key: t('diag.trainedTypes'),
+        val: model.diagnostics.type_models_trained.map((type) => formatType(type)).join(', '),
+      })
+    }
+    return rows
+  })
+
+  const perTypeRows = computed(() => {
+    const ptm = model.info?.per_type_metrics
+    if (!ptm) return []
+    return Object.entries(ptm).map(([propertyType, metricsData]: [string, any]) => ({
+      propertyType,
+      typeLabel: formatType(propertyType),
+      mae: metricsData.mae,
+      rmse: metricsData.rmse,
+      r2: metricsData.r2,
+      mape: metricsData.mape,
+      n_train: metricsData.n_train,
+      n_test: metricsData.n_test,
+    }))
+  })
+
+  function perTypeRowClass(data) {
+    return selectedType.value === data.propertyType ? 'active-focus-row' : ''
+  }
+
+  const perRegionRows = computed(() => {
+    const prm = model.info?.per_region_metrics
+    if (!prm) return []
+    return Object.entries(prm).map(([region, metricsData]: [string, any]) => ({
+      region,
+      mae: metricsData.mae,
+      rmse: metricsData.rmse,
+      r2: metricsData.r2,
+      mape: metricsData.mape,
+    }))
+  })
+
+  const preparationMetadata = computed(
+    () => model.diagnostics?.data_preparation || dataStore.trainingDataset?.preparation_metadata || null,
+  )
+
+  const filterRows = computed(() => {
+    const summary = preparationMetadata.value?.filter_summary
+    if (!summary) return []
+    return Object.entries(summary).flatMap(([group, stages]) =>
+      (stages || []).map((stage) => ({
+        group,
+        groupLabel: group === 'building' ? t('diag.buildingFlow') : t('diag.landFlow'),
+        stage: stage.stage,
+        stageLabel: humanizeStage(stage.stage),
+        rows: stage.rows,
+        dropped_since_previous: stage.dropped_since_previous,
+        reports: stage.reports,
+      })),
+    )
+  })
+
+  const segmentRows = computed(
+    () => model.diagnostics?.segment_diagnostics?.[selectedSegmentGroup.value] || [],
+  )
+
+  const scoreDriverCards = computed(() => {
+    const diagnostics = model.diagnostics?.segment_diagnostics || {}
+    const cards = []
+    const property = diagnostics.property_type?.[0]
+    if (property) {
+      cards.push({
+        label: t('diag.worstPropertyType'),
+        value: `${formatType(property.segment)} · R² ${formatMetric(property.r2, 3)}`,
+        meta: `${t('diag.testSamples')}: ${formatNumber(property.n)}`,
+      })
+    }
+    const saleType = diagnostics.sale_type?.[0]
+    if (saleType) {
+      cards.push({
+        label: t('diag.worstSaleType'),
+        value: `${saleType.segment} · R² ${formatMetric(saleType.r2, 3)}`,
+        meta: `${t('diag.testSamples')}: ${formatNumber(saleType.n)}`,
+      })
+    }
+    const landType = diagnostics.parcel_land_type?.[0]
+    if (landType) {
+      cards.push({
+        label: t('diag.worstParcelLandType'),
+        value: `${landType.segment} · R² ${formatMetric(landType.r2, 3)}`,
+        meta: `${t('diag.testSamples')}: ${formatNumber(landType.n)}`,
+      })
+    }
+    return cards
+  })
+
+  function r2Severity(value) {
+    if (value > 0.7) return 'success'
+    if (value > 0.4) return 'warn'
+    return 'danger'
+  }
+
+  function formatMape(mape) {
+    return mape == null ? '—' : formatPercent(mape, { scale: 0.01, minimumFractionDigits: 1 })
+  }
+
   onMounted(async () => {
-    await Promise.all([model.fetchInfo(), model.fetchDiagnostics(), model.fetchImportance()])
+    await Promise.all([
+      model.fetchInfo(),
+      model.fetchDiagnostics(),
+      model.fetchImportance(),
+      dataStore.fetchTrainingDataset(),
+    ])
+    if (segmentGroupOptions.value.length && !segmentGroupOptions.value.some((item) => item.value === selectedSegmentGroup.value)) {
+      selectedSegmentGroup.value = segmentGroupOptions.value[0].value
+    }
   })
 </script>
 
 <template>
   <div>
-    <h1 class="page-title">{{ t('nav.diagnostics') }}</h1>
+    <PageHeader :title="t('nav.diagnostics')" />
 
     <div v-if="!model.info" class="card">
       <p class="muted">{{ t('diag.noModel') }}</p>
     </div>
 
     <template v-else>
+      <!-- Focus type selector + KPI cards -->
       <div class="card" style="margin-bottom: 1.5rem">
         <div class="focus-head">
           <div>
@@ -174,109 +351,134 @@
               }}
             </p>
           </div>
-          <div class="focus-chips">
-            <button
-              type="button"
-              class="focus-chip"
-              :class="{ active: selectedType === 'all' }"
-              @click="selectedType = 'all'"
-            >
-              {{ t('diag.allTypes') }}
-            </button>
-            <button
-              v-for="type in availableTypes"
-              :key="type"
-              type="button"
-              class="focus-chip"
-              :class="{ active: selectedType === type }"
-              @click="selectedType = type"
-            >
-              {{ formatType(type) }}
-            </button>
-          </div>
+          <SelectButton
+            v-model="selectedType"
+            :options="typeOptions"
+            optionLabel="label"
+            optionValue="value"
+          />
         </div>
 
         <div class="kpi-grid" style="margin-top: 1rem">
-          <div v-for="item in focusMetrics" :key="item.label" class="kpi-card">
-            <span class="kpi-label">{{ item.label }}</span>
-            <span class="kpi-value">{{ item.value }}</span>
-            <span class="muted" style="font-size: 11px">{{ item.desc }}</span>
-          </div>
+          <MetricCard
+            v-for="item in focusMetrics"
+            :key="item.label"
+            :label="item.label"
+            :value="item.value"
+            :meta="item.desc"
+          />
         </div>
       </div>
 
+      <!-- Combined metrics -->
       <div v-if="combinedMetrics.length" class="card" style="margin-bottom: 1.5rem">
         <h2>{{ t('diag.combinedMetrics') }}</h2>
         <p class="muted" style="margin-bottom: 0.75rem">{{ t('diag.combinedDesc') }}</p>
         <div class="kpi-grid">
-          <div v-for="item in combinedMetrics" :key="item.label" class="kpi-card">
-            <span class="kpi-label">{{ item.label }}</span>
-            <span class="kpi-value">{{ item.value }}</span>
-          </div>
+          <MetricCard
+            v-for="item in combinedMetrics"
+            :key="item.label"
+            :label="item.label"
+            :value="item.value"
+          />
         </div>
       </div>
 
+      <!-- Model details table -->
       <div class="card" style="margin-bottom: 1.5rem">
         <h2>{{ t('diag.modelDetails') }}</h2>
-        <div class="table-wrap">
-          <table>
-            <tbody>
-              <tr>
-                <td class="muted">{{ t('diag.version') }}</td>
-                <td>{{ model.info.version }}</td>
-              </tr>
-              <tr>
-                <td class="muted">{{ t('diag.trainedAt') }}</td>
-                <td>{{ formatDateTime(model.info.trained_at) }}</td>
-              </tr>
-              <tr>
-                <td class="muted">{{ t('diag.rows') }}</td>
-                <td>{{ formatNumber(model.info.rows) }}</td>
-              </tr>
-              <tr v-if="model.diagnostics?.train_rows">
-                <td class="muted">{{ t('diag.trainRows') }}</td>
-                <td>{{ formatNumber(model.diagnostics.train_rows) }}</td>
-              </tr>
-              <tr v-if="model.diagnostics?.test_rows">
-                <td class="muted">{{ t('diag.testRows') }}</td>
-                <td>{{ formatNumber(model.diagnostics.test_rows) }}</td>
-              </tr>
-              <tr>
-                <td class="muted">{{ t('diag.duration') }}</td>
-                <td>{{ formatDuration(model.info.duration_sec) }}</td>
-              </tr>
-              <tr>
-                <td class="muted">{{ t('diag.perTypeModels') }}</td>
-                <td>{{ formatNumber(model.info.per_type_count) }}</td>
-              </tr>
-              <tr v-if="model.diagnostics?.model_type">
-                <td class="muted">{{ t('diag.modelType') }}</td>
-                <td>{{ model.diagnostics.model_type }}</td>
-              </tr>
-              <tr v-if="model.diagnostics?.type_models_trained?.length">
-                <td class="muted">{{ t('diag.trainedTypes') }}</td>
-                <td>
-                  {{
-                    model.diagnostics.type_models_trained.map((type) => formatType(type)).join(', ')
-                  }}
-                </td>
-              </tr>
-            </tbody>
-          </table>
+        <DataTable :value="modelDetailsRows" size="small" table-style="min-width: 100%">
+          <Column field="key" :header="t('diag.property')" />
+          <Column field="val" :header="t('diag.value')" />
+        </DataTable>
+      </div>
+
+      <div v-if="scoreDriverCards.length" class="card" style="margin-bottom: 1.5rem">
+        <h2>{{ t('diag.scoreDrivers') }}</h2>
+        <p class="muted" style="margin-bottom: 0.75rem">{{ t('diag.scoreDriversDesc') }}</p>
+        <div class="kpi-grid">
+          <MetricCard
+            v-for="item in scoreDriverCards"
+            :key="item.label"
+            :label="item.label"
+            :value="item.value"
+            :meta="item.meta"
+          />
         </div>
       </div>
 
+      <div v-if="segmentGroupOptions.length" class="card" style="margin-bottom: 1.5rem">
+        <div class="focus-head">
+          <div>
+            <h2 style="margin: 0">{{ t('diag.worstSegments') }}</h2>
+            <p class="muted">{{ t('diag.worstSegmentsDesc') }}</p>
+          </div>
+          <Select
+            v-model="selectedSegmentGroup"
+            :options="segmentGroupOptions"
+            optionLabel="label"
+            optionValue="value"
+          />
+        </div>
+
+        <DataTable
+          :value="segmentRows"
+          size="small"
+          striped-rows
+          table-style="min-width: 100%"
+        >
+          <Column field="segment" :header="t('diag.segment')" sortable />
+          <Column field="n" :header="t('diag.testSamples')" sortable>
+            <template #body="{ data }">{{ formatNumber(data.n) }}</template>
+          </Column>
+          <Column field="r2" header="R²" sortable>
+            <template #body="{ data }">
+              <Tag :value="formatMetric(data.r2, 3)" :severity="r2Severity(data.r2)" />
+            </template>
+          </Column>
+          <Column field="mae" header="MAE" sortable>
+            <template #body="{ data }">{{ formatCurrency(data.mae) }}</template>
+          </Column>
+          <Column field="rmse" header="RMSE" sortable>
+            <template #body="{ data }">{{ formatCurrency(data.rmse) }}</template>
+          </Column>
+          <Column field="mape" header="MAPE" sortable>
+            <template #body="{ data }">{{ formatMape(data.mape) }}</template>
+          </Column>
+        </DataTable>
+      </div>
+
+      <div v-if="filterRows.length" class="card" style="margin-bottom: 1.5rem">
+        <h2>{{ t('diag.filterSummary') }}</h2>
+        <p class="muted" style="margin-bottom: 0.75rem">{{ t('diag.filterSummaryDesc') }}</p>
+        <DataTable :value="filterRows" size="small" striped-rows table-style="min-width: 100%">
+          <Column field="groupLabel" :header="t('diag.flow')" sortable />
+          <Column field="stageLabel" :header="t('diag.stage')" sortable />
+          <Column field="rows" :header="t('diag.rowsKept')" sortable>
+            <template #body="{ data }">{{ formatNumber(data.rows) }}</template>
+          </Column>
+          <Column field="dropped_since_previous" :header="t('diag.rowsDropped')" sortable>
+            <template #body="{ data }">{{ formatNumber(data.dropped_since_previous) }}</template>
+          </Column>
+          <Column field="reports" :header="t('diag.yearsCovered')" sortable>
+            <template #body="{ data }">{{ formatNumber(data.reports) }}</template>
+          </Column>
+        </DataTable>
+      </div>
+
+      <!-- Compare metrics charts -->
       <div class="card" style="margin-bottom: 1.5rem">
         <div class="focus-head">
           <div>
             <h2 style="margin: 0">{{ t('diag.compareMetrics') }}</h2>
             <p class="muted">{{ t('diag.byPropertyType') }} / {{ t('diag.byRegion') }}</p>
           </div>
-          <select v-model="selectedMetric" class="form-input" style="width: auto; min-width: 120px">
-            <option v-for="metric in metrics" :key="metric" :value="metric">
-              {{ metric.toUpperCase() }}
-            </option>
-          </select>
+          <Select
+            v-model="selectedMetric"
+            :options="metricOptions"
+            optionLabel="label"
+            optionValue="value"
+          />
         </div>
 
         <div v-if="perTypeChart" style="margin-bottom: 2rem">
@@ -294,6 +496,7 @@
         </div>
       </div>
 
+      <!-- Feature importance -->
       <div v-if="featureHighlights.length" class="card" style="margin-bottom: 1.5rem">
         <h2>{{ t('diag.topFeatures') }}</h2>
         <p class="muted" style="margin-bottom: 0.75rem">{{ t('diag.topFeaturesDesc') }}</p>
@@ -311,6 +514,7 @@
         </div>
       </div>
 
+      <!-- Per-type metrics table -->
       <div v-if="model.info.per_type_metrics" class="card" style="margin-bottom: 1.5rem">
         <h2>{{ t('diag.perTypeTable') }}</h2>
         <EmptyState
@@ -318,52 +522,39 @@
           icon="📊"
           :message="t('empty.noResults')"
         />
-        <div v-else class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>{{ t('diag.type') }}</th>
-                <th>MAE</th>
-                <th>RMSE</th>
-                <th>R²</th>
-                <th>MAPE</th>
-                <th>{{ t('diag.trainSamples') }}</th>
-                <th>{{ t('diag.testSamples') }}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="(metricsData, propertyType) in model.info.per_type_metrics"
-                :key="propertyType"
-                :class="{ 'active-focus-row': selectedType === propertyType }"
-              >
-                <td>{{ formatType(propertyType) }}</td>
-                <td>{{ formatCurrency(metricsData.mae) }}</td>
-                <td>{{ formatCurrency(metricsData.rmse) }}</td>
-                <td
-                  :class="{
-                    'badge-green': metricsData.r2 > 0.7,
-                    'badge-yellow': metricsData.r2 > 0.4 && metricsData.r2 <= 0.7,
-                    'badge-red': metricsData.r2 <= 0.4,
-                  }"
-                >
-                  {{ formatMetric(metricsData.r2) }}
-                </td>
-                <td>
-                  {{
-                    metricsData.mape == null
-                      ? '—'
-                      : formatPercent(metricsData.mape, { scale: 0.01, minimumFractionDigits: 1 })
-                  }}
-                </td>
-                <td>{{ formatNumber(metricsData.n_train) }}</td>
-                <td>{{ formatNumber(metricsData.n_test) }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          v-else
+          :value="perTypeRows"
+          :rowClass="perTypeRowClass"
+          size="small"
+          striped-rows
+          table-style="min-width: 100%"
+        >
+          <Column field="typeLabel" :header="t('diag.type')" sortable />
+          <Column field="mae" header="MAE" sortable>
+            <template #body="{ data }">{{ formatCurrency(data.mae) }}</template>
+          </Column>
+          <Column field="rmse" header="RMSE" sortable>
+            <template #body="{ data }">{{ formatCurrency(data.rmse) }}</template>
+          </Column>
+          <Column field="r2" header="R²" sortable>
+            <template #body="{ data }">
+              <Tag :value="formatMetric(data.r2)" :severity="r2Severity(data.r2)" />
+            </template>
+          </Column>
+          <Column field="mape" header="MAPE" sortable>
+            <template #body="{ data }">{{ formatMape(data.mape) }}</template>
+          </Column>
+          <Column field="n_train" :header="t('diag.trainSamples')" sortable>
+            <template #body="{ data }">{{ formatNumber(data.n_train) }}</template>
+          </Column>
+          <Column field="n_test" :header="t('diag.testSamples')" sortable>
+            <template #body="{ data }">{{ formatNumber(data.n_test) }}</template>
+          </Column>
+        </DataTable>
       </div>
 
+      <!-- Per-region metrics table -->
       <div v-if="model.info.per_region_metrics" class="card">
         <h2>{{ t('diag.perRegionTable') }}</h2>
         <EmptyState
@@ -371,34 +562,27 @@
           icon="🗺️"
           :message="t('empty.noResults')"
         />
-        <div v-else class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>{{ t('diag.region') }}</th>
-                <th>MAE</th>
-                <th>RMSE</th>
-                <th>R²</th>
-                <th>MAPE</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="(metricsData, region) in model.info.per_region_metrics" :key="region">
-                <td>{{ region }}</td>
-                <td>{{ formatCurrency(metricsData.mae) }}</td>
-                <td>{{ formatCurrency(metricsData.rmse) }}</td>
-                <td>{{ formatMetric(metricsData.r2) }}</td>
-                <td>
-                  {{
-                    metricsData.mape == null
-                      ? '—'
-                      : formatPercent(metricsData.mape, { scale: 0.01, minimumFractionDigits: 1 })
-                  }}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          v-else
+          :value="perRegionRows"
+          size="small"
+          striped-rows
+          table-style="min-width: 100%"
+        >
+          <Column field="region" :header="t('diag.region')" sortable />
+          <Column field="mae" header="MAE" sortable>
+            <template #body="{ data }">{{ formatCurrency(data.mae) }}</template>
+          </Column>
+          <Column field="rmse" header="RMSE" sortable>
+            <template #body="{ data }">{{ formatCurrency(data.rmse) }}</template>
+          </Column>
+          <Column field="r2" header="R²" sortable>
+            <template #body="{ data }">{{ formatMetric(data.r2) }}</template>
+          </Column>
+          <Column field="mape" header="MAPE" sortable>
+            <template #body="{ data }">{{ formatMape(data.mape) }}</template>
+          </Column>
+        </DataTable>
       </div>
     </template>
   </div>
@@ -411,29 +595,6 @@
     align-items: flex-start;
     justify-content: space-between;
     flex-wrap: wrap;
-  }
-
-  .focus-chips {
-    display: flex;
-    gap: 0.55rem;
-    flex-wrap: wrap;
-  }
-
-  .focus-chip {
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    background: var(--surface-soft);
-    color: var(--text);
-    padding: 0.45rem 0.8rem;
-    font: inherit;
-    font-weight: 700;
-    cursor: pointer;
-  }
-
-  .focus-chip.active {
-    border-color: rgb(37 99 235 / 34%);
-    background: linear-gradient(135deg, rgb(37 99 235 / 14%), rgb(245 158 11 / 14%));
-    color: var(--primary-strong);
   }
 
   .feature-list {
@@ -461,7 +622,7 @@
     height: 0.7rem;
     overflow: hidden;
     border-radius: 999px;
-    background: rgb(15 23 42 / 8%);
+    background: var(--surface-muted);
   }
 
   .feature-bar span {
@@ -471,7 +632,7 @@
     background: linear-gradient(90deg, var(--primary), #7dd3fc);
   }
 
-  .active-focus-row {
-    background: rgb(37 99 235 / 6%);
+  :deep(.active-focus-row) {
+    background: color-mix(in srgb, var(--primary) 8%, transparent);
   }
 </style>

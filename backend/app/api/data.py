@@ -33,6 +33,7 @@ from app.services.data_processing_service import (
     extract_zip_csvs,
     import_rpe_rn,
     inspect_csv,
+    load_training_metadata,
     prepare_training_csv,
     prepare_training_csv_from_etn_kpp,
     prepare_training_csv_from_etn_kpp_bulk,
@@ -84,6 +85,7 @@ def _get_training_dataset_metadata() -> TrainingDatasetResponse:
 
     rows = None
     columns: list[str] = []
+    preparation_metadata = load_training_metadata(TRAIN_CSV)
     try:
         df = read_csv_flexible(TRAIN_CSV)
         rows = len(df)
@@ -98,6 +100,7 @@ def _get_training_dataset_metadata() -> TrainingDatasetResponse:
         columns=columns,
         updated_at=datetime.fromtimestamp(os.path.getmtime(TRAIN_CSV), UTC),
         size_bytes=os.path.getsize(TRAIN_CSV),
+        preparation_metadata=preparation_metadata,
     )
 
 

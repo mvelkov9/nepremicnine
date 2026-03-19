@@ -1,9 +1,10 @@
-<script setup>
+<script setup lang="ts">
   import { computed, ref, watch } from 'vue'
   import { RouterLink, useRoute, useRouter } from 'vue-router'
   import { useI18n } from 'vue-i18n'
   import AppIcon from '../components/AppIcon.vue'
   import LoadingSpinner from '../components/LoadingSpinner.vue'
+  import MetricCard from '../components/MetricCard.vue'
   import { useStatsStore } from '../stores/stats'
   import { getApiErrorMessage } from '../utils/apiError'
   import { formatCurrency, formatNumber, formatPercent } from '../utils/format'
@@ -17,15 +18,15 @@
   const loading = ref(false)
   const error = ref('')
 
-  function fmt(value, decimals = 0) {
+  function fmt(value: number | null | undefined, decimals = 0) {
     return formatNumber(value, { maximumFractionDigits: decimals })
   }
 
-  function fmtPercent(value) {
+  function fmtPercent(value: number | null | undefined) {
     return formatPercent(value)
   }
 
-  function formatType(value) {
+  function formatType(value: string) {
     return getPropertyTypeLabel(value, t)
   }
 
@@ -57,7 +58,7 @@
     {
       label: t('dashboard.transactions'),
       value: fmt(detail.value?.overview?.count),
-      detail: t('municipality.coverageWindow', {
+      meta: t('municipality.coverageWindow', {
         from: detail.value?.overview?.earliest_year || '—',
         to: detail.value?.overview?.latest_year || '—',
       }),
@@ -65,20 +66,22 @@
     {
       label: t('dashboard.medianPrice'),
       value: formatCurrency(detail.value?.overview?.median_price),
-      detail: `${fmt(detail.value?.overview?.avg_area, 1)} m²`,
+      meta: `${fmt(detail.value?.overview?.avg_area, 1)} m²`,
     },
     {
       label: t('dashboard.pricePerM2'),
       value: formatCurrency(detail.value?.overview?.median_price_per_m2),
-      detail: detail.value?.region || '—',
+      meta: detail.value?.region || '—',
     },
   ])
 
-  function shareStyle(share) {
+  const recentTransactions = computed(() => detail.value?.recent_transactions || [])
+
+  function shareStyle(share: number | null | undefined) {
     return { width: `${Math.max(10, Math.round((share || 0) * 100))}%` }
   }
 
-  function openPrediction(transaction = null) {
+  function openPrediction(transaction: any = null) {
     router.push({
       name: 'prediction',
       query: {
@@ -120,23 +123,19 @@
           </p>
 
           <div class="hero-actions">
-            <button class="hero-btn primary" @click="openPrediction()">
-              <AppIcon name="prediction" :size="16" />
-              <span>{{ t('municipality.openPrediction') }}</span>
-            </button>
-            <button class="hero-btn" @click="openMap">
-              <AppIcon name="map" :size="16" />
-              <span>{{ t('municipality.openMap') }}</span>
-            </button>
+            <Button icon="pi pi-calculator" :label="t('municipality.openPrediction')" @click="openPrediction()" />
+            <Button icon="pi pi-map" severity="secondary" outlined :label="t('municipality.openMap')" @click="openMap" />
           </div>
         </div>
 
         <div class="hero-side">
-          <article v-for="card in heroMetrics" :key="card.label" class="metric-card">
-            <span>{{ card.label }}</span>
-            <strong>{{ card.value }}</strong>
-            <p>{{ card.detail }}</p>
-          </article>
+          <MetricCard
+            v-for="card in heroMetrics"
+            :key="card.label"
+            :label="card.label"
+            :value="card.value"
+            :meta="card.meta"
+          />
 
           <article class="metric-card accent">
             <span>{{ t('municipality.regionStanding') }}</span>
@@ -204,37 +203,40 @@
             </div>
           </div>
 
-          <div v-if="detail.recent_transactions?.length" class="table-shell">
-            <table>
-              <thead>
-                <tr>
-                  <th>{{ t('predict.propertyType') }}</th>
-                  <th>{{ t('predict.size') }}</th>
-                  <th>{{ t('dashboard.medianPrice') }}</th>
-                  <th>€/m²</th>
-                  <th>{{ t('map.yearFilter') }}</th>
-                  <th>{{ t('common.actions') }}</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr
-                  v-for="item in detail.recent_transactions"
-                  :key="`${item.property_type}-${item.price_eur}-${item.year}`"
-                >
-                  <td>{{ formatType(item.property_type) || '—' }}</td>
-                  <td>{{ fmt(item.size_m2, 1) }} m²</td>
-                  <td>{{ formatCurrency(item.price_eur) }}</td>
-                  <td>{{ formatCurrency(item.price_per_m2) }}</td>
-                  <td>{{ item.year || '—' }}</td>
-                  <td>
-                    <button class="table-btn" @click="openPrediction(item)">
-                      {{ t('municipality.useForPrediction') }}
-                    </button>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            v-if="recentTransactions.length"
+            :value="recentTransactions"
+            size="small"
+            striped-rows
+            responsive-layout="scroll"
+          >
+            <Column :header="t('predict.propertyType')">
+              <template #body="{ data }">{{ formatType(data.property_type) || '—' }}</template>
+            </Column>
+            <Column :header="t('predict.size')">
+              <template #body="{ data }">{{ fmt(data.size_m2, 1) }} m²</template>
+            </Column>
+            <Column :header="t('dashboard.medianPrice')">
+              <template #body="{ data }">{{ formatCurrency(data.price_eur) }}</template>
+            </Column>
+            <Column header="€/m²">
+              <template #body="{ data }">{{ formatCurrency(data.price_per_m2) }}</template>
+            </Column>
+            <Column :header="t('map.yearFilter')">
+              <template #body="{ data }">{{ data.year || '—' }}</template>
+            </Column>
+            <Column :header="t('common.actions')">
+              <template #body="{ data }">
+                <Button
+                  size="small"
+                  severity="secondary"
+                  outlined
+                  :label="t('municipality.useForPrediction')"
+                  @click="openPrediction(data)"
+                />
+              </template>
+            </Column>
+          </DataTable>
           <p v-else class="empty-text">{{ t('common.noData') }}</p>
         </article>
 
@@ -339,25 +341,6 @@
     margin-top: 1.2rem;
   }
 
-  .hero-btn,
-  .table-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.8rem 1rem;
-    border-radius: 999px;
-    border: 1px solid var(--border);
-    background: var(--surface-soft-strong);
-    color: var(--text);
-  }
-
-  .hero-btn.primary,
-  .table-btn {
-    border-color: rgb(37 99 235 / 26%);
-    background: linear-gradient(135deg, var(--primary), var(--primary-strong));
-    color: #eff6ff;
-  }
-
   .hero-side,
   .mix-list,
   .related-list {
@@ -445,7 +428,7 @@
     height: 0.72rem;
     overflow: hidden;
     border-radius: 999px;
-    background: rgb(15 23 42 / 8%);
+    background: var(--surface-muted);
   }
 
   .mix-bar span {
@@ -453,29 +436,6 @@
     height: 100%;
     border-radius: inherit;
     background: linear-gradient(90deg, #f59e0b, #facc15);
-  }
-
-  .table-shell {
-    overflow-x: auto;
-  }
-
-  table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-
-  th,
-  td {
-    padding: 0.8rem 0.45rem;
-    text-align: left;
-    border-bottom: 1px solid var(--border);
-  }
-
-  th {
-    color: var(--text-soft);
-    font-size: 0.78rem;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
   }
 
   .related-card {

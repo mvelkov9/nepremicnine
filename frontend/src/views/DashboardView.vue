@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
   import { computed, onMounted, ref, watch } from 'vue'
   import { RouterLink } from 'vue-router'
   import { useI18n } from 'vue-i18n'
@@ -261,10 +261,10 @@
       </div>
 
       <div class="filter-actions">
-        <span class="p-input-icon-left search-box">
-          <i class="pi pi-search"></i>
+        <IconField class="search-box">
+          <InputIcon class="pi pi-search" />
           <InputText v-model="dashboardSearch" :placeholder="t('common.search')" />
-        </span>
+        </IconField>
         <SelectButton
           v-model="selectedPropertyType"
           :options="propertyTypeOptions"

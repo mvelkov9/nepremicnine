@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import json
 import os
 import shutil
 import struct as _struct
@@ -134,6 +135,50 @@ def clean_display_text(value: Any) -> str:
     return text or "unknown"
 
 
+def _parse_fractional_numeric_series(series: pd.Series) -> pd.Series:
+    def _parse_value(value: Any) -> float:
+        if pd.isna(value):
+            return np.nan
+
+        if isinstance(value, (int, float, np.integer, np.floating)):
+            return float(value)
+
+        text = str(value).strip()
+        if not text:
+            return np.nan
+
+        text = text.replace(",", ".")
+        if "/" in text:
+            numerator_text, denominator_text = (part.strip() for part in text.split("/", 1))
+            try:
+                numerator = float(numerator_text)
+                denominator = float(denominator_text)
+            except ValueError:
+                return np.nan
+            if denominator == 0:
+                return np.nan
+            return numerator / denominator
+
+        try:
+            return float(text)
+        except ValueError:
+            return np.nan
+
+    return series.apply(_parse_value).astype("float64")
+
+
+def _first_numeric_series(df: pd.DataFrame, candidates: list[str]) -> pd.Series:
+    for candidate in candidates:
+        if candidate in df.columns:
+            return _parse_fractional_numeric_series(df[candidate])
+    return pd.Series(np.nan, index=df.index, dtype="float64")
+
+
+def _normalize_gradbena_faza(series: pd.Series) -> pd.Series:
+    values = pd.to_numeric(series, errors="coerce")
+    return values.where(values.isin([1, 2, 3, 4, 5, 6]), np.nan)
+
+
 def group_property_type(raw_value: Any) -> str:
     if pd.isna(raw_value):
         return "ostalo"
@@ -226,6 +271,21 @@ def enrich_training_df(df: pd.DataFrame) -> pd.DataFrame:
         result["uporabna_povrsina"] = np.nan
     if "lega_v_stavbi" not in result.columns:
         result["lega_v_stavbi"] = "unknown"
+    if "prodani_delez_parcele" not in result.columns:
+        result["prodani_delez_parcele"] = np.nan
+    if "prodani_delez_dela_stavbe" not in result.columns:
+        result["prodani_delez_dela_stavbe"] = np.nan
+    if "gradbena_faza" not in result.columns:
+        result["gradbena_faza"] = np.nan
+    if "stopnja_ddv" not in result.columns:
+        result["stopnja_ddv"] = np.nan
+    if "evidentiranost_dela_stavbe" not in result.columns:
+        result["evidentiranost_dela_stavbe"] = np.nan
+    if "atrij" not in result.columns:
+        result["atrij"] = np.nan
+    for col in ["ime_ko", "naselje", "vrsta_dela_stavbe", "vrsta_zemljisca", "vrsta_kupoprodajnega_posla"]:
+        if col not in result.columns:
+            result[col] = "unknown"
     if "transaction_year" not in result.columns:
         result["transaction_year"] = pd.Timestamp.now().year
     if "novogradnja" not in result.columns:
@@ -257,17 +317,92 @@ def prepare_training_csv(
     if missing:
         raise ValueError(f"Missing columns after mapping: {', '.join(missing)}")
 
-    training_df = renamed[required].copy()
+    optional = [
+        "prodani_delez_parcele",
+        "prodani_delez_dela_stavbe",
+        "gradbena_faza",
+        "stopnja_ddv",
+        "evidentiranost_dela_stavbe",
+        "atrij",
+        "ime_ko",
+        "naselje",
+        "vrsta_dela_stavbe",
+        "vrsta_zemljisca",
+        "vrsta_kupoprodajnega_posla",
+    ]
+    selected = required + [col for col in optional if col in renamed.columns]
+
+    training_df = renamed[selected].copy()
     training_df = enrich_training_df(training_df)
 
     os.makedirs(os.path.dirname(output_csv_path), exist_ok=True)
     training_df.to_csv(output_csv_path, index=False)
+    _write_training_metadata(
+        output_csv_path,
+        {
+            "source": "mapped_csv",
+            "rows": len(training_df),
+            "columns": list(training_df.columns),
+        },
+    )
 
     return {
         "output_csv_path": output_csv_path,
         "rows": len(training_df),
         "columns": list(training_df.columns),
     }
+
+
+def _training_metadata_path(csv_path: str) -> str:
+    return f"{csv_path}.metadata.json"
+
+
+def _write_training_metadata(csv_path: str, metadata: dict[str, Any]) -> None:
+    metadata_path = _training_metadata_path(csv_path)
+    os.makedirs(os.path.dirname(metadata_path), exist_ok=True)
+    with open(metadata_path, "w", encoding="utf-8") as f:
+        json.dump(metadata, f, ensure_ascii=True, indent=2)
+
+
+def load_training_metadata(csv_path: str) -> dict[str, Any] | None:
+    metadata_path = _training_metadata_path(csv_path)
+    if not os.path.exists(metadata_path):
+        return None
+    with open(metadata_path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _append_stage(stage_stats: list[dict[str, Any]], stage: str, rows: int, **extra: Any) -> None:
+    previous_rows = stage_stats[-1]["rows"] if stage_stats else None
+    entry = {
+        "stage": stage,
+        "rows": int(rows),
+        "dropped_since_previous": int(max((previous_rows - rows), 0)) if previous_rows is not None else 0,
+    }
+    entry.update(extra)
+    stage_stats.append(entry)
+
+
+def _aggregate_stage_sequences(stage_sequences: list[list[dict[str, Any]]]) -> list[dict[str, Any]]:
+    ordered: list[str] = []
+    by_stage: dict[str, dict[str, Any]] = {}
+
+    for sequence in stage_sequences:
+        for item in sequence:
+            stage = str(item.get("stage"))
+            if stage not in by_stage:
+                ordered.append(stage)
+                by_stage[stage] = {
+                    "stage": stage,
+                    "rows": 0,
+                    "dropped_since_previous": 0,
+                    "reports": 0,
+                }
+            by_stage[stage]["rows"] += int(item.get("rows", 0) or 0)
+            by_stage[stage]["dropped_since_previous"] += int(item.get("dropped_since_previous", 0) or 0)
+            by_stage[stage]["reports"] += 1
+
+    return [by_stage[stage] for stage in ordered]
 
 
 # ── ZIP extraction ──────────────────────────────────────────────────
@@ -603,6 +738,7 @@ def build_training_df_from_etn_kpp(
         "POGODBENA_CENA_DELA_STAVBE",
         "VRSTA_KUPOPRODAJNEGA_POSLA",
         "VKLJUCENOST_DDV",
+        "STOPNJA_DDV",
     ]:
         if opt_col in posli_df.columns:
             posli_selected.append(opt_col)
@@ -610,6 +746,9 @@ def build_training_df_from_etn_kpp(
     merged = deli_df.merge(posli_df[posli_selected], on="ID_POSLA", how="inner", suffixes=("", "_POSLI"))
     if merged.empty:
         raise ValueError("Merging posli.csv and delistavb.csv returned 0 rows.")
+
+    stage_stats: list[dict[str, Any]] = []
+    _append_stage(stage_stats, "building_merged_rows", len(merged))
 
     training_df = pd.DataFrame()
     merged_index = merged.index.to_series(index=merged.index).astype(str)
@@ -648,6 +787,21 @@ def build_training_df_from_etn_kpp(
     training_df["year_built"] = pd.to_numeric(merged.get("LETO_IZGRADNJE_DELA_STAVBE", np.nan), errors="coerce")
     training_df["floor"] = pd.to_numeric(merged.get("NADSTROPJE_DELA_STAVBE", np.nan), errors="coerce")
 
+    training_df["ime_ko"] = (
+        merged["IME_KO"].apply(clean_display_text) if "IME_KO" in merged.columns else "unknown"
+    )
+    training_df["naselje"] = (
+        merged["NASELJE"].apply(clean_display_text) if "NASELJE" in merged.columns else "unknown"
+    )
+    training_df["vrsta_dela_stavbe"] = (
+        merged["VRSTA_DELA_STAVBE"].apply(clean_display_text) if "VRSTA_DELA_STAVBE" in merged.columns else "unknown"
+    )
+    training_df["evidentiranost_dela_stavbe"] = (
+        pd.to_numeric(merged.get("EVIDENTIRANOST_DELA_STAVBE", np.nan), errors="coerce")
+    )
+    training_df["atrij"] = pd.to_numeric(merged.get("ATRIJ", np.nan), errors="coerce")
+    training_df["stopnja_ddv"] = pd.to_numeric(merged.get("STOPNJA_DDV", np.nan), errors="coerce")
+
     # Coordinates (ETRS89/TM)
     if "E_CENTROID" in merged.columns and "N_CENTROID" in merged.columns:
         training_df["longitude"] = pd.to_numeric(merged["E_CENTROID"], errors="coerce")
@@ -677,6 +831,26 @@ def build_training_df_from_etn_kpp(
         pd.to_numeric(merged.get("UPORABNA_POVRSINA", np.nan), errors="coerce")
         if "UPORABNA_POVRSINA" in merged.columns
         else np.nan
+    )
+
+    training_df["prodani_delez_dela_stavbe"] = _first_numeric_series(
+        merged,
+        [
+            "PRODANI_DELEZ_DELA_STAVBE",
+            "PRODAN_DELEZ_DELA_STAVBE",
+            "DELEZ_DELA_STAVBE",
+        ],
+    )
+
+    training_df["gradbena_faza"] = _normalize_gradbena_faza(
+        _first_numeric_series(
+            merged,
+            [
+                "GRADBENA_FAZA",
+                "GRADBENA_FAZA_DELA_STAVBE",
+                "SIFRA_GRADBENE_FAZE",
+            ],
+        )
     )
 
     # Lega dela stavbe v stavbi
@@ -778,24 +952,31 @@ def build_training_df_from_etn_kpp(
 
     training_df = training_df.dropna(subset=["size_m2", "price_eur"])
     training_df = training_df[(training_df["size_m2"] > 0) & (training_df["price_eur"] > 0)]
+    _append_stage(stage_stats, "building_after_price_size_presence", len(training_df))
 
     # TRZNOST_POSLA: keep only market transactions (1=market, 2=market/poor quality, 5=under review)
     if "TRZNOST_POSLA" in merged.columns:
         trznost = pd.to_numeric(merged["TRZNOST_POSLA"], errors="coerce")
         trznost_aligned = trznost.reindex(training_df.index)
         training_df = training_df.loc[trznost_aligned.isin([1, 2, 5])].copy()
+    _append_stage(stage_stats, "building_after_market_filter", len(training_df))
 
     # VRSTA_KUPOPRODAJNEGA_POSLA: keep only open market (1) and voluntary auction (2)
     vrsta_posla_col = next(
         (c for c in ["VRSTA_KUPOPRODAJNEGA_POSLA", "VRSTA_KUPOPRODAJNEGA_POSLA_POSLI"] if c in merged.columns), None
     )
+    training_df["vrsta_kupoprodajnega_posla"] = (
+        merged[vrsta_posla_col].astype(str).str.strip() if vrsta_posla_col is not None else "unknown"
+    )
     if vrsta_posla_col is not None:
         vrsta_posla = pd.to_numeric(merged[vrsta_posla_col], errors="coerce")
         vrsta_aligned = vrsta_posla.reindex(training_df.index)
         training_df = training_df.loc[vrsta_aligned.isin([1, 2]) | vrsta_aligned.isna()].copy()
+    _append_stage(stage_stats, "building_after_sale_type_filter", len(training_df))
 
     # Exclude non-market types
     training_df = training_df[~training_df["property_type"].isin(EXCLUDED_PROPERTY_TYPES)].copy()
+    _append_stage(stage_stats, "building_after_excluded_property_types", len(training_df))
 
     # Outlier removal
     price_per_m2 = training_df["price_eur"] / training_df["size_m2"]
@@ -805,19 +986,26 @@ def build_training_df_from_etn_kpp(
         & (training_df["size_m2"] <= 1000)
         & (training_df["size_m2"] >= 5)
     ].copy()
+    _append_stage(stage_stats, "building_after_basic_outlier_filters", len(training_df))
 
     # Remove symbolic/absurd transactions
     if len(training_df) > 0:
         price_floor = max(1_000.0, training_df["price_eur"].quantile(0.005))
         training_df = training_df[training_df["price_eur"] >= price_floor].copy()
+        _append_stage(stage_stats, "building_after_price_floor", len(training_df))
         ppm2 = training_df["price_eur"] / training_df["size_m2"]
         ppm2_ceil = ppm2.quantile(0.999)
         training_df = training_df[ppm2 <= ppm2_ceil].copy()
+        _append_stage(stage_stats, "building_after_ppm2_cap", len(training_df))
+    else:
+        _append_stage(stage_stats, "building_after_price_floor", len(training_df))
+        _append_stage(stage_stats, "building_after_ppm2_cap", len(training_df))
 
     training_df["property_type"] = training_df["property_type"].apply(normalize_text)
 
     # Enrich
     training_df = _enrich_with_sifra(training_df, merged)
+    _append_stage(stage_stats, "building_after_enrichment", len(training_df))
 
     # Land area from ZEMLJISCA
     if zemljisca_df is not None and "ID_POSLA" in zemljisca_df.columns and "POVRSINA_PARCELE" in zemljisca_df.columns:
@@ -829,15 +1017,242 @@ def build_training_df_from_etn_kpp(
     else:
         training_df["parcela_m2"] = np.nan
 
+    if zemljisca_df is not None and "ID_POSLA" in zemljisca_df.columns:
+        if "VRSTA_ZEMLJISCA" in zemljisca_df.columns:
+            land_type_by_deal = zemljisca_df.groupby("ID_POSLA")["VRSTA_ZEMLJISCA"].agg(
+                lambda values: clean_display_text(values.dropna().astype(str).mode().iloc[0])
+                if len(values.dropna())
+                else "unknown"
+            )
+            id_posla_aligned = merged["ID_POSLA"].reindex(training_df.index)
+            training_df["vrsta_zemljisca"] = id_posla_aligned.map(land_type_by_deal).fillna("unknown")
+        else:
+            training_df["vrsta_zemljisca"] = "unknown"
+
+        parcel_share_col = next(
+            (
+                c
+                for c in [
+                    "PRODANI_DELEZ_PARCELE",
+                    "PRODAN_DELEZ_PARCELE",
+                    "DELEZ_PARCELE",
+                ]
+                if c in zemljisca_df.columns
+            ),
+            None,
+        )
+        if parcel_share_col is not None:
+            parcel_share_df = zemljisca_df[["ID_POSLA", parcel_share_col]].copy()
+            parcel_share_df["parcel_share"] = _parse_fractional_numeric_series(parcel_share_df[parcel_share_col])
+
+            if "POVRSINA_PARCELE" in zemljisca_df.columns:
+                parcel_share_df["parcel_area"] = pd.to_numeric(zemljisca_df["POVRSINA_PARCELE"], errors="coerce")
+                valid = parcel_share_df["parcel_share"].notna() & parcel_share_df["parcel_area"].notna()
+                weighted_sum = (parcel_share_df.loc[valid, "parcel_share"] * parcel_share_df.loc[valid, "parcel_area"])
+                weight_sum = parcel_share_df.loc[valid].groupby("ID_POSLA")["parcel_area"].sum()
+                share_by_deal = weighted_sum.groupby(parcel_share_df.loc[valid, "ID_POSLA"]).sum() / weight_sum
+            else:
+                share_by_deal = parcel_share_df.groupby("ID_POSLA")["parcel_share"].mean()
+
+            id_posla_aligned = merged["ID_POSLA"].reindex(training_df.index)
+            training_df["prodani_delez_parcele"] = id_posla_aligned.map(share_by_deal)
+        else:
+            training_df["prodani_delez_parcele"] = np.nan
+    else:
+        training_df["vrsta_zemljisca"] = "unknown"
+        training_df["prodani_delez_parcele"] = np.nan
+
     if training_df.empty:
         raise ValueError("No valid rows after filtering ETN data.")
+
+    _append_stage(stage_stats, "building_final_rows", len(training_df))
 
     meta = {
         "used_size_column": size_col,
         "used_property_type_column": property_type_source,
         "used_municipality_column": municipality_source,
+        "filter_stats": {
+            "inputs": {
+                "posli_rows": int(len(posli_df)),
+                "delistavb_rows": int(len(deli_df)),
+                "zemljisca_rows": int(len(zemljisca_df)) if zemljisca_df is not None else 0,
+            },
+            "stages": stage_stats,
+        },
     }
     return training_df, meta
+
+
+def build_training_df_from_etn_kpp_land(
+    posli_df: pd.DataFrame,
+    zemljisca_df: pd.DataFrame,
+    *,
+    exclude_posli_ids: set[str] | None = None,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """Build parcela rows from land-only ETN transactions."""
+    if "ID_POSLA" not in posli_df.columns or "ID_POSLA" not in zemljisca_df.columns:
+        raise ValueError("Both ETN files must contain ID_POSLA.")
+
+    if "POVRSINA_PARCELE" not in zemljisca_df.columns:
+        raise ValueError("zemljisca.csv missing POVRSINA_PARCELE")
+
+    land_df = zemljisca_df.copy()
+    if exclude_posli_ids:
+        land_df = land_df[~land_df["ID_POSLA"].astype(str).isin(exclude_posli_ids)].copy()
+    if land_df.empty:
+        raise ValueError("No land-only transactions after excluding building deals.")
+
+    stage_stats: list[dict[str, Any]] = []
+    _append_stage(stage_stats, "land_candidates_after_building_exclusion", len(land_df))
+
+    posli_selected = ["ID_POSLA", "POGODBENA_CENA_ODSKODNINA"]
+    for opt_col in [
+        "TRZNOST_POSLA",
+        "RPE_OBCINE_SIFRA",
+        "RPE_OBCINE_IME",
+        "IME_OBCINE",
+        "VRSTA_KUPOPRODAJNEGA_POSLA",
+        "VKLJUCENOST_DDV",
+        "STOPNJA_DDV",
+    ]:
+        if opt_col in posli_df.columns:
+            posli_selected.append(opt_col)
+
+    merged = land_df.merge(posli_df[posli_selected], on="ID_POSLA", how="inner", suffixes=("", "_POSLI"))
+    if merged.empty:
+        raise ValueError("Merging posli.csv and zemljisca.csv returned 0 rows.")
+    _append_stage(stage_stats, "land_merged_rows", len(merged))
+
+    training_df = pd.DataFrame()
+    merged_index = merged.index.to_series(index=merged.index).astype(str)
+    parcel_id_col = next((c for c in ["PARCELNA_STEVILKA", "FEATUREID"] if c in merged.columns), None)
+    training_df["deal_id"] = merged["ID_POSLA"].astype(str)
+    if parcel_id_col is not None:
+        training_df["source_row_key"] = merged["ID_POSLA"].astype(str) + ":land:" + merged[parcel_id_col].astype(str)
+    else:
+        training_df["source_row_key"] = merged["ID_POSLA"].astype(str) + ":land:" + merged_index
+
+    training_df["size_m2"] = pd.to_numeric(merged["POVRSINA_PARCELE"], errors="coerce")
+    training_df["rooms"] = np.nan
+    training_df["num_prostori"] = 0
+    training_df["has_klet"] = 0
+    training_df["has_garaza"] = 0
+    training_df["has_terasa"] = 0
+    training_df["has_shramba"] = 0
+    training_df["year_built"] = np.nan
+    training_df["floor"] = np.nan
+    training_df["ime_ko"] = merged["IME_KO"].apply(clean_display_text) if "IME_KO" in merged.columns else "unknown"
+    training_df["naselje"] = "unknown"
+    training_df["vrsta_dela_stavbe"] = "unknown"
+    training_df["evidentiranost_dela_stavbe"] = np.nan
+    training_df["atrij"] = np.nan
+    training_df["stopnja_ddv"] = pd.to_numeric(
+        merged.get("STOPNJA_DDV_PARCELE", merged.get("STOPNJA_DDV", np.nan)),
+        errors="coerce",
+    )
+    training_df["longitude"] = pd.to_numeric(merged.get("E_CENTROID", np.nan), errors="coerce")
+    training_df["latitude"] = pd.to_numeric(merged.get("N_CENTROID", np.nan), errors="coerce")
+    training_df["novogradnja"] = 0
+    training_df["stavba_je_dokoncana"] = np.nan
+    training_df["uporabna_povrsina"] = np.nan
+    training_df["prodani_delez_dela_stavbe"] = np.nan
+    training_df["gradbena_faza"] = np.nan
+    training_df["lega_v_stavbi"] = "unknown"
+    training_df["has_parking"] = 0
+
+    vkljucenost_col = next((c for c in ["VKLJUCENOST_DDV", "VKLJUCENOST_DDV_POSLI"] if c in merged.columns), None)
+    if vkljucenost_col is not None:
+        training_df["ddv_vkljucen"] = (
+            pd.to_numeric(merged[vkljucenost_col], errors="coerce").fillna(0).clip(0, 1).astype(int)
+        )
+    else:
+        training_df["ddv_vkljucen"] = 0
+
+    municipality_series = None
+    for muni_candidate in ["OBCINA", "IME_OBCINE", "RPE_OBCINE_IME", "OBCINA_POSLI", "IME_OBCINE_POSLI"]:
+        if muni_candidate in merged.columns:
+            candidate_series = merged[muni_candidate].astype(str).str.strip()
+            if (candidate_series != "").mean() > 0:
+                municipality_series = candidate_series
+                break
+    if municipality_series is not None:
+        training_df["municipality"] = municipality_series.apply(
+            lambda value: format_municipality_label(clean_display_text(value)) or "unknown"
+        )
+    else:
+        training_df["municipality"] = "unknown"
+
+    training_df["property_type"] = "parcela"
+    vrsta_posla_col = next(
+        (c for c in ["VRSTA_KUPOPRODAJNEGA_POSLA", "VRSTA_KUPOPRODAJNEGA_POSLA_POSLI"] if c in merged.columns), None
+    )
+    training_df["vrsta_kupoprodajnega_posla"] = (
+        merged[vrsta_posla_col].astype(str).str.strip() if vrsta_posla_col is not None else "unknown"
+    )
+    training_df["parcela_m2"] = training_df["size_m2"]
+    training_df["vrsta_zemljisca"] = (
+        merged["VRSTA_ZEMLJISCA"].apply(clean_display_text) if "VRSTA_ZEMLJISCA" in merged.columns else "unknown"
+    )
+    training_df["prodani_delez_parcele"] = _parse_fractional_numeric_series(
+        merged.get("PRODANI_DELEZ_PARCELE", pd.Series(np.nan, index=merged.index))
+    )
+
+    parcel_component_price = pd.to_numeric(merged.get("POGODBENA_CENA_PARCELE", np.nan), errors="coerce")
+    total_price = pd.to_numeric(merged["POGODBENA_CENA_ODSKODNINA"], errors="coerce")
+    total_area_per_deal = training_df.groupby("deal_id")["size_m2"].transform("sum")
+    area_ratio = training_df["size_m2"] / total_area_per_deal.replace(0, np.nan)
+    prorated_price = total_price * area_ratio
+    training_df["price_eur"] = parcel_component_price
+    training_df.loc[training_df["price_eur"].isna() | (training_df["price_eur"] <= 0), "price_eur"] = prorated_price
+
+    training_df = training_df.dropna(subset=["size_m2", "price_eur"])
+    training_df = training_df[(training_df["size_m2"] > 0) & (training_df["price_eur"] > 0)]
+    _append_stage(stage_stats, "land_after_price_size_presence", len(training_df))
+
+    if "TRZNOST_POSLA" in merged.columns:
+        trznost = pd.to_numeric(merged["TRZNOST_POSLA"], errors="coerce")
+        trznost_aligned = trznost.reindex(training_df.index)
+        training_df = training_df.loc[trznost_aligned.isin([1, 2, 5])].copy()
+    _append_stage(stage_stats, "land_after_market_filter", len(training_df))
+
+    if vrsta_posla_col is not None:
+        vrsta_posla = pd.to_numeric(merged[vrsta_posla_col], errors="coerce")
+        vrsta_aligned = vrsta_posla.reindex(training_df.index)
+        training_df = training_df.loc[vrsta_aligned.isin([1, 2]) | vrsta_aligned.isna()].copy()
+    _append_stage(stage_stats, "land_after_sale_type_filter", len(training_df))
+
+    price_per_m2 = training_df["price_eur"] / training_df["size_m2"]
+    training_df = training_df[
+        (training_df["price_eur"] <= 2_000_000)
+        & (price_per_m2 <= 15_000)
+        & (training_df["size_m2"] <= 200_000)
+        & (training_df["size_m2"] >= 5)
+    ].copy()
+    _append_stage(stage_stats, "land_after_basic_outlier_filters", len(training_df))
+
+    if len(training_df) > 0:
+        price_floor = max(1_000.0, training_df["price_eur"].quantile(0.005))
+        training_df = training_df[training_df["price_eur"] >= price_floor].copy()
+    _append_stage(stage_stats, "land_after_price_floor", len(training_df))
+
+    training_df = _enrich_with_sifra(training_df, merged)
+    _append_stage(stage_stats, "land_final_rows", len(training_df))
+    if training_df.empty:
+        raise ValueError("No valid land-only ETN rows after filtering.")
+
+    return training_df, {
+        "used_size_column": "POVRSINA_PARCELE",
+        "used_property_type_column": "land_only",
+        "used_municipality_column": "OBCINA",
+        "filter_stats": {
+            "inputs": {
+                "posli_rows": int(len(posli_df)),
+                "zemljisca_rows": int(len(zemljisca_df)),
+                "excluded_posli_ids": int(len(exclude_posli_ids or set())),
+            },
+            "stages": stage_stats,
+        },
+    }
 
 
 def prepare_training_csv_from_etn_kpp(
@@ -852,6 +1267,19 @@ def prepare_training_csv_from_etn_kpp(
 
     os.makedirs(os.path.dirname(output_csv_path), exist_ok=True)
     training_df.to_csv(output_csv_path, index=False)
+    _write_training_metadata(
+        output_csv_path,
+        {
+            "source": "etn_kpp",
+            "rows": len(training_df),
+            "columns": list(training_df.columns),
+            "reports": [{"label": "single", "status": "ok", "rows": len(training_df), **meta}],
+            "filter_summary": {
+                "building": _aggregate_stage_sequences([meta.get("filter_stats", {}).get("stages", [])]),
+                "land": [],
+            },
+        },
+    )
 
     return {
         "output_csv_path": output_csv_path,
@@ -895,7 +1323,30 @@ def prepare_training_csv_from_etn_kpp_bulk(
             frame["source_label"] = label
             frame["transaction_year"] = pd.to_numeric(label, errors="coerce")
             training_frames.append(frame)
-            reports.append({"label": label, "status": "ok", "rows": len(frame), **meta})
+            report = {
+                "label": label,
+                "status": "ok",
+                "rows": len(frame),
+                **meta,
+                "building_filter_stats": meta.get("filter_stats", {}).get("stages", []),
+            }
+
+            if zemljisca_df is not None:
+                land_only_ids = set(deli_df["ID_POSLA"].astype(str)) if "ID_POSLA" in deli_df.columns else set()
+                with contextlib.suppress(Exception):
+                    land_frame, land_meta = build_training_df_from_etn_kpp_land(
+                        posli_df,
+                        zemljisca_df,
+                        exclude_posli_ids=land_only_ids,
+                    )
+                    land_frame["source_label"] = label
+                    land_frame["transaction_year"] = pd.to_numeric(label, errors="coerce")
+                    training_frames.append(land_frame)
+                    report["parcel_rows"] = len(land_frame)
+                    report["rows"] += len(land_frame)
+                    report["land_filter_stats"] = land_meta.get("filter_stats", {}).get("stages", [])
+
+            reports.append(report)
         except Exception as exc:
             reports.append({"label": label, "status": "error", "reason": str(exc)})
 
@@ -916,6 +1367,29 @@ def prepare_training_csv_from_etn_kpp_bulk(
     os.makedirs(os.path.dirname(output_csv_path), exist_ok=True)
     combined.to_csv(output_csv_path, index=False)
 
+    filter_summary = {
+        "building": _aggregate_stage_sequences(
+            [report.get("building_filter_stats", []) for report in reports if report.get("building_filter_stats")]
+        ),
+        "land": _aggregate_stage_sequences(
+            [report.get("land_filter_stats", []) for report in reports if report.get("land_filter_stats")]
+        ),
+    }
+    _write_training_metadata(
+        output_csv_path,
+        {
+            "source": "etn_kpp_bulk",
+            "rows": len(combined),
+            "columns": list(combined.columns),
+            "pairs_received": len(pairs),
+            "pairs_used": len(training_frames),
+            "deduplicated_rows": deduplicated_rows,
+            "per_year": per_year,
+            "reports": reports,
+            "filter_summary": filter_summary,
+        },
+    )
+
     return {
         "output_csv_path": output_csv_path,
         "rows": len(combined),
@@ -925,5 +1399,6 @@ def prepare_training_csv_from_etn_kpp_bulk(
         "pairs_used": len(training_frames),
         "deduplicated_rows": deduplicated_rows,
         "per_year": per_year,
+        "filter_summary": filter_summary,
         "reports": reports,
     }

@@ -1,26 +1,21 @@
-<script setup>
+<script setup lang="ts">
   import { computed, onMounted, ref, watch } from 'vue'
   import { RouterLink, useRoute, useRouter } from 'vue-router'
   import { useI18n } from 'vue-i18n'
   import { useLocalStorage, useWindowScroll } from '@vueuse/core'
-  import Button from 'primevue/button'
-  import Dialog from 'primevue/dialog'
-  import InputText from 'primevue/inputtext'
-  import SelectButton from 'primevue/selectbutton'
-  import Tag from 'primevue/tag'
   import { setLocale } from '../i18n'
   import { adminNavigation, viewerNavigation } from '../constants/navigation'
+  import type { NavItem } from '../constants/navigation'
   import AppIcon from './AppIcon.vue'
+  import AppSidebar from './layout/AppSidebar.vue'
+  import ProfileDialog from './layout/ProfileDialog.vue'
   import { useDarkMode } from '../composables/useDarkMode'
   import { useAuthStore } from '../stores/auth'
-  import { useToast } from '../composables/useToast'
-  import { getApiErrorMessage } from '../utils/apiError'
 
   const { t, locale } = useI18n()
   const auth = useAuthStore()
   const route = useRoute()
   const router = useRouter()
-  const { showToast } = useToast()
   const { isDark, toggleDark } = useDarkMode()
 
   const { y: scrollY } = useWindowScroll()
@@ -28,13 +23,8 @@
 
   const mobileMenuOpen = ref(false)
   const profileOpen = ref(false)
-  const profileSaving = ref(false)
   const appVersion = ref('')
   const sidebarCollapsed = useLocalStorage('sidebar_collapsed', false)
-  const profileForm = ref({
-    full_name: '',
-    avatar_url: '',
-  })
 
   const isAdminArea = computed(() => route.path.startsWith('/admin'))
   const currentNavItems = computed(() => (isAdminArea.value ? adminNavigation : viewerNavigation))
@@ -51,14 +41,14 @@
 
   const currentTitle = computed(() =>
     route.meta.titleKey
-      ? t(route.meta.titleKey)
+      ? t(route.meta.titleKey as string)
       : currentItem.value
         ? t(currentItem.value.label)
         : t('app.title'),
   )
 
   const currentDescription = computed(() =>
-    route.meta.descriptionKey ? t(route.meta.descriptionKey) : t('layout.page.default'),
+    route.meta.descriptionKey ? t(route.meta.descriptionKey as string) : t('layout.page.default'),
   )
 
   const workspaceLabel = computed(() =>
@@ -90,7 +80,6 @@
   })
 
   const avatarUrl = computed(() => auth.user?.avatar_url || '')
-  const profileAvatarUrl = computed(() => profileForm.value.avatar_url.trim() || avatarUrl.value)
 
   const userRoleLabel = computed(() =>
     auth.isAdmin ? t('layout.roleAdmin') : t('layout.roleViewer'),
@@ -107,34 +96,19 @@
 
   const localeChoice = computed({
     get: () => locale.value,
-    set: (nextLocale) => changeLocale(nextLocale),
+    set: (nextLocale: string) => changeLocale(nextLocale),
   })
 
   const profileInitials = computed(() => {
-    const source = profileForm.value.full_name || auth.user?.full_name || ''
+    const source = auth.user?.full_name || ''
     if (!source.trim()) return '?'
     return source
       .split(' ')
-      .map((part) => part[0])
+      .map((part: string) => part[0])
       .join('')
       .toUpperCase()
       .slice(0, 2)
   })
-
-  function sidebarTooltip(label) {
-    return sidebarCollapsed.value ? { value: label, showDelay: 120, autoHide: true } : null
-  }
-
-  watch(
-    () => auth.user,
-    (user) => {
-      profileForm.value = {
-        full_name: user?.full_name || '',
-        avatar_url: user?.avatar_url || '',
-      }
-    },
-    { immediate: true },
-  )
 
   watch(
     () => route.fullPath,
@@ -155,7 +129,7 @@
     }
   })
 
-  function changeLocale(nextLocale) {
+  function changeLocale(nextLocale: string) {
     if (!nextLocale || nextLocale === locale.value) return
     locale.value = nextLocale
     setLocale(nextLocale)
@@ -166,27 +140,7 @@
   }
 
   function openProfile() {
-    profileForm.value = {
-      full_name: auth.user?.full_name || '',
-      avatar_url: auth.user?.avatar_url || '',
-    }
     profileOpen.value = true
-  }
-
-  async function saveProfile() {
-    profileSaving.value = true
-    try {
-      await auth.updateProfile({
-        full_name: profileForm.value.full_name,
-        avatar_url: profileForm.value.avatar_url || null,
-      })
-      showToast(t('layout.profileSaved'), 'success')
-      profileOpen.value = false
-    } catch (error) {
-      showToast(getApiErrorMessage(error, t), 'error')
-    } finally {
-      profileSaving.value = false
-    }
   }
 
   async function handleLogout() {
@@ -194,7 +148,7 @@
     router.push('/login')
   }
 
-  function isActiveRoute(item) {
+  function isActiveRoute(item: NavItem): boolean {
     if (item.to === '/' || item.to === '/admin') return route.path === item.to
     return route.path === item.to || route.path.startsWith(`${item.to}/`)
   }
@@ -202,6 +156,7 @@
 
 <template>
   <div class="app-shell" :style="shellStyle" :class="{ collapsed: sidebarCollapsed }">
+    <!-- Mobile Top Bar -->
     <div class="mobile-shell-bar">
       <Button
         class="shell-icon-button mobile-menu-button"
@@ -238,63 +193,18 @@
 
     <div v-if="mobileMenuOpen" class="mobile-shell-backdrop" @click="mobileMenuOpen = false"></div>
 
-    <aside
-      class="shell-sidebar"
-      :class="{ 'mobile-open': mobileMenuOpen, collapsed: sidebarCollapsed }"
-    >
-      <div class="sidebar-pane flex min-h-full flex-col gap-4">
-        <RouterLink to="/" class="shell-brand">
-          <span class="brand-mark">
-            <AppIcon name="brand" :size="24" :stroke="1.95" />
-          </span>
-          <div class="brand-copy">
-            <strong>{{ t('app.title') }}</strong>
-            <small>{{ t('layout.brandTagline') }}</small>
-          </div>
-        </RouterLink>
+    <!-- Sidebar -->
+    <AppSidebar
+      :nav-items="currentNavItems"
+      :collapsed="sidebarCollapsed"
+      :mobile-open="mobileMenuOpen"
+      :workspace-label="workspaceLabel"
+      :footer-summary="footerSummary"
+      :switch-link="switchLink"
+      :is-active-route="isActiveRoute"
+    />
 
-        <section class="sidebar-context" :class="{ compact: sidebarCollapsed }">
-          <span class="sidebar-section-label">{{ t('layout.workspaceMode') }}</span>
-          <strong>{{ workspaceLabel }}</strong>
-          <p>{{ footerSummary }}</p>
-        </section>
-
-        <nav class="shell-nav" :aria-label="t('layout.navigation')">
-          <RouterLink
-            v-for="item in currentNavItems"
-            :key="item.to"
-            :to="item.to"
-            class="shell-nav-link"
-            :class="{ active: isActiveRoute(item) }"
-            v-tooltip.right="sidebarTooltip(t(item.label))"
-          >
-            <span class="shell-nav-icon">
-              <AppIcon :name="item.icon" :size="18" />
-            </span>
-            <span class="shell-nav-copy">
-              <strong>{{ t(item.label) }}</strong>
-            </span>
-          </RouterLink>
-        </nav>
-
-        <div class="sidebar-footer">
-          <RouterLink
-            v-if="switchLink"
-            :to="switchLink.to"
-            class="shell-switch-link"
-            v-tooltip.right="sidebarTooltip(switchLink.label)"
-          >
-            <span class="shell-nav-icon subtle">
-              <AppIcon :name="switchLink.icon" :size="16" />
-            </span>
-            <span class="shell-nav-copy">
-              <strong>{{ switchLink.label }}</strong>
-            </span>
-          </RouterLink>
-        </div>
-      </div>
-    </aside>
-
+    <!-- Main Workspace -->
     <div class="shell-workspace">
       <header class="shell-topbar" :class="{ scrolled: isScrolled }">
         <div class="shell-topbar-inner">
@@ -327,7 +237,7 @@
               </div>
             </div>
 
-            <div class="shell-header-actions flex flex-wrap items-center gap-2 xl:justify-end">
+            <div class="shell-header-actions">
               <RouterLink v-if="switchLink" :to="switchLink.to" class="shell-link-pill">
                 <AppIcon :name="switchLink.icon" :size="16" />
                 <span>{{ switchLink.label }}</span>
@@ -382,9 +292,7 @@
       </main>
 
       <footer class="shell-footer-bar">
-        <div
-          class="shell-footer-inner gap-4 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_auto] lg:items-center"
-        >
+        <div class="shell-footer-inner">
           <div class="footer-brand-block">
             <span class="brand-mark footer-brand-mark">
               <AppIcon name="brand" :size="18" :stroke="1.95" />
@@ -407,235 +315,11 @@
     </div>
   </div>
 
-  <Dialog
-    v-model:visible="profileOpen"
-    modal
-    :header="t('layout.profileTitle')"
-    class="profile-dialog"
-    :dismissable-mask="true"
-    :draggable="false"
-  >
-    <div class="profile-dialog-body">
-      <div class="profile-preview">
-        <span class="avatar-frame large">
-          <img
-            v-if="profileAvatarUrl"
-            :src="profileAvatarUrl"
-            :alt="profileForm.full_name || t('layout.profile')"
-          />
-          <span v-else>{{ profileInitials }}</span>
-        </span>
-
-        <div class="profile-preview-copy">
-          <strong>{{ profileForm.full_name || t('layout.profilePlaceholder') }}</strong>
-          <p>{{ auth.user?.email }}</p>
-          <small>{{ t('layout.profileDescription') }}</small>
-        </div>
-      </div>
-
-      <div class="profile-form-grid">
-        <label class="profile-field">
-          <span>{{ t('auth.fullName') }}</span>
-          <InputText v-model="profileForm.full_name" />
-        </label>
-
-        <label class="profile-field">
-          <span>{{ t('layout.avatarUrl') }}</span>
-          <InputText
-            v-model="profileForm.avatar_url"
-            :placeholder="t('layout.avatarPlaceholder')"
-          />
-        </label>
-      </div>
-
-      <p class="profile-hint">{{ t('layout.avatarHint') }}</p>
-    </div>
-
-    <template #footer>
-      <div class="profile-dialog-actions">
-        <Button
-          text
-          severity="secondary"
-          :label="t('common.cancel')"
-          @click="profileOpen = false"
-        />
-        <Button
-          :label="profileSaving ? t('layout.savingProfile') : t('common.save')"
-          :loading="profileSaving"
-          @click="saveProfile"
-        />
-      </div>
-    </template>
-  </Dialog>
+  <!-- Profile Dialog -->
+  <ProfileDialog v-model:visible="profileOpen" />
 </template>
 
 <style scoped>
-  .shell-sidebar {
-    position: sticky;
-    top: 0;
-    height: 100vh;
-    overflow-y: auto;
-    background: var(--shell-chrome-bg);
-    color: var(--shell-text);
-    border-right: 1px solid var(--shell-chrome-border);
-    box-shadow: inset -1px 0 0 rgb(255 255 255 / 2%);
-    transition:
-      width 180ms ease,
-      transform 180ms ease;
-    z-index: 18;
-  }
-
-  .sidebar-pane {
-    min-height: 100%;
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    padding: 1.1rem 0.85rem 0.9rem;
-  }
-
-  .shell-brand {
-    display: flex;
-    align-items: center;
-    gap: 0.9rem;
-    text-decoration: none;
-    color: inherit;
-    min-width: 0;
-  }
-
-  .brand-mark {
-    width: 2.7rem;
-    height: 2.7rem;
-    flex-shrink: 0;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 1.1rem;
-    background: linear-gradient(145deg, var(--shell-brand-start), var(--shell-brand-end));
-    color: var(--shell-brand-contrast);
-    border: 1px solid rgb(255 255 255 / 10%);
-    box-shadow: 0 16px 30px rgb(0 0 0 / 22%);
-  }
-
-  .brand-copy {
-    min-width: 0;
-    display: grid;
-    gap: 0.1rem;
-  }
-
-  .brand-copy strong {
-    color: var(--shell-text);
-    font-size: 0.93rem;
-    font-weight: 800;
-    letter-spacing: 0.01em;
-  }
-
-  .brand-copy small {
-    color: var(--shell-text-soft);
-    font-size: 0.74rem;
-  }
-
-  .sidebar-context {
-    display: grid;
-    gap: 0.3rem;
-    padding: 0.9rem;
-    border-radius: 1.05rem;
-    border: 1px solid var(--shell-panel-border);
-    background: var(--shell-panel-bg);
-    box-shadow: inset 0 1px 0 rgb(255 255 255 / 4%);
-  }
-
-  .sidebar-context strong {
-    color: var(--shell-text);
-    font-size: 0.92rem;
-  }
-
-  .sidebar-context p {
-    margin: 0;
-    color: var(--shell-text-soft);
-    font-size: 0.78rem;
-    line-height: 1.45;
-  }
-
-  .sidebar-section-label {
-    color: var(--shell-text-muted);
-    font-size: 0.68rem;
-    font-weight: 800;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-  }
-
-  .shell-nav {
-    display: grid;
-    gap: 0.4rem;
-  }
-
-  .shell-nav-link,
-  .shell-switch-link {
-    display: flex;
-    align-items: center;
-    gap: 0.85rem;
-    min-width: 0;
-    padding: 0.68rem 0.72rem;
-    border-radius: 0.95rem;
-    border: 1px solid transparent;
-    text-decoration: none;
-    color: var(--shell-text-soft);
-    transition:
-      background 160ms ease,
-      border-color 160ms ease,
-      color 160ms ease,
-      transform 160ms ease;
-  }
-
-  .shell-nav-link:hover,
-  .shell-switch-link:hover,
-  .shell-nav-link.active {
-    background: var(--shell-active-bg);
-    border-color: var(--shell-active-border);
-    color: var(--shell-text);
-    transform: translateX(2px);
-  }
-
-  .shell-nav-icon {
-    width: 2.35rem;
-    height: 2.35rem;
-    flex-shrink: 0;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 0.95rem;
-    background: var(--shell-control-bg);
-    border: 1px solid var(--shell-control-border);
-    color: var(--shell-icon-color);
-  }
-
-  .shell-nav-icon.subtle {
-    width: 2.15rem;
-    height: 2.15rem;
-  }
-
-  .shell-nav-copy {
-    min-width: 0;
-    display: flex;
-    align-items: center;
-  }
-
-  .shell-nav-copy strong {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 0.86rem;
-    font-weight: 700;
-  }
-
-  .sidebar-footer {
-    margin-top: auto;
-    display: grid;
-    gap: 0.65rem;
-    padding-top: 0.85rem;
-    border-top: 1px solid var(--shell-divider);
-  }
-
   .shell-workspace {
     min-width: 0;
     min-height: 100vh;
@@ -784,6 +468,20 @@
     min-width: 0;
   }
 
+  .brand-mark {
+    width: 2.7rem;
+    height: 2.7rem;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 1.1rem;
+    background: linear-gradient(145deg, var(--shell-brand-start), var(--shell-brand-end));
+    color: var(--shell-brand-contrast);
+    border: 1px solid rgb(255 255 255 / 10%);
+    box-shadow: 0 16px 30px rgb(0 0 0 / 22%);
+  }
+
   .footer-brand-mark {
     width: 2.3rem;
     height: 2.3rem;
@@ -815,13 +513,39 @@
     display: none;
   }
 
+  .shell-brand {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    text-decoration: none;
+    color: inherit;
+    min-width: 0;
+  }
+
+  .brand-copy {
+    min-width: 0;
+    display: grid;
+    gap: 0.1rem;
+  }
+
+  .brand-copy strong {
+    color: var(--shell-text);
+    font-size: 0.93rem;
+    font-weight: 800;
+    letter-spacing: 0.01em;
+  }
+
+  .brand-copy small {
+    color: var(--shell-text-soft);
+    font-size: 0.74rem;
+  }
+
   .profile-trigger,
   .shell-action-button,
   .shell-icon-button,
   .logout-button,
   .language-toggle,
-  .shell-link-pill,
-  .shell-switch-link {
+  .shell-link-pill {
     flex-shrink: 0;
   }
 
@@ -879,12 +603,6 @@
     overflow: hidden;
   }
 
-  .avatar-frame.large {
-    width: 4.75rem;
-    height: 4.75rem;
-    font-size: 1.2rem;
-  }
-
   .avatar-frame img {
     width: 100%;
     height: 100%;
@@ -893,81 +611,6 @@
 
   .desktop-sidebar-toggle {
     margin-top: 0.1rem;
-  }
-
-  .profile-dialog-body {
-    display: grid;
-    gap: 1rem;
-  }
-
-  .profile-preview {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-  }
-
-  .profile-preview-copy {
-    display: grid;
-    gap: 0.2rem;
-  }
-
-  .profile-preview-copy strong {
-    font-size: 1rem;
-  }
-
-  .profile-preview-copy p,
-  .profile-preview-copy small,
-  .profile-hint {
-    margin: 0;
-    color: var(--text-muted);
-  }
-
-  .profile-form-grid {
-    display: grid;
-    gap: 0.9rem;
-  }
-
-  .profile-field {
-    display: grid;
-    gap: 0.4rem;
-    color: var(--text);
-    font-weight: 700;
-  }
-
-  .profile-field span {
-    font-size: 0.83rem;
-  }
-
-  .profile-dialog-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.7rem;
-    width: 100%;
-  }
-
-  .collapsed .sidebar-context,
-  .collapsed .shell-nav-copy,
-  .collapsed .brand-copy {
-    display: none;
-  }
-
-  .collapsed .sidebar-pane {
-    padding-inline: 0.75rem;
-  }
-
-  .collapsed .shell-brand,
-  .collapsed .shell-nav-link,
-  .collapsed .shell-switch-link {
-    justify-content: center;
-  }
-
-  .collapsed .shell-nav-link,
-  .collapsed .shell-switch-link {
-    padding-inline: 0.5rem;
-  }
-
-  .collapsed .desktop-sidebar-toggle {
-    transform: rotate(0deg);
   }
 
   :deep(.shell-icon-button .p-button-label),
@@ -1009,22 +652,7 @@
     background: var(--shell-control-bg);
     border: 1px solid var(--shell-control-border);
     color: var(--shell-text);
-  }
-
-  :deep(.footer-meta .p-tag) {
     font-size: 0.72rem;
-  }
-
-  :deep(.profile-dialog) {
-    width: min(34rem, calc(100vw - 2rem));
-  }
-
-  :deep(.profile-dialog .p-dialog-header) {
-    padding-bottom: 0.85rem;
-  }
-
-  :deep(.profile-dialog .p-dialog-content) {
-    padding-top: 0.4rem;
   }
 
   @media (max-width: 1100px) {
@@ -1042,18 +670,6 @@
   }
 
   @media (max-width: 960px) {
-    .shell-sidebar {
-      position: fixed;
-      inset: 0 auto 0 0;
-      width: min(90vw, 21rem);
-      transform: translateX(-102%);
-      z-index: 40;
-    }
-
-    .shell-sidebar.mobile-open {
-      transform: translateX(0);
-    }
-
     .shell-workspace::before {
       inset: 0;
     }
@@ -1090,12 +706,6 @@
     .shell-header-actions .profile-trigger {
       display: none;
     }
-
-    .collapsed .brand-copy,
-    .collapsed .shell-nav-copy,
-    .collapsed .sidebar-context {
-      display: initial;
-    }
   }
 
   @media (max-width: 760px) {
@@ -1119,11 +729,6 @@
       width: 100%;
       justify-content: center;
     }
-
-    .profile-preview {
-      align-items: flex-start;
-      flex-direction: column;
-    }
   }
 
   @media (max-width: 560px) {
@@ -1138,15 +743,6 @@
 
     .shell-main {
       padding-top: 0.85rem;
-    }
-
-    :deep(.profile-dialog) {
-      width: calc(100vw - 1rem);
-      margin: 0.5rem;
-    }
-
-    .profile-dialog-actions {
-      flex-direction: column-reverse;
     }
   }
 </style>

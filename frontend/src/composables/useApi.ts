@@ -1,3 +1,4 @@
+import type { AxiosInstance, InternalAxiosRequestConfig } from 'axios'
 import axios from 'axios'
 import { i18n } from '../i18n'
 import { getApiErrorMessage } from '../utils/apiError'
@@ -5,14 +6,14 @@ import { useToast } from './useToast'
 import router from '../router'
 import { accessToken, refreshToken } from '../stores/tokens'
 
-const api = axios.create({
+const api: AxiosInstance = axios.create({
   baseURL: '',
   headers: { 'Content-Type': 'application/json' },
   timeout: 30000,
 })
 
 // Request interceptor: attach JWT
-api.interceptors.request.use((config) => {
+api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   if (accessToken.value) {
     config.headers.Authorization = `Bearer ${accessToken.value}`
   }

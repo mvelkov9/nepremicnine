@@ -7,6 +7,7 @@ import os
 import time
 from collections.abc import Callable
 from typing import Any
+from math import isnan
 
 import joblib
 import numpy as np
@@ -23,6 +24,7 @@ from sklearn.preprocessing import TargetEncoder
 from app.services.data_processing_service import (
     EXCLUDED_PROPERTY_TYPES,
     enrich_training_df,
+    load_training_metadata,
     read_csv_flexible,
 )
 from app.utils.municipality import normalize_municipality_name
@@ -44,6 +46,10 @@ NUMERIC_FEATURES = [
     "has_terasa",
     "has_shramba",
     "uporabna_povrsina",
+    "parcela_m2",
+    "prodani_delez_parcele",
+    "prodani_delez_dela_stavbe",
+    "gradbena_faza",
     "stavba_je_dokoncana",
     "ddv_vkljucen",
     "log_size_m2",
@@ -57,6 +63,9 @@ CATEGORICAL_FEATURES = [
     "property_type",
     "statistical_region",
     "lega_v_stavbi",
+    "ime_ko",
+    "naselje",
+    'vrsta_zemljisca',
 ]
 
 PERTYPE_NUMERIC = [f for f in NUMERIC_FEATURES if f != "price_per_m2_type"]
@@ -73,6 +82,9 @@ ALWAYS_INCLUDE_NUMERIC = {
     "has_garaza",
     "has_terasa",
     "has_shramba",
+    "prodani_delez_parcele",
+    "prodani_delez_dela_stavbe",
+    "gradbena_faza",
     "stavba_je_dokoncana",
 }
 
@@ -100,18 +112,53 @@ FEATURE_LABELS_SL: dict[str, str] = {
     "has_terasa": "Terasa",
     "has_shramba": "Shramba",
     "uporabna_povrsina": "Uporabna površina",
+    "parcela_m2": "Površina parcele",
+    "prodani_delez_parcele": "Prodani delež parcele",
+    "prodani_delez_dela_stavbe": "Prodani delež dela stavbe",
+    "gradbena_faza": "Gradbena faza",
+    "stopnja_ddv": "Stopnja DDV",
+    "evidentiranost_dela_stavbe": "Evidentiranost dela stavbe",
+    "atrij": "Atrij",
     "stavba_je_dokoncana": "Stavba dokončana",
     "ddv_vkljucen": "DDV vključen",
     "lega_v_stavbi": "Lega v stavbi",
     "transaction_year": "Leto transakcije",
     "price_per_m2_region": "€/m² regija",
     "price_per_m2_type": "€/m² tip",
+    "ime_ko": "Katastrska občina",
+    "naselje": "Naselje",
+    "vrsta_dela_stavbe": "Vrsta dela stavbe",
+    "vrsta_zemljisca": "Vrsta zemljišča",
+    "vrsta_kupoprodajnega_posla": "Vrsta kupoprodajnega posla",
 }
 
 MODEL_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "models")
 
 _MIN_FILL_RATE = 0.10
+_MIN_SIGNAL_SCORE = 0.01
+_MAX_EXTRA_NUMERIC = 8
+_MAX_EXTRA_CATEGORICAL = 8
 _model_cache: dict | None = None
+
+PARCELA_ALWAYS_INCLUDE_NUMERIC = {
+    "size_m2",
+    "parcela_m2",
+    "prodani_delez_parcele",
+    "latitude",
+    "longitude",
+    "log_size_m2",
+    "transaction_year",
+    "price_per_m2_region",
+    "ddv_vkljucen",
+}
+
+PARCELA_ALWAYS_INCLUDE_CATEGORICAL = {
+    "municipality_normalized",
+    "statistical_region",
+    "ime_ko",
+    "naselje",
+    "vrsta_zemljisca",
+}
 
 
 def _filter_features(
@@ -125,12 +172,14 @@ def _filter_features(
         for c in candidate_numeric
         if c in df.columns
         and (df[c].notna().mean() >= _MIN_FILL_RATE or (c in ALWAYS_INCLUDE_NUMERIC and df[c].notna().any()))
+        and pd.to_numeric(df[c], errors="coerce").dropna().nunique() > 1
     ]
     categorical = [
         c
         for c in candidate_categorical
         if c in df.columns
         and (df[c].notna().mean() >= _MIN_FILL_RATE or (c in ALWAYS_INCLUDE_CATEGORICAL and df[c].notna().any()))
+        and df[c].fillna("unknown").astype(str).nunique() > 1
     ]
     return numeric, categorical
 
@@ -141,6 +190,84 @@ def _adaptive_hyperparams(n_samples: int) -> dict:
     if n_samples > 1000:
         return {"max_iter": 1000, "learning_rate": 0.04, "max_depth": 7}
     return {"max_iter": 600, "learning_rate": 0.05, "max_depth": 6}
+
+
+def _safe_abs(value: float | None) -> float:
+    if value is None:
+        return 0.0
+    if isnan(value):
+        return 0.0
+    return abs(float(value))
+
+
+def _score_numeric_feature(series: pd.Series, target: pd.Series) -> float:
+    numeric = pd.to_numeric(series, errors="coerce")
+    valid = numeric.notna() & target.notna()
+    if valid.sum() < 50 or numeric[valid].nunique() <= 1:
+        return 0.0
+    return _safe_abs(numeric[valid].corr(target[valid], method="spearman"))
+
+
+def _score_categorical_feature(series: pd.Series, target: pd.Series) -> float:
+    categorical = series.fillna("unknown").astype(str)
+    valid = target.notna()
+    categorical = categorical[valid]
+    target = target[valid]
+    if len(categorical) < 50 or categorical.nunique() <= 1:
+        return 0.0
+    grouped = pd.DataFrame({"value": categorical, "target": target})
+    means = grouped.groupby("value")["target"].mean()
+    encoded = grouped["value"].map(means)
+    return _safe_abs(encoded.corr(grouped["target"]))
+
+
+def _select_type_specific_features(
+    df: pd.DataFrame,
+    target: np.ndarray,
+    candidate_numeric: list[str],
+    candidate_categorical: list[str],
+    *,
+    always_numeric: set[str] | None = None,
+    always_categorical: set[str] | None = None,
+    max_extra_numeric: int = _MAX_EXTRA_NUMERIC,
+    max_extra_categorical: int = _MAX_EXTRA_CATEGORICAL,
+) -> tuple[list[str], list[str], dict[str, float]]:
+    filtered_numeric, filtered_categorical = _filter_features(df, candidate_numeric, candidate_categorical)
+    target_series = pd.Series(np.log1p(np.maximum(target, 0)), index=df.index)
+    always_numeric = ALWAYS_INCLUDE_NUMERIC if always_numeric is None else always_numeric
+    always_categorical = ALWAYS_INCLUDE_CATEGORICAL if always_categorical is None else always_categorical
+
+    scores: dict[str, float] = {}
+    for col in filtered_numeric:
+        scores[col] = _score_numeric_feature(df[col], target_series)
+    for col in filtered_categorical:
+        scores[col] = _score_categorical_feature(df[col], target_series)
+
+    always_numeric_selected = [col for col in filtered_numeric if col in always_numeric]
+    always_categorical_selected = [col for col in filtered_categorical if col in always_categorical]
+
+    ranked_numeric = sorted(
+        [col for col in filtered_numeric if col not in always_numeric_selected],
+        key=lambda col: (scores.get(col, 0.0), df[col].notna().mean()),
+        reverse=True,
+    )
+    ranked_categorical = sorted(
+        [col for col in filtered_categorical if col not in always_categorical_selected],
+        key=lambda col: (scores.get(col, 0.0), df[col].notna().mean()),
+        reverse=True,
+    )
+
+    selected_numeric = always_numeric_selected + [
+        col for col in ranked_numeric if scores.get(col, 0.0) >= _MIN_SIGNAL_SCORE
+    ][:max_extra_numeric]
+    selected_categorical = always_categorical_selected + [
+        col for col in ranked_categorical if scores.get(col, 0.0) >= _MIN_SIGNAL_SCORE
+    ][:max_extra_categorical]
+
+    if "size_m2" in filtered_numeric and "size_m2" not in selected_numeric:
+        selected_numeric = ["size_m2"] + selected_numeric
+
+    return selected_numeric, selected_categorical, scores
 
 
 def _build_pipeline(
@@ -193,6 +320,62 @@ def _compute_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict:
     mape = float(np.mean(np.abs((y_t - y_p) / y_t)) * 100)
     median_ae = float(np.median(np.abs(y_t - y_p)))
     return {"mae": mae, "rmse": rmse, "r2": r2, "mape": mape, "median_ae": median_ae}
+
+
+def _build_segment_diagnostics(
+    X_test: pd.DataFrame,
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+) -> dict[str, list[dict[str, Any]]]:
+    frame = X_test.copy()
+    frame["y_true"] = y_true
+    frame["y_pred"] = y_pred
+    frame["abs_err"] = np.abs(frame["y_true"] - frame["y_pred"])
+    frame["ape"] = np.where(frame["y_true"] > 0, frame["abs_err"] / frame["y_true"] * 100.0, np.nan)
+
+    specs: list[tuple[str, str, int, pd.Series | None]] = [
+        ("property_type", "property_type", 80, None),
+        ("vrsta_kupoprodajnega_posla", "sale_type", 80, None),
+        ("transaction_year", "transaction_year", 80, None),
+        (
+            "vrsta_zemljisca",
+            "parcel_land_type",
+            80,
+            frame.get("property_type", pd.Series(index=frame.index, dtype="object")) == "parcela",
+        ),
+    ]
+
+    diagnostics: dict[str, list[dict[str, Any]]] = {}
+    for column, key, min_count, mask in specs:
+        if column not in frame.columns:
+            continue
+        scoped = frame.loc[mask] if mask is not None else frame
+        if scoped.empty:
+            continue
+
+        rows: list[dict[str, Any]] = []
+        for segment, group in scoped.groupby(column, dropna=False):
+            if len(group) < min_count:
+                continue
+            metrics = _compute_metrics(group["y_true"].to_numpy(), group["y_pred"].to_numpy())
+            if not metrics:
+                continue
+            rows.append(
+                {
+                    "segment": "unknown" if pd.isna(segment) else str(segment),
+                    "n": int(len(group)),
+                    "r2": round(float(metrics.get("r2", 0.0)), 6),
+                    "mae": round(float(metrics.get("mae", 0.0)), 2),
+                    "rmse": round(float(metrics.get("rmse", 0.0)), 2),
+                    "mape": round(float(metrics.get("mape", 0.0)), 2) if metrics.get("mape") is not None else None,
+                    "median_ae": round(float(metrics.get("median_ae", 0.0)), 2),
+                }
+            )
+
+        if rows:
+            diagnostics[key] = sorted(rows, key=lambda item: (item["r2"], -item["n"], item["mae"]))
+
+    return diagnostics
 
 
 def _overall_training_progress(current_model_index: int, total_models: int, fitted: int, total: int) -> int:
@@ -251,11 +434,20 @@ def _train_single_model(
     try:
         feat_names = preprocessor.get_feature_names_out()
         try:
+            importance_sample_size = min(len(X_test_t), 5000)
+            if len(X_test_t) > importance_sample_size:
+                sample_idx = np.random.default_rng(42).choice(len(X_test_t), size=importance_sample_size, replace=False)
+                X_importance = X_test_t[sample_idx]
+                y_importance = y_test[sample_idx]
+            else:
+                X_importance = X_test_t
+                y_importance = y_test
+
             perm = permutation_importance(
                 regressor,
-                X_test_t,
-                y_test,
-                n_repeats=3,
+                X_importance,
+                y_importance,
+                n_repeats=2,
                 random_state=42,
                 n_jobs=1,
             )
@@ -267,6 +459,26 @@ def _train_single_model(
         pass
 
     return {"metrics": metrics, "importance": importance}
+
+
+def _predict_combined_routed(
+    X_test: pd.DataFrame,
+    global_pipeline: Pipeline,
+    per_type_models: dict[str, dict[str, Any]],
+) -> np.ndarray:
+    y_pred = global_pipeline.predict(X_test)
+
+    if not per_type_models or "property_type" not in X_test.columns:
+        return y_pred
+
+    property_types = X_test["property_type"].astype(str)
+    for ptype, model_meta in per_type_models.items():
+        mask = property_types == ptype
+        if not mask.any():
+            continue
+        y_pred[mask.to_numpy()] = model_meta["pipeline"].predict(X_test.loc[mask])
+
+    return y_pred
 
 
 def train_from_csv(
@@ -306,8 +518,6 @@ def train_from_csv(
     y = df["price_eur"].values
     X = df.drop(columns=["price_eur"], errors="ignore")
 
-    # Filter features by fill rate
-    global_num, global_cat = _filter_features(X, NUMERIC_FEATURES, CATEGORICAL_FEATURES)
     emit_status("feature_prep", 14, rows=len(df))
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
@@ -337,11 +547,15 @@ def train_from_csv(
     )
     X_test["price_per_m2_type"] = X_test.get("property_type", pd.Series()).map(type_medians).fillna(global_median_ppm2)
 
+    global_num, global_cat = _filter_features(X_train, NUMERIC_FEATURES, CATEGORICAL_FEATURES)
+    data_preparation = load_training_metadata(csv_path)
+
     # Global model
     model_start_times: dict[str, float] = {}
     global_pipeline = _build_pipeline(global_num, global_cat, len(X_train))
     per_type_models: dict[str, Pipeline] = {}
     per_type_metrics: dict[str, dict] = {}
+    per_type_feature_usage: dict[str, dict[str, Any]] = {}
 
     eligible: list[str] = []
     if "property_type" in X_train.columns:
@@ -409,7 +623,22 @@ def train_from_csv(
             if len(Xte) < 10:
                 continue
 
-            pt_num, pt_cat = _filter_features(Xt, PERTYPE_NUMERIC, PERTYPE_CATEGORICAL)
+            pt_scores: dict[str, float] = {}
+            selection_mode = "fill_rate"
+            if ptype == "parcela":
+                pt_num, pt_cat, pt_scores = _select_type_specific_features(
+                    Xt,
+                    yt,
+                    PERTYPE_NUMERIC,
+                    PERTYPE_CATEGORICAL,
+                    always_numeric=PARCELA_ALWAYS_INCLUDE_NUMERIC,
+                    always_categorical=PARCELA_ALWAYS_INCLUDE_CATEGORICAL,
+                    max_extra_numeric=10,
+                    max_extra_categorical=10,
+                )
+                selection_mode = "signal_scored_parcela"
+            else:
+                pt_num, pt_cat = _filter_features(Xt, PERTYPE_NUMERIC, PERTYPE_CATEGORICAL)
             pt_pipeline = _build_pipeline(pt_num, pt_cat, len(Xt))
             emit_status(
                 "per_type_models",
@@ -439,6 +668,16 @@ def train_from_csv(
                 "categorical_features": pt_cat,
             }
             per_type_metrics[ptype] = pt_result["metrics"]
+            per_type_feature_usage[ptype] = {
+                "numeric_features": pt_num,
+                "categorical_features": pt_cat,
+                "selection_mode": selection_mode,
+            }
+            if pt_scores:
+                per_type_feature_usage[ptype]["feature_scores"] = {
+                    key: round(float(value), 6)
+                    for key, value in sorted(pt_scores.items(), key=lambda item: item[1], reverse=True)
+                }
     else:
         emit_status("per_type_models", 88, rows=len(df), total_models=total_models)
 
@@ -454,20 +693,13 @@ def train_from_csv(
 
     # Combined routing metrics: use per-type model when available, else global
     if per_type_models:
-        y_pred_combined = np.zeros(len(y_test))
-        for idx in range(len(X_test)):
-            row = X_test.iloc[idx : idx + 1]
-            ptype = str(row.get("property_type", pd.Series(["unknown"])).iloc[0])
-            if ptype in per_type_models:
-                tm = per_type_models[ptype]
-                pt_pipe = tm["pipeline"]
-                # Use preprocessor + regressor from the per-type pipeline
-                y_pred_combined[idx] = pt_pipe.predict(row)[0]
-            else:
-                y_pred_combined[idx] = global_pipeline.predict(row)[0]
+        y_pred_combined = _predict_combined_routed(X_test, global_pipeline, per_type_models)
         combined_metrics = _compute_metrics(y_test, y_pred_combined)
     else:
+        y_pred_combined = global_pipeline.predict(X_test)
         combined_metrics = global_result["metrics"]
+
+    segment_diagnostics = _build_segment_diagnostics(X_test, y_test, y_pred_combined)
 
     # Municipality coordinates
     emit_status("artifact_save", 96, rows=len(df), total_models=total_models)
@@ -515,6 +747,9 @@ def train_from_csv(
         "train_rows": len(X_train),
         "test_rows": len(X_test),
         "used_features": global_num + global_cat,
+        "per_type_features": per_type_feature_usage,
+        "data_preparation": data_preparation,
+        "segment_diagnostics": segment_diagnostics,
         "model_type": "HistGradientBoostingRegressor",
         "duration_sec": duration,
     }
@@ -533,6 +768,9 @@ def train_from_csv(
         "combined_metrics": combined_metrics,
         "per_type_count": len(per_type_models),
         "used_features": global_num + global_cat,
+        "per_type_features": per_type_feature_usage,
+        "data_preparation": data_preparation,
+        "segment_diagnostics": segment_diagnostics,
         "model_type": "HistGradientBoostingRegressor",
     }
 
@@ -750,8 +988,11 @@ def get_model_info() -> dict[str, Any] | None:
         "combined_metrics": artifact.get("combined_metrics"),
         "global_importance": artifact.get("global_importance"),
         "feature_labels": artifact.get("feature_labels"),
+        "per_type_features": artifact.get("per_type_features"),
         "per_type_count": len(artifact.get("per_type_models", {})),
         "type_models_trained": sorted(artifact.get("per_type_models", {}).keys()),
         "coords_by_municipality": artifact.get("coords_by_municipality"),
         "csv_path": artifact.get("csv_path"),
+        "data_preparation": artifact.get("data_preparation"),
+        "segment_diagnostics": artifact.get("segment_diagnostics"),
     }

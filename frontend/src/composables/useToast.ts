@@ -2,25 +2,30 @@ import { ref } from 'vue'
 
 export type ToastType = 'info' | 'success' | 'warning' | 'error'
 
-interface Toast {
+interface ToastEvent {
   id: number
   message: string
   type: ToastType
+  life: number
 }
 
-const toasts = ref<Toast[]>([])
+const pending = ref<ToastEvent[]>([])
 let nextId = 0
 
-function showToast(message: string, type: ToastType = 'info', duration = 4000): void {
-  const id = nextId++
-  toasts.value.push({ id, message, type })
-  if (duration > 0) {
-    setTimeout(() => {
-      toasts.value = toasts.value.filter((t) => t.id !== id)
-    }, duration)
-  }
+/**
+ * Queue a toast message. Works from any context (component setup, interceptors, etc.).
+ * App.vue bridges these to PrimeVue Toast for rendering.
+ */
+function showToast(message: string, type: ToastType = 'info', life = 4000): void {
+  pending.value.push({ id: nextId++, message, type, life })
 }
 
+/** Used by App.vue to drain queued toasts into PrimeVue Toast. */
+export function usePendingToasts() {
+  return { pending }
+}
+
+/** Backward-compatible composable for use anywhere. */
 export function useToast() {
-  return { toasts, showToast }
+  return { showToast }
 }

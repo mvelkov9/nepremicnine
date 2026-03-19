@@ -1,12 +1,14 @@
-<script setup>
+<script setup lang="ts">
   import { ref, onMounted } from 'vue'
   import { useI18n } from 'vue-i18n'
+  import { useConfirm } from 'primevue/useconfirm'
   import api from '../composables/useApi'
-  import LoadingSpinner from '../components/LoadingSpinner.vue'
+  import PageHeader from '../components/PageHeader.vue'
   import { getApiErrorMessage } from '../utils/apiError'
   import { formatDate } from '../utils/format'
 
   const { t } = useI18n()
+  const confirm = useConfirm()
 
   const users = ref([])
   const loading = ref(false)
@@ -25,56 +27,56 @@
     }
   }
 
-  async function toggleRole(user) {
+  async function toggleRole(user: any) {
     const newRole = user.role === 'admin' ? 'viewer' : 'admin'
     try {
       const { data } = await api.patch(`/api/admin/users/${user.id}`, { role: newRole })
-      const idx = users.value.findIndex((u) => u.id === user.id)
+      const idx = users.value.findIndex((u: any) => u.id === user.id)
       if (idx !== -1) users.value[idx] = data
     } catch (e) {
       error.value = getApiErrorMessage(e, t)
     }
   }
 
-  async function toggleActive(user) {
+  async function toggleActive(user: any) {
     try {
       const { data } = await api.patch(`/api/admin/users/${user.id}`, {
         is_active: !user.is_active,
       })
-      const idx = users.value.findIndex((u) => u.id === user.id)
+      const idx = users.value.findIndex((u: any) => u.id === user.id)
       if (idx !== -1) users.value[idx] = data
     } catch (e) {
       error.value = getApiErrorMessage(e, t)
     }
   }
 
-  async function deleteUser(user) {
-    if (!confirm(t('admin.confirmDelete', { name: user.full_name }))) return
-    try {
-      await api.delete(`/api/admin/users/${user.id}`)
-      users.value = users.value.filter((u) => u.id !== user.id)
-    } catch (e) {
-      error.value = getApiErrorMessage(e, t)
-    }
+  function deleteUser(user: any) {
+    confirm.require({
+      message: t('admin.confirmDelete', { name: user.full_name }),
+      header: t('common.delete'),
+      icon: 'pi pi-exclamation-triangle',
+      rejectProps: { label: t('common.cancel'), severity: 'secondary', outlined: true },
+      acceptProps: { label: t('common.delete'), severity: 'danger' },
+      accept: async () => {
+        try {
+          await api.delete(`/api/admin/users/${user.id}`)
+          users.value = users.value.filter((u: any) => u.id !== user.id)
+        } catch (e) {
+          error.value = getApiErrorMessage(e, t)
+        }
+      },
+    })
   }
 
-  function roleBadge(role) {
-    return role === 'admin' ? 'badge-blue' : 'badge-gray'
+  function roleSeverity(role: string) {
+    return role === 'admin' ? 'info' : 'secondary'
   }
 
-  function activeBadge(active) {
-    return active ? 'badge-green' : 'badge-red'
+  function statusSeverity(active: boolean) {
+    return active ? 'success' : 'danger'
   }
 
-  function roleActionLabel(user) {
-    return `${user.role === 'admin' ? t('admin.makeViewer') : t('admin.makeAdmin')} - ${user.full_name}`
-  }
-
-  function activeActionLabel(user) {
-    return `${user.is_active ? t('admin.disable') : t('admin.enable')} - ${user.full_name}`
-  }
-
-  function formatCreatedAt(value) {
+  function formatCreatedAt(value: string) {
     return formatDate(value, { dateStyle: 'medium' })
   }
 
@@ -83,81 +85,89 @@
 
 <template>
   <div>
-    <h1 class="page-title">{{ t('nav.admin') }}</h1>
+    <PageHeader :title="t('nav.admin')" />
 
     <div class="card">
       <h2>{{ t('admin.userManagement') }}</h2>
-      <p v-if="error" class="error-text" style="margin-bottom: 1rem">{{ error }}</p>
+      <p v-if="error" class="error-text mb-3">{{ error }}</p>
 
-      <LoadingSpinner v-if="loading" :label="t('common.loading')" />
+      <DataTable
+        :value="users"
+        :loading="loading"
+        stripedRows
+        responsive-layout="scroll"
+      >
+        <template #empty>
+          <div class="empty-message">
+            {{ t('empty.noUsers') }}
+          </div>
+        </template>
 
-      <div v-else class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>{{ t('admin.name') }}</th>
-              <th>{{ t('admin.email') }}</th>
-              <th>{{ t('admin.role') }}</th>
-              <th>{{ t('admin.status') }}</th>
-              <th>{{ t('admin.created') }}</th>
-              <th>{{ t('data.actions') }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-if="users.length === 0">
-              <td
-                colspan="7"
-                style="text-align: center; color: var(--text-muted, #6b7280); padding: 1.5rem"
-              >
-                {{ t('empty.noUsers') }}
-              </td>
-            </tr>
-            <tr v-for="user in users" :key="user.id">
-              <td>{{ user.id }}</td>
-              <td>{{ user.full_name }}</td>
-              <td>{{ user.email }}</td>
-              <td>
-                <span class="badge" :class="roleBadge(user.role)">{{ user.role }}</span>
-              </td>
-              <td>
-                <span class="badge" :class="activeBadge(user.is_active)">
-                  {{ user.is_active ? t('admin.active') : t('admin.disabled') }}
-                </span>
-              </td>
-              <td>{{ formatCreatedAt(user.created_at) }}</td>
-              <td>
-                <div style="display: flex; gap: 0.5rem; flex-wrap: wrap">
-                  <button
-                    class="secondary"
-                    style="padding: 4px 10px; font-size: 12px"
-                    :aria-label="roleActionLabel(user)"
-                    @click="toggleRole(user)"
-                  >
-                    {{ user.role === 'admin' ? t('admin.makeViewer') : t('admin.makeAdmin') }}
-                  </button>
-                  <button
-                    :class="user.is_active ? 'danger' : ''"
-                    style="padding: 4px 10px; font-size: 12px"
-                    :aria-label="activeActionLabel(user)"
-                    @click="toggleActive(user)"
-                  >
-                    {{ user.is_active ? t('admin.disable') : t('admin.enable') }}
-                  </button>
-                  <button
-                    class="danger"
-                    style="padding: 4px 10px; font-size: 12px"
-                    :aria-label="t('common.delete') + ' – ' + user.full_name"
-                    @click="deleteUser(user)"
-                  >
-                    {{ t('common.delete') }}
-                  </button>
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+        <Column field="id" header="ID" />
+        <Column field="full_name" :header="t('admin.name')" />
+        <Column field="email" :header="t('admin.email')" />
+
+        <Column field="role" :header="t('admin.role')">
+          <template #body="{ data }">
+            <Tag :value="data.role" :severity="roleSeverity(data.role)" />
+          </template>
+        </Column>
+
+        <Column field="is_active" :header="t('admin.status')">
+          <template #body="{ data }">
+            <Tag
+              :value="data.is_active ? t('admin.active') : t('admin.disabled')"
+              :severity="statusSeverity(data.is_active)"
+            />
+          </template>
+        </Column>
+
+        <Column field="created_at" :header="t('admin.created')">
+          <template #body="{ data }">
+            {{ formatCreatedAt(data.created_at) }}
+          </template>
+        </Column>
+
+        <Column :header="t('data.actions')">
+          <template #body="{ data }">
+            <div class="flex gap-2 flex-wrap">
+              <Button
+                :label="data.role === 'admin' ? t('admin.makeViewer') : t('admin.makeAdmin')"
+                severity="secondary"
+                size="small"
+                :aria-label="`${data.role === 'admin' ? t('admin.makeViewer') : t('admin.makeAdmin')} - ${data.full_name}`"
+                @click="toggleRole(data)"
+              />
+              <Button
+                :label="data.is_active ? t('admin.disable') : t('admin.enable')"
+                :severity="data.is_active ? 'danger' : undefined"
+                size="small"
+                :aria-label="`${data.is_active ? t('admin.disable') : t('admin.enable')} - ${data.full_name}`"
+                @click="toggleActive(data)"
+              />
+              <Button
+                :label="t('common.delete')"
+                severity="danger"
+                size="small"
+                :aria-label="`${t('common.delete')} – ${data.full_name}`"
+                @click="deleteUser(data)"
+              />
+            </div>
+          </template>
+        </Column>
+      </DataTable>
     </div>
   </div>
 </template>
+
+<style scoped>
+  .mb-3 {
+    margin-bottom: 1rem;
+  }
+
+  .empty-message {
+    text-align: center;
+    color: var(--text-muted, #6b7280);
+    padding: 1.5rem;
+  }
+</style>

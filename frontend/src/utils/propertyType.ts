@@ -7,6 +7,7 @@ const FALLBACK_LABELS = {
   gostinstvo: 'Gostinstvo',
   industrijski: 'Industrijski',
   kmetijsko: 'Kmetijsko',
+  parcela: 'Parcela',
 }
 
 function humanizePropertyType(value) {

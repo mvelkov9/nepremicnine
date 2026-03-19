@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
   import { computed, onMounted, ref, watch } from 'vue'
   import { useRoute, useRouter } from 'vue-router'
   import { useI18n } from 'vue-i18n'
@@ -54,6 +54,7 @@
     'gostinstvo',
     'garaza',
     'kmetijsko',
+    'parcela',
   ]
 
   const legaOptions = ['pritlicje', 'nadstropje', 'klet', 'unknown']
@@ -507,22 +508,19 @@
 
           <div class="story-actions">
             <a :href="comparisonUrl" target="_blank" rel="noreferrer">
-              <button class="ghost-link action-link" type="button">
-                {{ t('predict.compareOnPortal') }}
-              </button>
+              <Button severity="secondary" text class="action-link" :label="t('predict.compareOnPortal')" />
             </a>
           </div>
 
           <section class="story-block">
             <div class="story-head">
               <h3>{{ t('predict.featuresUsed') }}</h3>
-              <button
-                class="ghost-link"
-                type="button"
+              <Button
+                severity="secondary"
+                text
+                :label="t('common.retry')"
                 @click="loadContext(result.predicted_price_eur)"
-              >
-                {{ t('common.retry') }}
-              </button>
+              />
             </div>
             <div class="chip-grid">
               <span v-for="(value, key) in result.features_used" :key="key" class="data-chip">
@@ -534,9 +532,7 @@
           <section v-if="municipalityContext" class="story-block context-card">
             <div class="story-head">
               <h3>{{ t('predict.marketContext') }}</h3>
-              <button class="ghost-link" type="button" @click="openMunicipality">
-                {{ t('predict.openMunicipality') }}
-              </button>
+              <Button severity="secondary" text :label="t('predict.openMunicipality')" @click="openMunicipality" />
             </div>
             <div class="context-metrics">
               <article>
@@ -580,9 +576,7 @@
                   <strong>{{ formatCurrency(item.price_eur) }}</strong>
                   <small>{{ t('predict.similarityLabel') }} {{ item.similarity_score }}</small>
                 </div>
-                <button class="mini-btn" type="button" @click="reuseComparable(item)">
-                  {{ t('predict.reuseComparable') }}
-                </button>
+                <Button size="small" :label="t('predict.reuseComparable')" @click="reuseComparable(item)" />
               </article>
             </div>
             <EmptyState v-else icon="📊" :message="t('predict.noComparables')" />
@@ -594,9 +588,7 @@
         <section class="story-block history-block">
           <div class="story-head">
             <h3>{{ t('predict.history') }}</h3>
-            <button class="ghost-link" type="button" @click="exportHistoryRows">
-              {{ t('predict.exportHistory') }}
-            </button>
+            <Button severity="secondary" text :label="t('predict.exportHistory')" @click="exportHistoryRows" />
           </div>
 
           <div v-if="history.length" class="history-list">
@@ -771,16 +763,15 @@
     justify-content: flex-start;
   }
 
-  .submit-btn,
-  .mini-btn {
+  .submit-btn {
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
     padding: 0.9rem 1.1rem;
     border-radius: 999px;
-    border: 1px solid rgb(37 99 235 / 22%);
+    border: 1px solid var(--primary-border);
     background: linear-gradient(135deg, var(--primary), var(--primary-strong));
-    color: #eff6ff;
+    color: var(--primary-contrast);
   }
 
   .story-block {
@@ -795,26 +786,19 @@
     gap: 1rem;
   }
 
-  .ghost-link {
-    border: none;
-    background: none;
-    color: var(--primary-strong);
-    font-weight: 700;
-  }
-
   .estimate-card {
     padding: 1.15rem;
     border-radius: 1.35rem;
     background:
-      linear-gradient(135deg, rgb(15 23 42 / 96%), rgb(28 39 63 / 96%)),
-      linear-gradient(135deg, rgb(37 99 235 / 25%), transparent);
-    color: #eff6ff;
+      linear-gradient(135deg, var(--surface-dark), var(--surface-dark-alt)),
+      linear-gradient(135deg, var(--primary-overlay), transparent);
+    color: var(--primary-contrast);
   }
 
   .estimate-card span {
     display: inline-block;
     margin-bottom: 0.35rem;
-    color: rgb(255 255 255 / 72%);
+    color: var(--text-on-dark);
     font-size: 0.82rem;
     letter-spacing: 0.08em;
     text-transform: uppercase;
@@ -828,7 +812,7 @@
 
   .estimate-card p {
     margin: 0.45rem 0 0;
-    color: rgb(255 255 255 / 76%);
+    color: var(--text-on-dark);
   }
 
   .data-chip {
@@ -846,7 +830,7 @@
   .context-card {
     padding: 1rem;
     border-radius: 1.25rem;
-    background: linear-gradient(135deg, rgb(37 99 235 / 9%), rgb(245 158 11 / 10%));
+    background: linear-gradient(135deg, var(--primary-overlay), var(--warning-overlay));
   }
 
   .context-metrics {
@@ -889,12 +873,6 @@
     align-items: flex-start;
     justify-content: space-between;
     gap: 1rem;
-  }
-
-  .mini-btn {
-    justify-self: start;
-    padding: 0.65rem 0.85rem;
-    font-size: 0.82rem;
   }
 
   .history-metric {

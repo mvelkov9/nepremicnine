@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from unittest.mock import patch
 
@@ -50,6 +51,7 @@ def test_train_from_csv_returns_expected_keys(tmp_path, monkeypatch):
         "per_type_metrics",
         "per_region_metrics",
         "per_type_count",
+        "segment_diagnostics",
     }
     assert required_keys.issubset(result.keys()), f"Missing keys: {required_keys - result.keys()}"
 
@@ -97,6 +99,195 @@ def test_train_from_csv_model_file_saved(tmp_path, monkeypatch):
     assert os.path.exists(result["model_path"]), "Model .joblib file was not saved"
 
 
+def test_train_from_csv_loads_training_data_preparation_metadata(tmp_path, monkeypatch):
+    import app.services.model_service as ms
+
+    monkeypatch.setattr(ms, "MODEL_DIR", str(tmp_path / "models"))
+    csv_path = tmp_path / "synthetic.csv"
+    _make_synthetic_csv(str(csv_path), n=80)
+    metadata_path = csv_path.with_name(f"{csv_path.name}.metadata.json")
+    metadata_path.write_text(
+        json.dumps({"source": "etn_kpp_bulk", "filter_summary": {"building": [], "land": []}}),
+        encoding="utf-8",
+    )
+
+    result = ms.train_from_csv(str(csv_path))
+
+    assert result["data_preparation"]["source"] == "etn_kpp_bulk"
+
+
+def test_build_normalized_payload_accepts_new_training_features():
+    import app.services.model_service as ms
+
+    row = ms._build_normalized_payload(
+        {
+            "size_m2": 70,
+            "municipality": "Ljubljana",
+            "property_type": "stanovanje",
+            "parcela_m2": 220,
+            "prodani_delez_parcele": 0.75,
+            "prodani_delez_dela_stavbe": 0.5,
+            "gradbena_faza": 4,
+            "stopnja_ddv": 22,
+            "evidentiranost_dela_stavbe": 1,
+            "atrij": 1,
+            "ime_ko": "Moste",
+            "naselje": "Ljubljana",
+            "vrsta_dela_stavbe": "stanovanje",
+            "vrsta_zemljisca": "stavbno",
+            "vrsta_kupoprodajnega_posla": "1",
+        },
+        [
+            "size_m2",
+            "parcela_m2",
+            "prodani_delez_parcele",
+            "prodani_delez_dela_stavbe",
+            "gradbena_faza",
+            "stopnja_ddv",
+            "evidentiranost_dela_stavbe",
+            "atrij",
+        ],
+        [
+            "municipality_normalized",
+            "property_type",
+            "ime_ko",
+            "naselje",
+            "vrsta_dela_stavbe",
+            "vrsta_zemljisca",
+            "vrsta_kupoprodajnega_posla",
+        ],
+        {
+            "coords_by_municipality": {},
+            "region_medians": {},
+            "type_medians": {},
+            "global_median_ppm2": 2000.0,
+        },
+    )
+
+    assert row["parcela_m2"] == pytest.approx(220.0)
+    assert row["prodani_delez_parcele"] == pytest.approx(0.75)
+    assert row["prodani_delez_dela_stavbe"] == pytest.approx(0.5)
+    assert row["gradbena_faza"] == pytest.approx(4.0)
+    assert row["stopnja_ddv"] == pytest.approx(22.0)
+    assert row["evidentiranost_dela_stavbe"] == pytest.approx(1.0)
+    assert row["atrij"] == pytest.approx(1.0)
+    assert row["ime_ko"] == "moste"
+    assert row["naselje"] == "ljubljana"
+    assert row["vrsta_dela_stavbe"] == "stanovanje"
+    assert row["vrsta_zemljisca"] == "stavbno"
+    assert row["vrsta_kupoprodajnega_posla"] == "1"
+
+
+def test_select_type_specific_features_prefers_signal_over_noise():
+    import app.services.model_service as ms
+
+    rng = np.random.default_rng(42)
+    n = 300
+    signal = np.linspace(0, 1, n)
+    target = 100000 + signal * 200000 + rng.normal(0, 5000, n)
+    df = pd.DataFrame(
+        {
+            "size_m2": rng.uniform(40, 120, n),
+            "signal_num": signal,
+            "noise_num": rng.normal(0, 1, n),
+            "signal_cat": np.where(signal > 0.5, "premium", "standard"),
+            "noise_cat": rng.choice(["a", "b", "c"], n),
+            "municipality_normalized": rng.choice(["ljubljana", "maribor"], n),
+            "lega_v_stavbi": rng.choice(["pritlicje", "nadstropje"], n),
+        }
+    )
+
+    num, cat, scores = ms._select_type_specific_features(
+        df,
+        target,
+        ["size_m2", "signal_num", "noise_num"],
+        ["municipality_normalized", "lega_v_stavbi", "signal_cat", "noise_cat"],
+    )
+
+    assert "signal_num" in num
+    assert "signal_cat" in cat
+    assert scores["signal_num"] > scores["noise_num"]
+    assert scores["signal_cat"] > scores["noise_cat"]
+
+
+def test_train_from_csv_uses_parcela_specific_feature_selection(tmp_path, monkeypatch):
+    import app.services.model_service as ms
+
+    monkeypatch.setattr(ms, "MODEL_DIR", str(tmp_path / "models"))
+
+    rng = np.random.default_rng(7)
+    n = 320
+    size = rng.uniform(300, 2500, n)
+    land_kind = rng.choice(["stavbno", "kmetijsko"], size=n, p=[0.55, 0.45])
+    municipality = rng.choice(["ljubljana", "kranj", "koper"], n)
+    price = size * np.where(land_kind == "stavbno", 140.0, 28.0) + rng.normal(0, 5000, n)
+
+    df = pd.DataFrame(
+        {
+            "price_eur": np.clip(price, 5000, None),
+            "size_m2": size,
+            "parcela_m2": size,
+            "prodani_delez_parcele": rng.choice([0.5, 1.0], n),
+            "latitude": rng.uniform(45.8, 46.8, n),
+            "longitude": rng.uniform(13.6, 16.3, n),
+            "property_type": ["parcela"] * n,
+            "municipality": municipality,
+            "municipality_normalized": municipality,
+            "statistical_region": rng.choice(["osrednjeslovenska", "gorenjska"], n),
+            "vrsta_zemljisca": land_kind,
+            "ime_ko": rng.choice(["Moste", "Kranj", "Koper"], n),
+            "naselje": rng.choice(["Ljubljana", "Kranj", "Koper"], n),
+            "transaction_year": rng.choice([2023, 2024, 2025], n),
+        }
+    )
+    csv_path = tmp_path / "parcela.csv"
+    df.to_csv(csv_path, index=False)
+
+    result = ms.train_from_csv(str(csv_path))
+
+    parcela_features = result["per_type_features"]["parcela"]
+    assert parcela_features["selection_mode"] == "signal_scored_parcela"
+    assert "vrsta_zemljisca" in parcela_features["categorical_features"]
+
+
+def test_predict_combined_routed_batches_predictions_by_property_type():
+    import app.services.model_service as ms
+
+    class FakePipeline:
+        def __init__(self, value):
+            self.value = value
+            self.calls = []
+
+        def predict(self, frame):
+            self.calls.append(len(frame))
+            return np.full(len(frame), self.value, dtype=float)
+
+    X_test = pd.DataFrame(
+        {
+            "property_type": ["stanovanje", "hisa", "stanovanje", "poslovni_prostor"],
+            "size_m2": [60, 120, 75, 90],
+        }
+    )
+
+    global_pipeline = FakePipeline(100.0)
+    stanovanje_pipeline = FakePipeline(200.0)
+    hisa_pipeline = FakePipeline(300.0)
+
+    predicted = ms._predict_combined_routed(
+        X_test,
+        global_pipeline,
+        {
+            "stanovanje": {"pipeline": stanovanje_pipeline},
+            "hisa": {"pipeline": hisa_pipeline},
+        },
+    )
+
+    assert predicted.tolist() == [200.0, 300.0, 200.0, 100.0]
+    assert global_pipeline.calls == [4]
+    assert stanovanje_pipeline.calls == [2]
+    assert hisa_pipeline.calls == [1]
+
+
 def test_train_from_csv_emits_staged_progress_updates(tmp_path, monkeypatch):
     """Structured status callbacks should advance through multiple stages and progress values."""
     import app.services.model_service as ms
@@ -141,6 +332,7 @@ _FAKE_MODEL_INFO = {
     "per_type_count": 0,
     "type_models_trained": [],
     "coords_by_municipality": {},
+    "segment_diagnostics": {"property_type": [{"segment": "parcela", "n": 100, "r2": 0.5, "mae": 1000}]},
 }
 
 
@@ -223,6 +415,7 @@ async def test_model_diagnostics_with_model(client: AsyncClient, admin_headers: 
     assert "global_metrics" in data
     assert "per_type_metrics" in data
     assert "per_region_metrics" in data
+    assert "segment_diagnostics" in data
 
 
 # ── GET /api/model/runs ──────────────────────────────────────────────────────
@@ -273,6 +466,7 @@ _ENHANCED_MODEL_INFO = {
     "test_rows": 20,
     "used_features": ["size_m2", "rooms", "floor"],
     "model_type": "HistGradientBoostingRegressor",
+    "data_preparation": {"source": "etn_kpp_bulk", "filter_summary": {"building": [], "land": []}},
 }
 
 
@@ -287,3 +481,5 @@ async def test_diagnostics_includes_enhanced_fields(client: AsyncClient, admin_h
     assert data["test_rows"] == 20
     assert data["used_features"] == ["size_m2", "rooms", "floor"]
     assert data["model_type"] == "HistGradientBoostingRegressor"
+    assert data["data_preparation"]["source"] == "etn_kpp_bulk"
+    assert data["segment_diagnostics"]["property_type"][0]["segment"] == "parcela"

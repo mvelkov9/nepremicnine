@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
   import { computed, ref } from 'vue'
   import { useRouter } from 'vue-router'
   import { useI18n } from 'vue-i18n'
@@ -17,7 +17,17 @@
   const fullName = ref('')
   const error = ref('')
   const loading = ref(false)
-  const formErrors = ref({})
+  const formErrors = ref<Record<string, string | null>>({})
+
+  const localeOptions = [
+    { label: 'SI', value: 'sl' },
+    { label: 'EN', value: 'en' },
+  ]
+
+  const authModeOptions = computed(() => [
+    { label: t('auth.loginButton'), value: true },
+    { label: t('auth.registerButton'), value: false },
+  ])
 
   const marketCards = computed(() => [
     { icon: 'map', title: t('auth.marketMap'), value: t('auth.marketMapValue') },
@@ -25,8 +35,8 @@
     { icon: 'prediction', title: t('auth.marketEstimate'), value: t('auth.marketEstimateValue') },
   ])
 
-  function validateForm() {
-    const errors = {}
+  function validateForm(): boolean {
+    const errors: Record<string, string> = {}
     if (!email.value.trim()) errors.email = t('validation.required')
     if (!password.value) errors.password = t('validation.required')
     if (!isLogin.value && !fullName.value.trim()) errors.fullName = t('validation.required')
@@ -58,9 +68,9 @@
     }
   }
 
-  function changeLocale(nextLocale) {
-    locale.value = nextLocale
-    setLocale(nextLocale)
+  function onLocaleChange(val: string) {
+    locale.value = val
+    setLocale(val)
   }
 </script>
 
@@ -100,103 +110,133 @@
           <h2>{{ isLogin ? t('auth.loginButton') : t('auth.registerButton') }}</h2>
         </div>
 
-        <div class="segmented-control" role="group" :aria-label="t('layout.language')">
-          <button
-            class="segmented-btn"
-            :class="{ active: locale === 'sl' }"
-            @click="changeLocale('sl')"
-          >
-            SI
-          </button>
-          <button
-            class="segmented-btn"
-            :class="{ active: locale === 'en' }"
-            @click="changeLocale('en')"
-          >
-            EN
-          </button>
-        </div>
+        <SelectButton
+          :model-value="locale"
+          :options="localeOptions"
+          option-label="label"
+          option-value="value"
+          :aria-label="t('layout.language')"
+          @update:model-value="onLocaleChange"
+        />
       </div>
 
-      <div class="auth-switch">
-        <button class="auth-switch-btn" :class="{ active: isLogin }" @click="isLogin = true">
-          {{ t('auth.loginButton') }}
-        </button>
-        <button class="auth-switch-btn" :class="{ active: !isLogin }" @click="isLogin = false">
-          {{ t('auth.registerButton') }}
-        </button>
-      </div>
+      <SelectButton
+        v-model="isLogin"
+        :options="authModeOptions"
+        option-label="label"
+        option-value="value"
+        class="auth-mode-switch"
+      />
 
-      <form @submit.prevent="handleSubmit" novalidate>
+      <form @submit.prevent="handleSubmit" novalidate class="login-form">
         <div v-if="!isLogin" class="field">
           <label for="fullName">{{ t('auth.fullName') }}</label>
-          <input
+          <InputText
             id="fullName"
             v-model="fullName"
-            type="text"
-            required
-            :class="{ 'input-error': formErrors.fullName }"
+            :invalid="!!formErrors.fullName"
             :aria-describedby="formErrors.fullName ? 'fullName-error' : undefined"
             @input="formErrors.fullName = null"
           />
-          <span v-if="formErrors.fullName" id="fullName-error" class="field-error">{{
-            formErrors.fullName
-          }}</span>
+          <small v-if="formErrors.fullName" id="fullName-error" class="text-red-500">
+            {{ formErrors.fullName }}
+          </small>
         </div>
 
         <div class="field">
           <label for="email">{{ t('auth.email') }}</label>
-          <input
+          <InputText
             id="email"
             v-model="email"
             type="email"
-            required
             autocomplete="username"
-            :class="{ 'input-error': formErrors.email }"
+            :invalid="!!formErrors.email"
             :aria-describedby="formErrors.email ? 'email-error' : undefined"
             @input="formErrors.email = null"
           />
-          <span v-if="formErrors.email" id="email-error" class="field-error">{{
-            formErrors.email
-          }}</span>
+          <small v-if="formErrors.email" id="email-error" class="text-red-500">
+            {{ formErrors.email }}
+          </small>
         </div>
 
         <div class="field">
           <label for="password">{{ t('auth.password') }}</label>
-          <input
+          <Password
             id="password"
             v-model="password"
-            type="password"
-            required
+            :feedback="false"
+            toggle-mask
+            input-id="password"
             autocomplete="current-password"
-            :class="{ 'input-error': formErrors.password }"
+            :invalid="!!formErrors.password"
             :aria-describedby="formErrors.password ? 'password-error' : undefined"
             @input="formErrors.password = null"
           />
-          <span v-if="formErrors.password" id="password-error" class="field-error">{{
-            formErrors.password
-          }}</span>
+          <small v-if="formErrors.password" id="password-error" class="text-red-500">
+            {{ formErrors.password }}
+          </small>
         </div>
 
-        <p v-if="error" class="error-text" style="margin-bottom: 0.9rem">{{ error }}</p>
+        <Message v-if="error" severity="error" :closable="false" class="login-error">
+          {{ error }}
+        </Message>
 
-        <button type="submit" class="btn btn-primary auth-submit" :disabled="loading">
-          {{
-            loading
-              ? t('common.loading')
-              : isLogin
-                ? t('auth.loginButton')
-                : t('auth.registerButton')
-          }}
-        </button>
+        <Button
+          type="submit"
+          :loading="loading"
+          :label="isLogin ? t('auth.loginButton') : t('auth.registerButton')"
+          class="auth-submit"
+        />
       </form>
 
       <p class="login-footer">
         {{ isLogin ? t('auth.noAccount') : t('auth.hasAccount') }}
-        <button class="inline-link" @click="isLogin = !isLogin">
-          {{ isLogin ? t('auth.registerButton') : t('auth.loginButton') }}
-        </button>
+        <Button
+          :label="isLogin ? t('auth.registerButton') : t('auth.loginButton')"
+          link
+          class="inline-switch-btn"
+          @click="isLogin = !isLogin"
+        />
       </p>
     </section>
   </div>
 </template>
+
+<style scoped>
+  .auth-mode-switch {
+    margin-bottom: 1.1rem;
+  }
+
+  .auth-mode-switch :deep(.p-togglebutton) {
+    flex: 1;
+    justify-content: center;
+  }
+
+  .login-form {
+    display: grid;
+    gap: 0.9rem;
+  }
+
+  .login-form :deep(.p-password) {
+    width: 100%;
+  }
+
+  .login-form :deep(.p-password-input) {
+    width: 100%;
+  }
+
+  .auth-submit {
+    width: 100%;
+    margin-top: 0.25rem;
+  }
+
+  .login-error {
+    margin: 0;
+  }
+
+  .inline-switch-btn {
+    padding: 0;
+    margin-left: 0.3rem;
+    font-weight: 800;
+  }
+</style>

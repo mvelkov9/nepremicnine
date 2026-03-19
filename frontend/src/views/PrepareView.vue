@@ -1,11 +1,9 @@
-<script setup>
+<script setup lang="ts">
   import { ref, onMounted, computed, reactive } from 'vue'
   import { useRouter } from 'vue-router'
   import { useI18n } from 'vue-i18n'
-  import Button from 'primevue/button'
-  import Checkbox from 'primevue/checkbox'
-  import Select from 'primevue/select'
   import PageHeader from '../components/PageHeader.vue'
+  import MetricCard from '../components/MetricCard.vue'
   import { useDataStore } from '../stores/data'
   import { useModelStore } from '../stores/model'
   import api from '../composables/useApi'
@@ -228,6 +226,15 @@
   function fmt(value, decimals = 0) {
     return formatNumber(value, { maximumFractionDigits: decimals })
   }
+
+  // Computed data for per_year DataTable
+  const perYearRows = computed(() => {
+    if (!result.value?.per_year) return []
+    return Object.entries(result.value.per_year).map(([year, rows]) => ({
+      year,
+      rows,
+    }))
+  })
 </script>
 
 <template>
@@ -241,234 +248,218 @@
     </section>
 
     <!-- Mode tabs -->
-    <div class="card mode-shell">
-      <div class="mode-tabs" role="tablist">
-        <button
-          :class="['tab-btn', { active: etnMode === 'bulk' }]"
-          role="tab"
-          :aria-selected="etnMode === 'bulk'"
-          @click="etnMode = 'bulk'"
-        >
-          {{ t('prepare.autoEtn') }}
-        </button>
-        <button
-          :class="['tab-btn', { active: etnMode === 'single' }]"
-          role="tab"
-          :aria-selected="etnMode === 'single'"
-          @click="etnMode = 'single'"
-        >
-          {{ t('prepare.singleEtn') }}
-        </button>
-        <button
-          :class="['tab-btn', { active: etnMode === 'manual' }]"
-          role="tab"
-          :aria-selected="etnMode === 'manual'"
-          @click="etnMode = 'manual'"
-        >
-          {{ t('prepare.manualMapping') }}
-        </button>
-      </div>
-    </div>
+    <div class="card">
+      <Tabs v-model:value="etnMode">
+        <TabList>
+          <Tab value="bulk">{{ t('prepare.autoEtn') }}</Tab>
+          <Tab value="single">{{ t('prepare.singleEtn') }}</Tab>
+          <Tab value="manual">{{ t('prepare.manualMapping') }}</Tab>
+        </TabList>
 
-    <!-- Bulk ETN -->
-    <div v-if="etnMode === 'bulk'" class="card" role="tabpanel">
-      <div class="card-title">{{ t('prepare.autoEtn') }}</div>
-      <p class="muted" style="margin-bottom: 1rem">{{ t('prepare.autoEtnDesc') }}</p>
+        <TabPanels>
+          <!-- Bulk ETN -->
+          <TabPanel value="bulk">
+            <div class="card-title">{{ t('prepare.autoEtn') }}</div>
+            <p class="muted mb-4">{{ t('prepare.autoEtnDesc') }}</p>
 
-      <div v-if="!detectedPairs.length" class="muted">
-        {{ t('prepare.noPairsDetected') }}
-      </div>
+            <div v-if="!detectedPairs.length" class="muted">
+              {{ t('prepare.noPairsDetected') }}
+            </div>
 
-      <div v-else>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th style="width: 40px">
-                  <Checkbox
-                    binary
-                    :model-value="detectedPairs.every((p) => isSelected(p.year))"
-                    @update:model-value="toggleAll($event)"
-                  />
-                </th>
-                <th>{{ t('prepare.year') }}</th>
-                <th>{{ t('prepare.posliFile') }}</th>
-                <th>{{ t('prepare.delistavbFile') }}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="pair in detectedPairs" :key="pair.year">
-                <td>
-                  <Checkbox
-                    binary
-                    :model-value="isSelected(pair.year)"
-                    @update:model-value="togglePair(pair)"
-                  />
-                </td>
-                <td>
-                  <span class="badge-blue">{{ pair.year }}</span>
-                </td>
-                <td>{{ pair.posli.original_name }}</td>
-                <td>{{ pair.delistavb.original_name }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+            <div v-else>
+              <DataTable :value="detectedPairs" striped-rows size="small">
+                <Column header-style="width: 3rem">
+                  <template #header>
+                    <Checkbox
+                      binary
+                      :model-value="detectedPairs.every((p) => isSelected(p.year))"
+                      @update:model-value="toggleAll($event)"
+                    />
+                  </template>
+                  <template #body="{ data: pair }">
+                    <Checkbox
+                      binary
+                      :model-value="isSelected(pair.year)"
+                      @update:model-value="togglePair(pair)"
+                    />
+                  </template>
+                </Column>
+                <Column :header="t('prepare.year')">
+                  <template #body="{ data: pair }">
+                    <Tag :value="String(pair.year)" severity="info" />
+                  </template>
+                </Column>
+                <Column :header="t('prepare.posliFile')">
+                  <template #body="{ data: pair }">
+                    {{ pair.posli.original_name }}
+                  </template>
+                </Column>
+                <Column :header="t('prepare.delistavbFile')">
+                  <template #body="{ data: pair }">
+                    {{ pair.delistavb.original_name }}
+                  </template>
+                </Column>
+              </DataTable>
 
-        <Button
-          class="prepare-btn"
-          icon="pi pi-cog"
-          :loading="loading"
-          :disabled="loading || trainingLocked || !selectedPairs().length"
-          :label="loading ? t('common.loading') : t('prepare.prepareButton')"
-          @click="prepareEtnBulk"
-        />
-      </div>
-    </div>
+              <Button
+                class="mt-4"
+                icon="pi pi-cog"
+                :loading="loading"
+                :disabled="loading || trainingLocked || !selectedPairs().length"
+                :label="loading ? t('common.loading') : t('prepare.prepareButton')"
+                @click="prepareEtnBulk"
+              />
+            </div>
+          </TabPanel>
 
-    <!-- Single ETN -->
-    <div v-if="etnMode === 'single'" class="card" role="tabpanel">
-      <div class="card-title">{{ t('prepare.singleEtn') }}</div>
-      <p class="muted" style="margin-bottom: 1rem">{{ t('prepare.singleEtnDesc') }}</p>
+          <!-- Single ETN -->
+          <TabPanel value="single">
+            <div class="card-title">{{ t('prepare.singleEtn') }}</div>
+            <p class="muted mb-4">{{ t('prepare.singleEtnDesc') }}</p>
 
-      <div class="form-grid">
-        <div>
-          <label class="form-label">{{ t('prepare.posliFile') }}</label>
-          <Select
-            v-model="singlePosli"
-            :options="[{ label: t('prepare.selectFile'), value: '' }, ...getDatasetPaths()]"
-            option-label="label"
-            option-value="value"
-          />
-        </div>
-        <div>
-          <label class="form-label">{{ t('prepare.delistavbFile') }}</label>
-          <Select
-            v-model="singleDelistavb"
-            :options="[{ label: t('prepare.selectFile'), value: '' }, ...getDatasetPaths()]"
-            option-label="label"
-            option-value="value"
-          />
-        </div>
-      </div>
+            <div class="form-grid">
+              <div>
+                <label class="form-label">{{ t('prepare.posliFile') }}</label>
+                <Select
+                  v-model="singlePosli"
+                  :options="[{ label: t('prepare.selectFile'), value: '' }, ...getDatasetPaths()]"
+                  option-label="label"
+                  option-value="value"
+                />
+              </div>
+              <div>
+                <label class="form-label">{{ t('prepare.delistavbFile') }}</label>
+                <Select
+                  v-model="singleDelistavb"
+                  :options="[{ label: t('prepare.selectFile'), value: '' }, ...getDatasetPaths()]"
+                  option-label="label"
+                  option-value="value"
+                />
+              </div>
+            </div>
 
-      <Button
-        class="prepare-btn"
-        icon="pi pi-cog"
-        :loading="loading"
-        :disabled="loading || trainingLocked || !singlePosli || !singleDelistavb"
-        :label="loading ? t('common.loading') : t('prepare.prepareButton')"
-        @click="prepareEtnSingle"
-      />
-    </div>
+            <Button
+              class="mt-4"
+              icon="pi pi-cog"
+              :loading="loading"
+              :disabled="loading || trainingLocked || !singlePosli || !singleDelistavb"
+              :label="loading ? t('common.loading') : t('prepare.prepareButton')"
+              @click="prepareEtnSingle"
+            />
+          </TabPanel>
 
-    <!-- Manual mapping -->
-    <div v-if="etnMode === 'manual'" class="card" role="tabpanel">
-      <div class="card-title">{{ t('prepare.manualMapping') }}</div>
-      <p class="muted" style="margin-bottom: 1rem">{{ t('prepare.manualDesc') }}</p>
+          <!-- Manual mapping -->
+          <TabPanel value="manual">
+            <div class="card-title">{{ t('prepare.manualMapping') }}</div>
+            <p class="muted mb-4">{{ t('prepare.manualDesc') }}</p>
 
-      <div style="margin-bottom: 1rem">
-        <label class="form-label">{{ t('prepare.sourceFile') }}</label>
-        <Select
-          v-model="manualCsvPath"
-          :options="[{ label: t('prepare.selectFile'), value: '' }, ...getDatasetPaths()]"
-          option-label="label"
-          option-value="value"
-        />
-      </div>
+            <div class="mb-4">
+              <label class="form-label">{{ t('prepare.sourceFile') }}</label>
+              <Select
+                v-model="manualCsvPath"
+                :options="[{ label: t('prepare.selectFile'), value: '' }, ...getDatasetPaths()]"
+                option-label="label"
+                option-value="value"
+              />
+            </div>
 
-      <div>
-        <label class="form-label">{{ t('prepare.columnMapping') }}</label>
-        <textarea
-          v-model="columnMap"
-          class="form-input code-textarea"
-          rows="8"
-          :placeholder="columnMapPlaceholder"
-        ></textarea>
-      </div>
+            <div>
+              <label class="form-label">{{ t('prepare.columnMapping') }}</label>
+              <Textarea
+                v-model="columnMap"
+                class="code-textarea"
+                rows="8"
+                :placeholder="columnMapPlaceholder"
+                auto-resize
+              />
+            </div>
 
-      <Button
-        class="prepare-btn"
-        icon="pi pi-cog"
-        :loading="loading"
-        :disabled="loading || trainingLocked || !manualCsvPath || !columnMap"
-        :label="loading ? t('common.loading') : t('prepare.prepareButton')"
-        @click="prepareManual"
-      />
+            <Button
+              class="mt-4"
+              icon="pi pi-cog"
+              :loading="loading"
+              :disabled="loading || trainingLocked || !manualCsvPath || !columnMap"
+              :label="loading ? t('common.loading') : t('prepare.prepareButton')"
+              @click="prepareManual"
+            />
+          </TabPanel>
+        </TabPanels>
+      </Tabs>
     </div>
 
     <!-- Error -->
-    <p v-if="error" class="error-text" style="margin-top: 1rem">{{ error }}</p>
+    <p v-if="error" class="error-text mt-4">{{ error }}</p>
 
     <!-- Result -->
-    <div v-if="result" class="card result-card" style="margin-top: 1.5rem">
+    <div v-if="result" class="card result-card mt-6">
       <div class="card-title">{{ t('prepare.result') }}</div>
-      <div class="kpi-grid">
-        <div class="kpi-card">
-          <span class="kpi-label">{{ t('prepare.outputRows') }}</span>
-          <span class="kpi-value">{{ fmt(result.rows || result.total_rows || 0) }}</span>
-        </div>
-        <div v-if="result.columns" class="kpi-card">
-          <span class="kpi-label">{{ t('prepare.outputColumns') }}</span>
-          <span class="kpi-value">{{ fmt(result.columns?.length || 0) }}</span>
-        </div>
-        <div v-if="result.per_year" class="kpi-card">
-          <span class="kpi-label">{{ t('prepare.yearsCovered') }}</span>
-          <span class="kpi-value">{{ fmt(Object.keys(result.per_year).length) }}</span>
-        </div>
+
+      <div class="flex flex-wrap gap-4">
+        <MetricCard
+          :label="t('prepare.outputRows')"
+          :value="fmt(result.rows || result.total_rows || 0)"
+          tone="success"
+        />
+        <MetricCard
+          v-if="result.columns"
+          :label="t('prepare.outputColumns')"
+          :value="fmt(result.columns?.length || 0)"
+        />
+        <MetricCard
+          v-if="result.per_year"
+          :label="t('prepare.yearsCovered')"
+          :value="fmt(Object.keys(result.per_year).length)"
+        />
       </div>
 
-      <div v-if="result.per_year" class="table-wrap" style="margin-top: 1rem">
-        <table>
-          <thead>
-            <tr>
-              <th>{{ t('prepare.year') }}</th>
-              <th>{{ t('data.rows') }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="(rows, year) in result.per_year" :key="year">
-              <td>
-                <span class="badge-blue">{{ year }}</span>
-              </td>
-              <td>{{ fmt(rows) }}</td>
-            </tr>
-          </tbody>
-        </table>
+      <div v-if="result.per_year" class="mt-4">
+        <DataTable :value="perYearRows" striped-rows size="small">
+          <Column :header="t('prepare.year')">
+            <template #body="{ data: row }">
+              <Tag :value="String(row.year)" severity="info" />
+            </template>
+          </Column>
+          <Column :header="t('data.rows')">
+            <template #body="{ data: row }">
+              {{ fmt(row.rows) }}
+            </template>
+          </Column>
+        </DataTable>
       </div>
 
-      <div v-if="result.reports?.length" class="table-wrap" style="margin-top: 1rem">
-        <table>
-          <thead>
-            <tr>
-              <th>{{ t('prepare.year') }}</th>
-              <th>{{ t('prepare.reportStatus') }}</th>
-              <th>{{ t('data.rows') }}</th>
-              <th>{{ t('prepare.reportDetail') }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="report in result.reports" :key="report.label">
-              <td>
-                <span class="badge-blue">{{ report.label }}</span>
-              </td>
-              <td>
-                <span :class="report.status === 'ok' ? 'badge badge-green' : 'badge badge-red'">
-                  {{ report.status }}
-                </span>
-              </td>
-              <td>{{ fmt(report.rows || 0) }}</td>
-              <td class="muted">{{ getReportDetail(report) }}</td>
-            </tr>
-          </tbody>
-        </table>
+      <div v-if="result.reports?.length" class="mt-4">
+        <DataTable :value="result.reports" striped-rows size="small">
+          <Column :header="t('prepare.year')">
+            <template #body="{ data: report }">
+              <Tag :value="String(report.label)" severity="info" />
+            </template>
+          </Column>
+          <Column :header="t('prepare.reportStatus')">
+            <template #body="{ data: report }">
+              <Tag
+                :value="report.status"
+                :severity="report.status === 'ok' ? 'success' : 'danger'"
+              />
+            </template>
+          </Column>
+          <Column :header="t('data.rows')">
+            <template #body="{ data: report }">
+              {{ fmt(report.rows || 0) }}
+            </template>
+          </Column>
+          <Column :header="t('prepare.reportDetail')">
+            <template #body="{ data: report }">
+              <span class="muted">{{ getReportDetail(report) }}</span>
+            </template>
+          </Column>
+        </DataTable>
       </div>
 
-      <div v-if="result.training_dataset" class="selected-source-card" style="margin-top: 1rem">
+      <div v-if="result.training_dataset" class="selected-source-card mt-4">
         <span class="eyebrow">{{ t('prepare.readyForModel') }}</span>
         <strong>{{ result.training_dataset.relative_path }}</strong>
         <p class="muted">{{ fmt(result.training_dataset.rows) }} {{ t('data.rows') }}</p>
-        <div class="actions">
+        <div class="mt-3">
           <Button :label="t('prepare.openModel')" @click="openModelView" />
         </div>
       </div>
@@ -482,51 +473,19 @@
     gap: 1rem;
   }
 
-  .mode-shell {
-    margin-bottom: 0;
-  }
-
-  .mode-tabs {
-    display: flex;
-    gap: 4px;
-    border-bottom: 1px solid var(--border);
-    padding-bottom: 0;
-  }
-  .tab-btn {
-    padding: 8px 20px;
-    border: none;
-    background: transparent;
-    font-size: 14px;
-    font-weight: 500;
-    color: var(--text-soft);
-    cursor: pointer;
-    border-bottom: 2px solid transparent;
-    margin-bottom: -2px;
-    transition:
-      color 0.2s,
-      border-color 0.2s;
-  }
-  .tab-btn:hover {
-    color: var(--primary);
-  }
-  .tab-btn.active {
-    color: var(--primary);
-    border-bottom-color: var(--primary);
-  }
   .form-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 1rem;
   }
-  .prepare-btn {
-    margin-top: 1rem;
-  }
+
   .code-textarea {
     font-family: 'Fira Code', 'Consolas', monospace;
     font-size: 13px;
     line-height: 1.6;
-    resize: vertical;
+    width: 100%;
   }
+
   .result-card {
     border-left: 4px solid var(--success);
   }

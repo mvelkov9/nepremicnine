@@ -1,13 +1,8 @@
-<script setup>
+<script setup lang="ts">
   import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
   import { useI18n } from 'vue-i18n'
   import { useRoute, useRouter } from 'vue-router'
-  import Button from 'primevue/button'
-  import Column from 'primevue/column'
-  import DataTable from 'primevue/datatable'
-  import Dialog from 'primevue/dialog'
-  import Select from 'primevue/select'
-  import Tag from 'primevue/tag'
+  /* PrimeVue components (Button, Column, DataTable, Dialog, Select, Tag) are auto-imported */
   import L from 'leaflet'
   import 'leaflet/dist/leaflet.css'
   import EmptyState from '../components/EmptyState.vue'
@@ -610,11 +605,12 @@
       </div>
 
       <div class="legend-strip">
-        <button
+        <Button
           v-for="band in bandOptions"
           :key="band.value || 'all'"
           class="legend-chip"
-          :class="{ active: selectedPriceBand === band.value }"
+          :severity="selectedPriceBand === band.value ? undefined : 'secondary'"
+          :outlined="selectedPriceBand !== band.value"
           @click="selectedPriceBand = band.value"
         >
           <span
@@ -626,7 +622,7 @@
             <strong>{{ band.label }}</strong>
             <small>{{ band.range || t('map.allBandsHint') }} · {{ fmt(band.count) }}</small>
           </span>
-        </button>
+        </Button>
 
         <Button
           severity="secondary"
@@ -664,10 +660,12 @@
         />
 
         <div v-if="activityFeed.length" class="rail-list">
-          <button
+          <Button
             v-for="item in activityFeed"
             :key="item.id || item.slug"
             class="rail-card"
+            severity="secondary"
+            outlined
             @click="openDetails(item, viewMode === 'transactions' ? 'transaction' : 'overview')"
           >
             <div class="rail-card-top">
@@ -707,7 +705,7 @@
                 }}
               </small>
             </div>
-          </button>
+          </Button>
         </div>
         <EmptyState v-else icon="📍" :message="t('common.noData')" />
       </aside>
@@ -973,21 +971,20 @@
     align-items: stretch;
   }
 
-  .legend-chip {
+  :deep(.legend-chip.p-button) {
     display: flex;
     align-items: center;
     gap: 0.75rem;
     padding: 0.8rem 0.9rem;
     border-radius: 1rem;
-    border: 1px solid var(--border);
-    background: var(--surface-soft);
-    color: var(--text);
     text-align: left;
+    white-space: normal;
+    height: auto;
   }
 
-  .legend-chip.active {
-    border-color: rgb(59 130 246 / 34%);
-    box-shadow: 0 18px 36px rgb(59 130 246 / 12%);
+  :deep(.legend-chip.p-button:not(.p-button-outlined)) {
+    border-color: color-mix(in srgb, var(--primary) 34%, transparent);
+    box-shadow: 0 18px 36px color-mix(in srgb, var(--primary) 12%, transparent);
   }
 
   .legend-dot {
@@ -1022,15 +1019,14 @@
     overflow: hidden;
   }
 
-  .rail-card {
+  :deep(.rail-card.p-button) {
     display: grid;
     gap: 0.4rem;
     padding: 0.9rem;
     border-radius: 1rem;
-    border: 1px solid var(--border);
-    background: var(--surface-soft);
     text-align: left;
-    color: inherit;
+    white-space: normal;
+    height: auto;
   }
 
   .rail-card-top,
@@ -1126,8 +1122,8 @@
 
   .flag-chip.active {
     color: var(--text);
-    border-color: rgb(34 197 94 / 28%);
-    background: rgb(34 197 94 / 10%);
+    border-color: color-mix(in srgb, var(--success) 28%, transparent);
+    background: color-mix(in srgb, var(--success) 10%, transparent);
   }
 
   .comparables-list {
