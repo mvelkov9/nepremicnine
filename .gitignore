@@ -49,5 +49,6 @@ Thumbs.db
 .coverage
 htmlcov/
 .pytest_cache/
+frontend/coverage/
 frontend/.pnpm-store/
 frontend/node_modules/
