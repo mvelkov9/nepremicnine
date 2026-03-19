@@ -284,7 +284,11 @@ async def test_market_home_formats_ascii_labels_for_display(client: AsyncClient,
         "goriska",
         "obalno-kraska",
     ]
-    with patch("app.api.stats._load_df", return_value=fake_df):
+    with (
+        patch("app.api.stats._load_df", return_value=fake_df),
+        patch.dict("app.api.stats._PREPARED_DF_CACHE", {"mtime": None, "df": None}),
+        patch.dict("app.api.stats._RAW_DF_CACHE", {"mtime": None, "df": None}),
+    ):
         resp = await client.get("/api/stats/market-home", headers=admin_headers)
 
     assert resp.status_code == 200
@@ -404,7 +408,11 @@ async def test_map_transactions_returns_wgs84_coordinates(client: AsyncClient, a
             "source_label": ["2024"],
         }
     )
-    with patch("app.api.stats._load_df", return_value=fake_df):
+    with (
+        patch("app.api.stats._load_df", return_value=fake_df),
+        patch.dict("app.api.stats._PREPARED_DF_CACHE", {"mtime": None, "df": None}),
+        patch.dict("app.api.stats._RAW_DF_CACHE", {"mtime": None, "df": None}),
+    ):
         resp = await client.get("/api/stats/map-transactions", headers=admin_headers)
     assert resp.status_code == 200
     data = resp.json()

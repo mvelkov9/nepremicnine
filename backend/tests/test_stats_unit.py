@@ -22,6 +22,11 @@ class _FakeRedis:
         self.store[key] = value
 
 
+class _FakeResponse:
+    def __init__(self):
+        self.headers: dict[str, str] = {}
+
+
 def _fake_request():
     return SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(redis=_FakeRedis())))
 
@@ -61,7 +66,7 @@ async def test_market_home_property_type_filter_is_case_insensitive(monkeypatch:
         ),
     )
 
-    result = await market_home(_fake_request(), property_type="Stanovanje", _user=object())
+    result = await market_home(_fake_request(), _FakeResponse(), property_type="Stanovanje", _user=object())
 
     assert result["active_property_type"] == "Stanovanje"
     assert result["headline"]["total_records"] == 3
@@ -87,7 +92,7 @@ async def test_market_home_uses_canonical_municipality_coverage(monkeypatch: pyt
     monkeypatch.setattr("app.api.stats._RAW_DF_CACHE", {"mtime": None, "df": None})
     monkeypatch.setattr("app.api.stats._PREPARED_DF_CACHE", {"mtime": None, "df": None})
 
-    result = await market_home(_fake_request(), _user=object())
+    result = await market_home(_fake_request(), _FakeResponse(), _user=object())
 
     assert result["headline"]["latest_year"] == "2026"
     assert result["headline"]["municipalities_count"] == 3
@@ -106,7 +111,7 @@ async def test_regions_stats_property_type_filter_scopes_region_counts(monkeypat
         ),
     )
 
-    result = await regions_stats(_fake_request(), property_type="hisa", _user=object())
+    result = await regions_stats(_fake_request(), _FakeResponse(), property_type="hisa", _user=object())
 
     assert len(result) == 2
     assert sum(item["count"] for item in result) == 2
