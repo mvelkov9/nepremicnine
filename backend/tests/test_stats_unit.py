@@ -65,6 +65,8 @@ async def test_market_home_property_type_filter_is_case_insensitive(monkeypatch:
             ]
         ),
     )
+    monkeypatch.setattr("app.api.stats._RAW_DF_CACHE", {"mtime": None, "df": None})
+    monkeypatch.setattr("app.api.stats._PREPARED_DF_CACHE", {"mtime": None, "df": None})
 
     result = await market_home(_fake_request(), _FakeResponse(), property_type="Stanovanje", _user=object())
 
@@ -110,6 +112,8 @@ async def test_regions_stats_property_type_filter_scopes_region_counts(monkeypat
             else _build_market_df()[_build_market_df()["property_type"] == property_type]
         ),
     )
+    monkeypatch.setattr("app.api.stats._RAW_DF_CACHE", {"mtime": None, "df": None})
+    monkeypatch.setattr("app.api.stats._PREPARED_DF_CACHE", {"mtime": None, "df": None})
 
     result = await regions_stats(_fake_request(), _FakeResponse(), property_type="hisa", _user=object())
 
