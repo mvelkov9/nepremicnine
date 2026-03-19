@@ -9,16 +9,26 @@ test.describe('Authentication', () => {
 
   test('login form has required fields', async ({ page }) => {
     await page.goto('/login')
-    await expect(page.locator('input[type="email"], input[name="email"], [data-testid="email-input"]')).toBeVisible()
-    await expect(page.locator('input[type="password"], input[name="password"], [data-testid="password-input"]')).toBeVisible()
+    await expect(
+      page.locator('input[type="email"], input[name="email"], [data-testid="email-input"]'),
+    ).toBeVisible()
+    await expect(
+      page.locator(
+        'input[type="password"], input[name="password"], [data-testid="password-input"]',
+      ),
+    ).toBeVisible()
   })
 
   test('shows error on invalid credentials', async ({ page }) => {
     await page.goto('/login')
 
     // Fill in invalid credentials
-    const emailInput = page.locator('input[type="email"], input[name="email"], [data-testid="email-input"]')
-    const passwordInput = page.locator('input[type="password"], input[name="password"], [data-testid="password-input"]')
+    const emailInput = page.locator(
+      'input[type="email"], input[name="email"], [data-testid="email-input"]',
+    )
+    const passwordInput = page.locator(
+      'input[type="password"], input[name="password"], [data-testid="password-input"]',
+    )
 
     await emailInput.fill('invalid@test.com')
     await passwordInput.fill('wrongpassword')

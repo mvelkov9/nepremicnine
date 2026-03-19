@@ -274,8 +274,14 @@ Full interactive API documentation available at `/docs` (Swagger UI).
 ## Development
 
 ```bash
-# Backend lint + format
+# Install ruff (if not already installed)
+pip install ruff
+
+# Backend lint + format check
 cd backend && ruff check . && ruff format --check .
+
+# Backend auto-fix lint + format
+cd backend && ruff check . --fix && ruff format .
 
 # Backend tests (uses SQLite + fake Redis, no infra needed)
 cd backend && pytest -v --cov=app

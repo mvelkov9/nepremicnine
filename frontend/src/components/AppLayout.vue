@@ -305,7 +305,9 @@
                 text
                 rounded
                 @click="toggleSidebar"
-                :aria-label="sidebarCollapsed ? t('layout.expandSidebar') : t('layout.collapseSidebar')"
+                :aria-label="
+                  sidebarCollapsed ? t('layout.expandSidebar') : t('layout.collapseSidebar')
+                "
                 v-tooltip.bottom="
                   sidebarCollapsed ? t('layout.expandSidebar') : t('layout.collapseSidebar')
                 "
@@ -341,7 +343,12 @@
                 :aria-label="t('layout.language')"
               />
 
-              <Button class="shell-action-button" rounded @click="toggleDark" :aria-label="isDark ? t('ui.lightMode') : t('ui.darkMode')">
+              <Button
+                class="shell-action-button"
+                rounded
+                @click="toggleDark"
+                :aria-label="isDark ? t('ui.lightMode') : t('ui.darkMode')"
+              >
                 <AppIcon :name="isDark ? 'sun' : 'moon'" :size="16" />
                 <span>{{ isDark ? t('ui.lightMode') : t('ui.darkMode') }}</span>
               </Button>

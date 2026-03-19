@@ -53,7 +53,9 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  async function updateProfile(payload: Partial<Pick<User, 'full_name' | 'avatar_url'>>): Promise<User> {
+  async function updateProfile(
+    payload: Partial<Pick<User, 'full_name' | 'avatar_url'>>,
+  ): Promise<User> {
     const { data } = await api.patch<User>('/api/auth/me', payload)
     user.value = data
     return data

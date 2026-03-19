@@ -3,7 +3,15 @@
  * match expected API response shapes.
  */
 import { describe, it, expect } from 'vitest'
-import type { User, Dataset, TrainingJob, ModelInfo, PredictionResult, HealthStatus, RegionLookup } from '../../types/api'
+import type {
+  User,
+  Dataset,
+  TrainingJob,
+  ModelInfo,
+  PredictionResult,
+  HealthStatus,
+  RegionLookup,
+} from '../../types/api'
 
 describe('API response contracts', () => {
   describe('User type', () => {

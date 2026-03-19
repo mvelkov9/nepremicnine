@@ -131,7 +131,9 @@ async def model_runs(
             "model_type": row.ModelRun.model_type,
             "features": json.loads(row.ModelRun.features_json) if row.ModelRun.features_json else None,
             "importance": json.loads(row.ModelRun.importance_json) if row.ModelRun.importance_json else None,
-            "combined_metrics": json.loads(row.ModelRun.combined_metrics_json) if row.ModelRun.combined_metrics_json else None,
+            "combined_metrics": json.loads(row.ModelRun.combined_metrics_json)
+            if row.ModelRun.combined_metrics_json
+            else None,
             "created_at": row.ModelRun.created_at.isoformat(),
         }
         for row in rows

@@ -6,15 +6,15 @@ Create Date: 2026-03-18 12:00:00.000000
 
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "a3e1f8b9c012"
-down_revision: Union[str, None] = "f5ab9d4c4f21"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "f5ab9d4c4f21"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -43,8 +43,7 @@ def upgrade() -> None:
     # --- training_jobs: partial index for active jobs, index on created_at ---
     op.create_index("ix_training_jobs_created_at", "training_jobs", ["created_at"])
     op.execute(
-        "CREATE INDEX ix_training_jobs_active ON training_jobs (updated_at) "
-        "WHERE status IN ('queued', 'running')"
+        "CREATE INDEX ix_training_jobs_active ON training_jobs (updated_at) WHERE status IN ('queued', 'running')"
     )
 
 
