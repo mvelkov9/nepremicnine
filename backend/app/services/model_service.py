@@ -522,6 +522,8 @@ def _build_pipeline(
     categorical_feats: list[str],
     n_samples: int,
     y_train: np.ndarray | None = None,
+    *,
+    use_early_stopping: bool = False,
 ) -> Pipeline:
     numeric_transformer = SimpleImputer(strategy="median")
     categorical_transformer = Pipeline(
@@ -540,17 +542,38 @@ def _build_pipeline(
     )
 
     hp = _adaptive_hyperparams(n_samples)
-    model = HistGradientBoostingRegressor(
-        max_iter=hp["max_iter"],
-        learning_rate=hp["learning_rate"],
-        max_depth=hp["max_depth"],
-        min_samples_leaf=hp.get("min_samples_leaf", 20),
-        max_bins=255,
-        l2_regularization=hp.get("l2_regularization", 0.1),
-        random_state=42,
-        warm_start=True,
-        verbose=0,
-    )
+
+    # Early stopping requires warm_start=False (sklearn limitation).
+    # Per-type models use early stopping; global model uses warm_start for progress.
+    if use_early_stopping:
+        model = HistGradientBoostingRegressor(
+            loss="absolute_error",
+            max_iter=hp["max_iter"],
+            learning_rate=hp["learning_rate"],
+            max_depth=hp["max_depth"],
+            min_samples_leaf=hp.get("min_samples_leaf", 20),
+            max_bins=255,
+            l2_regularization=hp.get("l2_regularization", 0.1),
+            early_stopping=True,
+            validation_fraction=0.12,
+            n_iter_no_change=30,
+            random_state=42,
+            warm_start=False,
+            verbose=0,
+        )
+    else:
+        model = HistGradientBoostingRegressor(
+            loss="absolute_error",
+            max_iter=hp["max_iter"],
+            learning_rate=hp["learning_rate"],
+            max_depth=hp["max_depth"],
+            min_samples_leaf=hp.get("min_samples_leaf", 20),
+            max_bins=255,
+            l2_regularization=hp.get("l2_regularization", 0.1),
+            random_state=42,
+            warm_start=True,
+            verbose=0,
+        )
 
     return Pipeline([("preprocessor", preprocessor), ("regressor", model)])
 
@@ -657,8 +680,6 @@ def _train_single_model(
     preprocessor = pipeline.named_steps["preprocessor"]
     regressor = pipeline.named_steps["regressor"]
     total_trees = regressor.max_iter
-    chunk_size = max(50, total_trees // 20)
-    fitted_trees = 0
 
     # Log-transform target: trains on log(1+y), predicts in log-space then expm1
     y_fit = np.log1p(y_train) if log_target else y_train
@@ -667,15 +688,25 @@ def _train_single_model(
     X_train_t = preprocessor.fit_transform(X_train, y_fit)
     X_test_t = preprocessor.transform(X_test)
 
-    # Warm-start loop: only re-fit the regressor on transformed data
-    while fitted_trees < total_trees:
-        next_target = min(fitted_trees + chunk_size, total_trees)
-        regressor.max_iter = next_target
-        regressor.fit(X_train_t, y_fit)
-        fitted_trees = next_target
+    use_warm_start = regressor.warm_start
 
+    if use_warm_start:
+        # Warm-start loop for progress reporting (global model)
+        chunk_size = max(50, total_trees // 20)
+        fitted_trees = 0
+        while fitted_trees < total_trees:
+            next_target = min(fitted_trees + chunk_size, total_trees)
+            regressor.max_iter = next_target
+            regressor.fit(X_train_t, y_fit)
+            fitted_trees = next_target
+            if progress_callback:
+                progress_callback(label, fitted_trees, total_trees)
+    else:
+        # Single fit with early stopping (per-type models)
+        regressor.fit(X_train_t, y_fit)
+        actual_trees = regressor.n_iter_
         if progress_callback:
-            progress_callback(label, fitted_trees, total_trees)
+            progress_callback(label, actual_trees, total_trees)
 
     y_pred_raw = regressor.predict(X_test_t)
     y_pred = np.maximum(np.expm1(y_pred_raw), 0) if log_target else y_pred_raw
@@ -695,6 +726,10 @@ def _train_single_model(
             else:
                 X_importance = X_test_t
                 y_importance = y_test
+
+            # Fix: permutation importance must use the same target space as the regressor
+            if log_target:
+                y_importance = np.log1p(y_importance)
 
             perm = permutation_importance(
                 regressor,
@@ -778,7 +813,11 @@ def train_from_csv(
 
     emit_status("feature_prep", 14, rows=len(df))
 
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    # Stratified split preserves type distribution in train and test sets
+    stratify_col = X["property_type"] if "property_type" in X.columns else None
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42, stratify=stratify_col,
+    )
     emit_status("training_setup", 18, rows=len(df))
 
     # Compute group medians from TRAINING SET ONLY (prevent data leakage)
@@ -888,25 +927,45 @@ def train_from_csv(
         log_target=True,
     )
 
-    # Per-type models — signal-scored feature selection for ALL types
+    # Per-type models — signal-scored features + early stopping + aggressive outlier removal
     if eligible:
         for ptype in eligible:
             mask_train = X_train["property_type"] == ptype
             mask_test = X_test["property_type"] == ptype
             Xt = X_train[mask_train].copy()
-            yt = y_train[mask_train]
+            yt = y_train[mask_train].copy()
             Xte = X_test[mask_test].copy()
             yte = y_test[mask_test]
 
             if len(Xte) < 10:
                 continue
 
-            # Per-type outlier clipping (percentile-based) for types with enough data
-            if len(yt) > 500:
-                p_low, p_high = np.percentile(yt, [1, 99])
-                outlier_mask = (yt >= p_low) & (yt <= p_high)
-                Xt = Xt[outlier_mask]
-                yt = yt[outlier_mask]
+            # ── Aggressive per-type outlier removal ──────────────────────
+            n_before = len(yt)
+
+            # 1) IQR-based price outlier removal (tighter than percentile)
+            q1, q3 = np.percentile(yt, [25, 75])
+            iqr = q3 - q1
+            price_lower = max(q1 - 2.0 * iqr, 0)
+            price_upper = q3 + 2.5 * iqr
+            price_mask = (yt >= price_lower) & (yt <= price_upper)
+
+            # 2) Price-per-m² outlier removal within each type
+            size_col_vals = pd.to_numeric(Xt.get("size_m2"), errors="coerce")
+            ppm2_mask = np.ones(len(yt), dtype=bool)
+            valid_size = size_col_vals.notna() & (size_col_vals > 0)
+            if valid_size.sum() > 50:
+                ppm2 = np.where(valid_size, yt / size_col_vals.clip(lower=1), np.nan)
+                ppm2_valid = ppm2[~np.isnan(ppm2)]
+                if len(ppm2_valid) > 50:
+                    ppm2_q1, ppm2_q3 = np.percentile(ppm2_valid, [5, 95])
+                    ppm2_mask = np.isnan(ppm2) | ((ppm2 >= ppm2_q1) & (ppm2 <= ppm2_q3))
+
+            combined_mask = price_mask & ppm2_mask
+            if combined_mask.sum() >= MIN_SAMPLES_PER_TYPE:
+                Xt = Xt[combined_mask]
+                yt = yt[combined_mask]
+                logger.info("Type %s: outlier removal %d → %d rows", ptype, n_before, len(yt))
 
             # Look up type-specific feature config, fall back to global defaults
             type_config = TYPE_FEATURE_CONFIGS.get(ptype, {})
@@ -929,7 +988,8 @@ def train_from_csv(
             )
             selection_mode = f"signal_scored_{ptype}"
 
-            pt_pipeline = _build_pipeline(pt_num, pt_cat, len(Xt))
+            # Per-type models: use early_stopping (no warm_start) for proper regularization
+            pt_pipeline = _build_pipeline(pt_num, pt_cat, len(Xt), use_early_stopping=True)
             emit_status(
                 "per_type_models",
                 _overall_training_progress(
