@@ -59,6 +59,13 @@ NUMERIC_FEATURES = [
     "price_per_m2_region",
     "price_per_m2_type",
     "price_per_m2_municipality",
+    # Spatial distance features (ETRS89/TM metric coordinates → Euclidean distance in meters)
+    "dist_ljubljana",
+    "dist_maribor",
+    "dist_coast",
+    # Type-specific comparable-sales features (computed per-type from training data)
+    "comp_type_muni_ppm2",
+    "comp_type_ko_ppm2",
 ]
 
 CATEGORICAL_FEATURES = [
@@ -94,6 +101,11 @@ ALWAYS_INCLUDE_NUMERIC = {
     "log_size_m2",
     "transaction_year",
     "price_per_m2_region",
+    "dist_ljubljana",
+    "dist_maribor",
+    "dist_coast",
+    "comp_type_muni_ppm2",
+    "comp_type_ko_ppm2",
 }
 
 ALWAYS_INCLUDE_CATEGORICAL = {
@@ -142,6 +154,11 @@ FEATURE_LABELS_SL: dict[str, str] = {
     "vrsta_dela_stavbe": "Vrsta dela stavbe",
     "vrsta_zemljisca": "Vrsta zemljišča",
     "vrsta_kupoprodajnega_posla": "Vrsta kupoprodajnega posla",
+    "dist_ljubljana": "Razdalja do Ljubljane",
+    "dist_maribor": "Razdalja do Maribora",
+    "dist_coast": "Razdalja do obale",
+    "comp_type_muni_ppm2": "€/m² tip+občina",
+    "comp_type_ko_ppm2": "€/m² tip+KO",
 }
 
 MODEL_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "models")
@@ -164,6 +181,11 @@ PARCELA_ALWAYS_INCLUDE_NUMERIC = {
     "price_per_m2_region",
     "price_per_m2_municipality",
     "ddv_vkljucen",
+    "dist_ljubljana",
+    "dist_maribor",
+    "dist_coast",
+    "comp_type_muni_ppm2",
+    "comp_type_ko_ppm2",
 }
 
 PARCELA_ALWAYS_INCLUDE_CATEGORICAL = {
@@ -176,6 +198,8 @@ PARCELA_ALWAYS_INCLUDE_CATEGORICAL = {
 
 # ── Type-specific feature configurations ─────────────────────────────
 # Each type gets its own "always include" set — signal scoring adds more on top.
+# _SPATIAL_ALWAYS is added to every type's always_numeric automatically.
+_SPATIAL_ALWAYS = {"dist_ljubljana", "dist_maribor", "dist_coast", "comp_type_muni_ppm2", "comp_type_ko_ppm2"}
 
 TYPE_FEATURE_CONFIGS: dict[str, dict[str, set[str]]] = {
     "stanovanje": {
@@ -194,7 +218,8 @@ TYPE_FEATURE_CONFIGS: dict[str, dict[str, set[str]]] = {
             "stavba_je_dokoncana",
             "uporabna_povrsina",
             "num_prostori",
-        },
+        }
+        | _SPATIAL_ALWAYS,
         "always_categorical": {
             "municipality_normalized",
             "statistical_region",
@@ -220,7 +245,8 @@ TYPE_FEATURE_CONFIGS: dict[str, dict[str, set[str]]] = {
             "latitude",
             "longitude",
             "has_parking",
-        },
+        }
+        | _SPATIAL_ALWAYS,
         "always_categorical": {
             "municipality_normalized",
             "statistical_region",
@@ -244,7 +270,8 @@ TYPE_FEATURE_CONFIGS: dict[str, dict[str, set[str]]] = {
             "price_per_m2_region",
             "price_per_m2_municipality",
             "ddv_vkljucen",
-        },
+        }
+        | _SPATIAL_ALWAYS,
         "always_categorical": {
             "municipality_normalized",
             "statistical_region",
@@ -265,7 +292,8 @@ TYPE_FEATURE_CONFIGS: dict[str, dict[str, set[str]]] = {
             "stavba_je_dokoncana",
             "ddv_vkljucen",
             "prodani_delez_dela_stavbe",
-        },
+        }
+        | _SPATIAL_ALWAYS,
         "always_categorical": {
             "municipality_normalized",
             "statistical_region",
@@ -288,7 +316,8 @@ TYPE_FEATURE_CONFIGS: dict[str, dict[str, set[str]]] = {
             "prodani_delez_dela_stavbe",
             "stavba_je_dokoncana",
             "ddv_vkljucen",
-        },
+        }
+        | _SPATIAL_ALWAYS,
         "always_categorical": {
             "municipality_normalized",
             "statistical_region",
@@ -311,7 +340,8 @@ TYPE_FEATURE_CONFIGS: dict[str, dict[str, set[str]]] = {
             "parcela_m2",
             "prodani_delez_dela_stavbe",
             "stavba_je_dokoncana",
-        },
+        }
+        | _SPATIAL_ALWAYS,
         "always_categorical": {
             "municipality_normalized",
             "statistical_region",
@@ -332,7 +362,8 @@ TYPE_FEATURE_CONFIGS: dict[str, dict[str, set[str]]] = {
             "uporabna_povrsina",
             "prodani_delez_dela_stavbe",
             "stavba_je_dokoncana",
-        },
+        }
+        | _SPATIAL_ALWAYS,
         "always_categorical": {
             "municipality_normalized",
             "statistical_region",
@@ -351,7 +382,8 @@ TYPE_FEATURE_CONFIGS: dict[str, dict[str, set[str]]] = {
             "price_per_m2_municipality",
             "uporabna_povrsina",
             "stavba_je_dokoncana",
-        },
+        }
+        | _SPATIAL_ALWAYS,
         "always_categorical": {
             "municipality_normalized",
             "statistical_region",
@@ -774,7 +806,7 @@ def _predict_combined_routed(
     global_pipeline: Pipeline,
     per_type_models: dict[str, dict[str, Any]],
     *,
-    target_transform: str = "none",
+    target_transform: str = "log_ppm2",
 ) -> np.ndarray:
     size_vals = X_test["size_m2"].clip(lower=1).values.astype(float)
 
@@ -843,6 +875,32 @@ def train_from_csv(
     df["size_m2"] = pd.to_numeric(df.get("size_m2"), errors="coerce")
     df = df[df["size_m2"] > 0]
 
+    # ── Mixed-type deal contamination removal ──────────────────────────
+    # When a deal has multiple property types and prices are pro-rated by area,
+    # each part gets the same €/m² regardless of type (e.g., garage gets apartment
+    # ppm2). Remove these contaminated rows.
+    n_before_deal_clean = len(df)
+    if "deal_id" in df.columns and "property_type" in df.columns:
+        df["_ppm2_tmp"] = df["price_eur"] / df["size_m2"]
+        deal_type_count = df.groupby("deal_id")["property_type"].transform("nunique")
+        deal_ppm2_nunique = df.groupby("deal_id")["_ppm2_tmp"].transform("nunique")
+        # Mixed-type deal where all parts have identical ppm2 = pro-rated
+        contaminated = (deal_type_count > 1) & (deal_ppm2_nunique == 1)
+        df = df[~contaminated]
+        df = df.drop(columns=["_ppm2_tmp"])
+        logger.info("Mixed-type deal cleaning: %d → %d rows", n_before_deal_clean, len(df))
+
+    # ── Spatial distance features from ETRS89/TM coordinates ───────────
+    # These are metric coordinates, so Euclidean distance gives meters.
+    _LJ_E, _LJ_N = 461000, 100000  # Ljubljana
+    _MB_E, _MB_N = 553000, 155000  # Maribor
+    _KP_E, _KP_N = 404000, 44000   # Koper (coast)
+    lon = pd.to_numeric(df.get("longitude"), errors="coerce")
+    lat = pd.to_numeric(df.get("latitude"), errors="coerce")
+    df["dist_ljubljana"] = np.sqrt((lon - _LJ_E) ** 2 + (lat - _LJ_N) ** 2)
+    df["dist_maribor"] = np.sqrt((lon - _MB_E) ** 2 + (lat - _MB_N) ** 2)
+    df["dist_coast"] = np.sqrt((lon - _KP_E) ** 2 + (lat - _KP_N) ** 2)
+
     y = df["price_eur"].values
     X = df.drop(columns=["price_eur"], errors="ignore")
 
@@ -901,6 +959,53 @@ def train_from_csv(
     X_test["price_per_m2_municipality"] = (
         X_test.get("municipality_normalized", pd.Series()).map(municipality_medians).fillna(global_median_ppm2)
     )
+
+    # ── Type-specific comparable-sales features ────────────────────────
+    # Median log(ppm2) per type+municipality and type+KO — much more targeted
+    # than the global ppm2 medians above.
+    valid["log_ppm2"] = np.log(valid["ppm2"].clip(lower=0.01))
+    type_muni_comp: dict[str, dict[str, float]] = {}
+    type_ko_comp: dict[str, dict[str, float]] = {}
+    if "property_type" in valid.columns:
+        for ptype_grp, ptype_data in valid.groupby("property_type"):
+            ptype_key = str(ptype_grp)
+            type_median_log = float(ptype_data["log_ppm2"].median())
+            # Municipality comp
+            muni_med = {}
+            if "municipality_normalized" in ptype_data.columns:
+                for muni, mgrp in ptype_data.groupby("municipality_normalized"):
+                    muni_med[str(muni)] = float(mgrp["log_ppm2"].median()) if len(mgrp) >= 5 else type_median_log
+            type_muni_comp[ptype_key] = muni_med
+            # KO comp (finer spatial granularity)
+            ko_med = {}
+            if "ime_ko" in ptype_data.columns:
+                for ko, kgrp in ptype_data.groupby("ime_ko"):
+                    ko_med[str(ko)] = float(kgrp["log_ppm2"].median()) if len(kgrp) >= 5 else type_median_log
+            type_ko_comp[ptype_key] = ko_med
+
+    # Apply comp features to train and test
+    global_log_ppm2 = float(valid["log_ppm2"].median()) if len(valid) > 0 else np.log(2000.0)
+    for split_X in (X_train, X_test):
+        comp_muni_vals = np.full(len(split_X), global_log_ppm2)
+        comp_ko_vals = np.full(len(split_X), global_log_ppm2)
+        if "property_type" in split_X.columns:
+            for ptype_key, muni_map in type_muni_comp.items():
+                mask = split_X["property_type"] == ptype_key
+                if mask.any() and muni_map:
+                    comp_muni_vals[mask.values] = (
+                        split_X.loc[mask, "municipality_normalized"]
+                        .map(muni_map)
+                        .fillna(global_log_ppm2)
+                        .values
+                    )
+            for ptype_key, ko_map in type_ko_comp.items():
+                mask = split_X["property_type"] == ptype_key
+                if mask.any() and ko_map and "ime_ko" in split_X.columns:
+                    comp_ko_vals[mask.values] = (
+                        split_X.loc[mask, "ime_ko"].map(ko_map).fillna(global_log_ppm2).values
+                    )
+        split_X["comp_type_muni_ppm2"] = comp_muni_vals
+        split_X["comp_type_ko_ppm2"] = comp_ko_vals
 
     global_num, global_cat = _filter_features(X_train, NUMERIC_FEATURES, CATEGORICAL_FEATURES)
     data_preparation = load_training_metadata(csv_path)
@@ -979,31 +1084,15 @@ def train_from_csv(
             if len(Xte) < 10:
                 continue
 
-            # ── Aggressive per-type outlier removal ──────────────────────
+            # ── Per-type outlier removal in log(ppm2) space ──────────────
             n_before = len(yt)
-
-            # 1) IQR-based price outlier removal (tighter than percentile)
-            q1, q3 = np.percentile(yt, [25, 75])
-            iqr = q3 - q1
-            price_lower = max(q1 - 2.0 * iqr, 0)
-            price_upper = q3 + 2.5 * iqr
-            price_mask = (yt >= price_lower) & (yt <= price_upper)
-
-            # 2) Price-per-m² outlier removal within each type
-            size_col_vals = pd.to_numeric(Xt.get("size_m2"), errors="coerce")
-            ppm2_mask = np.ones(len(yt), dtype=bool)
-            valid_size = size_col_vals.notna() & (size_col_vals > 0)
-            if valid_size.sum() > 50:
-                ppm2 = np.where(valid_size, yt / size_col_vals.clip(lower=1), np.nan)
-                ppm2_valid = ppm2[~np.isnan(ppm2)]
-                if len(ppm2_valid) > 50:
-                    ppm2_q1, ppm2_q3 = np.percentile(ppm2_valid, [5, 95])
-                    ppm2_mask = np.isnan(ppm2) | ((ppm2 >= ppm2_q1) & (ppm2 <= ppm2_q3))
-
-            combined_mask = price_mask & ppm2_mask
-            if combined_mask.sum() >= MIN_SAMPLES_PER_TYPE:
-                Xt = Xt[combined_mask]
-                yt = yt[combined_mask]
+            size_vals = pd.to_numeric(Xt.get("size_m2"), errors="coerce").clip(lower=1).values
+            log_ppm2 = np.log(yt / size_vals)
+            lo, hi = np.percentile(log_ppm2, [2, 98])
+            outlier_mask = (log_ppm2 >= lo) & (log_ppm2 <= hi)
+            if outlier_mask.sum() >= MIN_SAMPLES_PER_TYPE:
+                Xt = Xt[outlier_mask]
+                yt = yt[outlier_mask]
                 logger.info("Type %s: outlier removal %d → %d rows", ptype, n_before, len(yt))
 
             # Look up type-specific feature config, fall back to global defaults
@@ -1118,7 +1207,7 @@ def train_from_csv(
     os.makedirs(MODEL_DIR, exist_ok=True)
     emit_status("finalizing", 99, rows=len(df), total_models=total_models)
     artifact = {
-        "version": "6.0",
+        "version": "6.1",
         "target_transform": "log_ppm2",
         "log_target": True,  # backward compat
         "global_model": {
@@ -1133,6 +1222,9 @@ def train_from_csv(
         "type_medians": type_medians,
         "municipality_medians": municipality_medians,
         "global_median_ppm2": global_median_ppm2,
+        "type_muni_comp": type_muni_comp,
+        "type_ko_comp": type_ko_comp,
+        "global_log_ppm2": global_log_ppm2,
         "global_metrics": global_result["metrics"],
         "global_importance": global_result["importance"],
         "per_type_metrics": per_type_metrics,
@@ -1334,6 +1426,42 @@ def _build_normalized_payload(
         row["price_per_m2_municipality"] = municipality_medians.get(
             muni_key, region_medians.get(row.get("statistical_region", "neznana"), global_median)
         )
+
+    # Distance features (ETRS89/TM coordinates → Euclidean distance in meters)
+    _LJ_E, _LJ_N = 461000, 100000
+    _MB_E, _MB_N = 553000, 155000
+    _KP_E, _KP_N = 404000, 44000
+    lon_val = row.get("longitude", np.nan)
+    lat_val = row.get("latitude", np.nan)
+    if "dist_ljubljana" in numeric_features:
+        if not (isinstance(lon_val, float) and np.isnan(lon_val)):
+            row["dist_ljubljana"] = float(np.sqrt((lon_val - _LJ_E) ** 2 + (lat_val - _LJ_N) ** 2))
+        else:
+            row["dist_ljubljana"] = np.nan
+    if "dist_maribor" in numeric_features:
+        if not (isinstance(lon_val, float) and np.isnan(lon_val)):
+            row["dist_maribor"] = float(np.sqrt((lon_val - _MB_E) ** 2 + (lat_val - _MB_N) ** 2))
+        else:
+            row["dist_maribor"] = np.nan
+    if "dist_coast" in numeric_features:
+        if not (isinstance(lon_val, float) and np.isnan(lon_val)):
+            row["dist_coast"] = float(np.sqrt((lon_val - _KP_E) ** 2 + (lat_val - _KP_N) ** 2))
+        else:
+            row["dist_coast"] = np.nan
+
+    # Type-specific comparable-sales features
+    global_log_ppm2 = artifact.get("global_log_ppm2", np.log(2000.0))
+    ptype_key = payload.get("property_type", "unknown")
+    if "comp_type_muni_ppm2" in numeric_features:
+        type_muni_comp = artifact.get("type_muni_comp", {})
+        muni_map = type_muni_comp.get(ptype_key, {})
+        muni_key = row.get("municipality_normalized", municipality_norm)
+        row["comp_type_muni_ppm2"] = muni_map.get(muni_key, global_log_ppm2)
+    if "comp_type_ko_ppm2" in numeric_features:
+        type_ko_comp = artifact.get("type_ko_comp", {})
+        ko_map = type_ko_comp.get(ptype_key, {})
+        ko_key = payload.get("ime_ko", "unknown")
+        row["comp_type_ko_ppm2"] = ko_map.get(str(ko_key), global_log_ppm2)
 
     return row
 
