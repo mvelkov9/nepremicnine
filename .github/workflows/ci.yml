@@ -228,6 +228,6 @@ jobs:
           script: |
             cd ${{ secrets.VPS_APP_DIR }}
             git pull origin main
-            docker compose -f docker-compose.prod.yml up -d --build
-            docker compose -f docker-compose.prod.yml exec -T backend alembic upgrade head
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T backend alembic upgrade head
             docker image prune -f
