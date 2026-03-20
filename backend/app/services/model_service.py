@@ -774,7 +774,7 @@ def _predict_combined_routed(
     global_pipeline: Pipeline,
     per_type_models: dict[str, dict[str, Any]],
     *,
-    target_transform: str = "log_ppm2",
+    target_transform: str = "none",
 ) -> np.ndarray:
     size_vals = X_test["size_m2"].clip(lower=1).values.astype(float)
 
