@@ -42,7 +42,7 @@ services:
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     volumes:
       - ./backend:/app
-      - backend-data:/app/data
+      - ./backend/data:/app/data
       - backend-models:/app/models
     ports:
       - "8000:8000"
@@ -63,7 +63,7 @@ services:
       disable: true
     volumes:
       - ./backend:/app
-      - backend-data:/app/data
+      - ./backend/data:/app/data
       - backend-models:/app/models
     depends_on:
       postgres:
@@ -76,5 +76,4 @@ services:
 volumes:
   pgdata:
   redisdata:
-  backend-data:
   backend-models:

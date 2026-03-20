@@ -17,7 +17,7 @@ services:
     # Remove dev overrides: no source mount, no reload, run as appuser
     user: appuser
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
-    volumes:
+    volumes: !override
       - backend-data:/app/data
       - backend-models:/app/models
     ports:
@@ -29,7 +29,7 @@ services:
     user: appuser
     healthcheck:
       disable: true
-    volumes:
+    volumes: !override
       - backend-data:/app/data
       - backend-models:/app/models
     environment:
@@ -44,3 +44,6 @@ services:
     volumes: !reset []
     ports:
       - "80:80"
+
+volumes:
+  backend-data:

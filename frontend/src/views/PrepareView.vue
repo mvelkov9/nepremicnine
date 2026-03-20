@@ -50,17 +50,28 @@
 
   // --- Dataset role & year helpers (mirrors v1 logic) ---
 
-  function datasetRole(item) {
-    const text = `${item.original_name || ''} ${item.relative_path || ''}`.toLowerCase()
-    if (text.includes('posli') || text.includes('posle')) return 'posli'
-    if (text.includes('delistavb') || text.includes('deli_stavb')) return 'delistavb'
-    if (text.includes('zemljisca') || text.includes('zemljisc')) return 'zemljisca'
-    return 'other'
-  }
+  function parseEtnKppDataset(item) {
+    const candidates = [item.original_name || '', item.relative_path || '']
 
-  function datasetYear(item) {
-    const match = `${item.original_name || ''} ${item.relative_path || ''}`.match(/(20\d{2})/)
-    return match ? Number(match[1]) : null
+    for (const candidate of candidates) {
+      const text = String(candidate).toUpperCase()
+      const yearMatch = text.match(/ETN_SLO_(20\d{2})_KPP_/)
+      if (!yearMatch) continue
+
+      if (text.includes('_KPP_POSLI_')) {
+        return { role: 'posli', year: Number(yearMatch[1]) }
+      }
+
+      if (text.includes('_KPP_DELISTAVB_')) {
+        return { role: 'delistavb', year: Number(yearMatch[1]) }
+      }
+
+      if (text.includes('_KPP_ZEMLJISCA_') || text.includes('_KPP_ZEMLJISC_')) {
+        return { role: 'zemljisca', year: Number(yearMatch[1]) }
+      }
+    }
+
+    return { role: 'other', year: null }
   }
 
   // Track which years are selected (all selected by default)
@@ -87,8 +98,7 @@
     const byYear = new Map()
     const items = datasets.value || []
     for (const item of items) {
-      const role = datasetRole(item)
-      const year = datasetYear(item)
+      const { role, year } = parseEtnKppDataset(item)
       if (!year || (role !== 'posli' && role !== 'delistavb' && role !== 'zemljisca')) continue
       if (!byYear.has(year))
         byYear.set(year, { year, posli: null, delistavb: null, zemljisca: null })
@@ -106,8 +116,8 @@
   })
 
   function pairStatus(pair) {
-    if (pair.posli && pair.delistavb && pair.zemljisca) return 'complete'
-    if (pair.posli && pair.delistavb) return 'ready'
+    if (pair.posli && pair.delistavb) return 'complete'
+    if (pair.posli || pair.delistavb || pair.zemljisca) return 'ready'
     return 'incomplete'
   }
 
