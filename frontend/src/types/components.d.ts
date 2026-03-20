@@ -31,6 +31,7 @@ declare module 'vue' {
     PageHeader: typeof import('./../components/PageHeader.vue')['default']
     Password: typeof import('primevue/password')['default']
     ProfileDialog: typeof import('./../components/layout/ProfileDialog.vue')['default']
+    ProgressBar: typeof import('primevue/progressbar')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     Select: typeof import('primevue/select')['default']

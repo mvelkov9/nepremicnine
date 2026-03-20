@@ -1,12 +1,15 @@
 """Data management routes: upload, list, delete, preview, ETN prepare."""
 
+import contextlib
 import hashlib
 import json
 import logging
 import os
 import pathlib
 import re
+import sqlite3
 import uuid
+import zipfile
 from collections import Counter
 from datetime import UTC, datetime
 from typing import Literal
@@ -28,10 +31,17 @@ from app.schemas.dataset import (
     DatasetPreviewResponse,
     DatasetUploadResponse,
     TrainingDatasetResponse,
+    UploadCapacityResponse,
 )
 from app.services.data_processing_service import (
+    compute_file_sha256,
+    ensure_directory_headroom,
+    estimate_zip_uncompressed_size,
     extract_zip_csvs,
+    extract_zip_supported_files,
+    get_available_disk_bytes,
     import_rpe_rn,
+    inspect_gpkg,
     inspect_csv,
     load_training_metadata,
     prepare_training_csv,
@@ -53,7 +63,9 @@ UPLOAD_DIR = os.path.join(DATA_DIR, "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 MAX_UPLOAD_SIZE = get_settings().max_upload_size_mb * 1024 * 1024
-ALLOWED_EXTENSIONS = {".csv", ".zip"}
+ALLOWED_EXTENSIONS = {".csv", ".zip", ".gpkg"}
+UPLOAD_DISK_RESERVE_BYTES = 2 * 1024 * 1024 * 1024
+UPLOAD_STREAM_CHUNK_SIZE = 8 * 1024 * 1024
 
 
 def _resolve_data_path(raw_path: str) -> str:
@@ -76,6 +88,44 @@ def _serialize_dataset(record: DatasetFile) -> DatasetFileResponse:
         file_hash=record.file_hash,
         uploaded_at=record.uploaded_at,
     )
+
+
+def _get_upload_capacity() -> UploadCapacityResponse:
+    free_disk_bytes = get_available_disk_bytes(UPLOAD_DIR)
+    return UploadCapacityResponse(
+        max_upload_size_mb=get_settings().max_upload_size_mb,
+        max_upload_size_bytes=MAX_UPLOAD_SIZE,
+        free_disk_bytes=free_disk_bytes,
+        reserve_disk_bytes=UPLOAD_DISK_RESERVE_BYTES,
+        recommended_max_upload_bytes=max(0, free_disk_bytes - UPLOAD_DISK_RESERVE_BYTES),
+    )
+
+
+def _remove_file_if_exists(path: str) -> None:
+    with contextlib.suppress(FileNotFoundError):
+        os.remove(path)
+
+
+async def _stream_upload_to_disk(file: UploadFile, destination_path: str) -> tuple[int, str]:
+    file_size = 0
+    hasher = hashlib.sha256()
+
+    with open(destination_path, "wb") as output:
+        while True:
+            chunk = await file.read(UPLOAD_STREAM_CHUNK_SIZE)
+            if not chunk:
+                break
+            file_size += len(chunk)
+            if file_size > MAX_UPLOAD_SIZE:
+                raise HTTPException(
+                    status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    f"File exceeds {MAX_UPLOAD_SIZE // (1024 * 1024)} MB limit",
+                )
+            output.write(chunk)
+            hasher.update(chunk)
+
+    await file.close()
+    return file_size, hasher.hexdigest()
 
 
 def _get_training_dataset_metadata() -> TrainingDatasetResponse:
@@ -171,8 +221,13 @@ def _build_quality_summary() -> dict:
     }
 
 
+@router.get("/upload-capacity", response_model=UploadCapacityResponse)
+async def get_upload_capacity(_user: User = Depends(require_admin)):
+    return _get_upload_capacity()
+
+
 @router.post("/upload", response_model=DatasetUploadResponse)
-@limiter.limit("5/minute")
+@limiter.limit("60/minute")
 async def upload_files(
     request: Request,
     files: list[UploadFile],
@@ -183,54 +238,90 @@ async def upload_files(
     uploaded = []
     skipped = []
 
+    content_length = request.headers.get("content-length")
+    if content_length and content_length.isdigit():
+        try:
+            ensure_directory_headroom(UPLOAD_DIR, int(content_length), UPLOAD_DISK_RESERVE_BYTES)
+        except OSError as exc:
+            raise HTTPException(
+                status.HTTP_507_INSUFFICIENT_STORAGE,
+                f"Not enough disk space to receive upload safely: {exc}",
+            ) from exc
+
     for file in files:
         # Validate file extension
         ext = os.path.splitext(file.filename or "file.csv")[1].lower()
         if ext not in ALLOWED_EXTENSIONS:
             raise HTTPException(
-                status.HTTP_400_BAD_REQUEST, f"File type '{ext}' not allowed. Only .csv and .zip accepted."
+                status.HTTP_400_BAD_REQUEST,
+                f"File type '{ext}' not allowed. Only .csv, .zip, and .gpkg accepted.",
             )
-
-        content = await file.read()
-
-        # Validate file size
-        if len(content) > MAX_UPLOAD_SIZE:
-            raise HTTPException(
-                status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                f"File exceeds {MAX_UPLOAD_SIZE // (1024 * 1024)} MB limit",
-            )
-
-        file_hash = hashlib.sha256(content).hexdigest()
-
-        # Dedup check
-        existing = await db.execute(select(DatasetFile).where(DatasetFile.file_hash == file_hash))
-        if existing.scalar_one_or_none():
-            skipped.append(file.filename or "unknown")
-            continue
 
         # Save to disk — sanitise filename to prevent path injection
         safe_filename = pathlib.Path(file.filename or "upload").name
         safe_filename = re.sub(r"[^\w.\-]", "_", safe_filename)[:200] or "upload"
         stored_name = f"{uuid.uuid4().hex}_{safe_filename}"
         stored_path = os.path.join(UPLOAD_DIR, stored_name)
-        with open(stored_path, "wb") as f:
-            f.write(content)
+        try:
+            file_size, file_hash = await _stream_upload_to_disk(file, stored_path)
+        except Exception:
+            _remove_file_if_exists(stored_path)
+            raise
 
-        # Handle ZIP files: extract CSVs
+        try:
+            ensure_directory_headroom(UPLOAD_DIR, 0, UPLOAD_DISK_RESERVE_BYTES)
+        except OSError as exc:
+            _remove_file_if_exists(stored_path)
+            raise HTTPException(
+                status.HTTP_507_INSUFFICIENT_STORAGE,
+                f"Not enough disk space to continue upload safely: {exc}",
+            ) from exc
+
+        # Dedup check
+        existing = await db.execute(select(DatasetFile).where(DatasetFile.file_hash == file_hash))
+        if existing.scalar_one_or_none():
+            _remove_file_if_exists(stored_path)
+            skipped.append(file.filename or "unknown")
+            continue
+
+        # Handle ZIP files: extract CSVs and GeoPackages
         if ext == ".zip":
             try:
-                csv_paths = extract_zip_csvs(stored_path, UPLOAD_DIR)
+                estimated_uncompressed = estimate_zip_uncompressed_size(stored_path)
+                ensure_directory_headroom(UPLOAD_DIR, estimated_uncompressed, UPLOAD_DISK_RESERVE_BYTES)
+                csv_paths, gpkg_paths = extract_zip_supported_files(
+                    stored_path,
+                    UPLOAD_DIR,
+                    reserve_bytes=UPLOAD_DISK_RESERVE_BYTES,
+                )
+                if not csv_paths and not gpkg_paths:
+                    raise HTTPException(
+                        status.HTTP_422_UNPROCESSABLE_ENTITY,
+                        "ZIP contains no supported CSV or GeoPackage files to import.",
+                    )
+            except OSError as exc:
+                _remove_file_if_exists(stored_path)
+                raise HTTPException(
+                    status.HTTP_507_INSUFFICIENT_STORAGE,
+                    f"Not enough disk space to extract ZIP safely: {exc}",
+                ) from exc
+            except HTTPException:
+                _remove_file_if_exists(stored_path)
+                raise
             except Exception as exc:
-                os.remove(stored_path)
+                _remove_file_if_exists(stored_path)
                 raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Bad ZIP: {exc}") from exc
-            os.remove(stored_path)  # remove original zip
+            _remove_file_if_exists(stored_path)  # remove original zip
 
             for csv_path in csv_paths:
+                csv_hash = hashlib.sha256()
                 with open(csv_path, "rb") as fh:
-                    csv_hash = hashlib.sha256(fh.read()).hexdigest()
-                dup = await db.execute(select(DatasetFile).where(DatasetFile.file_hash == csv_hash))
+                    for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+                        csv_hash.update(chunk)
+                csv_hash_hex = csv_hash.hexdigest()
+                dup = await db.execute(select(DatasetFile).where(DatasetFile.file_hash == csv_hash_hex))
                 if dup.scalar_one_or_none():
-                    os.remove(csv_path)
+                    _remove_file_if_exists(csv_path)
                     skipped.append(os.path.basename(csv_path))
                     continue
 
@@ -249,7 +340,30 @@ async def upload_files(
                     source_type="csv",
                     row_count=row_count,
                     columns_json=columns_json,
-                    file_hash=csv_hash,
+                    file_hash=csv_hash_hex,
+                    uploaded_by=user.id,
+                )
+                db.add(record)
+                await db.flush()
+                await db.refresh(record)
+                uploaded.append(record)
+
+            for gpkg_path in gpkg_paths:
+                gpkg_hash = compute_file_sha256(gpkg_path)
+                dup = await db.execute(select(DatasetFile).where(DatasetFile.file_hash == gpkg_hash))
+                if dup.scalar_one_or_none():
+                    _remove_file_if_exists(gpkg_path)
+                    skipped.append(os.path.basename(gpkg_path))
+                    continue
+
+                gpkg_preview = inspect_gpkg(gpkg_path, preview_rows=0)
+                record = DatasetFile(
+                    original_name=os.path.basename(gpkg_path),
+                    stored_path=gpkg_path,
+                    source_type="gpkg",
+                    row_count=None,
+                    columns_json=json.dumps(gpkg_preview.get("layers", [])),
+                    file_hash=gpkg_hash,
                     uploaded_by=user.id,
                 )
                 db.add(record)
@@ -258,7 +372,7 @@ async def upload_files(
                 uploaded.append(record)
             continue
 
-        # Regular CSV
+        # Regular CSV / GeoPackage
         row_count = None
         columns_json = None
         if ext == ".csv":
@@ -268,11 +382,17 @@ async def upload_files(
                 row_count = len(df)
             except (pd.errors.ParserError, pd.errors.EmptyDataError, ValueError, UnicodeDecodeError, OSError):
                 logger.exception("Failed to read CSV metadata from %s", stored_path)
+        elif ext == ".gpkg":
+            try:
+                gpkg_preview = inspect_gpkg(stored_path, preview_rows=0)
+                columns_json = json.dumps(gpkg_preview.get("layers", []))
+            except (sqlite3.DatabaseError, OSError, ValueError):
+                logger.exception("Failed to inspect GeoPackage metadata from %s", stored_path)
 
         record = DatasetFile(
             original_name=file.filename or "unknown",
             stored_path=stored_path,
-            source_type=source_type,
+            source_type="gpkg" if ext == ".gpkg" else source_type,
             row_count=row_count,
             columns_json=columns_json,
             file_hash=file_hash,
@@ -347,6 +467,18 @@ async def preview_dataset(
 
     if not os.path.exists(dataset.stored_path):
         raise HTTPException(status_code=404, detail="File not found on disk")
+
+    if dataset.source_type == "gpkg" or dataset.stored_path.lower().endswith(".gpkg"):
+        try:
+            preview = inspect_gpkg(dataset.stored_path, preview_rows=limit)
+            return DatasetPreviewResponse(
+                columns=preview.get("columns", []),
+                rows=preview.get("rows", []),
+                total_rows=int(preview.get("total_rows", 0)),
+            )
+        except (sqlite3.DatabaseError, OSError, ValueError):
+            logger.exception("Cannot read GeoPackage file %s for preview", dataset.stored_path)
+            raise HTTPException(status_code=500, detail="Cannot read the GeoPackage file") from None
 
     try:
         df = pd.read_csv(dataset.stored_path, nrows=limit)

@@ -38,6 +38,14 @@ function translateDetail(detail, t) {
     return t('errorDetail.unsupportedFileType')
   }
 
+  if (detail.startsWith('ZIP contains GeoPackage (.gpkg) data')) {
+    return t('errorDetail.unsupportedGeoPackage')
+  }
+
+  if (detail.startsWith('ZIP contains no supported CSV or GeoPackage files to import')) {
+    return t('errorDetail.zipWithoutCsv')
+  }
+
   return detail
 }
 

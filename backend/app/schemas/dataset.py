@@ -24,6 +24,14 @@ class DatasetUploadResponse(BaseModel):
     message: str
 
 
+class UploadCapacityResponse(BaseModel):
+    max_upload_size_mb: int
+    max_upload_size_bytes: int
+    free_disk_bytes: int
+    reserve_disk_bytes: int
+    recommended_max_upload_bytes: int
+
+
 class DatasetPreviewResponse(BaseModel):
     columns: list[str]
     rows: list[dict]

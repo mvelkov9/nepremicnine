@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import shutil
+import sqlite3
 import struct as _struct
 import unicodedata
 import uuid
@@ -206,6 +207,25 @@ def compute_file_sha256(file_path: str) -> str:
         for chunk in iter(lambda: f.read(1024 * 1024), b""):
             hasher.update(chunk)
     return hasher.hexdigest()
+
+
+def get_available_disk_bytes(path: str) -> int:
+    return shutil.disk_usage(path).free
+
+
+def ensure_directory_headroom(path: str, required_bytes: int, reserve_bytes: int = 0) -> int:
+    free_bytes = get_available_disk_bytes(path)
+    if free_bytes - required_bytes < reserve_bytes:
+        raise OSError(
+            f"Insufficient disk space: requires {required_bytes} bytes plus {reserve_bytes} bytes reserve, "
+            f"but only {free_bytes} bytes are free"
+        )
+    return free_bytes
+
+
+def estimate_zip_uncompressed_size(zip_path: str) -> int:
+    with zipfile.ZipFile(zip_path, "r") as archive:
+        return sum(info.file_size for info in archive.infolist() if not info.is_dir())
 
 
 def read_csv_flexible(csv_path: str) -> pd.DataFrame:
@@ -411,9 +431,11 @@ def _aggregate_stage_sequences(stage_sequences: list[list[dict[str, Any]]]) -> l
 # ── ZIP extraction ──────────────────────────────────────────────────
 
 
-def _safe_extractall(archive: zipfile.ZipFile, dest: str) -> None:
+def _safe_extractall(archive: zipfile.ZipFile, dest: str, reserve_bytes: int = 0) -> None:
     """Extract ZIP members after verifying none escape the destination directory."""
     dest = os.path.realpath(dest)
+    required_bytes = sum(info.file_size for info in archive.infolist() if not info.is_dir())
+    ensure_directory_headroom(dest, required_bytes, reserve_bytes)
     for member in archive.namelist():
         member_path = os.path.realpath(os.path.join(dest, member))
         if not member_path.startswith(dest + os.sep) and member_path != dest:
@@ -421,28 +443,131 @@ def _safe_extractall(archive: zipfile.ZipFile, dest: str) -> None:
     archive.extractall(dest)
 
 
-def extract_zip_csvs(zip_path: str, upload_dir: str) -> list[str]:
+def _expand_nested_zips(extract_dir: str, reserve_bytes: int = 0) -> None:
+    processed_archives: set[str] = set()
+
+    while True:
+        discovered_any = False
+        for root, _, files in os.walk(extract_dir):
+            for fname in files:
+                if not fname.lower().endswith('.zip'):
+                    continue
+
+                nested_path = os.path.realpath(os.path.join(root, fname))
+                if nested_path in processed_archives:
+                    continue
+
+                processed_archives.add(nested_path)
+                discovered_any = True
+
+                nested_dir = os.path.join(root, f"inner_{os.path.splitext(fname)[0]}")
+                os.makedirs(nested_dir, exist_ok=True)
+                try:
+                    with zipfile.ZipFile(nested_path, 'r') as nested:
+                        _safe_extractall(nested, nested_dir, reserve_bytes)
+                except (zipfile.BadZipFile, ValueError):
+                    continue
+
+        if not discovered_any:
+            break
+
+
+def _quote_sql_identifier(identifier: str) -> str:
+    return '"' + str(identifier).replace('"', '""') + '"'
+
+
+def inspect_gpkg(gpkg_path: str, preview_rows: int = 8) -> dict[str, Any]:
+    with sqlite3.connect(gpkg_path) as conn:
+        layer_rows = conn.execute(
+            """
+            SELECT c.table_name, c.data_type, COALESCE(g.column_name, '') AS geometry_column
+            FROM gpkg_contents c
+            LEFT JOIN gpkg_geometry_columns g ON g.table_name = c.table_name
+            WHERE c.data_type IN ('features', 'attributes')
+            ORDER BY c.table_name
+            """
+        ).fetchall()
+
+        if not layer_rows:
+            fallback_tables = conn.execute(
+                """
+                SELECT name
+                FROM sqlite_master
+                WHERE type = 'table'
+                  AND name NOT LIKE 'gpkg_%'
+                  AND name NOT LIKE 'sqlite_%'
+                ORDER BY name
+                """
+            ).fetchall()
+            layer_rows = [(name, 'table', '') for (name,) in fallback_tables]
+
+        layers: list[dict[str, Any]] = []
+        for table_name, data_type, geometry_column in layer_rows:
+            table_info = conn.execute(f"PRAGMA table_info({_quote_sql_identifier(table_name)})").fetchall()
+            column_names = [row[1] for row in table_info]
+            layers.append(
+                {
+                    'table_name': table_name,
+                    'data_type': data_type,
+                    'geometry_column': geometry_column or None,
+                    'columns': [name for name in column_names if name != geometry_column],
+                }
+            )
+
+        if len(layers) == 1 and preview_rows > 0:
+            layer = layers[0]
+            selected_columns = layer['columns'][: min(len(layer['columns']), 24)]
+            if selected_columns:
+                select_list = ', '.join(_quote_sql_identifier(name) for name in selected_columns)
+                df = pd.read_sql_query(
+                    f"SELECT {select_list} FROM {_quote_sql_identifier(layer['table_name'])} LIMIT {int(preview_rows)}",
+                    conn,
+                )
+                total_rows = conn.execute(
+                    f"SELECT COUNT(*) FROM {_quote_sql_identifier(layer['table_name'])}"
+                ).fetchone()[0]
+                return {
+                    'layers': layers,
+                    'columns': list(df.columns),
+                    'rows': df.fillna('').to_dict(orient='records'),
+                    'total_rows': int(total_rows),
+                }
+
+        summary_rows = [
+            {
+                'layer_name': layer['table_name'],
+                'data_type': layer['data_type'],
+                'geometry_column': layer['geometry_column'] or '',
+                'columns': ', '.join(layer['columns'][:12]),
+            }
+            for layer in layers
+        ]
+        return {
+            'layers': layers,
+            'columns': ['layer_name', 'data_type', 'geometry_column', 'columns'],
+            'rows': summary_rows,
+            'total_rows': len(summary_rows),
+        }
+
+
+def extract_zip_csvs(zip_path: str, upload_dir: str, reserve_bytes: int = 0) -> list[str]:
     """Extract a ZIP (incl. nested ZIPs) and return paths to all CSV files."""
+    csv_paths, _ = extract_zip_supported_files(zip_path, upload_dir, reserve_bytes)
+    return csv_paths
+
+
+def extract_zip_supported_files(zip_path: str, upload_dir: str, reserve_bytes: int = 0) -> tuple[list[str], list[str]]:
+    """Extract a ZIP (incl. nested ZIPs) and return paths to CSV and GeoPackage files."""
     extract_dir = os.path.join(upload_dir, f"unzipped_{uuid.uuid4().hex}")
     os.makedirs(extract_dir, exist_ok=True)
     try:
         with zipfile.ZipFile(zip_path, "r") as archive:
-            _safe_extractall(archive, extract_dir)
+            _safe_extractall(archive, extract_dir, reserve_bytes)
 
-        # Expand nested ZIPs
-        for root, _, files in os.walk(extract_dir):
-            for fname in files:
-                if fname.lower().endswith(".zip"):
-                    nested_path = os.path.join(root, fname)
-                    nested_dir = os.path.join(root, f"inner_{os.path.splitext(fname)[0]}")
-                    os.makedirs(nested_dir, exist_ok=True)
-                    try:
-                        with zipfile.ZipFile(nested_path, "r") as nested:
-                            _safe_extractall(nested, nested_dir)
-                    except (zipfile.BadZipFile, ValueError):
-                        continue
+        _expand_nested_zips(extract_dir, reserve_bytes)
 
         csv_paths: list[str] = []
+        gpkg_paths: list[str] = []
         for root, _, files in os.walk(extract_dir):
             for fname in files:
                 if fname.lower().endswith(".csv"):
@@ -451,29 +576,25 @@ def extract_zip_csvs(zip_path: str, upload_dir: str) -> list[str]:
                     dst = os.path.join(upload_dir, f"{uuid.uuid4().hex}_{safe_name}")
                     shutil.move(src, dst)
                     csv_paths.append(dst)
-        return csv_paths
+                elif fname.lower().endswith(".gpkg"):
+                    src = os.path.join(root, fname)
+                    safe_name = fname.replace("/", "_").replace("\\", "_")
+                    dst = os.path.join(upload_dir, f"{uuid.uuid4().hex}_{safe_name}")
+                    shutil.move(src, dst)
+                    gpkg_paths.append(dst)
+        return csv_paths, gpkg_paths
     finally:
         shutil.rmtree(extract_dir, ignore_errors=True)
 
 
-def extract_zip_all(zip_path: str, upload_dir: str) -> str:
+def extract_zip_all(zip_path: str, upload_dir: str, reserve_bytes: int = 0) -> str:
     """Extract ZIP (incl. nested ZIPs) and return the extraction directory."""
     extract_dir = os.path.join(upload_dir, f"unzipped_{uuid.uuid4().hex}")
     os.makedirs(extract_dir, exist_ok=True)
     with zipfile.ZipFile(zip_path, "r") as archive:
-        _safe_extractall(archive, extract_dir)
+        _safe_extractall(archive, extract_dir, reserve_bytes)
 
-    for root, _, files in os.walk(extract_dir):
-        for fname in files:
-            if fname.lower().endswith(".zip"):
-                nested_path = os.path.join(root, fname)
-                nested_dir = os.path.join(root, f"inner_{os.path.splitext(fname)[0]}")
-                os.makedirs(nested_dir, exist_ok=True)
-                try:
-                    with zipfile.ZipFile(nested_path, "r") as nested:
-                        _safe_extractall(nested, nested_dir)
-                except (zipfile.BadZipFile, ValueError):
-                    continue
+    _expand_nested_zips(extract_dir, reserve_bytes)
     return extract_dir
 
 
