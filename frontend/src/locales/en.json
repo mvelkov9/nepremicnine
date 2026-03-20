@@ -199,12 +199,12 @@
     "maxUpload": "Upload limit",
     "maxUploadValue": "Upload limit: {size}",
     "maxUploadUnknown": "Upload limit: unknown",
-    "acceptedFormats": "Accepted: CSV, ZIP, GPKG",
+    "acceptedFormats": "Accepted: CSV, ZIP, GPKG, shapefile ZIP",
     "chooseFiles": "Choose files",
     "uploadButton": "Upload selected",
     "clearSelection": "Clear selection",
     "dropzoneTitle": "Drop files here",
-    "dropzoneBody": "Or click the area to pick files. Multi-gigabyte CSV, ZIP, and GPKG uploads now stream to disk instead of loading the entire file into memory.",
+    "dropzoneBody": "Or click the area to pick files. Multi-gigabyte CSV, ZIP, GPKG, and shapefile ZIP uploads now stream to disk instead of loading the entire file into memory.",
     "uploadQueue": "Upload queue",
     "selectedFiles": "Selected files",
     "selectedFilesCount": "{count} selected",
@@ -729,7 +729,7 @@
     "fileTooLarge": "The file is larger than the allowed limit ({limit} MB).",
     "unsupportedFileType": "Only CSV, ZIP, and GPKG files are supported.",
     "unsupportedGeoPackage": "The ZIP contains GeoPackage (.gpkg) data. The current importer supports CSV content only.",
-    "zipWithoutCsv": "The ZIP does not contain any supported CSV or GPKG files to import."
+    "zipWithoutCsv": "The ZIP does not contain any supported CSV, GPKG, or previewable shapefile attribute tables."
   },
   "a11y": {
     "skipToContent": "Skip to main content",

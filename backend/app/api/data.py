@@ -41,6 +41,8 @@ from app.services.data_processing_service import (
     extract_zip_supported_files,
     get_available_disk_bytes,
     import_rpe_rn,
+    inspect_shapefile_zip,
+    inspect_shapefile_zip_with_cache,
     inspect_gpkg,
     inspect_csv,
     load_training_metadata,
@@ -295,16 +297,33 @@ async def upload_files(
                     reserve_bytes=UPLOAD_DISK_RESERVE_BYTES,
                 )
                 if not csv_paths and not gpkg_paths:
-                    raise HTTPException(
-                        status.HTTP_422_UNPROCESSABLE_ENTITY,
-                        "ZIP contains no supported CSV or GeoPackage files to import.",
+                    shape_preview = inspect_shapefile_zip_with_cache(stored_path, UPLOAD_DIR, preview_rows=20)
+                    record = DatasetFile(
+                        original_name=file.filename or "unknown",
+                        stored_path=stored_path,
+                        source_type="shape-zip",
+                        row_count=None,
+                        columns_json=json.dumps(shape_preview.get("layers", [])),
+                        file_hash=file_hash,
+                        uploaded_by=user.id,
                     )
+                    db.add(record)
+                    await db.flush()
+                    await db.refresh(record)
+                    uploaded.append(record)
+                    continue
             except OSError as exc:
                 _remove_file_if_exists(stored_path)
                 raise HTTPException(
                     status.HTTP_507_INSUFFICIENT_STORAGE,
                     f"Not enough disk space to extract ZIP safely: {exc}",
                 ) from exc
+            except ValueError:
+                _remove_file_if_exists(stored_path)
+                raise HTTPException(
+                    status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    "ZIP contains no supported CSV, GeoPackage, or shapefile attribute data to preview.",
+                ) from None
             except HTTPException:
                 _remove_file_if_exists(stored_path)
                 raise
@@ -479,6 +498,21 @@ async def preview_dataset(
         except (sqlite3.DatabaseError, OSError, ValueError):
             logger.exception("Cannot read GeoPackage file %s for preview", dataset.stored_path)
             raise HTTPException(status_code=500, detail="Cannot read the GeoPackage file") from None
+
+    if dataset.source_type == "shape-zip":
+        try:
+            preview = inspect_shapefile_zip_with_cache(dataset.stored_path, UPLOAD_DIR, preview_rows=limit)
+            return DatasetPreviewResponse(
+                columns=preview.get("columns", []),
+                rows=preview.get("rows", []),
+                total_rows=int(preview.get("total_rows", 0)),
+            )
+        except ValueError:
+            logger.exception("Cannot preview shapefile ZIP %s", dataset.stored_path)
+            raise HTTPException(status_code=422, detail="ZIP does not contain any previewable shapefile attribute tables") from None
+        except OSError:
+            logger.exception("Cannot read shapefile ZIP %s for preview", dataset.stored_path)
+            raise HTTPException(status_code=500, detail="Cannot read the shapefile ZIP") from None
 
     try:
         df = pd.read_csv(dataset.stored_path, nrows=limit)

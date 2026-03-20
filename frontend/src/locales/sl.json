@@ -199,12 +199,12 @@
     "maxUpload": "Omejitev nalaganja",
     "maxUploadValue": "Omejitev nalaganja: {size}",
     "maxUploadUnknown": "Omejitev nalaganja: neznana",
-    "acceptedFormats": "Sprejeto: CSV, ZIP, GPKG",
+    "acceptedFormats": "Sprejeto: CSV, ZIP, GPKG, shapefile ZIP",
     "chooseFiles": "Izberi datoteke",
     "uploadButton": "Naloži izbrane",
     "clearSelection": "Počisti izbor",
     "dropzoneTitle": "Povlecite datoteke sem",
-    "dropzoneBody": "Ali kliknite v območje za izbor datotek. Večgigabajtni prenosi CSV, ZIP in GPKG datotek zdaj tečejo pretočno brez nalaganja celotne datoteke v pomnilnik.",
+    "dropzoneBody": "Ali kliknite v območje za izbor datotek. Večgigabajtni prenosi CSV, ZIP, GPKG in shapefile ZIP datotek zdaj tečejo pretočno brez nalaganja celotne datoteke v pomnilnik.",
     "uploadQueue": "Čakalna vrsta",
     "selectedFiles": "Izbrane datoteke",
     "selectedFilesCount": "{count} izbranih",
@@ -729,7 +729,7 @@
     "fileTooLarge": "Datoteka je večja od dovoljene omejitve ({limit} MB).",
     "unsupportedFileType": "Podprte so samo CSV, ZIP in GPKG datoteke.",
     "unsupportedGeoPackage": "ZIP vsebuje GeoPackage (.gpkg). Trenutni uvoz podpira samo CSV vsebino.",
-    "zipWithoutCsv": "ZIP ne vsebuje nobene podprte CSV ali GPKG datoteke za uvoz."
+    "zipWithoutCsv": "ZIP ne vsebuje nobene podprte CSV, GPKG ali previewable shapefile atributne tabele."
   },
   "a11y": {
     "skipToContent": "Preskoči na vsebino",

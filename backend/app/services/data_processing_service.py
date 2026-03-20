@@ -655,6 +655,170 @@ def _read_dbf(dbf_path: str, encoding: str = "cp1250") -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _read_dbf_header(fh) -> tuple[int, int, int, list[tuple[str, int]]]:
+    header = fh.read(32)
+    if len(header) < 32:
+        raise ValueError("DBF header is incomplete")
+
+    num_records = _struct.unpack_from("<I", header, 4)[0]
+    header_size = _struct.unpack_from("<H", header, 8)[0]
+    record_size = _struct.unpack_from("<H", header, 10)[0]
+
+    fields: list[tuple[str, int]] = []
+    while fh.tell() < header_size:
+      descriptor = fh.read(32)
+      if not descriptor:
+          break
+      if descriptor[0] == 0x0D:
+          break
+      fname = descriptor[0:11].split(b"\x00")[0].decode("ascii")
+      fsize = descriptor[16]
+      fields.append((fname, fsize))
+
+    return num_records, header_size, record_size, fields
+
+
+def inspect_dbf(dbf_path: str, preview_rows: int = 8, encoding: str = "cp1250") -> dict[str, Any]:
+    """Inspect a .dbf file without loading the full table into memory."""
+    with open(dbf_path, "rb") as fh:
+        num_records, header_size, record_size, fields = _read_dbf_header(fh)
+        fh.seek(header_size)
+
+        rows: list[dict[str, str]] = []
+        preview_limit = max(0, int(preview_rows))
+        for _ in range(min(num_records, preview_limit)):
+            record = fh.read(record_size)
+            if len(record) < record_size:
+                break
+            offset = 1
+            row: dict[str, str] = {}
+            for fname, fsize in fields:
+                raw = record[offset : offset + fsize]
+                try:
+                    val = raw.decode(encoding).strip()
+                except Exception:
+                    val = raw.decode("latin1", errors="replace").strip()
+                row[fname] = val.replace("\x00", "").strip()
+                offset += fsize
+            rows.append(row)
+
+    return {
+        "row_count": int(num_records),
+        "columns": [fname for fname, _ in fields],
+        "rows": rows,
+    }
+
+
+def get_shape_zip_preview_cache_path(zip_path: str) -> str:
+    return f"{zip_path}.preview.json"
+
+
+def load_shape_zip_preview_cache(zip_path: str) -> dict[str, Any] | None:
+    cache_path = get_shape_zip_preview_cache_path(zip_path)
+    if not os.path.exists(cache_path):
+        return None
+    with open(cache_path, encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def save_shape_zip_preview_cache(zip_path: str, preview: dict[str, Any]) -> None:
+    cache_path = get_shape_zip_preview_cache_path(zip_path)
+    with open(cache_path, "w", encoding="utf-8") as fh:
+        json.dump(preview, fh, ensure_ascii=True)
+
+
+def inspect_shapefile_zip_with_cache(zip_path: str, upload_dir: str, preview_rows: int = 8) -> dict[str, Any]:
+    cached = load_shape_zip_preview_cache(zip_path)
+    if cached is not None:
+        cached_rows = cached.get("rows", [])
+        requested_rows = max(0, int(preview_rows))
+        return {
+            "layers": cached.get("layers", []),
+            "columns": cached.get("columns", []),
+            "rows": cached_rows[:requested_rows] if requested_rows else [],
+            "total_rows": int(cached.get("total_rows", 0)),
+        }
+
+    preview = inspect_shapefile_zip(zip_path, upload_dir, preview_rows=max(preview_rows, 50))
+    save_shape_zip_preview_cache(zip_path, preview)
+    rows: list[dict[str, str]] = []
+    return {
+        "layers": preview.get("layers", []),
+        "columns": preview.get("columns", []),
+        "rows": preview.get("rows", [])[: max(0, int(preview_rows))],
+        "total_rows": int(preview.get("total_rows", 0)),
+    }
+
+
+def inspect_shapefile_zip(zip_path: str, upload_dir: str, preview_rows: int = 8) -> dict[str, Any]:
+    """Inspect a ZIP that contains shapefile components and preview DBF attribute tables."""
+    extract_dir = extract_zip_all(zip_path, upload_dir)
+    try:
+        layers: list[dict[str, Any]] = []
+        for root, _, files in os.walk(extract_dir):
+            file_lookup = {os.path.splitext(name)[0].lower(): set() for name in files}
+            for name in files:
+                stem, ext = os.path.splitext(name)
+                file_lookup.setdefault(stem.lower(), set()).add(ext.lower())
+
+            for fname in sorted(files):
+                if not fname.lower().endswith(".dbf"):
+                    continue
+
+                stem = os.path.splitext(fname)[0]
+                extensions = file_lookup.get(stem.lower(), set())
+                full = os.path.join(root, fname)
+                dbf_info = inspect_dbf(full, preview_rows=0)
+                layers.append(
+                    {
+                        "layer_name": stem,
+                        "row_count": dbf_info["row_count"],
+                        "columns": dbf_info["columns"],
+                        "has_geometry": ".shp" in extensions,
+                        "has_index": ".shx" in extensions,
+                        "has_projection": ".prj" in extensions,
+                    }
+                )
+
+        if not layers:
+            raise ValueError("ZIP does not contain any DBF layers that can be previewed")
+
+        if len(layers) == 1 and preview_rows > 0:
+            layer = layers[0]
+            dbf_path = None
+            for root, _, files in os.walk(extract_dir):
+                candidate = f"{layer['layer_name']}.dbf"
+                if candidate in files:
+                    dbf_path = os.path.join(root, candidate)
+                    break
+            if dbf_path:
+                dbf_preview = inspect_dbf(dbf_path, preview_rows=preview_rows)
+                return {
+                    "layers": layers,
+                    "columns": dbf_preview["columns"],
+                    "rows": dbf_preview["rows"],
+                    "total_rows": dbf_preview["row_count"],
+                }
+
+        summary_rows = [
+            {
+                "layer_name": layer["layer_name"],
+                "row_count": layer["row_count"],
+                "columns": ", ".join(layer["columns"][:12]),
+                "has_geometry": "yes" if layer["has_geometry"] else "no",
+            }
+            for layer in layers
+        ]
+        return {
+            "layers": layers,
+            "columns": ["layer_name", "row_count", "columns", "has_geometry"],
+            "rows": summary_rows,
+            "total_rows": len(summary_rows),
+        }
+    finally:
+        shutil.rmtree(extract_dir, ignore_errors=True)
+
+
 def import_rpe_from_zip(zip_path: str, upload_dir: str) -> dict[str, Any]:
     """Import RPE data from a ZIP with shapefiles (.dbf)."""
     extract_dir = extract_zip_all(zip_path, upload_dir)
