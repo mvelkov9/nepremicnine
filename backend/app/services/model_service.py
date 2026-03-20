@@ -1085,7 +1085,9 @@ def train_from_csv(
 
     # Combined routing metrics: use per-type model when available, else global
     if per_type_models:
-        y_pred_combined = _predict_combined_routed(X_test, global_pipeline, per_type_models, target_transform="log_ppm2")
+        y_pred_combined = _predict_combined_routed(
+            X_test, global_pipeline, per_type_models, target_transform="log_ppm2"
+        )
         combined_metrics = _compute_metrics(y_test, y_pred_combined)
     else:
         size_test_combined = X_test["size_m2"].clip(lower=1).values.astype(float)
