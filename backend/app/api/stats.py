@@ -32,8 +32,20 @@ TRAIN_CSV = os.path.join(
 )
 
 _RAW_DF_CACHE: dict[str, object] = {"mtime": None, "df": None}
-_PREPARED_DF_CACHE: dict[str, object] = {"mtime": None, "df": None}
+_PREPARED_DF_CACHE: dict[str, object] = {"mtime": None, "shape": None, "columns": None, "df": None}
 _CANONICAL_REGION_TOTAL = len(CANONICAL_REGION_ROWS)
+
+
+def _first_present(*values: object) -> object | None:
+    for value in values:
+        if value is None:
+            continue
+        if pd.isna(value):
+            continue
+        if isinstance(value, str) and not value.strip():
+            continue
+        return value
+    return None
 
 
 def _d96tm_to_wgs84(n: np.ndarray, e: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -174,12 +186,12 @@ def _build_price_band_meta(values: pd.Series) -> dict | None:
 
 
 def _stable_transaction_key(row: pd.Series) -> str:
-    municipality = municipality_slug(str(row.get("municipality") or "unknown"))
-    year = str(row.get("_year") or row.get("source_label") or "na")
-    price = int(round(float(row.get("price_eur") or 0)))
-    area = int(round(float(row.get("_area") or 0)))
-    lat = int(round(float(row.get("_map_lat") or row.get("latitude") or 0) * 10000))
-    lon = int(round(float(row.get("_map_lon") or row.get("longitude") or 0) * 10000))
+    municipality = municipality_slug(str(_first_present(row.get("municipality"), "unknown")))
+    year = str(_first_present(row.get("_year"), row.get("source_label"), "na"))
+    price = int(round(float(_first_present(row.get("price_eur"), 0))))
+    area = int(round(float(_first_present(row.get("_area"), 0))))
+    lat = int(round(float(_first_present(row.get("_map_lat"), row.get("latitude"), 0)) * 10000))
+    lon = int(round(float(_first_present(row.get("_map_lon"), row.get("longitude"), 0)) * 10000))
     return f"{municipality}:{year}:{price}:{area}:{lat}:{lon}"
 
 
@@ -213,7 +225,13 @@ def _prepare_market_df(property_type: str | None = None) -> pd.DataFrame | None:
     if df is None or df.empty:
         return None
     mtime = _RAW_DF_CACHE["mtime"]
-    if _PREPARED_DF_CACHE["mtime"] != mtime or _PREPARED_DF_CACHE["df"] is None:
+    shape = tuple(df.shape)
+    columns = tuple(df.columns)
+    cached_mtime = _PREPARED_DF_CACHE.get("mtime")
+    cached_shape = _PREPARED_DF_CACHE.get("shape")
+    cached_columns = _PREPARED_DF_CACHE.get("columns")
+    cached_df = _PREPARED_DF_CACHE.get("df")
+    if cached_mtime != mtime or cached_shape != shape or cached_columns != columns or cached_df is None:
         frame = _ensure_regions(df.copy())
 
         if "municipality" in frame.columns:
@@ -255,6 +273,8 @@ def _prepare_market_df(property_type: str | None = None) -> pd.DataFrame | None:
             frame["_sale_date"] = pd.NaT
 
         _PREPARED_DF_CACHE["mtime"] = mtime
+        _PREPARED_DF_CACHE["shape"] = shape
+        _PREPARED_DF_CACHE["columns"] = columns
         _PREPARED_DF_CACHE["df"] = frame
 
     cached = _PREPARED_DF_CACHE["df"]
@@ -350,7 +370,7 @@ def _serialize_price_row(row: pd.Series) -> dict:
     return {
         "id": _stable_transaction_key(row),
         "municipality": format_municipality_label(row.get("municipality")) or row.get("municipality"),
-        "slug": row.get("_municipality_slug") or municipality_slug(row.get("municipality")),
+        "slug": _first_present(row.get("_municipality_slug"), municipality_slug(row.get("municipality"))),
         "region": format_region_label(row.get("statistical_region")) or row.get("statistical_region"),
         "property_type": row.get("property_type"),
         "price_eur": _round_or_none(row.get("price_eur")),
@@ -364,8 +384,8 @@ def _serialize_price_row(row: pd.Series) -> dict:
         "floor": _round_or_none(row.get("floor"), 0),
         "num_prostori": _round_or_none(row.get("num_prostori"), 0),
         "lega_v_stavbi": row.get("lega_v_stavbi"),
-        "lat": _round_or_none(row.get("_map_lat") or row.get("latitude"), 6),
-        "lon": _round_or_none(row.get("_map_lon") or row.get("longitude"), 6),
+        "lat": _round_or_none(_first_present(row.get("_map_lat"), row.get("latitude")), 6),
+        "lon": _round_or_none(_first_present(row.get("_map_lon"), row.get("longitude")), 6),
         "novogradnja": int(row["novogradnja"]) if "novogradnja" in row.index and pd.notna(row["novogradnja"]) else None,
         "has_garaza": int(row["has_garaza"]) if "has_garaza" in row.index and pd.notna(row["has_garaza"]) else None,
         "has_klet": int(row["has_klet"]) if "has_klet" in row.index and pd.notna(row["has_klet"]) else None,
@@ -462,13 +482,13 @@ async def overview(
 
     result = {
         "total_records": len(df),
-        "avg_price": round(float(df["price_eur"].mean()), 2) if "price_eur" in df.columns else None,
-        "median_price": round(float(df["price_eur"].median()), 2) if "price_eur" in df.columns else None,
-        "min_price": round(float(df["price_eur"].min()), 2) if "price_eur" in df.columns else None,
-        "max_price": round(float(df["price_eur"].max()), 2) if "price_eur" in df.columns else None,
-        "std_price": round(float(df["price_eur"].std()), 2) if "price_eur" in df.columns else None,
-        "avg_area": round(float(df["size_m2"].mean()), 2) if "size_m2" in df.columns else None,
-        "median_area": round(float(df["size_m2"].median()), 2) if "size_m2" in df.columns else None,
+        "avg_price": _round_or_none(df["price_eur"].mean()) if "price_eur" in df.columns else None,
+        "median_price": _round_or_none(df["price_eur"].median()) if "price_eur" in df.columns else None,
+        "min_price": _round_or_none(df["price_eur"].min()) if "price_eur" in df.columns else None,
+        "max_price": _round_or_none(df["price_eur"].max()) if "price_eur" in df.columns else None,
+        "std_price": _round_or_none(df["price_eur"].std()) if "price_eur" in df.columns else None,
+        "avg_area": _round_or_none(df["size_m2"].mean()) if "size_m2" in df.columns else None,
+        "median_area": _round_or_none(df["size_m2"].median()) if "size_m2" in df.columns else None,
         "avg_price_per_m2": None,
         "regions_count": int(df["statistical_region"].nunique()) if "statistical_region" in df.columns else None,
         "top_municipalities": [],
@@ -494,7 +514,7 @@ async def overview(
         valid = tmp.dropna()
         valid = valid[valid["_area"] > 0]
         if not valid.empty:
-            result["avg_price_per_m2"] = round(float((valid["price_eur"] / valid["_area"]).mean()), 2)
+            result["avg_price_per_m2"] = _round_or_none((valid["price_eur"] / valid["_area"]).mean())
 
     if "municipality" in df.columns:
         muni_groups = df.groupby("municipality")
@@ -502,7 +522,7 @@ async def overview(
         for name, group in muni_groups:
             entry = {"name": name, "count": len(group)}
             if "price_eur" in group.columns:
-                entry["avg_price"] = round(float(group["price_eur"].mean()), 2)
+                entry["avg_price"] = _round_or_none(group["price_eur"].mean())
             muni_stats.append(entry)
         muni_stats.sort(key=lambda x: x["count"], reverse=True)
         result["top_municipalities"] = muni_stats

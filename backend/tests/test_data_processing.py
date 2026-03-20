@@ -149,9 +149,7 @@ def test_build_training_df_from_etn_kpp_extracts_requested_share_and_phase_featu
 
 
 def test_parse_fractional_numeric_series_handles_etn_share_formats():
-    parsed = _parse_fractional_numeric_series(
-        pd.Series(["1/2", "147/10000", "1", "3,5", "bad", None, "4/0"])
-    )
+    parsed = _parse_fractional_numeric_series(pd.Series(["1/2", "147/10000", "1", "3,5", "bad", None, "4/0"]))
 
     assert parsed.iloc[0] == pytest.approx(0.5)
     assert parsed.iloc[1] == pytest.approx(0.0147)

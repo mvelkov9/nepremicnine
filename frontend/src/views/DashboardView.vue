@@ -500,9 +500,9 @@
             <template #body="{ data }">{{ getPropertyTypeLabel(data.property_type, t) }}</template>
           </Column>
           <Column field="size_m2" :header="t('predict.size')" sortable>
-            <template #body="{ data }"
-              >{{ formatNumber(data.size_m2, { maximumFractionDigits: 1 }) }} m²</template
-            >
+            <template #body="{ data }">
+              {{ formatNumber(data.size_m2, { maximumFractionDigits: 1 }) }} m²
+            </template>
           </Column>
           <Column field="price_eur" :header="t('dashboard.medianPrice')" sortable>
             <template #body="{ data }">{{ formatCurrency(data.price_eur) }}</template>

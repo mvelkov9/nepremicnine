@@ -792,17 +792,13 @@ def build_training_df_from_etn_kpp(
     training_df["year_built"] = pd.to_numeric(merged.get("LETO_IZGRADNJE_DELA_STAVBE", np.nan), errors="coerce")
     training_df["floor"] = pd.to_numeric(merged.get("NADSTROPJE_DELA_STAVBE", np.nan), errors="coerce")
 
-    training_df["ime_ko"] = (
-        merged["IME_KO"].apply(clean_display_text) if "IME_KO" in merged.columns else "unknown"
-    )
-    training_df["naselje"] = (
-        merged["NASELJE"].apply(clean_display_text) if "NASELJE" in merged.columns else "unknown"
-    )
+    training_df["ime_ko"] = merged["IME_KO"].apply(clean_display_text) if "IME_KO" in merged.columns else "unknown"
+    training_df["naselje"] = merged["NASELJE"].apply(clean_display_text) if "NASELJE" in merged.columns else "unknown"
     training_df["vrsta_dela_stavbe"] = (
         merged["VRSTA_DELA_STAVBE"].apply(clean_display_text) if "VRSTA_DELA_STAVBE" in merged.columns else "unknown"
     )
-    training_df["evidentiranost_dela_stavbe"] = (
-        pd.to_numeric(merged.get("EVIDENTIRANOST_DELA_STAVBE", np.nan), errors="coerce")
+    training_df["evidentiranost_dela_stavbe"] = pd.to_numeric(
+        merged.get("EVIDENTIRANOST_DELA_STAVBE", np.nan), errors="coerce"
     )
     training_df["atrij"] = pd.to_numeric(merged.get("ATRIJ", np.nan), errors="coerce")
     training_df["stopnja_ddv"] = pd.to_numeric(merged.get("STOPNJA_DDV", np.nan), errors="coerce")
@@ -900,9 +896,18 @@ def build_training_df_from_etn_kpp(
 
     # Transaction date → extract quarter for seasonality
     date_col = next(
-        (c for c in ["DATUM_SKLENITVE_POGODBE", "DATUM_UVELJAVITVE", "DATUM_POGODBE",
-                      "DATUM_SKLENITVE_POGODBE_POSLI", "DATUM_UVELJAVITVE_POSLI", "DATUM_POGODBE_POSLI"]
-         if c in merged.columns),
+        (
+            c
+            for c in [
+                "DATUM_SKLENITVE_POGODBE",
+                "DATUM_UVELJAVITVE",
+                "DATUM_POGODBE",
+                "DATUM_SKLENITVE_POGODBE_POSLI",
+                "DATUM_UVELJAVITVE_POSLI",
+                "DATUM_POGODBE_POSLI",
+            ]
+            if c in merged.columns
+        ),
         None,
     )
     if date_col is not None:
@@ -1038,9 +1043,11 @@ def build_training_df_from_etn_kpp(
     if zemljisca_df is not None and "ID_POSLA" in zemljisca_df.columns:
         if "VRSTA_ZEMLJISCA" in zemljisca_df.columns:
             land_type_by_deal = zemljisca_df.groupby("ID_POSLA")["VRSTA_ZEMLJISCA"].agg(
-                lambda values: clean_display_text(values.dropna().astype(str).mode().iloc[0])
-                if len(values.dropna())
-                else "unknown"
+                lambda values: (
+                    clean_display_text(values.dropna().astype(str).mode().iloc[0])
+                    if len(values.dropna())
+                    else "unknown"
+                )
             )
             id_posla_aligned = merged["ID_POSLA"].reindex(training_df.index)
             training_df["vrsta_zemljisca"] = id_posla_aligned.map(land_type_by_deal).fillna("unknown")
@@ -1066,7 +1073,7 @@ def build_training_df_from_etn_kpp(
             if "POVRSINA_PARCELE" in zemljisca_df.columns:
                 parcel_share_df["parcel_area"] = pd.to_numeric(zemljisca_df["POVRSINA_PARCELE"], errors="coerce")
                 valid = parcel_share_df["parcel_share"].notna() & parcel_share_df["parcel_area"].notna()
-                weighted_sum = (parcel_share_df.loc[valid, "parcel_share"] * parcel_share_df.loc[valid, "parcel_area"])
+                weighted_sum = parcel_share_df.loc[valid, "parcel_share"] * parcel_share_df.loc[valid, "parcel_area"]
                 weight_sum = parcel_share_df.loc[valid].groupby("ID_POSLA")["parcel_area"].sum()
                 share_by_deal = weighted_sum.groupby(parcel_share_df.loc[valid, "ID_POSLA"]).sum() / weight_sum
             else:
@@ -1190,9 +1197,16 @@ def build_training_df_from_etn_kpp_land(
 
     # Transaction date → extract quarter for seasonality
     land_date_col = next(
-        (c for c in ["DATUM_SKLENITVE_POGODBE", "DATUM_UVELJAVITVE",
-                      "DATUM_SKLENITVE_POGODBE_POSLI", "DATUM_UVELJAVITVE_POSLI"]
-         if c in merged.columns),
+        (
+            c
+            for c in [
+                "DATUM_SKLENITVE_POGODBE",
+                "DATUM_UVELJAVITVE",
+                "DATUM_SKLENITVE_POGODBE_POSLI",
+                "DATUM_UVELJAVITVE_POSLI",
+            ]
+            if c in merged.columns
+        ),
         None,
     )
     if land_date_col is not None:

@@ -303,7 +303,9 @@ def test_prepare_etn_bulk_uses_stable_source_keys_for_dedup_and_reports_per_year
 
 
 @pytest.mark.asyncio
-async def test_training_dataset_endpoint_includes_preparation_metadata(client: AsyncClient, monkeypatch: pytest.MonkeyPatch):
+async def test_training_dataset_endpoint_includes_preparation_metadata(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+):
     token = await _get_admin_token(client)
 
     monkeypatch.setattr(

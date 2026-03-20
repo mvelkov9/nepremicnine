@@ -6,8 +6,8 @@ import logging
 import os
 import time
 from collections.abc import Callable
-from typing import Any
 from math import isnan
+from typing import Any
 
 import joblib
 import numpy as np
@@ -179,28 +179,52 @@ PARCELA_ALWAYS_INCLUDE_CATEGORICAL = {
 TYPE_FEATURE_CONFIGS: dict[str, dict[str, set[str]]] = {
     "stanovanje": {
         "always_numeric": {
-            "size_m2", "year_built", "rooms", "floor", "building_age",
-            "novogradnja", "log_size_m2", "transaction_year",
-            "price_per_m2_region", "price_per_m2_municipality",
-            "prodani_delez_dela_stavbe", "stavba_je_dokoncana",
-            "uporabna_povrsina", "num_prostori",
+            "size_m2",
+            "year_built",
+            "rooms",
+            "floor",
+            "building_age",
+            "novogradnja",
+            "log_size_m2",
+            "transaction_year",
+            "price_per_m2_region",
+            "price_per_m2_municipality",
+            "prodani_delez_dela_stavbe",
+            "stavba_je_dokoncana",
+            "uporabna_povrsina",
+            "num_prostori",
         },
         "always_categorical": {
-            "municipality_normalized", "statistical_region",
-            "lega_v_stavbi", "ime_ko", "naselje",
+            "municipality_normalized",
+            "statistical_region",
+            "lega_v_stavbi",
+            "ime_ko",
+            "naselje",
         },
     },
     "hisa": {
         "always_numeric": {
-            "size_m2", "year_built", "rooms", "building_age",
-            "novogradnja", "log_size_m2", "transaction_year",
-            "price_per_m2_region", "price_per_m2_municipality",
-            "parcela_m2", "stavba_je_dokoncana", "uporabna_povrsina",
-            "latitude", "longitude", "has_parking",
+            "size_m2",
+            "year_built",
+            "rooms",
+            "building_age",
+            "novogradnja",
+            "log_size_m2",
+            "transaction_year",
+            "price_per_m2_region",
+            "price_per_m2_municipality",
+            "parcela_m2",
+            "stavba_je_dokoncana",
+            "uporabna_povrsina",
+            "latitude",
+            "longitude",
+            "has_parking",
         },
         "always_categorical": {
-            "municipality_normalized", "statistical_region",
-            "ime_ko", "naselje",
+            "municipality_normalized",
+            "statistical_region",
+            "ime_ko",
+            "naselje",
         },
     },
     "parcela": {
@@ -209,76 +233,127 @@ TYPE_FEATURE_CONFIGS: dict[str, dict[str, set[str]]] = {
     },
     "kmetijsko": {
         "always_numeric": {
-            "size_m2", "parcela_m2", "prodani_delez_parcele",
-            "latitude", "longitude", "log_size_m2",
-            "transaction_year", "price_per_m2_region",
-            "price_per_m2_municipality", "ddv_vkljucen",
+            "size_m2",
+            "parcela_m2",
+            "prodani_delez_parcele",
+            "latitude",
+            "longitude",
+            "log_size_m2",
+            "transaction_year",
+            "price_per_m2_region",
+            "price_per_m2_municipality",
+            "ddv_vkljucen",
         },
         "always_categorical": {
-            "municipality_normalized", "statistical_region",
-            "vrsta_zemljisca", "ime_ko",
+            "municipality_normalized",
+            "statistical_region",
+            "vrsta_zemljisca",
+            "ime_ko",
         },
     },
     "garaza": {
         "always_numeric": {
-            "size_m2", "year_built", "building_age", "novogradnja",
-            "log_size_m2", "transaction_year",
-            "price_per_m2_region", "price_per_m2_municipality",
-            "stavba_je_dokoncana", "ddv_vkljucen",
+            "size_m2",
+            "year_built",
+            "building_age",
+            "novogradnja",
+            "log_size_m2",
+            "transaction_year",
+            "price_per_m2_region",
+            "price_per_m2_municipality",
+            "stavba_je_dokoncana",
+            "ddv_vkljucen",
             "prodani_delez_dela_stavbe",
         },
         "always_categorical": {
-            "municipality_normalized", "statistical_region",
-            "lega_v_stavbi", "ime_ko",
+            "municipality_normalized",
+            "statistical_region",
+            "lega_v_stavbi",
+            "ime_ko",
         },
     },
     "poslovni_prostor": {
         "always_numeric": {
-            "size_m2", "year_built", "floor", "building_age",
-            "novogradnja", "log_size_m2", "transaction_year",
-            "price_per_m2_region", "price_per_m2_municipality",
-            "uporabna_povrsina", "prodani_delez_dela_stavbe",
-            "stavba_je_dokoncana", "ddv_vkljucen",
+            "size_m2",
+            "year_built",
+            "floor",
+            "building_age",
+            "novogradnja",
+            "log_size_m2",
+            "transaction_year",
+            "price_per_m2_region",
+            "price_per_m2_municipality",
+            "uporabna_povrsina",
+            "prodani_delez_dela_stavbe",
+            "stavba_je_dokoncana",
+            "ddv_vkljucen",
         },
         "always_categorical": {
-            "municipality_normalized", "statistical_region",
-            "lega_v_stavbi", "ime_ko", "naselje",
+            "municipality_normalized",
+            "statistical_region",
+            "lega_v_stavbi",
+            "ime_ko",
+            "naselje",
         },
     },
     "industrijski": {
         "always_numeric": {
-            "size_m2", "year_built", "building_age", "novogradnja",
-            "log_size_m2", "transaction_year",
-            "price_per_m2_region", "price_per_m2_municipality",
-            "uporabna_povrsina", "parcela_m2",
-            "prodani_delez_dela_stavbe", "stavba_je_dokoncana",
+            "size_m2",
+            "year_built",
+            "building_age",
+            "novogradnja",
+            "log_size_m2",
+            "transaction_year",
+            "price_per_m2_region",
+            "price_per_m2_municipality",
+            "uporabna_povrsina",
+            "parcela_m2",
+            "prodani_delez_dela_stavbe",
+            "stavba_je_dokoncana",
         },
         "always_categorical": {
-            "municipality_normalized", "statistical_region", "ime_ko",
+            "municipality_normalized",
+            "statistical_region",
+            "ime_ko",
         },
     },
     "turisticni": {
         "always_numeric": {
-            "size_m2", "year_built", "rooms", "building_age",
-            "novogradnja", "log_size_m2", "transaction_year",
-            "price_per_m2_region", "price_per_m2_municipality",
-            "uporabna_povrsina", "prodani_delez_dela_stavbe",
+            "size_m2",
+            "year_built",
+            "rooms",
+            "building_age",
+            "novogradnja",
+            "log_size_m2",
+            "transaction_year",
+            "price_per_m2_region",
+            "price_per_m2_municipality",
+            "uporabna_povrsina",
+            "prodani_delez_dela_stavbe",
             "stavba_je_dokoncana",
         },
         "always_categorical": {
-            "municipality_normalized", "statistical_region",
-            "ime_ko", "naselje",
+            "municipality_normalized",
+            "statistical_region",
+            "ime_ko",
+            "naselje",
         },
     },
     "gostinstvo": {
         "always_numeric": {
-            "size_m2", "year_built", "building_age",
-            "log_size_m2", "transaction_year",
-            "price_per_m2_region", "price_per_m2_municipality",
-            "uporabna_povrsina", "stavba_je_dokoncana",
+            "size_m2",
+            "year_built",
+            "building_age",
+            "log_size_m2",
+            "transaction_year",
+            "price_per_m2_region",
+            "price_per_m2_municipality",
+            "uporabna_povrsina",
+            "stavba_je_dokoncana",
         },
         "always_categorical": {
-            "municipality_normalized", "statistical_region",
+            "municipality_normalized",
+            "statistical_region",
         },
     },
 }
@@ -310,27 +385,42 @@ def _filter_features(
 def _adaptive_hyperparams(n_samples: int) -> dict:
     if n_samples > 20_000:
         return {
-            "max_iter": 2000, "learning_rate": 0.02, "max_depth": 8,
-            "min_samples_leaf": 30, "l2_regularization": 0.05,
+            "max_iter": 2000,
+            "learning_rate": 0.02,
+            "max_depth": 8,
+            "min_samples_leaf": 30,
+            "l2_regularization": 0.05,
         }
     if n_samples > 5000:
         return {
-            "max_iter": 1500, "learning_rate": 0.03, "max_depth": 8,
-            "min_samples_leaf": 25, "l2_regularization": 0.1,
+            "max_iter": 1500,
+            "learning_rate": 0.03,
+            "max_depth": 8,
+            "min_samples_leaf": 25,
+            "l2_regularization": 0.1,
         }
     if n_samples > 1000:
         return {
-            "max_iter": 1000, "learning_rate": 0.04, "max_depth": 7,
-            "min_samples_leaf": 20, "l2_regularization": 0.15,
+            "max_iter": 1000,
+            "learning_rate": 0.04,
+            "max_depth": 7,
+            "min_samples_leaf": 20,
+            "l2_regularization": 0.15,
         }
     if n_samples > 500:
         return {
-            "max_iter": 800, "learning_rate": 0.05, "max_depth": 6,
-            "min_samples_leaf": 15, "l2_regularization": 0.2,
+            "max_iter": 800,
+            "learning_rate": 0.05,
+            "max_depth": 6,
+            "min_samples_leaf": 15,
+            "l2_regularization": 0.2,
         }
     return {
-        "max_iter": 500, "learning_rate": 0.06, "max_depth": 5,
-        "min_samples_leaf": 10, "l2_regularization": 0.3,
+        "max_iter": 500,
+        "learning_rate": 0.06,
+        "max_depth": 5,
+        "min_samples_leaf": 10,
+        "l2_regularization": 0.3,
     }
 
 
@@ -412,12 +502,14 @@ def _select_type_specific_features(
         reverse=True,
     )
 
-    selected_numeric = always_numeric_selected + [
-        col for col in ranked_numeric if scores.get(col, 0.0) >= _MIN_SIGNAL_SCORE
-    ][:max_extra_numeric]
-    selected_categorical = always_categorical_selected + [
-        col for col in ranked_categorical if scores.get(col, 0.0) >= _MIN_SIGNAL_SCORE
-    ][:max_extra_categorical]
+    selected_numeric = (
+        always_numeric_selected
+        + [col for col in ranked_numeric if scores.get(col, 0.0) >= _MIN_SIGNAL_SCORE][:max_extra_numeric]
+    )
+    selected_categorical = (
+        always_categorical_selected
+        + [col for col in ranked_categorical if scores.get(col, 0.0) >= _MIN_SIGNAL_SCORE][:max_extra_categorical]
+    )
 
     if "size_m2" in filtered_numeric and "size_m2" not in selected_numeric:
         selected_numeric = ["size_m2"] + selected_numeric
@@ -1175,10 +1267,7 @@ def predict_one(features: dict[str, Any]) -> dict[str, Any]:
     raw_pred = float(pipeline.predict(row)[0])
 
     # Log-transform: model was trained on log1p(price), so expm1 to get original scale
-    if artifact.get("log_target"):
-        predicted = max(0.0, float(np.expm1(raw_pred)))
-    else:
-        predicted = max(0.0, raw_pred)
+    predicted = max(0.0, float(np.expm1(raw_pred))) if artifact.get("log_target") else max(0.0, raw_pred)
 
     return {
         "predicted_price_eur": round(predicted, 2),
