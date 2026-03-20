@@ -45,6 +45,7 @@ NUMERIC_FEATURES = [
     "has_garaza",
     "has_terasa",
     "has_shramba",
+    "has_parking",
     "uporabna_povrsina",
     "parcela_m2",
     "prodani_delez_parcele",
@@ -54,8 +55,10 @@ NUMERIC_FEATURES = [
     "ddv_vkljucen",
     "log_size_m2",
     "transaction_year",
+    "transaction_quarter",
     "price_per_m2_region",
     "price_per_m2_type",
+    "price_per_m2_municipality",
 ]
 
 CATEGORICAL_FEATURES = [
@@ -65,7 +68,8 @@ CATEGORICAL_FEATURES = [
     "lega_v_stavbi",
     "ime_ko",
     "naselje",
-    'vrsta_zemljisca',
+    "vrsta_zemljisca",
+    "vrsta_kupoprodajnega_posla",
 ]
 
 PERTYPE_NUMERIC = [f for f in NUMERIC_FEATURES if f != "price_per_m2_type"]
@@ -73,7 +77,7 @@ PERTYPE_CATEGORICAL = [f for f in CATEGORICAL_FEATURES if f != "property_type"]
 
 MIN_SAMPLES_PER_TYPE = 200
 
-# Core features to always keep even with low fill rates
+# Core features to always keep even with low fill rates (global model defaults)
 ALWAYS_INCLUDE_NUMERIC = {
     "size_m2",
     "year_built",
@@ -82,14 +86,19 @@ ALWAYS_INCLUDE_NUMERIC = {
     "has_garaza",
     "has_terasa",
     "has_shramba",
+    "has_parking",
     "prodani_delez_parcele",
     "prodani_delez_dela_stavbe",
     "gradbena_faza",
     "stavba_je_dokoncana",
+    "log_size_m2",
+    "transaction_year",
+    "price_per_m2_region",
 }
 
 ALWAYS_INCLUDE_CATEGORICAL = {
     "municipality_normalized",
+    "statistical_region",
     "lega_v_stavbi",
 }
 
@@ -111,6 +120,7 @@ FEATURE_LABELS_SL: dict[str, str] = {
     "has_garaza": "Garaža",
     "has_terasa": "Terasa",
     "has_shramba": "Shramba",
+    "has_parking": "Parkirno mesto",
     "uporabna_povrsina": "Uporabna površina",
     "parcela_m2": "Površina parcele",
     "prodani_delez_parcele": "Prodani delež parcele",
@@ -123,8 +133,10 @@ FEATURE_LABELS_SL: dict[str, str] = {
     "ddv_vkljucen": "DDV vključen",
     "lega_v_stavbi": "Lega v stavbi",
     "transaction_year": "Leto transakcije",
+    "transaction_quarter": "Četrtletje transakcije",
     "price_per_m2_region": "€/m² regija",
     "price_per_m2_type": "€/m² tip",
+    "price_per_m2_municipality": "€/m² občina",
     "ime_ko": "Katastrska občina",
     "naselje": "Naselje",
     "vrsta_dela_stavbe": "Vrsta dela stavbe",
@@ -149,6 +161,7 @@ PARCELA_ALWAYS_INCLUDE_NUMERIC = {
     "log_size_m2",
     "transaction_year",
     "price_per_m2_region",
+    "price_per_m2_municipality",
     "ddv_vkljucen",
 }
 
@@ -158,6 +171,116 @@ PARCELA_ALWAYS_INCLUDE_CATEGORICAL = {
     "ime_ko",
     "naselje",
     "vrsta_zemljisca",
+}
+
+# ── Type-specific feature configurations ─────────────────────────────
+# Each type gets its own "always include" set — signal scoring adds more on top.
+
+TYPE_FEATURE_CONFIGS: dict[str, dict[str, set[str]]] = {
+    "stanovanje": {
+        "always_numeric": {
+            "size_m2", "year_built", "rooms", "floor", "building_age",
+            "novogradnja", "log_size_m2", "transaction_year",
+            "price_per_m2_region", "price_per_m2_municipality",
+            "prodani_delez_dela_stavbe", "stavba_je_dokoncana",
+            "uporabna_povrsina", "num_prostori",
+        },
+        "always_categorical": {
+            "municipality_normalized", "statistical_region",
+            "lega_v_stavbi", "ime_ko", "naselje",
+        },
+    },
+    "hisa": {
+        "always_numeric": {
+            "size_m2", "year_built", "rooms", "building_age",
+            "novogradnja", "log_size_m2", "transaction_year",
+            "price_per_m2_region", "price_per_m2_municipality",
+            "parcela_m2", "stavba_je_dokoncana", "uporabna_povrsina",
+            "latitude", "longitude", "has_parking",
+        },
+        "always_categorical": {
+            "municipality_normalized", "statistical_region",
+            "ime_ko", "naselje",
+        },
+    },
+    "parcela": {
+        "always_numeric": PARCELA_ALWAYS_INCLUDE_NUMERIC,
+        "always_categorical": PARCELA_ALWAYS_INCLUDE_CATEGORICAL,
+    },
+    "kmetijsko": {
+        "always_numeric": {
+            "size_m2", "parcela_m2", "prodani_delez_parcele",
+            "latitude", "longitude", "log_size_m2",
+            "transaction_year", "price_per_m2_region",
+            "price_per_m2_municipality", "ddv_vkljucen",
+        },
+        "always_categorical": {
+            "municipality_normalized", "statistical_region",
+            "vrsta_zemljisca", "ime_ko",
+        },
+    },
+    "garaza": {
+        "always_numeric": {
+            "size_m2", "year_built", "building_age", "novogradnja",
+            "log_size_m2", "transaction_year",
+            "price_per_m2_region", "price_per_m2_municipality",
+            "stavba_je_dokoncana", "ddv_vkljucen",
+            "prodani_delez_dela_stavbe",
+        },
+        "always_categorical": {
+            "municipality_normalized", "statistical_region",
+            "lega_v_stavbi", "ime_ko",
+        },
+    },
+    "poslovni_prostor": {
+        "always_numeric": {
+            "size_m2", "year_built", "floor", "building_age",
+            "novogradnja", "log_size_m2", "transaction_year",
+            "price_per_m2_region", "price_per_m2_municipality",
+            "uporabna_povrsina", "prodani_delez_dela_stavbe",
+            "stavba_je_dokoncana", "ddv_vkljucen",
+        },
+        "always_categorical": {
+            "municipality_normalized", "statistical_region",
+            "lega_v_stavbi", "ime_ko", "naselje",
+        },
+    },
+    "industrijski": {
+        "always_numeric": {
+            "size_m2", "year_built", "building_age", "novogradnja",
+            "log_size_m2", "transaction_year",
+            "price_per_m2_region", "price_per_m2_municipality",
+            "uporabna_povrsina", "parcela_m2",
+            "prodani_delez_dela_stavbe", "stavba_je_dokoncana",
+        },
+        "always_categorical": {
+            "municipality_normalized", "statistical_region", "ime_ko",
+        },
+    },
+    "turisticni": {
+        "always_numeric": {
+            "size_m2", "year_built", "rooms", "building_age",
+            "novogradnja", "log_size_m2", "transaction_year",
+            "price_per_m2_region", "price_per_m2_municipality",
+            "uporabna_povrsina", "prodani_delez_dela_stavbe",
+            "stavba_je_dokoncana",
+        },
+        "always_categorical": {
+            "municipality_normalized", "statistical_region",
+            "ime_ko", "naselje",
+        },
+    },
+    "gostinstvo": {
+        "always_numeric": {
+            "size_m2", "year_built", "building_age",
+            "log_size_m2", "transaction_year",
+            "price_per_m2_region", "price_per_m2_municipality",
+            "uporabna_povrsina", "stavba_je_dokoncana",
+        },
+        "always_categorical": {
+            "municipality_normalized", "statistical_region",
+        },
+    },
 }
 
 
@@ -185,11 +308,43 @@ def _filter_features(
 
 
 def _adaptive_hyperparams(n_samples: int) -> dict:
+    if n_samples > 20_000:
+        return {
+            "max_iter": 2000, "learning_rate": 0.02, "max_depth": 8,
+            "min_samples_leaf": 30, "l2_regularization": 0.05,
+        }
     if n_samples > 5000:
-        return {"max_iter": 1500, "learning_rate": 0.03, "max_depth": 8}
+        return {
+            "max_iter": 1500, "learning_rate": 0.03, "max_depth": 8,
+            "min_samples_leaf": 25, "l2_regularization": 0.1,
+        }
     if n_samples > 1000:
-        return {"max_iter": 1000, "learning_rate": 0.04, "max_depth": 7}
-    return {"max_iter": 600, "learning_rate": 0.05, "max_depth": 6}
+        return {
+            "max_iter": 1000, "learning_rate": 0.04, "max_depth": 7,
+            "min_samples_leaf": 20, "l2_regularization": 0.15,
+        }
+    if n_samples > 500:
+        return {
+            "max_iter": 800, "learning_rate": 0.05, "max_depth": 6,
+            "min_samples_leaf": 15, "l2_regularization": 0.2,
+        }
+    return {
+        "max_iter": 500, "learning_rate": 0.06, "max_depth": 5,
+        "min_samples_leaf": 10, "l2_regularization": 0.3,
+    }
+
+
+def _adaptive_max_extras(n_samples: int) -> tuple[int, int]:
+    """Return (max_extra_numeric, max_extra_categorical) based on dataset size."""
+    if n_samples > 10_000:
+        return 12, 10
+    if n_samples > 3000:
+        return 10, 8
+    if n_samples > 1000:
+        return 8, 6
+    if n_samples > 500:
+        return 6, 4
+    return 4, 3
 
 
 def _safe_abs(value: float | None) -> float:
@@ -297,9 +452,9 @@ def _build_pipeline(
         max_iter=hp["max_iter"],
         learning_rate=hp["learning_rate"],
         max_depth=hp["max_depth"],
-        min_samples_leaf=20,
+        min_samples_leaf=hp.get("min_samples_leaf", 20),
         max_bins=255,
-        l2_regularization=0.1,
+        l2_regularization=hp.get("l2_regularization", 0.1),
         random_state=42,
         warm_start=True,
         verbose=0,
@@ -404,6 +559,8 @@ def _train_single_model(
     y_test: np.ndarray,
     label: str,
     progress_callback: Callable | None = None,
+    *,
+    log_target: bool = False,
 ) -> dict:
     preprocessor = pipeline.named_steps["preprocessor"]
     regressor = pipeline.named_steps["regressor"]
@@ -411,21 +568,25 @@ def _train_single_model(
     chunk_size = max(50, total_trees // 20)
     fitted_trees = 0
 
-    # Fit preprocessor ONCE and transform data
-    X_train_t = preprocessor.fit_transform(X_train, y_train)
+    # Log-transform target: trains on log(1+y), predicts in log-space then expm1
+    y_fit = np.log1p(y_train) if log_target else y_train
+
+    # Fit preprocessor ONCE and transform data (TargetEncoder uses y_fit)
+    X_train_t = preprocessor.fit_transform(X_train, y_fit)
     X_test_t = preprocessor.transform(X_test)
 
     # Warm-start loop: only re-fit the regressor on transformed data
     while fitted_trees < total_trees:
         next_target = min(fitted_trees + chunk_size, total_trees)
         regressor.max_iter = next_target
-        regressor.fit(X_train_t, y_train)
+        regressor.fit(X_train_t, y_fit)
         fitted_trees = next_target
 
         if progress_callback:
             progress_callback(label, fitted_trees, total_trees)
 
-    y_pred = regressor.predict(X_test_t)
+    y_pred_raw = regressor.predict(X_test_t)
+    y_pred = np.maximum(np.expm1(y_pred_raw), 0) if log_target else y_pred_raw
     metrics = _compute_metrics(y_test, y_pred)
     metrics["n_train"] = len(X_train)
     metrics["n_test"] = len(X_test)
@@ -465,8 +626,11 @@ def _predict_combined_routed(
     X_test: pd.DataFrame,
     global_pipeline: Pipeline,
     per_type_models: dict[str, dict[str, Any]],
+    *,
+    log_target: bool = False,
 ) -> np.ndarray:
-    y_pred = global_pipeline.predict(X_test)
+    y_pred_raw = global_pipeline.predict(X_test)
+    y_pred = np.maximum(np.expm1(y_pred_raw), 0) if log_target else y_pred_raw
 
     if not per_type_models or "property_type" not in X_test.columns:
         return y_pred
@@ -476,7 +640,9 @@ def _predict_combined_routed(
         mask = property_types == ptype
         if not mask.any():
             continue
-        y_pred[mask.to_numpy()] = model_meta["pipeline"].predict(X_test.loc[mask])
+        pt_raw = model_meta["pipeline"].predict(X_test.loc[mask])
+        pt_pred = np.maximum(np.expm1(pt_raw), 0) if log_target else pt_raw
+        y_pred[mask.to_numpy()] = pt_pred
 
     return y_pred
 
@@ -535,6 +701,19 @@ def train_from_csv(
     type_medians = valid.groupby("property_type")["ppm2"].median().to_dict() if "property_type" in valid.columns else {}
     global_median_ppm2 = float(valid["ppm2"].median()) if len(valid) > 0 else 2000.0
 
+    # Municipality-level price medians (finer granularity than region)
+    municipality_medians: dict[str, float] = {}
+    if "municipality_normalized" in valid.columns:
+        muni_groups = valid.groupby("municipality_normalized")["ppm2"]
+        for muni, group in muni_groups:
+            if len(group) >= 10:
+                municipality_medians[str(muni)] = float(group.median())
+            else:
+                # Fall back to region median for small municipalities
+                region = valid.loc[group.index, "statistical_region"].mode()
+                region_key = region.iloc[0] if len(region) > 0 else "neznana"
+                municipality_medians[str(muni)] = region_medians.get(region_key, global_median_ppm2)
+
     # Apply to train and test sets separately
     X_train["price_per_m2_region"] = (
         X_train.get("statistical_region", pd.Series()).map(region_medians).fillna(global_median_ppm2)
@@ -542,10 +721,16 @@ def train_from_csv(
     X_train["price_per_m2_type"] = (
         X_train.get("property_type", pd.Series()).map(type_medians).fillna(global_median_ppm2)
     )
+    X_train["price_per_m2_municipality"] = (
+        X_train.get("municipality_normalized", pd.Series()).map(municipality_medians).fillna(global_median_ppm2)
+    )
     X_test["price_per_m2_region"] = (
         X_test.get("statistical_region", pd.Series()).map(region_medians).fillna(global_median_ppm2)
     )
     X_test["price_per_m2_type"] = X_test.get("property_type", pd.Series()).map(type_medians).fillna(global_median_ppm2)
+    X_test["price_per_m2_municipality"] = (
+        X_test.get("municipality_normalized", pd.Series()).map(municipality_medians).fillna(global_median_ppm2)
+    )
 
     global_num, global_cat = _filter_features(X_train, NUMERIC_FEATURES, CATEGORICAL_FEATURES)
     data_preparation = load_training_metadata(csv_path)
@@ -608,37 +793,50 @@ def train_from_csv(
         y_test,
         "global",
         training_progress,
+        log_target=True,
     )
 
-    # Per-type models
+    # Per-type models — signal-scored feature selection for ALL types
     if eligible:
         for ptype in eligible:
             mask_train = X_train["property_type"] == ptype
             mask_test = X_test["property_type"] == ptype
-            Xt = X_train[mask_train]
+            Xt = X_train[mask_train].copy()
             yt = y_train[mask_train]
-            Xte = X_test[mask_test]
+            Xte = X_test[mask_test].copy()
             yte = y_test[mask_test]
 
             if len(Xte) < 10:
                 continue
 
-            pt_scores: dict[str, float] = {}
-            selection_mode = "fill_rate"
-            if ptype == "parcela":
-                pt_num, pt_cat, pt_scores = _select_type_specific_features(
-                    Xt,
-                    yt,
-                    PERTYPE_NUMERIC,
-                    PERTYPE_CATEGORICAL,
-                    always_numeric=PARCELA_ALWAYS_INCLUDE_NUMERIC,
-                    always_categorical=PARCELA_ALWAYS_INCLUDE_CATEGORICAL,
-                    max_extra_numeric=10,
-                    max_extra_categorical=10,
-                )
-                selection_mode = "signal_scored_parcela"
-            else:
-                pt_num, pt_cat = _filter_features(Xt, PERTYPE_NUMERIC, PERTYPE_CATEGORICAL)
+            # Per-type outlier clipping (percentile-based) for types with enough data
+            if len(yt) > 500:
+                p_low, p_high = np.percentile(yt, [1, 99])
+                outlier_mask = (yt >= p_low) & (yt <= p_high)
+                Xt = Xt[outlier_mask]
+                yt = yt[outlier_mask]
+
+            # Look up type-specific feature config, fall back to global defaults
+            type_config = TYPE_FEATURE_CONFIGS.get(ptype, {})
+            always_num = type_config.get("always_numeric", ALWAYS_INCLUDE_NUMERIC)
+            always_cat = type_config.get("always_categorical", ALWAYS_INCLUDE_CATEGORICAL)
+
+            # Adaptive max extras based on dataset size
+            max_extra_num, max_extra_cat = _adaptive_max_extras(len(Xt))
+
+            # Signal-scored feature selection for ALL types
+            pt_num, pt_cat, pt_scores = _select_type_specific_features(
+                Xt,
+                yt,
+                PERTYPE_NUMERIC,
+                PERTYPE_CATEGORICAL,
+                always_numeric=always_num,
+                always_categorical=always_cat,
+                max_extra_numeric=max_extra_num,
+                max_extra_categorical=max_extra_cat,
+            )
+            selection_mode = f"signal_scored_{ptype}"
+
             pt_pipeline = _build_pipeline(pt_num, pt_cat, len(Xt))
             emit_status(
                 "per_type_models",
@@ -661,6 +859,7 @@ def train_from_csv(
                 yte,
                 f"type:{ptype}",
                 training_progress,
+                log_target=True,
             )
             per_type_models[ptype] = {
                 "pipeline": pt_pipeline,
@@ -685,7 +884,8 @@ def train_from_csv(
     emit_status("evaluation", 92, rows=len(df), total_models=total_models)
     per_region_metrics: dict[str, dict] = {}
     if "statistical_region" in X_test.columns:
-        y_pred_all = global_pipeline.predict(X_test)
+        y_pred_all_raw = global_pipeline.predict(X_test)
+        y_pred_all = np.maximum(np.expm1(y_pred_all_raw), 0)
         for region in X_test["statistical_region"].unique():
             mask = X_test["statistical_region"] == region
             if mask.sum() >= 10:
@@ -693,10 +893,11 @@ def train_from_csv(
 
     # Combined routing metrics: use per-type model when available, else global
     if per_type_models:
-        y_pred_combined = _predict_combined_routed(X_test, global_pipeline, per_type_models)
+        y_pred_combined = _predict_combined_routed(X_test, global_pipeline, per_type_models, log_target=True)
         combined_metrics = _compute_metrics(y_test, y_pred_combined)
     else:
-        y_pred_combined = global_pipeline.predict(X_test)
+        y_pred_combined_raw = global_pipeline.predict(X_test)
+        y_pred_combined = np.maximum(np.expm1(y_pred_combined_raw), 0)
         combined_metrics = global_result["metrics"]
 
     segment_diagnostics = _build_segment_diagnostics(X_test, y_test, y_pred_combined)
@@ -722,7 +923,8 @@ def train_from_csv(
     os.makedirs(MODEL_DIR, exist_ok=True)
     emit_status("finalizing", 99, rows=len(df), total_models=total_models)
     artifact = {
-        "version": "4.0",
+        "version": "5.0",
+        "log_target": True,
         "global_model": {
             "pipeline": global_pipeline,
             "numeric_features": global_num,
@@ -733,6 +935,7 @@ def train_from_csv(
         "per_type_models": per_type_models,
         "region_medians": region_medians,
         "type_medians": type_medians,
+        "municipality_medians": municipality_medians,
         "global_median_ppm2": global_median_ppm2,
         "global_metrics": global_result["metrics"],
         "global_importance": global_result["importance"],
@@ -877,6 +1080,7 @@ def _build_normalized_payload(
         "has_garaza",
         "has_terasa",
         "has_shramba",
+        "has_parking",
         "ddv_vkljucen",
         "stavba_je_dokoncana",
     ):
@@ -893,9 +1097,11 @@ def _build_normalized_payload(
         except (TypeError, ValueError):
             row["num_prostori"] = 0.0
 
-    # transaction_year
+    # transaction_year / transaction_quarter
     if "transaction_year" in numeric_features and "transaction_year" not in payload:
         row["transaction_year"] = float(pd.Timestamp.now().year)
+    if "transaction_quarter" in numeric_features and "transaction_quarter" not in payload:
+        row["transaction_quarter"] = float(pd.Timestamp.now().quarter)
 
     # Lat/lon imputation from municipality coords
     municipality_norm = normalize_municipality_name(payload.get("municipality"))
@@ -916,6 +1122,13 @@ def _build_normalized_payload(
     if "price_per_m2_type" in numeric_features:
         ptype = row.get("property_type", "unknown")
         row["price_per_m2_type"] = type_medians.get(ptype, global_median)
+
+    if "price_per_m2_municipality" in numeric_features:
+        municipality_medians = artifact.get("municipality_medians", {})
+        muni_key = row.get("municipality_normalized", municipality_norm)
+        row["price_per_m2_municipality"] = municipality_medians.get(
+            muni_key, region_medians.get(row.get("statistical_region", "neznana"), global_median)
+        )
 
     return row
 
@@ -959,7 +1172,13 @@ def predict_one(features: dict[str, Any]) -> dict[str, Any]:
 
     normalized = _build_normalized_payload(features, num_feats, cat_feats, artifact)
     row = pd.DataFrame([normalized])
-    predicted = max(0.0, float(pipeline.predict(row)[0]))
+    raw_pred = float(pipeline.predict(row)[0])
+
+    # Log-transform: model was trained on log1p(price), so expm1 to get original scale
+    if artifact.get("log_target"):
+        predicted = max(0.0, float(np.expm1(raw_pred)))
+    else:
+        predicted = max(0.0, raw_pred)
 
     return {
         "predicted_price_eur": round(predicted, 2),

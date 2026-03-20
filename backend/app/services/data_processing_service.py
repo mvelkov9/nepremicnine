@@ -260,6 +260,7 @@ def enrich_training_df(df: pd.DataFrame) -> pd.DataFrame:
         "has_garaza",
         "has_terasa",
         "has_shramba",
+        "has_parking",
         "ddv_vkljucen",
     ]:
         if col not in result.columns:
@@ -288,6 +289,8 @@ def enrich_training_df(df: pd.DataFrame) -> pd.DataFrame:
             result[col] = "unknown"
     if "transaction_year" not in result.columns:
         result["transaction_year"] = pd.Timestamp.now().year
+    if "transaction_quarter" not in result.columns:
+        result["transaction_quarter"] = np.nan
     if "novogradnja" not in result.columns:
         result["novogradnja"] = 0
 
@@ -735,6 +738,8 @@ def build_training_df_from_etn_kpp(
         "RPE_OBCINE_IME",
         "IME_OBCINE",
         "DATUM_POGODBE",
+        "DATUM_SKLENITVE_POGODBE",
+        "DATUM_UVELJAVITVE",
         "POGODBENA_CENA_DELA_STAVBE",
         "VRSTA_KUPOPRODAJNEGA_POSLA",
         "VKLJUCENOST_DDV",
@@ -892,6 +897,19 @@ def build_training_df_from_etn_kpp(
         )
     else:
         training_df["ddv_vkljucen"] = 0
+
+    # Transaction date → extract quarter for seasonality
+    date_col = next(
+        (c for c in ["DATUM_SKLENITVE_POGODBE", "DATUM_UVELJAVITVE", "DATUM_POGODBE",
+                      "DATUM_SKLENITVE_POGODBE_POSLI", "DATUM_UVELJAVITVE_POSLI", "DATUM_POGODBE_POSLI"]
+         if c in merged.columns),
+        None,
+    )
+    if date_col is not None:
+        date_parsed = pd.to_datetime(merged[date_col], errors="coerce", dayfirst=True)
+        training_df["transaction_quarter"] = date_parsed.dt.quarter.astype("float64")
+    else:
+        training_df["transaction_quarter"] = np.nan
 
     # Municipality
     municipality_source = None
@@ -1114,6 +1132,8 @@ def build_training_df_from_etn_kpp_land(
         "VRSTA_KUPOPRODAJNEGA_POSLA",
         "VKLJUCENOST_DDV",
         "STOPNJA_DDV",
+        "DATUM_SKLENITVE_POGODBE",
+        "DATUM_UVELJAVITVE",
     ]:
         if opt_col in posli_df.columns:
             posli_selected.append(opt_col)
@@ -1167,6 +1187,19 @@ def build_training_df_from_etn_kpp_land(
         )
     else:
         training_df["ddv_vkljucen"] = 0
+
+    # Transaction date → extract quarter for seasonality
+    land_date_col = next(
+        (c for c in ["DATUM_SKLENITVE_POGODBE", "DATUM_UVELJAVITVE",
+                      "DATUM_SKLENITVE_POGODBE_POSLI", "DATUM_UVELJAVITVE_POSLI"]
+         if c in merged.columns),
+        None,
+    )
+    if land_date_col is not None:
+        land_date_parsed = pd.to_datetime(merged[land_date_col], errors="coerce", dayfirst=True)
+        training_df["transaction_quarter"] = land_date_parsed.dt.quarter.astype("float64")
+    else:
+        training_df["transaction_quarter"] = np.nan
 
     municipality_series = None
     for muni_candidate in ["OBCINA", "IME_OBCINE", "RPE_OBCINE_IME", "OBCINA_POSLI", "IME_OBCINE_POSLI"]:
