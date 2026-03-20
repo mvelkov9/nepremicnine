@@ -138,7 +138,7 @@
             :aria-describedby="formErrors.fullName ? 'fullName-error' : undefined"
             @input="formErrors.fullName = null"
           />
-          <small v-if="formErrors.fullName" id="fullName-error" class="text-red-500">
+          <small v-if="formErrors.fullName" id="fullName-error" class="field-error">
             {{ formErrors.fullName }}
           </small>
         </div>
@@ -154,7 +154,7 @@
             :aria-describedby="formErrors.email ? 'email-error' : undefined"
             @input="formErrors.email = null"
           />
-          <small v-if="formErrors.email" id="email-error" class="text-red-500">
+          <small v-if="formErrors.email" id="email-error" class="field-error">
             {{ formErrors.email }}
           </small>
         </div>
@@ -172,7 +172,7 @@
             :aria-describedby="formErrors.password ? 'password-error' : undefined"
             @input="formErrors.password = null"
           />
-          <small v-if="formErrors.password" id="password-error" class="text-red-500">
+          <small v-if="formErrors.password" id="password-error" class="field-error">
             {{ formErrors.password }}
           </small>
         </div>
@@ -208,6 +208,35 @@
     margin-bottom: 1.1rem;
   }
 
+  .login-page {
+    align-items: stretch;
+  }
+
+  .login-showcase {
+    justify-content: space-between;
+  }
+
+  .showcase-band {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+  }
+
+  .showcase-band span {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2rem;
+    padding: 0.3rem 0.75rem;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, white 14%, transparent);
+    background: color-mix(in srgb, white 10%, transparent);
+    color: var(--shell-text);
+    font-size: 0.77rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
   .auth-mode-switch :deep(.p-togglebutton) {
     flex: 1;
     justify-content: center;
@@ -229,6 +258,35 @@
   .auth-submit {
     width: 100%;
     margin-top: 0.25rem;
+  }
+
+  .market-card {
+    transition:
+      transform 0.18s ease,
+      border-color 0.18s ease,
+      box-shadow 0.18s ease;
+  }
+
+  .market-card:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 18px 32px color-mix(in srgb, rgb(2 6 23) 18%, transparent);
+  }
+
+  .login-panel-top {
+    align-items: flex-start;
+  }
+
+  .login-panel-top h2 {
+    line-height: 1.05;
+  }
+
+  .field {
+    display: grid;
+    gap: 0.38rem;
+  }
+
+  .field label {
+    font-weight: 700;
   }
 
   .login-error {

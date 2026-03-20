@@ -75,9 +75,7 @@
     ...availableTypes.value.map((type) => ({ label: formatType(type), value: type })),
   ])
 
-  const metricOptions = computed(() =>
-    metrics.map((m) => ({ label: m.toUpperCase(), value: m })),
-  )
+  const metricOptions = computed(() => metrics.map((m) => ({ label: m.toUpperCase(), value: m })))
 
   const segmentGroupOptions = computed(() =>
     Object.keys(model.diagnostics?.segment_diagnostics || {}).map((key) => ({
@@ -129,11 +127,24 @@
 
   const featureHighlights = computed(() => model.importance.slice(0, 8))
 
+  function getChartPalette() {
+    const style = getComputedStyle(document.documentElement)
+    return {
+      primary: style.getPropertyValue('--primary').trim() || '#1d4ed8',
+      primarySoft:
+        style.getPropertyValue('--secondary').trim() ||
+        style.getPropertyValue('--primary').trim() ||
+        '#0f766e',
+      success: style.getPropertyValue('--success').trim() || '#15803d',
+    }
+  }
+
   const perTypeChart = computed(() => {
     const ptm = model.info?.per_type_metrics
     if (!ptm) return null
     const labels = Object.keys(ptm)
     const data = labels.map((k) => ptm[k]?.[selectedMetric.value] ?? 0)
+    const palette = getChartPalette()
     return {
       labels: labels.map((label) => formatType(label)),
       datasets: [
@@ -141,7 +152,9 @@
           label: selectedMetric.value.toUpperCase(),
           data,
           backgroundColor: labels.map((label) =>
-            selectedType.value === 'all' || selectedType.value === label ? '#2563eb' : '#bfdbfe',
+            selectedType.value === 'all' || selectedType.value === label
+              ? palette.primary
+              : palette.primarySoft,
           ),
           borderRadius: 4,
         },
@@ -154,13 +167,14 @@
     if (!prm) return null
     const labels = Object.keys(prm)
     const data = labels.map((k) => prm[k]?.[selectedMetric.value] ?? 0)
+    const palette = getChartPalette()
     return {
       labels,
       datasets: [
         {
           label: selectedMetric.value.toUpperCase(),
           data,
-          backgroundColor: '#22c55e',
+          backgroundColor: palette.success,
           borderRadius: 4,
         },
       ],
@@ -253,7 +267,10 @@
   })
 
   const preparationMetadata = computed(
-    () => model.diagnostics?.data_preparation || dataStore.trainingDataset?.preparation_metadata || null,
+    () =>
+      model.diagnostics?.data_preparation ||
+      dataStore.trainingDataset?.preparation_metadata ||
+      null,
   )
 
   const filterRows = computed(() => {
@@ -323,23 +340,32 @@
       model.fetchImportance(),
       dataStore.fetchTrainingDataset(),
     ])
-    if (segmentGroupOptions.value.length && !segmentGroupOptions.value.some((item) => item.value === selectedSegmentGroup.value)) {
+    if (
+      segmentGroupOptions.value.length &&
+      !segmentGroupOptions.value.some((item) => item.value === selectedSegmentGroup.value)
+    ) {
       selectedSegmentGroup.value = segmentGroupOptions.value[0].value
     }
   })
 </script>
 
 <template>
-  <div>
-    <PageHeader :title="t('nav.diagnostics')" />
+  <div class="diagnostics-page">
+    <section class="card diagnostics-hero">
+      <PageHeader
+        :eyebrow="t('nav.diagnostics')"
+        :title="t('nav.diagnostics')"
+        :description="t('layout.page.diagnostics')"
+      />
+    </section>
 
-    <div v-if="!model.info" class="card">
+    <div v-if="!model.info" class="card diagnostics-card">
       <p class="muted">{{ t('diag.noModel') }}</p>
     </div>
 
     <template v-else>
       <!-- Focus type selector + KPI cards -->
-      <div class="card" style="margin-bottom: 1.5rem">
+      <div class="card diagnostics-card focus-card">
         <div class="focus-head">
           <div>
             <h2>{{ t('diag.focusType') }}</h2>
@@ -359,7 +385,7 @@
           />
         </div>
 
-        <div class="kpi-grid" style="margin-top: 1rem">
+        <div class="kpi-grid diagnostics-kpi-grid">
           <MetricCard
             v-for="item in focusMetrics"
             :key="item.label"
@@ -371,9 +397,13 @@
       </div>
 
       <!-- Combined metrics -->
-      <div v-if="combinedMetrics.length" class="card" style="margin-bottom: 1.5rem">
-        <h2>{{ t('diag.combinedMetrics') }}</h2>
-        <p class="muted" style="margin-bottom: 0.75rem">{{ t('diag.combinedDesc') }}</p>
+      <div v-if="combinedMetrics.length" class="card diagnostics-card">
+        <PageHeader
+          compact
+          :eyebrow="t('diag.combinedMetrics')"
+          :title="t('diag.combinedMetrics')"
+          :description="t('diag.combinedDesc')"
+        />
         <div class="kpi-grid">
           <MetricCard
             v-for="item in combinedMetrics"
@@ -385,17 +415,21 @@
       </div>
 
       <!-- Model details table -->
-      <div class="card" style="margin-bottom: 1.5rem">
-        <h2>{{ t('diag.modelDetails') }}</h2>
+      <div class="card diagnostics-card">
+        <PageHeader compact :eyebrow="t('diag.modelDetails')" :title="t('diag.modelDetails')" />
         <DataTable :value="modelDetailsRows" size="small" table-style="min-width: 100%">
           <Column field="key" :header="t('diag.property')" />
           <Column field="val" :header="t('diag.value')" />
         </DataTable>
       </div>
 
-      <div v-if="scoreDriverCards.length" class="card" style="margin-bottom: 1.5rem">
-        <h2>{{ t('diag.scoreDrivers') }}</h2>
-        <p class="muted" style="margin-bottom: 0.75rem">{{ t('diag.scoreDriversDesc') }}</p>
+      <div v-if="scoreDriverCards.length" class="card diagnostics-card">
+        <PageHeader
+          compact
+          :eyebrow="t('diag.scoreDrivers')"
+          :title="t('diag.scoreDrivers')"
+          :description="t('diag.scoreDriversDesc')"
+        />
         <div class="kpi-grid">
           <MetricCard
             v-for="item in scoreDriverCards"
@@ -407,10 +441,10 @@
         </div>
       </div>
 
-      <div v-if="segmentGroupOptions.length" class="card" style="margin-bottom: 1.5rem">
+      <div v-if="segmentGroupOptions.length" class="card diagnostics-card">
         <div class="focus-head">
           <div>
-            <h2 style="margin: 0">{{ t('diag.worstSegments') }}</h2>
+            <h2 class="section-title">{{ t('diag.worstSegments') }}</h2>
             <p class="muted">{{ t('diag.worstSegmentsDesc') }}</p>
           </div>
           <Select
@@ -421,12 +455,7 @@
           />
         </div>
 
-        <DataTable
-          :value="segmentRows"
-          size="small"
-          striped-rows
-          table-style="min-width: 100%"
-        >
+        <DataTable :value="segmentRows" size="small" striped-rows table-style="min-width: 100%">
           <Column field="segment" :header="t('diag.segment')" sortable />
           <Column field="n" :header="t('diag.testSamples')" sortable>
             <template #body="{ data }">{{ formatNumber(data.n) }}</template>
@@ -448,9 +477,13 @@
         </DataTable>
       </div>
 
-      <div v-if="filterRows.length" class="card" style="margin-bottom: 1.5rem">
-        <h2>{{ t('diag.filterSummary') }}</h2>
-        <p class="muted" style="margin-bottom: 0.75rem">{{ t('diag.filterSummaryDesc') }}</p>
+      <div v-if="filterRows.length" class="card diagnostics-card">
+        <PageHeader
+          compact
+          :eyebrow="t('diag.filterSummary')"
+          :title="t('diag.filterSummary')"
+          :description="t('diag.filterSummaryDesc')"
+        />
         <DataTable :value="filterRows" size="small" striped-rows table-style="min-width: 100%">
           <Column field="groupLabel" :header="t('diag.flow')" sortable />
           <Column field="stageLabel" :header="t('diag.stage')" sortable />
@@ -467,10 +500,10 @@
       </div>
 
       <!-- Compare metrics charts -->
-      <div class="card" style="margin-bottom: 1.5rem">
+      <div class="card diagnostics-card compare-card">
         <div class="focus-head">
           <div>
-            <h2 style="margin: 0">{{ t('diag.compareMetrics') }}</h2>
+            <h2 class="section-title">{{ t('diag.compareMetrics') }}</h2>
             <p class="muted">{{ t('diag.byPropertyType') }} / {{ t('diag.byRegion') }}</p>
           </div>
           <Select
@@ -481,25 +514,29 @@
           />
         </div>
 
-        <div v-if="perTypeChart" style="margin-bottom: 2rem">
+        <div v-if="perTypeChart" class="chart-block">
           <h3>{{ t('diag.byPropertyType') }}</h3>
-          <div style="height: 300px">
+          <div class="chart-frame">
             <Bar :data="perTypeChart" :options="chartOptions" />
           </div>
         </div>
 
         <div v-if="perRegionChart">
           <h3>{{ t('diag.byRegion') }}</h3>
-          <div style="height: 300px">
+          <div class="chart-frame">
             <Bar :data="perRegionChart" :options="chartOptions" />
           </div>
         </div>
       </div>
 
       <!-- Feature importance -->
-      <div v-if="featureHighlights.length" class="card" style="margin-bottom: 1.5rem">
-        <h2>{{ t('diag.topFeatures') }}</h2>
-        <p class="muted" style="margin-bottom: 0.75rem">{{ t('diag.topFeaturesDesc') }}</p>
+      <div v-if="featureHighlights.length" class="card diagnostics-card">
+        <PageHeader
+          compact
+          :eyebrow="t('diag.topFeatures')"
+          :title="t('diag.topFeatures')"
+          :description="t('diag.topFeaturesDesc')"
+        />
         <div class="feature-list">
           <div v-for="item in featureHighlights" :key="item.feature" class="feature-row">
             <div class="feature-copy">
@@ -515,8 +552,8 @@
       </div>
 
       <!-- Per-type metrics table -->
-      <div v-if="model.info.per_type_metrics" class="card" style="margin-bottom: 1.5rem">
-        <h2>{{ t('diag.perTypeTable') }}</h2>
+      <div v-if="model.info.per_type_metrics" class="card diagnostics-card">
+        <PageHeader compact :eyebrow="t('diag.perTypeTable')" :title="t('diag.perTypeTable')" />
         <EmptyState
           v-if="!Object.keys(model.info.per_type_metrics).length"
           icon="📊"
@@ -555,8 +592,8 @@
       </div>
 
       <!-- Per-region metrics table -->
-      <div v-if="model.info.per_region_metrics" class="card">
-        <h2>{{ t('diag.perRegionTable') }}</h2>
+      <div v-if="model.info.per_region_metrics" class="card diagnostics-card">
+        <PageHeader compact :eyebrow="t('diag.perRegionTable')" :title="t('diag.perRegionTable')" />
         <EmptyState
           v-if="!Object.keys(model.info.per_region_metrics).length"
           icon="🗺️"
@@ -589,12 +626,52 @@
 </template>
 
 <style scoped>
+  .diagnostics-page {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .diagnostics-hero,
+  .diagnostics-card {
+    display: grid;
+    gap: 1rem;
+  }
+
   .focus-head {
     display: flex;
     gap: 1rem;
     align-items: flex-start;
     justify-content: space-between;
     flex-wrap: wrap;
+  }
+
+  .section-title,
+  .focus-head h2 {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 1.45rem;
+    line-height: 1.04;
+  }
+
+  .diagnostics-kpi-grid {
+    margin-top: 1rem;
+  }
+
+  .compare-card {
+    align-items: start;
+  }
+
+  .chart-block {
+    display: grid;
+    gap: 0.8rem;
+  }
+
+  .chart-block + .chart-block {
+    margin-top: 1.2rem;
+  }
+
+  .chart-frame {
+    height: 300px;
   }
 
   .feature-list {
@@ -629,10 +706,20 @@
     display: block;
     height: 100%;
     border-radius: inherit;
-    background: linear-gradient(90deg, var(--primary), color-mix(in srgb, var(--primary) 40%, white));
+    background: linear-gradient(
+      90deg,
+      var(--primary),
+      color-mix(in srgb, var(--primary) 40%, white)
+    );
   }
 
   :deep(.active-focus-row) {
     background: color-mix(in srgb, var(--primary) 8%, transparent);
+  }
+
+  @media (max-width: 860px) {
+    .feature-row {
+      grid-template-columns: 1fr;
+    }
   }
 </style>

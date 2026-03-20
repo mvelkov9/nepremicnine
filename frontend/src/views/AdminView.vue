@@ -3,6 +3,7 @@
   import { useI18n } from 'vue-i18n'
   import { useConfirm } from 'primevue/useconfirm'
   import api from '../composables/useApi'
+  import MetricCard from '../components/MetricCard.vue'
   import PageHeader from '../components/PageHeader.vue'
   import { getApiErrorMessage } from '../utils/apiError'
   import { formatDate } from '../utils/format'
@@ -26,6 +27,25 @@
       ),
     )
   })
+
+  const summaryCards = computed(() => [
+    {
+      label: t('admin.userManagement'),
+      value: String(users.value.length),
+      meta: t('admin.totalUsers', { count: users.value.length }),
+    },
+    {
+      label: t('admin.active'),
+      value: String(users.value.filter((user: any) => user.is_active).length),
+      meta: t('admin.status'),
+      tone: 'success',
+    },
+    {
+      label: t('layout.roleAdmin'),
+      value: String(users.value.filter((user: any) => user.role === 'admin').length),
+      meta: t('admin.role'),
+    },
+  ])
 
   async function fetchUsers() {
     loading.value = true
@@ -97,28 +117,40 @@
 </script>
 
 <template>
-  <div>
-    <PageHeader
-      :title="t('admin.userManagement')"
-      :description="t('admin.description')"
-    >
-      <template #actions>
-        <Tag
-          severity="secondary"
-          :value="t('admin.totalUsers', { count: users.length })"
+  <div class="admin-view">
+    <section class="card admin-overview">
+      <PageHeader :title="t('admin.userManagement')" :description="t('admin.description')">
+        <template #actions>
+          <Tag severity="secondary" :value="t('admin.totalUsers', { count: users.length })" />
+        </template>
+      </PageHeader>
+
+      <div class="admin-metric-grid">
+        <MetricCard
+          v-for="card in summaryCards"
+          :key="card.label"
+          :label="card.label"
+          :value="card.value"
+          :meta="card.meta"
+          :tone="card.tone || 'default'"
         />
-      </template>
-    </PageHeader>
+      </div>
+    </section>
 
-    <div class="card mt-3">
-      <p v-if="error" class="error-text mb-3">{{ error }}</p>
+    <section class="card admin-users-panel">
+      <div class="panel-toolbar">
+        <div>
+          <p class="eyebrow subtle">{{ t('layout.adminWorkbench') }}</p>
+          <h2>{{ t('admin.userManagement') }}</h2>
+        </div>
 
-      <div class="table-actions mb-3">
-        <IconField>
+        <IconField class="search-field">
           <InputIcon class="pi pi-search" />
           <InputText v-model="userFilter" :placeholder="t('common.search')" />
         </IconField>
       </div>
+
+      <p v-if="error" class="error-text">{{ error }}</p>
 
       <DataTable
         :value="filteredUsers"
@@ -161,7 +193,7 @@
 
         <Column :header="t('data.actions')">
           <template #body="{ data }">
-            <div class="flex gap-2 flex-wrap">
+            <div class="row-actions">
               <Button
                 :icon="data.role === 'admin' ? 'pi pi-user' : 'pi pi-shield'"
                 :label="data.role === 'admin' ? t('admin.makeViewer') : t('admin.makeAdmin')"
@@ -193,20 +225,48 @@
           </template>
         </Column>
       </DataTable>
-    </div>
+    </section>
   </div>
 </template>
 
 <style scoped>
-  .mb-3 {
-    margin-bottom: 1rem;
+  .admin-view {
+    display: grid;
+    gap: 1rem;
   }
 
-  .mt-3 {
-    margin-top: 1rem;
+  .admin-overview,
+  .admin-users-panel {
+    display: grid;
+    gap: 1rem;
   }
 
-  .table-actions {
+  .admin-metric-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.85rem;
+  }
+
+  .panel-toolbar {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+
+  .panel-toolbar h2 {
+    margin: 0.2rem 0 0;
+    font-family: var(--font-display);
+    font-size: 1.45rem;
+    line-height: 1.05;
+  }
+
+  .search-field {
+    width: min(100%, 22rem);
+  }
+
+  .row-actions {
     display: flex;
     align-items: center;
     gap: 0.75rem;
@@ -217,5 +277,15 @@
     text-align: center;
     color: var(--text-muted, #6b7280);
     padding: 1.5rem;
+  }
+
+  .eyebrow.subtle {
+    color: var(--text-soft);
+  }
+
+  @media (max-width: 980px) {
+    .admin-metric-grid {
+      grid-template-columns: 1fr;
+    }
   }
 </style>

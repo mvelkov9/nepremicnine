@@ -288,7 +288,11 @@
       </header>
 
       <main id="main-content" class="shell-main">
-        <slot />
+        <div class="workspace-stage">
+          <div class="workspace-stage__inner">
+            <slot />
+          </div>
+        </div>
       </main>
 
       <footer class="shell-footer-bar">
@@ -334,8 +338,8 @@
     inset: 0 0 auto var(--sidebar-width);
     height: 16rem;
     background:
-      radial-gradient(circle at top left, rgb(45 132 121 / 12%), transparent 34%),
-      radial-gradient(circle at top right, rgb(213 154 53 / 10%), transparent 28%);
+      radial-gradient(circle at top left, var(--shell-ambient-start), transparent 34%),
+      radial-gradient(circle at top right, var(--shell-ambient-end), transparent 28%);
     pointer-events: none;
     z-index: 0;
   }
@@ -353,6 +357,7 @@
     position: sticky;
     top: 0;
     border-bottom: 1px solid var(--shell-chrome-border);
+    box-shadow: inset 0 1px 0 var(--shell-highlight);
     transition:
       box-shadow 160ms ease,
       backdrop-filter 160ms ease;
@@ -440,13 +445,42 @@
     color: var(--shell-text);
     background: var(--shell-control-bg);
     border: 1px solid var(--shell-control-border);
+    box-shadow: inset 0 1px 0 var(--shell-highlight);
   }
 
   .shell-main {
     position: relative;
     z-index: 1;
     flex: 1;
-    padding: 1rem 1.25rem 1.5rem;
+    padding: 1.2rem 1.35rem 1.8rem;
+  }
+
+  .workspace-stage {
+    position: relative;
+    width: min(100%, 1600px);
+    margin: 0 auto;
+    min-height: 100%;
+  }
+
+  .workspace-stage::before {
+    content: '';
+    position: absolute;
+    inset: 0.4rem 0 auto;
+    height: 8rem;
+    border-radius: 2rem;
+    background:
+      radial-gradient(circle at 12% 0%, var(--accent-glow-start), transparent 42%),
+      radial-gradient(circle at 88% 0%, var(--accent-glow-end), transparent 34%);
+    filter: blur(18px);
+    pointer-events: none;
+    opacity: 0.95;
+  }
+
+  .workspace-stage__inner {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    gap: 1.25rem;
   }
 
   .shell-footer-bar {
@@ -478,8 +512,8 @@
     border-radius: 1.1rem;
     background: linear-gradient(145deg, var(--shell-brand-start), var(--shell-brand-end));
     color: var(--shell-brand-contrast);
-    border: 1px solid rgb(255 255 255 / 10%);
-    box-shadow: 0 16px 30px rgb(0 0 0 / 22%);
+    border: 1px solid var(--shell-control-border);
+    box-shadow: 0 16px 30px var(--shell-depth-shadow-strong);
   }
 
   .footer-brand-mark {
@@ -556,6 +590,7 @@
     background: var(--shell-control-bg);
     border-color: var(--shell-control-border);
     color: var(--shell-text);
+    box-shadow: inset 0 1px 0 var(--shell-highlight);
   }
 
   .profile-trigger {
@@ -601,6 +636,7 @@
     color: var(--shell-brand-contrast);
     font-weight: 800;
     overflow: hidden;
+    box-shadow: 0 14px 30px color-mix(in srgb, var(--primary) 24%, transparent);
   }
 
   .avatar-frame img {
@@ -694,7 +730,7 @@
     .mobile-shell-backdrop {
       position: fixed;
       inset: 0;
-      background: rgb(5 12 24 / 56%);
+        background: var(--backdrop-scrim);
       z-index: 35;
     }
 
@@ -742,7 +778,7 @@
     }
 
     .shell-main {
-      padding-top: 0.85rem;
+      padding-top: 0.95rem;
     }
   }
 </style>

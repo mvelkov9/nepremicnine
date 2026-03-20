@@ -132,8 +132,18 @@
           </p>
 
           <div class="hero-actions">
-            <Button icon="pi pi-calculator" :label="t('municipality.openPrediction')" @click="openPrediction()" />
-            <Button icon="pi pi-map" severity="secondary" outlined :label="t('municipality.openMap')" @click="openMap" />
+            <Button
+              icon="pi pi-calculator"
+              :label="t('municipality.openPrediction')"
+              @click="openPrediction()"
+            />
+            <Button
+              icon="pi pi-map"
+              severity="secondary"
+              outlined
+              :label="t('municipality.openMap')"
+              @click="openMap"
+            />
           </div>
         </div>
 
@@ -144,6 +154,7 @@
             :label="card.label"
             :value="card.value"
             :meta="card.meta"
+            tone="success"
           />
 
           <article class="metric-card accent">
@@ -278,7 +289,9 @@
               <div class="related-info">
                 <strong>{{ item.municipality }}</strong>
                 <small>{{ item.region || '—' }}</small>
-                <span class="related-count">{{ fmt(item.count) }} {{ t('dashboard.transactions') }}</span>
+                <span class="related-count"
+                >{{ fmt(item.count) }} {{ t('dashboard.transactions') }}</span
+                >
               </div>
               <div class="related-right">
                 <div class="related-metric">
@@ -319,8 +332,8 @@
     padding: 1.35rem;
     background:
       linear-gradient(135deg, var(--surface-strong), var(--surface-soft)),
-      radial-gradient(circle at top left, rgb(37 99 235 / 15%), transparent 32%),
-      radial-gradient(circle at right, rgb(245 158 11 / 12%), transparent 26%);
+      radial-gradient(circle at top left, color-mix(in srgb, var(--primary) 15%, transparent), transparent 32%),
+      radial-gradient(circle at right, color-mix(in srgb, var(--warning) 12%, transparent), transparent 26%);
   }
 
   .municipality-hero h1,
@@ -370,6 +383,10 @@
     gap: 0.8rem;
   }
 
+  .hero-side {
+    align-content: start;
+  }
+
   .metric-card,
   .panel {
     padding: 1rem;
@@ -389,7 +406,11 @@
   }
 
   .metric-card.accent {
-    background: linear-gradient(135deg, var(--surface-dark), color-mix(in srgb, var(--surface-dark) 80%, var(--primary) 20%));
+    background: linear-gradient(
+      135deg,
+      var(--surface-dark),
+      color-mix(in srgb, var(--surface-dark) 80%, var(--primary) 20%)
+    );
     color: var(--shell-text);
   }
 
@@ -414,6 +435,11 @@
 
   .panel-head {
     margin-bottom: 0.95rem;
+  }
+
+  .panel-head h2 {
+    font-size: 1.25rem;
+    line-height: 1.1;
   }
 
   .mix-row {
@@ -453,12 +479,16 @@
     background: var(--surface-soft-muted);
     text-decoration: none;
     color: inherit;
-    transition: border-color 0.15s, box-shadow 0.15s;
+    transition:
+      transform 0.15s,
+      border-color 0.15s,
+      box-shadow 0.15s;
   }
 
   .related-card:hover {
+    transform: translateY(-1px);
     border-color: var(--primary);
-    box-shadow: 0 0 0 1px var(--primary);
+    box-shadow: 0 16px 28px color-mix(in srgb, var(--shadow-color) 12%, transparent);
   }
 
   .related-info {

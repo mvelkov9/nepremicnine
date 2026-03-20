@@ -13,26 +13,31 @@
 
 <style scoped>
   .loading-spinner-container {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    gap: 0.85rem;
     align-items: center;
     justify-content: center;
-    padding: 2rem 1rem;
-    gap: 0.75rem;
+    min-height: 9rem;
+    padding: 1.8rem 1rem;
+    text-align: center;
   }
 
   .loading-spinner {
-    width: 36px;
-    height: 36px;
-    border: 3px solid var(--border, #e2e8f0);
+    width: 42px;
+    height: 42px;
+    border: 3px solid color-mix(in srgb, var(--border) 82%, white 18%);
     border-top-color: var(--primary, #3b82f6);
+    border-right-color: color-mix(in srgb, var(--secondary) 46%, transparent);
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--primary) 8%, transparent);
+    margin: 0 auto;
   }
 
   .spinner-label {
     color: var(--text-muted, #64748b);
-    font-size: 0.875rem;
+    font-size: 0.88rem;
+    max-width: 28ch;
   }
 
   @keyframes spin {

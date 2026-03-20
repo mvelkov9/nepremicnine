@@ -20,11 +20,40 @@
   import { normalizeMunicipalityName } from '../utils/municipality'
   import { getPropertyTypeLabel } from '../utils/propertyType'
 
+  interface GuidedAnalysisForm {
+    municipality: string
+    property_type: string
+    size_m2: number
+    uporabna_povrsina: number | null
+    rooms: number | null
+    year_built: number | null
+    floor: number | null
+    lega_v_stavbi: string
+    novogradnja: number
+    has_garaza: number
+    has_klet: number
+    has_shramba: number
+    has_terasa: number
+    stavba_je_dokoncana: number
+    ddv_vkljucen: number
+    asking_price: number | null
+    notes: string
+  }
+
+  type BinaryGuidedField =
+    | 'novogradnja'
+    | 'has_garaza'
+    | 'has_klet'
+    | 'has_shramba'
+    | 'has_terasa'
+    | 'stavba_je_dokoncana'
+    | 'ddv_vkljucen'
+
   const { t } = useI18n()
   const auth = useAuthStore()
   const { exportToCSV } = useExport()
 
-  const guidedForm = ref({
+  const guidedForm = ref<GuidedAnalysisForm>({
     municipality: '',
     property_type: 'stanovanje',
     size_m2: 65,
@@ -208,6 +237,14 @@
     }),
   )
 
+  function toggleValue(field: BinaryGuidedField) {
+    return guidedForm.value[field] === 1
+  }
+
+  function updateToggle(field: BinaryGuidedField, checked: boolean) {
+    guidedForm.value[field] = checked ? 1 : 0
+  }
+
   onMounted(() => {
     void fetchMunicipalities()
   })
@@ -216,20 +253,37 @@
 <template>
   <div class="analysis-page">
     <section class="hero-shell">
-      <div>
+      <div class="hero-copy">
         <p class="eyebrow">{{ t('analysis.consumerKicker') }}</p>
         <h1>{{ t('analysis.consumerTitle') }}</h1>
         <p class="muted">{{ t('analysis.consumerBody') }}</p>
       </div>
 
-      <a :href="comparisonUrl" target="_blank" rel="noreferrer" class="hero-link">
-        <Button
-          severity="secondary"
-          outlined
-          icon="pi pi-external-link"
-          :label="t('analysis.compareOnPortal')"
-        />
-      </a>
+      <div class="hero-side">
+        <div class="hero-pill-grid">
+          <article class="hero-pill">
+            <span>{{ t('predict.propertyType') }}</span>
+            <strong>{{ formatType(guidedForm.property_type) }}</strong>
+          </article>
+          <article class="hero-pill">
+            <span>{{ t('map.region') }}</span>
+            <strong>{{ selectedMunicipalityMeta?.region || t('common.noData') }}</strong>
+          </article>
+          <article class="hero-pill">
+            <span>{{ t('analysis.threshold') }}</span>
+            <strong>{{ threshold }}%</strong>
+          </article>
+        </div>
+
+        <a :href="comparisonUrl" target="_blank" rel="noreferrer" class="hero-link">
+          <Button
+            severity="secondary"
+            outlined
+            icon="pi pi-external-link"
+            :label="t('analysis.compareOnPortal')"
+          />
+        </a>
+      </div>
     </section>
 
     <section class="panel">
@@ -243,6 +297,21 @@
           <label>{{ t('analysis.threshold') }}</label>
           <InputNumber v-model="threshold" input-id="threshold" :min="1" :max="100" suffix="%" />
         </div>
+      </div>
+
+      <div class="guided-summary">
+        <article class="summary-chip">
+          <span>{{ t('predict.municipality') }}</span>
+          <strong>{{ guidedForm.municipality || t('predict.municipalityPlaceholder') }}</strong>
+        </article>
+        <article class="summary-chip">
+          <span>{{ t('predict.size') }}</span>
+          <strong>{{ fmt(guidedForm.uporabna_povrsina || guidedForm.size_m2, 1) }} m²</strong>
+        </article>
+        <article class="summary-chip">
+          <span>{{ t('analysis.askingPrice') }}</span>
+          <strong>{{ fmtCurrency(guidedForm.asking_price) }}</strong>
+        </article>
       </div>
 
       <div class="form-grid">
@@ -327,31 +396,52 @@
 
       <div class="flag-row">
         <label class="focus-chip">
-          <ToggleSwitch v-model="guidedForm.novogradnja" :true-value="1" :false-value="0" />
+          <ToggleSwitch
+            :model-value="toggleValue('novogradnja')"
+            @update:model-value="updateToggle('novogradnja', $event)"
+          />
           <span>{{ t('predict.novogradnja') }}</span>
         </label>
         <label class="focus-chip">
-          <ToggleSwitch v-model="guidedForm.has_garaza" :true-value="1" :false-value="0" />
+          <ToggleSwitch
+            :model-value="toggleValue('has_garaza')"
+            @update:model-value="updateToggle('has_garaza', $event)"
+          />
           <span>{{ t('predict.hasGaraza') }}</span>
         </label>
         <label class="focus-chip">
-          <ToggleSwitch v-model="guidedForm.has_klet" :true-value="1" :false-value="0" />
+          <ToggleSwitch
+            :model-value="toggleValue('has_klet')"
+            @update:model-value="updateToggle('has_klet', $event)"
+          />
           <span>{{ t('predict.hasKlet') }}</span>
         </label>
         <label class="focus-chip">
-          <ToggleSwitch v-model="guidedForm.has_shramba" :true-value="1" :false-value="0" />
+          <ToggleSwitch
+            :model-value="toggleValue('has_shramba')"
+            @update:model-value="updateToggle('has_shramba', $event)"
+          />
           <span>{{ t('predict.hasShramba') }}</span>
         </label>
         <label class="focus-chip">
-          <ToggleSwitch v-model="guidedForm.has_terasa" :true-value="1" :false-value="0" />
+          <ToggleSwitch
+            :model-value="toggleValue('has_terasa')"
+            @update:model-value="updateToggle('has_terasa', $event)"
+          />
           <span>{{ t('predict.hasTerasa') }}</span>
         </label>
         <label class="focus-chip">
-          <ToggleSwitch v-model="guidedForm.stavba_je_dokoncana" :true-value="1" :false-value="0" />
+          <ToggleSwitch
+            :model-value="toggleValue('stavba_je_dokoncana')"
+            @update:model-value="updateToggle('stavba_je_dokoncana', $event)"
+          />
           <span>{{ t('predict.stavbaDokoncana') }}</span>
         </label>
         <label class="focus-chip">
-          <ToggleSwitch v-model="guidedForm.ddv_vkljucen" :true-value="1" :false-value="0" />
+          <ToggleSwitch
+            :model-value="toggleValue('ddv_vkljucen')"
+            @update:model-value="updateToggle('ddv_vkljucen', $event)"
+          />
           <span>{{ t('predict.ddvVkljucen') }}</span>
         </label>
       </div>
@@ -411,19 +501,19 @@
 
     <template v-if="result">
       <section v-if="primaryListing" class="result-band">
-        <article class="result-card">
+        <article class="result-card tone-default">
           <span>{{ t('analysis.askingPrice') }}</span>
           <strong>{{ fmtCurrency(primaryListing.asking_price) }}</strong>
         </article>
-        <article class="result-card">
+        <article class="result-card tone-primary">
           <span>{{ t('analysis.predictedPrice') }}</span>
           <strong>{{ fmtCurrency(primaryListing.predicted_price) }}</strong>
         </article>
-        <article class="result-card">
+        <article class="result-card tone-warning">
           <span>{{ t('analysis.deviation') }}</span>
           <strong>{{ fmt(primaryListing.deviation_percent, 1) }}%</strong>
         </article>
-        <article class="result-card">
+        <article class="result-card tone-label">
           <span>{{ t('analysis.label') }}</span>
           <Tag
             :severity="labelSeverity(primaryListing.label)"
@@ -503,7 +593,7 @@
   .result-card {
     border: 1px solid var(--border);
     border-radius: 1.5rem;
-    background: var(--surface-soft-strong);
+    background: linear-gradient(180deg, var(--surface-soft-subtle), var(--surface-soft-strong));
     box-shadow: var(--shadow-sm);
   }
 
@@ -513,10 +603,13 @@
   }
 
   .hero-shell {
-    display: flex;
-    align-items: flex-end;
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
+    align-items: stretch;
     gap: 1rem;
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--primary-overlay) 76%, transparent), var(--surface-soft-strong)),
+      var(--surface-soft-strong);
   }
 
   .hero-shell h1,
@@ -527,6 +620,58 @@
 
   .hero-link {
     text-decoration: none;
+  }
+
+  .hero-copy {
+    display: grid;
+    gap: 0.55rem;
+    align-content: start;
+  }
+
+  .hero-copy p {
+    margin: 0;
+  }
+
+  .hero-side,
+  .hero-pill-grid,
+  .guided-summary {
+    display: grid;
+    gap: 0.85rem;
+  }
+
+  .hero-side {
+    align-content: space-between;
+  }
+
+  .hero-pill-grid,
+  .guided-summary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .hero-pill,
+  .summary-chip {
+    padding: 0.9rem 1rem;
+    border-radius: 1.15rem;
+    border: 1px solid color-mix(in srgb, var(--border) 72%, var(--primary) 28%);
+    background: color-mix(in srgb, var(--surface-strong) 86%, white 14%);
+  }
+
+  .hero-pill span,
+  .summary-chip span {
+    display: block;
+    margin-bottom: 0.3rem;
+    color: var(--text-soft);
+    font-size: 0.76rem;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .hero-pill strong,
+  .summary-chip strong {
+    display: block;
+    font-size: 1rem;
+    line-height: 1.2;
   }
 
   .panel-head {
@@ -557,6 +702,7 @@
 
   .field {
     display: grid;
+    gap: 0.35rem;
   }
 
   .notes-field {
@@ -588,6 +734,16 @@
     color: var(--text);
     padding: 0.7rem 0.9rem;
     font-weight: 700;
+    transition:
+      transform 0.16s ease,
+      border-color 0.16s ease,
+      box-shadow 0.16s ease;
+  }
+
+  .focus-chip:hover {
+    transform: translateY(-1px);
+    border-color: color-mix(in srgb, var(--primary) 28%, transparent);
+    box-shadow: 0 16px 28px color-mix(in srgb, var(--shadow-color) 12%, transparent);
   }
 
   .result-band {
@@ -602,6 +758,24 @@
     gap: 0.35rem;
   }
 
+  .result-card.tone-primary {
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--primary-overlay) 82%, transparent), var(--surface-soft-strong)),
+      var(--surface-soft-strong);
+  }
+
+  .result-card.tone-warning {
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--warning-overlay) 80%, transparent), var(--surface-soft-strong)),
+      var(--surface-soft-strong);
+  }
+
+  .result-card.tone-label {
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--surface-dark-muted) 100%, transparent), var(--surface-soft-strong)),
+      var(--surface-soft-strong);
+  }
+
   .result-card span {
     color: var(--text-muted);
     font-size: 0.84rem;
@@ -614,12 +788,13 @@
   @media (max-width: 900px) {
     .hero-shell,
     .panel-head {
-      flex-direction: column;
-      align-items: stretch;
+      grid-template-columns: 1fr;
     }
 
     .form-grid,
-    .result-band {
+    .result-band,
+    .hero-pill-grid,
+    .guided-summary {
       grid-template-columns: 1fr;
     }
   }

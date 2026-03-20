@@ -104,12 +104,7 @@
 
     <template #footer>
       <div class="profile-dialog-actions">
-        <Button
-          text
-          severity="secondary"
-          :label="t('common.cancel')"
-          @click="visible = false"
-        />
+        <Button text severity="secondary" :label="t('common.cancel')" @click="visible = false" />
         <Button
           :label="profileSaving ? t('layout.savingProfile') : t('common.save')"
           :loading="profileSaving"

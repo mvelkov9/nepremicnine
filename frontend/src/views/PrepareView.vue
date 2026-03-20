@@ -227,9 +227,7 @@
       path: td.relative_path || td.path || '-',
       rows: td.rows || 0,
       columns: td.columns?.length || td.num_columns || 0,
-      years: result.value.per_year
-        ? Object.keys(result.value.per_year).sort().join(', ')
-        : '-',
+      years: result.value.per_year ? Object.keys(result.value.per_year).sort().join(', ') : '-',
     }
     return [row]
   })
@@ -270,7 +268,7 @@
 
 <template>
   <div class="prepare-page">
-    <section class="card">
+    <section class="card admin-hero prepare-hero">
       <PageHeader
         :eyebrow="t('nav.prepare')"
         :title="t('prepare.title')"
@@ -279,7 +277,7 @@
     </section>
 
     <!-- Mode tabs -->
-    <div class="card">
+    <div class="card prepare-workbench">
       <Tabs v-model:value="etnMode">
         <TabList>
           <Tab value="bulk">{{ t('prepare.autoEtn') }}</Tab>
@@ -291,15 +289,19 @@
           <!-- Bulk ETN -->
           <TabPanel value="bulk">
             <div class="card inner-card">
-              <div class="card-title">{{ t('prepare.autoEtn') }}</div>
-              <p class="muted mb-4">{{ t('prepare.autoEtnDesc') }}</p>
+              <PageHeader
+                compact
+                :eyebrow="t('prepare.autoEtn')"
+                :title="t('prepare.autoEtn')"
+                :description="t('prepare.autoEtnDesc')"
+              />
 
               <div v-if="!detectedPairs.length" class="muted">
                 {{ t('prepare.noPairsDetected') }}
               </div>
 
               <div v-else>
-                <div class="flex align-items-center gap-2 mb-3">
+                <div class="selection-toolbar">
                   <Button
                     size="small"
                     severity="secondary"
@@ -337,7 +339,13 @@
                     <template #body="{ data: pair }">
                       <Tag
                         :value="t('prepare.status_' + pairStatus(pair))"
-                        :severity="pairStatus(pair) === 'complete' ? 'success' : pairStatus(pair) === 'ready' ? 'info' : 'warn'"
+                        :severity="
+                          pairStatus(pair) === 'complete'
+                            ? 'success'
+                            : pairStatus(pair) === 'ready'
+                              ? 'info'
+                              : 'warn'
+                        "
                       />
                     </template>
                   </Column>
@@ -358,8 +366,12 @@
           <!-- Single ETN -->
           <TabPanel value="single">
             <div class="card inner-card">
-              <div class="card-title">{{ t('prepare.singleEtn') }}</div>
-              <p class="muted mb-4">{{ t('prepare.singleEtnDesc') }}</p>
+              <PageHeader
+                compact
+                :eyebrow="t('prepare.singleEtn')"
+                :title="t('prepare.singleEtn')"
+                :description="t('prepare.singleEtnDesc')"
+              />
 
               <div class="form-grid">
                 <div>
@@ -396,8 +408,12 @@
           <!-- Manual mapping -->
           <TabPanel value="manual">
             <div class="card inner-card">
-              <div class="card-title">{{ t('prepare.manualMapping') }}</div>
-              <p class="muted mb-4">{{ t('prepare.manualDesc') }}</p>
+              <PageHeader
+                compact
+                :eyebrow="t('prepare.manualMapping')"
+                :title="t('prepare.manualMapping')"
+                :description="t('prepare.manualDesc')"
+              />
 
               <div class="mb-4">
                 <label class="form-label">{{ t('prepare.sourceFile') }}</label>
@@ -439,9 +455,9 @@
 
     <!-- Result -->
     <div v-if="result" class="card result-card mt-6">
-      <div class="card-title">{{ t('prepare.result') }}</div>
+      <PageHeader compact :eyebrow="t('prepare.result')" :title="t('prepare.readyForModel')" />
 
-      <div class="flex flex-wrap gap-4">
+      <div class="result-metrics">
         <MetricCard
           :label="t('prepare.outputRows')"
           :value="fmt(result.rows || result.total_rows || 0)"
@@ -502,11 +518,8 @@
         </DataTable>
       </div>
 
-      <div v-if="result.training_dataset" class="card inner-card mt-4">
-        <div class="card-title">
-          <i class="pi pi-check-circle" style="color: var(--success); margin-right: 0.5rem" />
-          {{ t('prepare.readyForModel') }}
-        </div>
+      <div v-if="result.training_dataset" class="card inner-card mt-4 ready-card">
+        <PageHeader compact :eyebrow="t('prepare.result')" :title="t('prepare.readyForModel')" />
 
         <DataTable :value="trainingDatasetRows" striped-rows size="small" class="mb-3">
           <Column :header="t('prepare.datasetPath')" field="path" />
@@ -539,17 +552,42 @@
     gap: 1rem;
   }
 
+  .prepare-hero,
+  .prepare-workbench,
+  .result-card {
+    display: grid;
+    gap: 1rem;
+  }
+
   .inner-card {
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm, 8px);
     padding: 1rem 1.25rem;
+    display: grid;
+    gap: 1rem;
   }
 
   .form-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 1rem;
+  }
+
+  .selection-toolbar,
+  .result-metrics {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .result-metrics {
+    align-items: stretch;
+  }
+
+  .result-metrics :deep(.metric-card) {
+    flex: 1 1 220px;
   }
 
   .code-textarea {
@@ -561,6 +599,10 @@
 
   .result-card {
     border-left: 4px solid var(--success);
+  }
+
+  .ready-card {
+    border-color: color-mix(in srgb, var(--success) 32%, var(--border));
   }
 
   @media (max-width: 720px) {

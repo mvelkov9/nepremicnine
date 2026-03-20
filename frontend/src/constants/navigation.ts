@@ -17,6 +17,16 @@ export const adminNavigation: NavItem[] = [
   { to: '/admin/podatki', icon: 'data', label: 'nav.data', group: 'nav.groupPipeline' },
   { to: '/admin/priprava', icon: 'prepare', label: 'nav.prepare', group: 'nav.groupPipeline' },
   { to: '/admin/model', icon: 'model', label: 'nav.model', group: 'nav.groupPipeline' },
-  { to: '/admin/diagnostika', icon: 'diagnostics', label: 'nav.diagnostics', group: 'nav.groupMonitor' },
-  { to: '/admin/uporabniki', icon: 'admin', label: 'admin.userManagement', group: 'nav.groupMonitor' },
+  {
+    to: '/admin/diagnostika',
+    icon: 'diagnostics',
+    label: 'nav.diagnostics',
+    group: 'nav.groupMonitor',
+  },
+  {
+    to: '/admin/uporabniki',
+    icon: 'admin',
+    label: 'admin.userManagement',
+    group: 'nav.groupMonitor',
+  },
 ]

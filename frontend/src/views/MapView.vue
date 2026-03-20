@@ -16,6 +16,21 @@
   import { municipalitySlug } from '../utils/municipality'
   import { getPropertyTypeLabel } from '../utils/propertyType'
 
+  interface MapFilterParams {
+    property_type?: string
+    statistical_region?: string
+    year?: string
+    municipality?: string
+    price_band?: string
+  }
+
+  interface BandOption {
+    label: string
+    value: string
+    count: number
+    range?: string
+  }
+
   const { t } = useI18n()
   const route = useRoute()
   const router = useRouter()
@@ -50,13 +65,12 @@
   const detailMode = ref('transaction')
   const selectedRecord = ref(null)
 
-  const bandColors = {
-    low: '#22c55e',
-    mid: '#f59e0b',
-    high: '#ef4444',
-  }
-
   const overviewColor = '#3b82f6'
+
+  function semanticColor(name, fallback) {
+    const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+    return value || fallback
+  }
 
   const defaultYear = computed(() => {
     if (!availableYears.value.length) return ''
@@ -104,7 +118,7 @@
     clusterTransactions(transactions.value, mapZoom.value),
   )
 
-  const bandOptions = computed(() => [
+  const bandOptions = computed<BandOption[]>(() => [
     { label: t('map.allBands'), value: '', count: totalCount.value },
     ...(mapLegend.value
       ? ['low', 'mid', 'high'].map((key) => ({
@@ -115,6 +129,42 @@
         }))
       : []),
   ])
+
+  const activeFilterChips = computed(() => {
+    const chips: Array<{ key: string; label: string; tone?: string }> = []
+
+    chips.push({
+      key: 'view',
+      label:
+        viewMode.value === 'transactions' ? t('map.transactionView') : t('map.overviewMode'),
+    })
+
+    if (selectedType.value) {
+      chips.push({ key: 'type', label: formatType(selectedType.value) })
+    }
+
+    if (selectedRegion.value) {
+      chips.push({ key: 'region', label: selectedRegion.value })
+    }
+
+    if (selectedYear.value) {
+      chips.push({ key: 'year', label: selectedYear.value })
+    }
+
+    if (selectedMunicipality.value) {
+      chips.push({ key: 'municipality', label: selectedMunicipality.value })
+    }
+
+    if (selectedPriceBand.value) {
+      chips.push({
+        key: 'band',
+        label: bandOptions.value.find((band) => band.value === selectedPriceBand.value)?.label || '',
+        tone: selectedPriceBand.value,
+      })
+    }
+
+    return chips
+  })
 
   const propertyTypeOptions = computed(() => [
     { label: t('map.allTypes'), value: '' },
@@ -177,7 +227,13 @@
   }
 
   function bandColor(key) {
-    return bandColors[key] || overviewColor
+    const bandColors = {
+      low: semanticColor('--success', '#22c55e'),
+      mid: semanticColor('--warning', '#f59e0b'),
+      high: semanticColor('--danger', '#ef4444'),
+    }
+
+    return bandColors[key] || semanticColor('--primary', overviewColor)
   }
 
   function bandRangeLabel(key) {
@@ -195,8 +251,11 @@
     return Math.max(8, Math.min(26, 7 + Math.log10(count + 1) * 10))
   }
 
-  function dominantBand(counts = {}) {
-    return Object.entries(counts).sort((left, right) => right[1] - left[1])[0]?.[0] || 'mid'
+  function dominantBand(counts: Record<string, number> = {}) {
+    return (
+      Object.entries(counts).sort((left, right) => Number(right[1]) - Number(left[1]))[0]?.[0] ||
+      'mid'
+    )
   }
 
   function clusterTransactions(items, zoom) {
@@ -373,7 +432,7 @@
   }
 
   async function fetchTransactions() {
-    const params = {}
+    const params: MapFilterParams = {}
     if (selectedType.value) params.property_type = selectedType.value
     if (selectedRegion.value) params.statistical_region = selectedRegion.value
     if (selectedYear.value) params.year = selectedYear.value
@@ -387,7 +446,7 @@
   }
 
   async function fetchOverviewMarkers() {
-    const params = {}
+    const params: MapFilterParams = {}
     if (selectedType.value) params.property_type = selectedType.value
     if (selectedRegion.value) params.statistical_region = selectedRegion.value
     if (selectedYear.value) params.year = selectedYear.value
@@ -538,6 +597,17 @@
         <MetricCard :label="t('map.avgPrice')" :value="fmtCurrency(avgPrice)" />
         <MetricCard :label="t('map.municipalities')" :value="fmt(municipalities.length)" />
         <MetricCard :label="t('map.regions')" :value="fmt(regionStats.length)" />
+      </div>
+
+      <div v-if="activeFilterChips.length" class="active-filter-ribbon">
+        <span
+          v-for="chip in activeFilterChips"
+          :key="chip.key"
+          class="active-filter-chip"
+          :class="chip.tone ? `tone-${chip.tone}` : ''"
+        >
+          {{ chip.label }}
+        </span>
       </div>
     </section>
 
@@ -958,6 +1028,40 @@
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
+  .active-filter-ribbon {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+  }
+
+  .active-filter-chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.2rem;
+    padding: 0.35rem 0.8rem;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--primary) 18%, var(--border));
+    background: color-mix(in srgb, var(--primary-overlay) 62%, var(--surface-soft));
+    color: var(--text);
+    font-size: 0.82rem;
+    font-weight: 700;
+  }
+
+  .active-filter-chip.tone-low {
+    border-color: color-mix(in srgb, var(--success) 26%, transparent);
+    background: color-mix(in srgb, var(--success) 12%, var(--surface-soft));
+  }
+
+  .active-filter-chip.tone-mid {
+    border-color: color-mix(in srgb, var(--warning) 32%, transparent);
+    background: color-mix(in srgb, var(--warning) 12%, var(--surface-soft));
+  }
+
+  .active-filter-chip.tone-high {
+    border-color: color-mix(in srgb, var(--danger) 26%, transparent);
+    background: color-mix(in srgb, var(--danger) 10%, var(--surface-soft));
+  }
+
   .filters-grid {
     display: grid;
     grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -1027,6 +1131,17 @@
     text-align: left;
     white-space: normal;
     height: auto;
+    background: linear-gradient(180deg, var(--surface-soft-subtle), var(--surface-soft));
+    transition:
+      transform 0.18s ease,
+      border-color 0.18s ease,
+      box-shadow 0.18s ease;
+  }
+
+  :deep(.rail-card.p-button:hover) {
+    transform: translateY(-1px);
+    border-color: color-mix(in srgb, var(--primary) 26%, transparent);
+    box-shadow: 0 18px 30px color-mix(in srgb, var(--shadow-color) 12%, transparent);
   }
 
   .rail-card-top,
@@ -1062,8 +1177,16 @@
     padding: 1rem;
     border: 1px solid var(--border);
     border-radius: 1.25rem;
-    background: var(--surface-soft);
+    background: linear-gradient(180deg, var(--surface-soft-subtle), var(--surface-soft));
     min-width: 0;
+  }
+
+  .detail-section-main {
+    background: linear-gradient(180deg, color-mix(in srgb, var(--primary-overlay) 78%, transparent), var(--surface-soft));
+  }
+
+  .detail-section-comparables {
+    background: linear-gradient(180deg, color-mix(in srgb, var(--warning-overlay) 72%, transparent), var(--surface-soft));
   }
 
   .detail-section h3 {
@@ -1105,7 +1228,7 @@
     padding: 1rem;
     border: 1px solid var(--border);
     border-radius: 1.25rem;
-    background: var(--surface-soft);
+    background: linear-gradient(180deg, var(--surface-soft-subtle), var(--surface-soft));
   }
 
   .flag-chip {
@@ -1153,6 +1276,16 @@
   .map-detail-dialog :deep(.p-dialog-header) {
     align-items: flex-start;
     padding: 1.15rem 1.35rem;
+    border-bottom: 1px solid color-mix(in srgb, white 10%, transparent);
+    background:
+      linear-gradient(135deg, var(--surface-dark), var(--surface-dark-alt)),
+      linear-gradient(135deg, var(--primary-overlay), transparent);
+    color: var(--primary-contrast);
+  }
+
+  .map-detail-dialog :deep(.p-dialog-title),
+  .map-detail-dialog :deep(.p-dialog-header-icon) {
+    color: inherit;
   }
 
   .map-detail-dialog :deep(.p-dialog-content) {

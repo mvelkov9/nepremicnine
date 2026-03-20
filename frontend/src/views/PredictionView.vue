@@ -19,13 +19,47 @@
   import { municipalitySlug, normalizeMunicipalityName } from '../utils/municipality'
   import { getPropertyTypeLabel } from '../utils/propertyType'
 
+  interface PredictionForm {
+    size_m2: number | null
+    rooms: number | null
+    year_built: number | null
+    floor: number | null
+    latitude: number | null
+    longitude: number | null
+    municipality: string
+    property_type: string
+    uporabna_povrsina: number | null
+    lega_v_stavbi: string
+    novogradnja: number
+    has_garaza: number
+    has_klet: number
+    has_shramba: number
+    has_terasa: number
+    stavba_je_dokoncana: number
+    ddv_vkljucen: number
+  }
+
+  interface PredictionFormErrors {
+    size_m2?: string | null
+    municipality?: string | null
+  }
+
+  type BinaryPredictionField =
+    | 'novogradnja'
+    | 'has_garaza'
+    | 'has_klet'
+    | 'has_shramba'
+    | 'has_terasa'
+    | 'stavba_je_dokoncana'
+    | 'ddv_vkljucen'
+
   const { t } = useI18n()
   const route = useRoute()
   const router = useRouter()
   const stats = useStatsStore()
   const { exportToCSV } = useExport()
 
-  const form = ref({
+  const form = ref<PredictionForm>({
     size_m2: null,
     rooms: null,
     year_built: null,
@@ -66,7 +100,7 @@
   const loading = ref(false)
   const contextLoading = ref(false)
   const error = ref('')
-  const formErrors = ref({})
+  const formErrors = ref<PredictionFormErrors>({})
 
   const municipalityContext = computed(() => stats.municipalityDetail)
   const comparables = computed(() => stats.comparables)
@@ -91,6 +125,14 @@
       propertyType: form.value.property_type,
     }),
   )
+
+  function toggleValue(field: BinaryPredictionField) {
+    return form.value[field] === 1
+  }
+
+  function updateToggle(field: BinaryPredictionField, checked: boolean) {
+    form.value[field] = checked ? 1 : 0
+  }
 
   function fmt(value, decimals = 0) {
     return formatNumber(value, { maximumFractionDigits: decimals })
@@ -129,7 +171,7 @@
   }
 
   function validateForm() {
-    const errors = {}
+    const errors: PredictionFormErrors = {}
     if (!form.value.size_m2 || form.value.size_m2 <= 0) {
       errors.size_m2 = t('validation.minSize')
     }
@@ -443,31 +485,52 @@
             <h2>{{ t('predict.buildingFlags') }}</h2>
             <div class="toggle-grid">
               <label class="toggle-chip">
-                <ToggleSwitch v-model="form.novogradnja" :true-value="1" :false-value="0" />
+                <ToggleSwitch
+                  :model-value="toggleValue('novogradnja')"
+                  @update:model-value="updateToggle('novogradnja', $event)"
+                />
                 <span>{{ t('predict.novogradnja') }}</span>
               </label>
               <label class="toggle-chip">
-                <ToggleSwitch v-model="form.has_garaza" :true-value="1" :false-value="0" />
+                <ToggleSwitch
+                  :model-value="toggleValue('has_garaza')"
+                  @update:model-value="updateToggle('has_garaza', $event)"
+                />
                 <span>{{ t('predict.hasGaraza') }}</span>
               </label>
               <label class="toggle-chip">
-                <ToggleSwitch v-model="form.has_klet" :true-value="1" :false-value="0" />
+                <ToggleSwitch
+                  :model-value="toggleValue('has_klet')"
+                  @update:model-value="updateToggle('has_klet', $event)"
+                />
                 <span>{{ t('predict.hasKlet') }}</span>
               </label>
               <label class="toggle-chip">
-                <ToggleSwitch v-model="form.has_shramba" :true-value="1" :false-value="0" />
+                <ToggleSwitch
+                  :model-value="toggleValue('has_shramba')"
+                  @update:model-value="updateToggle('has_shramba', $event)"
+                />
                 <span>{{ t('predict.hasShramba') }}</span>
               </label>
               <label class="toggle-chip">
-                <ToggleSwitch v-model="form.has_terasa" :true-value="1" :false-value="0" />
+                <ToggleSwitch
+                  :model-value="toggleValue('has_terasa')"
+                  @update:model-value="updateToggle('has_terasa', $event)"
+                />
                 <span>{{ t('predict.hasTerasa') }}</span>
               </label>
               <label class="toggle-chip">
-                <ToggleSwitch v-model="form.stavba_je_dokoncana" :true-value="1" :false-value="0" />
+                <ToggleSwitch
+                  :model-value="toggleValue('stavba_je_dokoncana')"
+                  @update:model-value="updateToggle('stavba_je_dokoncana', $event)"
+                />
                 <span>{{ t('predict.stavbaDokoncana') }}</span>
               </label>
               <label class="toggle-chip">
-                <ToggleSwitch v-model="form.ddv_vkljucen" :true-value="1" :false-value="0" />
+                <ToggleSwitch
+                  :model-value="toggleValue('ddv_vkljucen')"
+                  @update:model-value="updateToggle('ddv_vkljucen', $event)"
+                />
                 <span>{{ t('predict.ddvVkljucen') }}</span>
               </label>
             </div>
@@ -501,14 +564,38 @@
 
         <template v-else-if="result">
           <section class="estimate-card">
-            <span>{{ t('predict.predictedPrice') }}</span>
-            <strong>{{ formatCurrency(result.predicted_price_eur) }}</strong>
-            <p>{{ t('predict.modelUsed') }}: {{ result.model_used }}</p>
+            <div class="estimate-top">
+              <div>
+                <span>{{ t('predict.predictedPrice') }}</span>
+                <strong>{{ formatCurrency(result.predicted_price_eur) }}</strong>
+              </div>
+              <p>{{ t('predict.modelUsed') }}: {{ result.model_used }}</p>
+            </div>
+
+            <div class="estimate-meta-grid">
+              <article>
+                <span>{{ t('predict.propertyType') }}</span>
+                <strong>{{ formatType(form.property_type) || '—' }}</strong>
+              </article>
+              <article>
+                <span>{{ t('predict.municipality') }}</span>
+                <strong>{{ form.municipality || '—' }}</strong>
+              </article>
+              <article>
+                <span>{{ t('predict.size') }}</span>
+                <strong>{{ fmt(effectiveSize, 1) }} m²</strong>
+              </article>
+            </div>
           </section>
 
           <div class="story-actions">
             <a :href="comparisonUrl" target="_blank" rel="noreferrer">
-              <Button severity="secondary" text class="action-link" :label="t('predict.compareOnPortal')" />
+              <Button
+                severity="secondary"
+                text
+                class="action-link"
+                :label="t('predict.compareOnPortal')"
+              />
             </a>
           </div>
 
@@ -532,7 +619,12 @@
           <section v-if="municipalityContext" class="story-block context-card">
             <div class="story-head">
               <h3>{{ t('predict.marketContext') }}</h3>
-              <Button severity="secondary" text :label="t('predict.openMunicipality')" @click="openMunicipality" />
+              <Button
+                severity="secondary"
+                text
+                :label="t('predict.openMunicipality')"
+                @click="openMunicipality"
+              />
             </div>
             <div class="context-metrics">
               <article>
@@ -576,7 +668,11 @@
                   <strong>{{ formatCurrency(item.price_eur) }}</strong>
                   <small>{{ t('predict.similarityLabel') }} {{ item.similarity_score }}</small>
                 </div>
-                <Button size="small" :label="t('predict.reuseComparable')" @click="reuseComparable(item)" />
+                <Button
+                  size="small"
+                  :label="t('predict.reuseComparable')"
+                  @click="reuseComparable(item)"
+                />
               </article>
             </div>
             <EmptyState v-else icon="📊" :message="t('predict.noComparables')" />
@@ -588,7 +684,12 @@
         <section class="story-block history-block">
           <div class="story-head">
             <h3>{{ t('predict.history') }}</h3>
-            <Button severity="secondary" text :label="t('predict.exportHistory')" @click="exportHistoryRows" />
+            <Button
+              severity="secondary"
+              text
+              :label="t('predict.exportHistory')"
+              @click="exportHistoryRows"
+            />
           </div>
 
           <div v-if="history.length" class="history-list">
@@ -618,7 +719,7 @@
   .prediction-shell {
     display: grid;
     grid-template-columns: minmax(0, 1.05fr) minmax(340px, 0.95fr);
-    gap: 1rem;
+    gap: 1.15rem;
   }
 
   .panel {
@@ -631,6 +732,9 @@
   .input-panel,
   .story-panel {
     padding: 1.2rem;
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--surface-soft) 94%, white 6%), var(--surface-soft)),
+      var(--surface-soft);
   }
 
   .panel-head {
@@ -688,6 +792,13 @@
   .form-section h2 {
     margin: 0 0 0.15rem;
     font-size: 1rem;
+  }
+
+  .form-section {
+    padding: 1rem;
+    border: 1px solid var(--border);
+    border-radius: 1.25rem;
+    background: var(--surface-soft-subtle);
   }
 
   .form-grid {
@@ -748,6 +859,17 @@
     font-weight: 600;
     line-height: 1.25;
     cursor: pointer;
+    transition:
+      border-color 0.18s ease,
+      transform 0.18s ease,
+      box-shadow 0.18s ease,
+      background-color 0.18s ease;
+  }
+
+  .toggle-chip:hover {
+    transform: translateY(-1px);
+    border-color: color-mix(in srgb, var(--primary) 26%, var(--border));
+    box-shadow: 0 16px 28px color-mix(in srgb, var(--shadow-color) 12%, transparent);
   }
 
   .toggle-chip :deep(.p-toggleswitch) {
@@ -775,8 +897,10 @@
   }
 
   .story-block {
-    padding-top: 1rem;
-    border-top: 1px solid var(--border);
+    padding: 1rem;
+    border: 1px solid var(--border);
+    border-radius: 1.25rem;
+    background: var(--surface-soft-subtle);
   }
 
   .story-head {
@@ -787,12 +911,23 @@
   }
 
   .estimate-card {
+    display: grid;
+    gap: 1rem;
     padding: 1.15rem;
     border-radius: 1.35rem;
     background:
       linear-gradient(135deg, var(--surface-dark), var(--surface-dark-alt)),
+      radial-gradient(circle at top right, color-mix(in srgb, var(--primary) 34%, transparent), transparent 38%),
       linear-gradient(135deg, var(--primary-overlay), transparent);
     color: var(--primary-contrast);
+    box-shadow: 0 28px 46px color-mix(in srgb, var(--surface-dark) 30%, transparent);
+  }
+
+  .estimate-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
   }
 
   .estimate-card span {
@@ -811,8 +946,28 @@
   }
 
   .estimate-card p {
-    margin: 0.45rem 0 0;
+    margin: 0;
     color: var(--text-on-dark);
+  }
+
+  .estimate-meta-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.75rem;
+  }
+
+  .estimate-meta-grid article {
+    padding: 0.85rem 0.9rem;
+    border-radius: 1rem;
+    background: color-mix(in srgb, white 10%, transparent);
+    border: 1px solid color-mix(in srgb, white 10%, transparent);
+    min-width: 0;
+  }
+
+  .estimate-meta-grid article strong {
+    display: block;
+    font-size: 1rem;
+    line-height: 1.25;
   }
 
   .data-chip {
@@ -892,8 +1047,14 @@
 
   @media (max-width: 720px) {
     .form-grid,
-    .context-metrics {
+    .context-metrics,
+    .estimate-meta-grid,
+    .estimate-top {
       grid-template-columns: 1fr;
+    }
+
+    .estimate-top {
+      display: grid;
     }
 
     .input-panel,

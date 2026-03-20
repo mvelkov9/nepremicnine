@@ -312,7 +312,12 @@
       >
         <template #actions>
           <RouterLink v-if="!trainingDataset?.exists" to="/admin/priprava">
-            <Button severity="contrast" outlined icon="pi pi-arrow-right" :label="t('model.goToPrepare')" />
+            <Button
+              severity="contrast"
+              outlined
+              icon="pi pi-arrow-right"
+              :label="t('model.goToPrepare')"
+            />
           </RouterLink>
         </template>
       </PageHeader>
@@ -460,7 +465,7 @@
         :value="
           Object.entries(model.info.per_type_metrics).map(([propertyType, metrics]) => ({
             propertyType,
-            ...metrics,
+            ...(metrics as Record<string, unknown>),
           }))
         "
         size="small"
@@ -478,7 +483,10 @@
         </Column>
         <Column field="r2" header="R²" sortable>
           <template #body="{ data }">
-            <Tag :severity="data.r2 >= 0.7 ? 'success' : data.r2 >= 0.4 ? 'warn' : 'danger'" :value="formatScore(data.r2)" />
+            <Tag
+              :severity="data.r2 >= 0.7 ? 'success' : data.r2 >= 0.4 ? 'warn' : 'danger'"
+              :value="formatScore(data.r2)"
+            />
           </template>
         </Column>
         <Column field="mape" header="MAPE" sortable>
@@ -602,7 +610,12 @@
     <div v-if="!model.loading && !model.info" class="card empty-card">
       <p class="muted">{{ t('model.noModel') }}</p>
       <RouterLink v-if="isAdmin" to="/admin/priprava" style="text-decoration: none">
-        <Button severity="secondary" text icon="pi pi-arrow-right" :label="t('model.prepareDatasetCta')" />
+        <Button
+          severity="secondary"
+          text
+          icon="pi pi-arrow-right"
+          :label="t('model.prepareDatasetCta')"
+        />
       </RouterLink>
     </div>
   </div>
@@ -647,14 +660,18 @@
   .live-progress {
     border-radius: 1.25rem;
     border: 1px solid var(--border);
-    background: var(--surface-soft);
+    background: linear-gradient(180deg, var(--surface-soft-subtle), var(--surface-soft));
     padding: 1rem;
+    box-shadow: var(--shadow-sm);
   }
 
   .action-panel {
     display: grid;
     align-content: start;
     gap: 0.85rem;
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--primary-overlay) 70%, transparent), var(--surface-soft)),
+      var(--surface-soft);
   }
 
   .train-btn {
@@ -676,6 +693,27 @@
 
   .selected-source-card {
     margin-top: 1rem;
+    padding: 1rem;
+    border: 1px solid var(--border);
+    border-radius: 1rem;
+    background: color-mix(in srgb, var(--surface-strong) 76%, white 24%);
+  }
+
+  .selected-source-card strong {
+    display: block;
+    margin-bottom: 0.4rem;
+    font-size: 1rem;
+  }
+
+  .selected-source-card p {
+    margin: 0.15rem 0 0;
+  }
+
+  .live-progress {
+    margin-top: 1rem;
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--warning-overlay) 68%, transparent), var(--surface-soft)),
+      var(--surface-soft);
   }
 
   .importance-chart {
@@ -685,6 +723,10 @@
 
   .history-empty {
     margin-top: 1rem;
+  }
+
+  .history-grid > .card {
+    background: linear-gradient(180deg, var(--surface-soft-subtle), var(--surface-soft));
   }
 
   @media (max-width: 1100px) {

@@ -17,38 +17,75 @@
 
 <style scoped>
   .metric-card {
+    position: relative;
+    overflow: hidden;
     display: grid;
-    gap: 0.3rem;
-    padding: 1rem;
-    border-radius: 1.2rem;
-    border: 1px solid var(--border);
-    background: var(--surface-elevated);
+    gap: 0.42rem;
+    padding: 1.05rem 1.1rem;
+    border-radius: 1.4rem;
+    border: 1px solid color-mix(in srgb, var(--border) 84%, white 16%);
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--overlay-soft) 84%, transparent), transparent 34%),
+      linear-gradient(
+        145deg,
+        color-mix(in srgb, var(--surface-strong) 90%, var(--primary) 10%),
+        color-mix(in srgb, var(--surface-soft) 93%, var(--secondary) 7%)
+      );
     box-shadow: var(--shadow-sm);
   }
 
+  .metric-card::before {
+    content: '';
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 5.25rem;
+    height: 5.25rem;
+    background: radial-gradient(circle, var(--accent-glow-start), transparent 70%);
+    pointer-events: none;
+  }
+
   .metric-card-label {
+    position: relative;
     color: var(--text-soft);
-    font-size: 0.74rem;
+    font-size: 0.7rem;
     font-weight: 800;
     letter-spacing: 0.15em;
     text-transform: uppercase;
   }
 
   .metric-card-value {
-    font-size: clamp(1.1rem, 2vw, 1.55rem);
-    letter-spacing: -0.04em;
+    position: relative;
+    font-size: clamp(1.18rem, 2.2vw, 1.82rem);
+    line-height: 1.02;
+    letter-spacing: -0.05em;
   }
 
   .metric-card-meta {
+    position: relative;
     color: var(--text-muted);
-    font-size: 0.82rem;
+    font-size: 0.84rem;
+    line-height: 1.5;
   }
 
   .metric-card.tone-success {
-    border-color: rgb(16 185 129 / 24%);
+    border-color: color-mix(in srgb, var(--success) 28%, transparent);
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--overlay-soft) 84%, transparent), transparent 34%),
+      linear-gradient(
+        145deg,
+        color-mix(in srgb, var(--surface-strong) 86%, var(--success) 14%),
+        color-mix(in srgb, var(--surface-soft) 92%, var(--success) 8%)
+      );
   }
 
   .metric-card.tone-warning {
-    border-color: rgb(245 158 11 / 26%);
+    border-color: color-mix(in srgb, var(--warning) 28%, transparent);
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--overlay-soft) 84%, transparent), transparent 34%),
+      linear-gradient(
+        145deg,
+        color-mix(in srgb, var(--surface-strong) 88%, var(--warning) 12%),
+        color-mix(in srgb, var(--surface-soft) 93%, var(--warning) 7%)
+      );
   }
 </style>

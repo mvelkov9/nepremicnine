@@ -43,10 +43,7 @@
 </script>
 
 <template>
-  <aside
-    class="shell-sidebar"
-    :class="{ 'mobile-open': mobileOpen, collapsed: collapsed }"
-  >
+  <aside class="shell-sidebar" :class="{ 'mobile-open': mobileOpen, collapsed: collapsed }">
     <div class="sidebar-pane">
       <RouterLink to="/" class="shell-brand">
         <span class="brand-mark">
@@ -65,12 +62,10 @@
       </section>
 
       <nav class="shell-nav" :aria-label="t('layout.navigation')">
-        <div
-          v-for="(group, gi) in navGroups"
-          :key="group.key || gi"
-          class="shell-nav-group"
-        >
-          <span v-if="group.key && !collapsed" class="sidebar-section-label">{{ t(group.key) }}</span>
+        <div v-for="(group, gi) in navGroups" :key="group.key || gi" class="shell-nav-group">
+          <span v-if="group.key && !collapsed" class="sidebar-section-label">{{
+            t(group.key)
+          }}</span>
           <RouterLink
             v-for="item in group.items"
             :key="item.to"
@@ -117,7 +112,9 @@
     background: var(--shell-chrome-bg);
     color: var(--shell-text);
     border-right: 1px solid var(--shell-chrome-border);
-    box-shadow: inset -1px 0 0 rgb(255 255 255 / 2%);
+    box-shadow:
+      inset -1px 0 0 var(--shell-highlight-soft),
+      inset 0 1px 0 var(--shell-highlight);
     transition:
       width 180ms ease,
       transform 180ms ease;
@@ -130,6 +127,9 @@
     flex-direction: column;
     gap: 1rem;
     padding: 1.1rem 0.85rem 0.9rem;
+    background:
+      radial-gradient(circle at 0% 0%, var(--shell-ambient-start), transparent 30%),
+      radial-gradient(circle at 100% 12%, var(--shell-ambient-end), transparent 24%);
   }
 
   .shell-brand {
@@ -151,8 +151,8 @@
     border-radius: 1.1rem;
     background: linear-gradient(145deg, var(--shell-brand-start), var(--shell-brand-end));
     color: var(--shell-brand-contrast);
-    border: 1px solid rgb(255 255 255 / 10%);
-    box-shadow: 0 16px 30px rgb(0 0 0 / 22%);
+    border: 1px solid var(--shell-control-border);
+    box-shadow: 0 16px 30px var(--shell-depth-shadow-strong);
   }
 
   .brand-copy {
@@ -180,7 +180,9 @@
     border-radius: 1.05rem;
     border: 1px solid var(--shell-panel-border);
     background: var(--shell-panel-bg);
-    box-shadow: inset 0 1px 0 rgb(255 255 255 / 4%);
+    box-shadow:
+      inset 0 1px 0 var(--shell-highlight),
+      0 18px 34px var(--shell-depth-shadow);
   }
 
   .sidebar-context strong {
@@ -234,6 +236,7 @@
     border: 1px solid transparent;
     text-decoration: none;
     color: var(--shell-text-soft);
+    box-shadow: inset 0 1px 0 var(--shell-highlight-soft);
     transition:
       background 160ms ease,
       border-color 160ms ease,
@@ -248,6 +251,9 @@
     border-color: var(--shell-active-border);
     color: var(--shell-text);
     transform: translateX(2px);
+    box-shadow:
+      inset 0 1px 0 var(--shell-highlight-strong),
+      0 20px 34px var(--shell-depth-shadow);
   }
 
   .shell-nav-icon {
@@ -261,6 +267,7 @@
     background: var(--shell-control-bg);
     border: 1px solid var(--shell-control-border);
     color: var(--shell-icon-color);
+    box-shadow: inset 0 1px 0 var(--shell-highlight);
   }
 
   .shell-nav-icon.subtle {

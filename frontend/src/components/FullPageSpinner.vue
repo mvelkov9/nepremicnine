@@ -18,6 +18,7 @@
     inset: 0;
     z-index: 9998;
     pointer-events: none;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--backdrop-scrim) 18%, transparent), transparent 16%);
   }
 
   .page-loader-bar {
@@ -27,6 +28,7 @@
     height: 3px;
     background: linear-gradient(90deg, var(--primary), var(--secondary));
     border-radius: 0 999px 999px 0;
+    box-shadow: 0 0 18px color-mix(in srgb, var(--primary) 26%, transparent);
     animation: loader-bar 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
   }
 

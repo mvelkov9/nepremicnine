@@ -160,7 +160,7 @@
 
 <template>
   <div class="data-page">
-    <section class="card">
+    <section class="card admin-hero data-hero">
       <PageHeader
         :eyebrow="t('nav.data')"
         :title="t('data.workspaceTitle')"
@@ -168,7 +168,7 @@
       />
     </section>
 
-    <section v-if="auth.isAdmin" class="card admin-upload">
+    <section v-if="auth.isAdmin" class="card admin-upload upload-card">
       <PageHeader
         compact
         :eyebrow="t('data.upload')"
@@ -181,6 +181,10 @@
       </PageHeader>
 
       <div class="upload-shell">
+        <div class="upload-copy">
+          <strong>{{ t('data.uploadTitle') }}</strong>
+          <p class="muted">{{ t('data.uploadHint') }}</p>
+        </div>
         <FileUpload
           ref="fileInput"
           mode="basic"
@@ -219,7 +223,7 @@
     </section>
 
     <section v-if="auth.isAdmin" class="quality-grid">
-      <article class="card">
+      <article class="card quality-card">
         <PageHeader
           compact
           :eyebrow="t('data.qualitySummary')"
@@ -240,7 +244,7 @@
         </DataTable>
       </article>
 
-      <article class="card">
+      <article class="card quality-card">
         <PageHeader
           compact
           :eyebrow="t('data.qualitySummary')"
@@ -267,7 +271,7 @@
       </article>
     </section>
 
-    <section class="card">
+    <section class="card dataset-library-card">
       <PageHeader
         compact
         :eyebrow="t('data.datasets')"
@@ -276,7 +280,7 @@
       >
         <template #actions>
           <div class="table-actions">
-            <IconField>
+            <IconField class="search-field">
               <InputIcon class="pi pi-search" />
               <InputText v-model="datasetFilter" :placeholder="t('common.search')" />
             </IconField>
@@ -378,6 +382,14 @@
     gap: 1rem;
   }
 
+  .data-hero,
+  .upload-card,
+  .dataset-library-card,
+  .quality-card {
+    display: grid;
+    gap: 1rem;
+  }
+
   .metrics-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
@@ -389,6 +401,21 @@
   .admin-upload {
     display: grid;
     gap: 1rem;
+  }
+
+  .upload-shell {
+    justify-content: space-between;
+    padding: 0.3rem 0;
+  }
+
+  .upload-copy {
+    display: grid;
+    gap: 0.3rem;
+    max-width: 42rem;
+  }
+
+  .upload-copy strong {
+    font-size: 1rem;
   }
 
   .upload-shell,
@@ -410,10 +437,46 @@
     gap: 0.75rem;
   }
 
+  .search-field {
+    width: min(100%, 22rem);
+  }
+
+  .row-actions {
+    align-items: stretch;
+  }
+
+  .row-actions :deep(.p-button) {
+    justify-content: center;
+  }
+
+  .preview-dialog .muted {
+    padding: 0.75rem 0.9rem;
+    border-radius: 1rem;
+    background: color-mix(in srgb, var(--surface-panel-muted, var(--surface-soft)) 92%, transparent);
+    border: 1px solid color-mix(in srgb, var(--border) 72%, var(--primary) 28%);
+  }
+
   @media (max-width: 960px) {
     .metrics-grid,
     .quality-grid {
       grid-template-columns: 1fr;
+    }
+
+    .upload-shell {
+      align-items: stretch;
+    }
+
+    .table-actions,
+    .row-actions {
+      display: grid;
+      grid-template-columns: 1fr;
+      width: 100%;
+    }
+
+    .search-field,
+    .row-actions :deep(.p-button),
+    .table-actions :deep(.p-button) {
+      width: 100%;
     }
   }
 </style>
