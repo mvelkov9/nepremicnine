@@ -17,6 +17,7 @@ export default [
       "vue/no-unused-vars": "warn",
       "vue/require-default-prop": "off",
       "vue/max-attributes-per-line": "off",
+      "vue/html-indent": "off",
       "vue/singleline-html-element-content-newline": "off",
       "vue/html-self-closing": "off",
       "vue/html-closing-bracket-newline": "off",
