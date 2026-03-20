@@ -38,6 +38,7 @@
 
   const datasets = computed(() => dataStore.datasets || [])
   const trainingLocked = computed(() => modelStore.training)
+  const PREPARE_REQUEST_TIMEOUT_MS = 10 * 60 * 1000
 
   onMounted(async () => {
     await Promise.all([
@@ -110,6 +111,13 @@
     return 'incomplete'
   }
 
+  function pairStatusLabel(pair) {
+    const status = pairStatus(pair)
+    if (status === 'complete') return t('prepare.status_complete')
+    if (status === 'ready') return t('prepare.status_ready')
+    return t('prepare.status_incomplete')
+  }
+
   function isSelected(year) {
     return !deselectedYears.has(year)
   }
@@ -137,6 +145,10 @@
     return getApiErrorMessage(apiError, t)
   }
 
+  function postPrepare(url, payload) {
+    return api.post(url, payload, { timeout: PREPARE_REQUEST_TIMEOUT_MS })
+  }
+
   async function prepareEtnBulk() {
     loading.value = true
     error.value = ''
@@ -156,7 +168,7 @@
         label: String(p.year),
       }))
 
-      const { data } = await api.post('/api/data/prepare-etn-kpp-bulk', { pairs })
+      const { data } = await postPrepare('/api/data/prepare-etn-kpp-bulk', { pairs })
       result.value = data
       await dataStore.fetchTrainingDataset()
     } catch (e) {
@@ -171,7 +183,7 @@
     error.value = ''
     result.value = null
     try {
-      const { data } = await api.post('/api/data/prepare-etn-kpp', {
+      const { data } = await postPrepare('/api/data/prepare-etn-kpp', {
         posli_csv_path: singlePosli.value,
         delistavb_csv_path: singleDelistavb.value,
       })
@@ -190,7 +202,7 @@
     result.value = null
     try {
       const map = JSON.parse(columnMap.value)
-      const { data } = await api.post('/api/data/prepare-train', {
+      const { data } = await postPrepare('/api/data/prepare-train', {
         source_csv_path: manualCsvPath.value,
         column_map: map,
       })
@@ -338,7 +350,7 @@
                   <Column :header="t('prepare.pairStatus')">
                     <template #body="{ data: pair }">
                       <Tag
-                        :value="t('prepare.status_' + pairStatus(pair))"
+                        :value="pairStatusLabel(pair)"
                         :severity="
                           pairStatus(pair) === 'complete'
                             ? 'success'

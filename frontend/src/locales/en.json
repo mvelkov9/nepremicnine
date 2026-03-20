@@ -516,6 +516,8 @@
     "medianError": "Median Error",
     "medianDesc": "Median Absolute Error",
     "modelDetails": "Model Details",
+    "property": "Property",
+    "value": "Value",
     "version": "Version",
     "trainedAt": "Trained at",
     "rows": "Rows",

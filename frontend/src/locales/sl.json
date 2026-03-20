@@ -516,6 +516,8 @@
     "medianError": "Mediana napake",
     "medianDesc": "Mediana absolutne napake",
     "modelDetails": "Podrobnosti modela",
+    "property": "Lastnost",
+    "value": "Vrednost",
     "version": "Verzija",
     "trainedAt": "Naučen ob",
     "rows": "Vrstic",
