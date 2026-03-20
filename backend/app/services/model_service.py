@@ -479,7 +479,9 @@ def _select_type_specific_features(
     max_extra_categorical: int = _MAX_EXTRA_CATEGORICAL,
 ) -> tuple[list[str], list[str], dict[str, float]]:
     filtered_numeric, filtered_categorical = _filter_features(df, candidate_numeric, candidate_categorical)
-    target_series = pd.Series(np.log1p(np.maximum(target, 0)), index=df.index)
+    # Score features against log(price/m²) — the actual prediction target
+    size_vals = pd.to_numeric(df.get("size_m2"), errors="coerce").clip(lower=1).values
+    target_series = pd.Series(np.log(np.maximum(target, 1) / size_vals), index=df.index)
     always_numeric = ALWAYS_INCLUDE_NUMERIC if always_numeric is None else always_numeric
     always_categorical = ALWAYS_INCLUDE_CATEGORICAL if always_categorical is None else always_categorical
 
@@ -676,14 +678,21 @@ def _train_single_model(
     label: str,
     progress_callback: Callable | None = None,
     *,
-    log_target: bool = False,
+    target_transform: str = "log_ppm2",
 ) -> dict:
     preprocessor = pipeline.named_steps["preprocessor"]
     regressor = pipeline.named_steps["regressor"]
     total_trees = regressor.max_iter
 
-    # Log-transform target: trains on log(1+y), predicts in log-space then expm1
-    y_fit = np.log1p(y_train) if log_target else y_train
+    # Target transform: log(price/m²) normalizes the enormous price range
+    if target_transform == "log_ppm2":
+        size_train = X_train["size_m2"].clip(lower=1).values.astype(float)
+        size_test = X_test["size_m2"].clip(lower=1).values.astype(float)
+        y_fit = np.log(y_train / size_train)
+    elif target_transform == "log_price":
+        y_fit = np.log1p(y_train)
+    else:
+        y_fit = y_train
 
     # Fit preprocessor ONCE and transform data (TargetEncoder uses y_fit)
     X_train_t = preprocessor.fit_transform(X_train, y_fit)
@@ -709,8 +718,14 @@ def _train_single_model(
         if progress_callback:
             progress_callback(label, actual_trees, total_trees)
 
+    # Inverse transform predictions back to price scale
     y_pred_raw = regressor.predict(X_test_t)
-    y_pred = np.maximum(np.expm1(y_pred_raw), 0) if log_target else y_pred_raw
+    if target_transform == "log_ppm2":
+        y_pred = np.maximum(size_test * np.exp(y_pred_raw), 0)
+    elif target_transform == "log_price":
+        y_pred = np.maximum(np.expm1(y_pred_raw), 0)
+    else:
+        y_pred = y_pred_raw
     metrics = _compute_metrics(y_test, y_pred)
     metrics["n_train"] = len(X_train)
     metrics["n_test"] = len(X_test)
@@ -724,12 +739,16 @@ def _train_single_model(
                 sample_idx = np.random.default_rng(42).choice(len(X_test_t), size=importance_sample_size, replace=False)
                 X_importance = X_test_t[sample_idx]
                 y_importance = y_test[sample_idx]
+                size_importance = X_test["size_m2"].clip(lower=1).values.astype(float)[sample_idx]
             else:
                 X_importance = X_test_t
                 y_importance = y_test
+                size_importance = X_test["size_m2"].clip(lower=1).values.astype(float)
 
-            # Fix: permutation importance must use the same target space as the regressor
-            if log_target:
+            # Permutation importance must use the same target space as the regressor
+            if target_transform == "log_ppm2":
+                y_importance = np.log(y_importance / size_importance)
+            elif target_transform == "log_price":
                 y_importance = np.log1p(y_importance)
 
             perm = permutation_importance(
@@ -755,10 +774,17 @@ def _predict_combined_routed(
     global_pipeline: Pipeline,
     per_type_models: dict[str, dict[str, Any]],
     *,
-    log_target: bool = False,
+    target_transform: str = "log_ppm2",
 ) -> np.ndarray:
+    size_vals = X_test["size_m2"].clip(lower=1).values.astype(float)
+
     y_pred_raw = global_pipeline.predict(X_test)
-    y_pred = np.maximum(np.expm1(y_pred_raw), 0) if log_target else y_pred_raw
+    if target_transform == "log_ppm2":
+        y_pred = np.maximum(size_vals * np.exp(y_pred_raw), 0)
+    elif target_transform == "log_price":
+        y_pred = np.maximum(np.expm1(y_pred_raw), 0)
+    else:
+        y_pred = y_pred_raw
 
     if not per_type_models or "property_type" not in X_test.columns:
         return y_pred
@@ -768,8 +794,15 @@ def _predict_combined_routed(
         mask = property_types == ptype
         if not mask.any():
             continue
-        pt_raw = model_meta["pipeline"].predict(X_test.loc[mask])
-        pt_pred = np.maximum(np.expm1(pt_raw), 0) if log_target else pt_raw
+        X_sub = X_test.loc[mask]
+        pt_raw = model_meta["pipeline"].predict(X_sub)
+        if target_transform == "log_ppm2":
+            pt_size = X_sub["size_m2"].clip(lower=1).values.astype(float)
+            pt_pred = np.maximum(pt_size * np.exp(pt_raw), 0)
+        elif target_transform == "log_price":
+            pt_pred = np.maximum(np.expm1(pt_raw), 0)
+        else:
+            pt_pred = pt_raw
         y_pred[mask.to_numpy()] = pt_pred
 
     return y_pred
@@ -806,8 +839,9 @@ def train_from_csv(
     if "property_type" in df.columns:
         df = df[~df["property_type"].isin(EXCLUDED_PROPERTY_TYPES)]
 
-    # Ensure size_m2 is numeric before split
+    # Ensure size_m2 is numeric and positive (required for log_ppm2 target transform)
     df["size_m2"] = pd.to_numeric(df.get("size_m2"), errors="coerce")
+    df = df[df["size_m2"] > 0]
 
     y = df["price_eur"].values
     X = df.drop(columns=["price_eur"], errors="ignore")
@@ -929,7 +963,7 @@ def train_from_csv(
         y_test,
         "global",
         training_progress,
-        log_target=True,
+        target_transform="log_ppm2",
     )
 
     # Per-type models — signal-scored features + early stopping + aggressive outlier removal
@@ -1016,7 +1050,7 @@ def train_from_csv(
                 yte,
                 f"type:{ptype}",
                 training_progress,
-                log_target=True,
+                target_transform="log_ppm2",
             )
             per_type_models[ptype] = {
                 "pipeline": pt_pipeline,
@@ -1041,8 +1075,9 @@ def train_from_csv(
     emit_status("evaluation", 92, rows=len(df), total_models=total_models)
     per_region_metrics: dict[str, dict] = {}
     if "statistical_region" in X_test.columns:
+        size_test_vals = X_test["size_m2"].clip(lower=1).values.astype(float)
         y_pred_all_raw = global_pipeline.predict(X_test)
-        y_pred_all = np.maximum(np.expm1(y_pred_all_raw), 0)
+        y_pred_all = np.maximum(size_test_vals * np.exp(y_pred_all_raw), 0)
         for region in X_test["statistical_region"].unique():
             mask = X_test["statistical_region"] == region
             if mask.sum() >= 10:
@@ -1050,11 +1085,12 @@ def train_from_csv(
 
     # Combined routing metrics: use per-type model when available, else global
     if per_type_models:
-        y_pred_combined = _predict_combined_routed(X_test, global_pipeline, per_type_models, log_target=True)
+        y_pred_combined = _predict_combined_routed(X_test, global_pipeline, per_type_models, target_transform="log_ppm2")
         combined_metrics = _compute_metrics(y_test, y_pred_combined)
     else:
+        size_test_combined = X_test["size_m2"].clip(lower=1).values.astype(float)
         y_pred_combined_raw = global_pipeline.predict(X_test)
-        y_pred_combined = np.maximum(np.expm1(y_pred_combined_raw), 0)
+        y_pred_combined = np.maximum(size_test_combined * np.exp(y_pred_combined_raw), 0)
         combined_metrics = global_result["metrics"]
 
     segment_diagnostics = _build_segment_diagnostics(X_test, y_test, y_pred_combined)
@@ -1080,8 +1116,9 @@ def train_from_csv(
     os.makedirs(MODEL_DIR, exist_ok=True)
     emit_status("finalizing", 99, rows=len(df), total_models=total_models)
     artifact = {
-        "version": "5.0",
-        "log_target": True,
+        "version": "6.0",
+        "target_transform": "log_ppm2",
+        "log_target": True,  # backward compat
         "global_model": {
             "pipeline": global_pipeline,
             "numeric_features": global_num,
@@ -1340,8 +1377,19 @@ def predict_one(features: dict[str, Any]) -> dict[str, Any]:
     row = pd.DataFrame([normalized])
     raw_pred = float(pipeline.predict(row)[0])
 
-    # Log-transform: model was trained on log1p(price), so expm1 to get original scale
-    predicted = max(0.0, float(np.expm1(raw_pred))) if artifact.get("log_target") else max(0.0, raw_pred)
+    # Inverse transform based on how the model was trained
+    target_transform = artifact.get("target_transform")
+    if target_transform is None:
+        # Backward compat: v5.0 used log_target flag
+        target_transform = "log_price" if artifact.get("log_target") else "none"
+
+    if target_transform == "log_ppm2":
+        size_m2 = max(float(normalized.get("size_m2", 1.0)), 1.0)
+        predicted = max(0.0, size_m2 * float(np.exp(raw_pred)))
+    elif target_transform == "log_price":
+        predicted = max(0.0, float(np.expm1(raw_pred)))
+    else:
+        predicted = max(0.0, raw_pred)
 
     return {
         "predicted_price_eur": round(predicted, 2),

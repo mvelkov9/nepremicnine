@@ -48,12 +48,12 @@ Prediction Pipeline:
 ## Model Details
 
 - **Algorithm:** `HistGradientBoostingRegressor` (scikit-learn)
-- **Architecture:** Separate model per property type + global fallback (v5.0)
-- **Target transform:** log1p(price) — model trains in log-space, expm1 at prediction
+- **Architecture:** Separate model per property type + global fallback (v6.0)
+- **Target transform:** log(price/m²) — model predicts log unit price, multiplied by size at prediction. Normalizes the enormous price range (1k€–2M€) into a tight ~6–9 log-space, dramatically improving MAPE
 - **Feature selection:** Signal-scored per-type (Spearman correlation for numeric, target-mean for categorical), with type-specific "always include" sets
 - **Features (core):** size_m2, rooms, year_built, floor, building_age, municipality (TargetEncoded), statistical_region, latitude, longitude, log_size_m2, transaction_year, transaction_quarter, price_per_m2_region, price_per_m2_municipality, price_per_m2_type
 - **Features (amenities):** has_garaza, has_klet, has_shramba, has_terasa, has_parking, novogradnja, stavba_je_dokoncana, ddv_vkljucen, lega_v_stavbi, vrsta_kupoprodajnega_posla, vrsta_zemljisca
 - **Hyperparameters:** Adaptive by dataset size (max_iter, learning_rate, max_depth, min_samples_leaf, l2_regularization)
-- **Per-type outlier clipping:** Percentile-based (P1–P99) for types with >500 samples
+- **Per-type outlier clipping:** IQR-based price + P5–P95 price/m² within each type
 - **Metrics tracked:** R², MAE, RMSE, MAPE, median_ae per property type
 - **Serialization:** joblib → `models/price_model.joblib`
