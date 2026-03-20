@@ -733,7 +733,11 @@
   .story-panel {
     padding: 1.2rem;
     background:
-      linear-gradient(180deg, color-mix(in srgb, var(--surface-soft) 94%, white 6%), var(--surface-soft)),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface-soft) 94%, white 6%),
+        var(--surface-soft)
+      ),
       var(--surface-soft);
   }
 
@@ -917,7 +921,11 @@
     border-radius: 1.35rem;
     background:
       linear-gradient(135deg, var(--surface-dark), var(--surface-dark-alt)),
-      radial-gradient(circle at top right, color-mix(in srgb, var(--primary) 34%, transparent), transparent 38%),
+      radial-gradient(
+        circle at top right,
+        color-mix(in srgb, var(--primary) 34%, transparent),
+        transparent 38%
+      ),
       linear-gradient(135deg, var(--primary-overlay), transparent);
     color: var(--primary-contrast);
     box-shadow: 0 28px 46px color-mix(in srgb, var(--surface-dark) 30%, transparent);

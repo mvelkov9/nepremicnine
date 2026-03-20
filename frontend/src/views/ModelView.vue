@@ -670,7 +670,11 @@
     align-content: start;
     gap: 0.85rem;
     background:
-      linear-gradient(180deg, color-mix(in srgb, var(--primary-overlay) 70%, transparent), var(--surface-soft)),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--primary-overlay) 70%, transparent),
+        var(--surface-soft)
+      ),
       var(--surface-soft);
   }
 
@@ -712,7 +716,11 @@
   .live-progress {
     margin-top: 1rem;
     background:
-      linear-gradient(180deg, color-mix(in srgb, var(--warning-overlay) 68%, transparent), var(--surface-soft)),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--warning-overlay) 68%, transparent),
+        var(--surface-soft)
+      ),
       var(--surface-soft);
   }
 

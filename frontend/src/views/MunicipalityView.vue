@@ -290,7 +290,7 @@
                 <strong>{{ item.municipality }}</strong>
                 <small>{{ item.region || '—' }}</small>
                 <span class="related-count"
-                >{{ fmt(item.count) }} {{ t('dashboard.transactions') }}</span
+                  >{{ fmt(item.count) }} {{ t('dashboard.transactions') }}</span
                 >
               </div>
               <div class="related-right">
@@ -332,8 +332,16 @@
     padding: 1.35rem;
     background:
       linear-gradient(135deg, var(--surface-strong), var(--surface-soft)),
-      radial-gradient(circle at top left, color-mix(in srgb, var(--primary) 15%, transparent), transparent 32%),
-      radial-gradient(circle at right, color-mix(in srgb, var(--warning) 12%, transparent), transparent 26%);
+      radial-gradient(
+        circle at top left,
+        color-mix(in srgb, var(--primary) 15%, transparent),
+        transparent 32%
+      ),
+      radial-gradient(
+        circle at right,
+        color-mix(in srgb, var(--warning) 12%, transparent),
+        transparent 26%
+      );
   }
 
   .municipality-hero h1,

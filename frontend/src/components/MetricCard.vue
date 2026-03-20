@@ -25,7 +25,11 @@
     border-radius: 1.4rem;
     border: 1px solid color-mix(in srgb, var(--border) 84%, white 16%);
     background:
-      linear-gradient(180deg, color-mix(in srgb, var(--overlay-soft) 84%, transparent), transparent 34%),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--overlay-soft) 84%, transparent),
+        transparent 34%
+      ),
       linear-gradient(
         145deg,
         color-mix(in srgb, var(--surface-strong) 90%, var(--primary) 10%),
@@ -70,7 +74,11 @@
   .metric-card.tone-success {
     border-color: color-mix(in srgb, var(--success) 28%, transparent);
     background:
-      linear-gradient(180deg, color-mix(in srgb, var(--overlay-soft) 84%, transparent), transparent 34%),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--overlay-soft) 84%, transparent),
+        transparent 34%
+      ),
       linear-gradient(
         145deg,
         color-mix(in srgb, var(--surface-strong) 86%, var(--success) 14%),
@@ -81,7 +89,11 @@
   .metric-card.tone-warning {
     border-color: color-mix(in srgb, var(--warning) 28%, transparent);
     background:
-      linear-gradient(180deg, color-mix(in srgb, var(--overlay-soft) 84%, transparent), transparent 34%),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--overlay-soft) 84%, transparent),
+        transparent 34%
+      ),
       linear-gradient(
         145deg,
         color-mix(in srgb, var(--surface-strong) 88%, var(--warning) 12%),

@@ -608,7 +608,11 @@
     align-items: stretch;
     gap: 1rem;
     background:
-      linear-gradient(180deg, color-mix(in srgb, var(--primary-overlay) 76%, transparent), var(--surface-soft-strong)),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--primary-overlay) 76%, transparent),
+        var(--surface-soft-strong)
+      ),
       var(--surface-soft-strong);
   }
 
@@ -760,19 +764,31 @@
 
   .result-card.tone-primary {
     background:
-      linear-gradient(180deg, color-mix(in srgb, var(--primary-overlay) 82%, transparent), var(--surface-soft-strong)),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--primary-overlay) 82%, transparent),
+        var(--surface-soft-strong)
+      ),
       var(--surface-soft-strong);
   }
 
   .result-card.tone-warning {
     background:
-      linear-gradient(180deg, color-mix(in srgb, var(--warning-overlay) 80%, transparent), var(--surface-soft-strong)),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--warning-overlay) 80%, transparent),
+        var(--surface-soft-strong)
+      ),
       var(--surface-soft-strong);
   }
 
   .result-card.tone-label {
     background:
-      linear-gradient(180deg, color-mix(in srgb, var(--surface-dark-muted) 100%, transparent), var(--surface-soft-strong)),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface-dark-muted) 100%, transparent),
+        var(--surface-soft-strong)
+      ),
       var(--surface-soft-strong);
   }
 

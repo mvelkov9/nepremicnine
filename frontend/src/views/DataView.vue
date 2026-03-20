@@ -452,7 +452,11 @@
   .preview-dialog .muted {
     padding: 0.75rem 0.9rem;
     border-radius: 1rem;
-    background: color-mix(in srgb, var(--surface-panel-muted, var(--surface-soft)) 92%, transparent);
+    background: color-mix(
+      in srgb,
+      var(--surface-panel-muted, var(--surface-soft)) 92%,
+      transparent
+    );
     border: 1px solid color-mix(in srgb, var(--border) 72%, var(--primary) 28%);
   }
 

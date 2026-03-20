@@ -135,8 +135,7 @@
 
     chips.push({
       key: 'view',
-      label:
-        viewMode.value === 'transactions' ? t('map.transactionView') : t('map.overviewMode'),
+      label: viewMode.value === 'transactions' ? t('map.transactionView') : t('map.overviewMode'),
     })
 
     if (selectedType.value) {
@@ -158,7 +157,8 @@
     if (selectedPriceBand.value) {
       chips.push({
         key: 'band',
-        label: bandOptions.value.find((band) => band.value === selectedPriceBand.value)?.label || '',
+        label:
+          bandOptions.value.find((band) => band.value === selectedPriceBand.value)?.label || '',
         tone: selectedPriceBand.value,
       })
     }
@@ -1182,11 +1182,19 @@
   }
 
   .detail-section-main {
-    background: linear-gradient(180deg, color-mix(in srgb, var(--primary-overlay) 78%, transparent), var(--surface-soft));
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--primary-overlay) 78%, transparent),
+      var(--surface-soft)
+    );
   }
 
   .detail-section-comparables {
-    background: linear-gradient(180deg, color-mix(in srgb, var(--warning-overlay) 72%, transparent), var(--surface-soft));
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--warning-overlay) 72%, transparent),
+      var(--surface-soft)
+    );
   }
 
   .detail-section h3 {

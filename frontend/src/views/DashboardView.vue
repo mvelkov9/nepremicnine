@@ -109,7 +109,10 @@
         value:
           segmentShare.value == null
             ? '—'
-            : formatPercent(segmentShare.value, { minimumFractionDigits: 1, maximumFractionDigits: 1 }),
+            : formatPercent(segmentShare.value, {
+                minimumFractionDigits: 1,
+                maximumFractionDigits: 1,
+              }),
         meta: t('dashboard.segmentSpotlight'),
         tone: 'success',
       },
@@ -129,7 +132,11 @@
   const matchesSearch = (...values: unknown[]) => {
     const query = dashboardSearch.value.trim().toLowerCase()
     if (!query) return true
-    return values.some((value) => String(value || '').toLowerCase().includes(query))
+    return values.some((value) =>
+      String(value || '')
+        .toLowerCase()
+        .includes(query),
+    )
   }
 
   const largestMarketsRows = computed(() =>
@@ -198,7 +205,12 @@
             <Button icon="pi pi-bolt" :label="t('dashboard.quickPrediction')" />
           </RouterLink>
           <RouterLink to="/zemljevid" class="hero-link">
-            <Button severity="secondary" outlined icon="pi pi-map" :label="t('dashboard.quickMap')" />
+            <Button
+              severity="secondary"
+              outlined
+              icon="pi pi-map"
+              :label="t('dashboard.quickMap')"
+            />
           </RouterLink>
           <RouterLink to="/analiza" class="hero-link">
             <Button
@@ -245,7 +257,12 @@
               </div>
             </div>
             <RouterLink :to="`/obcine/${spotlight.slug}`" class="hero-link">
-              <Button severity="contrast" outlined icon="pi pi-arrow-right" :label="t('common.open')" />
+              <Button
+                severity="contrast"
+                outlined
+                icon="pi pi-arrow-right"
+                :label="t('common.open')"
+              />
             </RouterLink>
           </template>
           <EmptyState v-else :message="t('common.noData')" />
@@ -256,12 +273,22 @@
     <section class="filter-shell dashboard-filter-shell">
       <div>
         <p class="eyebrow subtle">{{ t('dashboard.filterByType') }}</p>
-        <h2>{{ selectedPropertyType ? getPropertyTypeLabel(selectedPropertyType, t) : t('dashboard.filterAllTypes') }}</h2>
+        <h2>
+          {{
+            selectedPropertyType
+              ? getPropertyTypeLabel(selectedPropertyType, t)
+              : t('dashboard.filterAllTypes')
+          }}
+        </h2>
         <p class="page-subtitle">{{ t('dashboard.filterCompareHint') }}</p>
       </div>
 
       <div class="filter-actions">
-        <InputText v-model="dashboardSearch" :placeholder="t('common.search')" class="dashboard-search" />
+        <InputText
+          v-model="dashboardSearch"
+          :placeholder="t('common.search')"
+          class="dashboard-search"
+        />
         <SelectButton
           v-model="selectedPropertyType"
           :options="propertyTypeOptions"
@@ -280,7 +307,11 @@
         <PageHeader
           compact
           :eyebrow="t('dashboard.segmentSpotlight')"
-          :title="t('dashboard.segmentSpotlightTitle', { type: getPropertyTypeLabel(selectedPropertyType, t) })"
+          :title="
+            t('dashboard.segmentSpotlightTitle', {
+              type: getPropertyTypeLabel(selectedPropertyType, t),
+            })
+          "
           :description="t('dashboard.segmentTopMarketsTitle')"
         />
 
@@ -308,7 +339,10 @@
                 <strong>{{ item.municipality }}</strong>
                 <p class="muted">{{ item.region || '—' }}</p>
               </div>
-              <Tag severity="success" :value="`${formatNumber(item.count)} ${t('dashboard.transactions')}`" />
+              <Tag
+                severity="success"
+                :value="`${formatNumber(item.count)} ${t('dashboard.transactions')}`"
+              />
             </RouterLink>
           </div>
         </template>
@@ -397,9 +431,16 @@
             >
               <div>
                 <strong>{{ getPropertyTypeLabel(item.property_type, t) }}</strong>
-                <p class="muted">{{ formatNumber(item.count) }} {{ t('dashboard.transactions') }}</p>
+                <p class="muted">
+                  {{ formatNumber(item.count) }} {{ t('dashboard.transactions') }}
+                </p>
               </div>
-              <Tag severity="secondary" :value="formatPercent(item.share, { minimumFractionDigits: 1, maximumFractionDigits: 1 })" />
+              <Tag
+                severity="secondary"
+                :value="
+                  formatPercent(item.share, { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+                "
+              />
             </article>
           </div>
           <EmptyState v-else :message="t('common.noData')" />
@@ -459,7 +500,9 @@
             <template #body="{ data }">{{ getPropertyTypeLabel(data.property_type, t) }}</template>
           </Column>
           <Column field="size_m2" :header="t('predict.size')" sortable>
-            <template #body="{ data }">{{ formatNumber(data.size_m2, { maximumFractionDigits: 1 }) }} m²</template>
+            <template #body="{ data }"
+              >{{ formatNumber(data.size_m2, { maximumFractionDigits: 1 }) }} m²</template
+            >
           </Column>
           <Column field="price_eur" :header="t('dashboard.medianPrice')" sortable>
             <template #body="{ data }">{{ formatCurrency(data.price_eur) }}</template>
@@ -494,8 +537,7 @@
   .dashboard-filter-shell,
   .panel {
     background:
-      linear-gradient(180deg, var(--surface-soft-subtle), var(--surface-soft)),
-      var(--surface-soft);
+      linear-gradient(180deg, var(--surface-soft-subtle), var(--surface-soft)), var(--surface-soft);
     box-shadow: var(--shadow-sm);
   }
 
@@ -527,7 +569,11 @@
     border-radius: 1.45rem;
     border: 1px solid color-mix(in srgb, var(--border) 72%, var(--primary) 28%);
     background:
-      linear-gradient(180deg, color-mix(in srgb, var(--primary-overlay) 86%, transparent), var(--surface-soft)),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--primary-overlay) 86%, transparent),
+        var(--surface-soft)
+      ),
       var(--surface-soft);
   }
 
@@ -590,7 +636,11 @@
     gap: 1rem;
     flex-wrap: wrap;
     background:
-      linear-gradient(180deg, color-mix(in srgb, var(--warning-overlay) 78%, transparent), var(--surface-soft)),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--warning-overlay) 78%, transparent),
+        var(--surface-soft)
+      ),
       var(--surface-soft);
   }
 
@@ -613,7 +663,11 @@
 
   .segment-panel {
     background:
-      linear-gradient(180deg, color-mix(in srgb, var(--primary-overlay) 76%, transparent), var(--surface-soft)),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--primary-overlay) 76%, transparent),
+        var(--surface-soft)
+      ),
       var(--surface-soft);
   }
 

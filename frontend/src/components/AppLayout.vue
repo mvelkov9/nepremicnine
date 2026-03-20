@@ -730,7 +730,7 @@
     .mobile-shell-backdrop {
       position: fixed;
       inset: 0;
-        background: var(--backdrop-scrim);
+      background: var(--backdrop-scrim);
       z-index: 35;
     }
 

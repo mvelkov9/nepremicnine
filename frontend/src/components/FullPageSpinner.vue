@@ -18,7 +18,11 @@
     inset: 0;
     z-index: 9998;
     pointer-events: none;
-    background: linear-gradient(180deg, color-mix(in srgb, var(--backdrop-scrim) 18%, transparent), transparent 16%);
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--backdrop-scrim) 18%, transparent),
+      transparent 16%
+    );
   }
 
   .page-loader-bar {
