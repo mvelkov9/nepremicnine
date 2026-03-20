@@ -151,6 +151,7 @@ _MIN_SIGNAL_SCORE = 0.01
 _MAX_EXTRA_NUMERIC = 8
 _MAX_EXTRA_CATEGORICAL = 8
 _model_cache: dict | None = None
+_model_cache_mtime: float = 0.0
 
 PARCELA_ALWAYS_INCLUDE_NUMERIC = {
     "size_m2",
@@ -816,7 +817,11 @@ def train_from_csv(
     # Stratified split preserves type distribution in train and test sets
     stratify_col = X["property_type"] if "property_type" in X.columns else None
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42, stratify=stratify_col,
+        X,
+        y,
+        test_size=0.2,
+        random_state=42,
+        stratify=stratify_col,
     )
     emit_status("training_setup", 18, rows=len(df))
 
@@ -1131,20 +1136,29 @@ def train_from_csv(
 
 
 def load_model() -> dict | None:
-    global _model_cache
-    if _model_cache is not None:
-        return _model_cache
+    """Load model artifact, auto-reloading when the file changes on disk.
+
+    The ARQ worker trains in a separate process, so `invalidate_model_cache()`
+    only clears the worker's cache. This mtime check ensures the API process
+    picks up the new model without requiring a restart.
+    """
+    global _model_cache, _model_cache_mtime
     model_path = os.path.join(MODEL_DIR, "price_model.joblib")
     if not os.path.exists(model_path):
         return None
+    current_mtime = os.path.getmtime(model_path)
+    if _model_cache is not None and current_mtime == _model_cache_mtime:
+        return _model_cache
     _model_cache = joblib.load(model_path)
+    _model_cache_mtime = current_mtime
     return _model_cache
 
 
 def invalidate_model_cache() -> None:
     """Clear the in-process model cache (call after training a new model)."""
-    global _model_cache
+    global _model_cache, _model_cache_mtime
     _model_cache = None
+    _model_cache_mtime = 0.0
 
 
 def _coerce_binary(value: Any, default: int = 0) -> int:
