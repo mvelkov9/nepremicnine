@@ -33,12 +33,16 @@ class _FakeRedis:
 
     def __init__(self) -> None:
         self._store: dict[str, str] = {}
+        self.enqueued_jobs: list[tuple[str, tuple, dict]] = []
 
     async def get(self, key: str) -> str | None:
         return self._store.get(key)
 
     async def set(self, key: str, value: str, ex: int | None = None) -> None:
         self._store[key] = value
+
+    async def enqueue_job(self, function_name: str, *args, **kwargs) -> None:
+        self.enqueued_jobs.append((function_name, args, kwargs))
 
     async def scan(self, cursor=0, match: str | None = None, count: int | None = None):
         prefix = (match or "").rstrip("*")

@@ -48,7 +48,7 @@ Prediction Pipeline:
 ## Model Details
 
 - **Algorithm:** `HistGradientBoostingRegressor` (scikit-learn)
-- **Architecture:** Separate model per property type + global fallback (v6.1)
+- **Architecture:** Separate model per property type + global fallback (v7.1)
 - **Target transform:** log(price/m²) — model predicts log unit price, multiplied by size at prediction
 - **Data cleaning:** Mixed-type deal contamination removal (pro-rated prices from bundled deals where garage gets apartment ppm2, etc.)
 - **Feature selection:** Signal-scored per-type (Spearman correlation for numeric, target-mean for categorical), with type-specific "always include" sets
@@ -56,7 +56,32 @@ Prediction Pipeline:
 - **Features (spatial):** dist_ljubljana, dist_maribor, dist_coast (Euclidean distance in meters from ETRS89/TM coordinates)
 - **Features (comparable sales):** comp_type_muni_ppm2, comp_type_ko_ppm2 (median log(ppm2) per type+municipality and type+cadastral_community from training data)
 - **Features (amenities):** has_garaza, has_klet, has_shramba, has_terasa, has_parking, novogradnja, stavba_je_dokoncana, ddv_vkljucen, lega_v_stavbi, vrsta_kupoprodajnega_posla, vrsta_zemljisca
-- **Hyperparameters:** Adaptive by dataset size (max_iter, learning_rate, max_depth, min_samples_leaf, l2_regularization)
-- **Per-type outlier clipping:** P2–P98 in log(price/m²) space
+- **Features (EV register):** ev_ima_dvigalo, ev_ima_vodovod, ev_ima_kanalizacijo, ev_ima_elektriko, ev_ima_plin, ev_st_etaz, ev_del_st_nadstropja, ev_del_povrsina, ev_del_upor_pov, ev_leto_izg_stavbe, ev_id_lega, ev_id_dr_dst, ev_id_tip_stavbe, ev_leto_obn_strehe, ev_leto_obn_fasade, ev_leto_obn_oken, ev_leto_obn_inst, ev_parcela_povrsina, ev_boniteta
+- **Features (GJI infrastructure):** gji_vodovod_distance_m, gji_vodovod_nearby_100m, gji_kanalizacija_distance_m, gji_kanalizacija_nearby_100m
+- **Features (EMV valuation zones):** emv_zone_level, emv_zone_id
+- **Features (KN/RN):** kn_ggo_openness, rn_address_match
+- **Hyperparameters:** Adaptive by dataset size — 6 tiers (max_iter, learning_rate, max_depth, min_samples_leaf, l2_regularization)
+- **Per-type outlier clipping:** P1–P99 for large types (>5000), P2–P98 for smaller
 - **Metrics tracked:** R², MAE, RMSE, MAPE, median_ae per property type
+- **EV Benchmark:** GURS POSPLOSENA_VREDNOST used as benchmark only (not a training feature) — model must beat government valuation
+- **Variant benchmarking:** Automatic A/B comparison of etn_only vs deterministic vs full enrichment
 - **Serialization:** joblib → `models/price_model.joblib`
+
+## GURS Data Integration
+
+The system joins multiple GURS datasets to enrich ETN transaction data:
+
+| Source | Join Key | Features Added |
+|--------|----------|---------------|
+| EV stavba (buildings) | SIFRA_KO + STEVILKA_STAVBE | construction year, num floors, material, utilities, building type |
+| EV del_stavbe (building parts) | SIFRA_KO + STEVILKA_STAVBE + STEVILKA_DELA_STAVBE | floor number, area, elevator, position, renovation years |
+| EV del_stavbe_enota (valuation) | EID_DEL_STAVBE | POSPLOSENA_VREDNOST (benchmark only) |
+| EV parcela (parcels) | SIFRA_KO + PARCELNA_STEVILKA | parcel area, boniteta, openness |
+| RN (address register) | obcina + naselje + ulica + hisna_stevilka | precise coordinates, region IDs |
+| GJI vodovod/kanalizacija | spatial (nearest distance) | distance to water/sewage infrastructure |
+| EMV vrednostne cone | spatial (point-in-polygon) | valuation zone level and ID |
+| KN kat. obcine / GGO | spatial (point-in-polygon) | cadastral community, forest openness |
+
+## Async Bulk Preparation
+
+The bulk preparation pipeline (`prepare_training_csv_from_etn_kpp_bulk`) runs as an ARQ background task with real-time progress updates via Redis. It processes multiple ETN year pairs, enriches with all GURS registers, and merges into a single training CSV.

@@ -116,6 +116,167 @@ def test_train_from_csv_loads_training_data_preparation_metadata(tmp_path, monke
     assert result["data_preparation"]["source"] == "etn_kpp_bulk"
 
 
+def test_train_from_csv_reports_ev_baseline_metrics(tmp_path, monkeypatch):
+    import app.services.model_service as ms
+
+    monkeypatch.setattr(ms, "MODEL_DIR", str(tmp_path / "models"))
+    csv_path = tmp_path / "synthetic_ev.csv"
+
+    rng = np.random.default_rng(9)
+    n = 240
+    size = rng.uniform(35, 160, n)
+    price = size * rng.uniform(1800, 3200, n)
+    benchmark = price * rng.uniform(0.82, 0.97, n)
+
+    df = pd.DataFrame(
+        {
+            "price_eur": price,
+            "size_m2": size,
+            "rooms": rng.choice([1, 2, 3, 4], n),
+            "floor": rng.integers(0, 8, n),
+            "year_built": rng.integers(1960, 2020, n),
+            "latitude": rng.uniform(45.8, 46.9, n),
+            "longitude": rng.uniform(13.6, 16.5, n),
+            "property_type": rng.choice(["stanovanje", "hisa"], n, p=[0.7, 0.3]),
+            "municipality": rng.choice(["Ljubljana", "Maribor", "Koper"], n),
+            "statistical_region": rng.choice(["Osrednjeslovenska", "Podravska"], n),
+            "ev_benchmark_price_eur": benchmark,
+            "ev_benchmark_source": rng.choice(["del_stavbe_enota", "parc_enota"], n, p=[0.85, 0.15]),
+        }
+    )
+    df.to_csv(csv_path, index=False)
+
+    result = ms.train_from_csv(str(csv_path))
+
+    assert result["ev_baseline_metrics"] is not None
+    assert result["ev_baseline_metrics"]["coverage_rows"] > 0
+    assert "benchmark_metrics" in result["ev_baseline_metrics"]
+    assert "model_metrics_on_coverage" in result["ev_baseline_metrics"]
+    assert "delta_vs_model" in result["ev_baseline_metrics"]
+
+
+def test_train_from_csv_reports_variant_benchmarks(tmp_path, monkeypatch):
+    import app.services.model_service as ms
+
+    monkeypatch.setattr(ms, "MODEL_DIR", str(tmp_path / "models"))
+    csv_path = tmp_path / "synthetic_variant_benchmarks.csv"
+
+    rng = np.random.default_rng(21)
+    n = 260
+    size = rng.uniform(40, 160, n)
+    price = size * rng.uniform(1800, 3200, n)
+
+    df = pd.DataFrame(
+        {
+            "price_eur": price,
+            "size_m2": size,
+            "rooms": rng.choice([1, 2, 3, 4], n),
+            "floor": rng.integers(0, 8, n),
+            "year_built": rng.integers(1960, 2021, n),
+            "latitude": rng.uniform(45.8, 46.9, n),
+            "longitude": rng.uniform(13.6, 16.5, n),
+            "property_type": rng.choice(["stanovanje", "hisa"], n, p=[0.75, 0.25]),
+            "municipality": rng.choice(["Ljubljana", "Maribor", "Koper"], n),
+            "statistical_region": rng.choice(["Osrednjeslovenska", "Podravska"], n),
+            "rn_address_match": rng.choice([0, 1], n, p=[0.35, 0.65]),
+            "eid_statisticna_regija": rng.choice(["1111001", "1112002", "unknown"], n),
+            "ev_st_etaz": rng.integers(1, 12, n),
+            "ev_ima_vodovod": rng.choice([0, 1], n, p=[0.1, 0.9]),
+            "ev_id_tip_stavbe": rng.choice(["10", "20", "30"], n),
+            "kn_ko_polygon_match": rng.choice([0, 1], n, p=[0.15, 0.85]),
+            "kn_ko_name": rng.choice(["Moste", "Center", "unknown"], n),
+            "gji_vodovod_distance_m": rng.uniform(5, 500, n),
+            "gji_vodovod_nearby_100m": rng.choice([0, 1], n, p=[0.45, 0.55]),
+            "emv_zone_match": rng.choice([0, 1], n, p=[0.2, 0.8]),
+            "emv_zone_level": rng.choice([1, 2, 3], n),
+            "emv_zone_model": rng.choice(["STA", "HIS", "unknown"], n),
+            "emv_zone_layer": rng.choice(["emv_sta", "emv_his"], n),
+        }
+    )
+    df.to_csv(csv_path, index=False)
+
+    result = ms.train_from_csv(str(csv_path))
+
+    assert result["variant_benchmarks"] is not None
+    assert result["variant_matrix"] is not None
+    assert {"etn_only", "deterministic", "full_global", "production_combined"}.issubset(
+        result["variant_benchmarks"].keys()
+    )
+    assert {"etn_only", "deterministic", "full_global"}.issubset(result["variant_matrix"].keys())
+    assert result["variant_benchmarks"]["etn_only"]["metrics"]["n_train"] > 0
+    assert result["variant_benchmarks"]["production_combined"]["metrics"]["n_test"] > 0
+    assert result["variant_benchmarks"]["deterministic"]["enabled_sources"]["emv"] is False
+    assert result["variant_benchmarks"]["deterministic"]["enabled_sources"]["kn"] is True
+    assert result["variant_matrix"]["full_global"]["per_type_count"] >= 0
+
+
+def test_train_from_csv_normalizes_mixed_type_categorical_enrichment_columns(tmp_path, monkeypatch):
+    import app.services.model_service as ms
+
+    monkeypatch.setattr(ms, "MODEL_DIR", str(tmp_path / "models"))
+    csv_path = tmp_path / "synthetic_mixed_categories.csv"
+
+    rng = np.random.default_rng(17)
+    n = 260
+    size = rng.uniform(40, 140, n)
+    price = size * rng.uniform(1700, 3100, n)
+
+    eid_region = rng.choice([1111001.0, 1112002.0, np.nan], n, p=[0.4, 0.4, 0.2])
+    emv_model = rng.choice(["STA", "HIS", np.nan], n, p=[0.45, 0.35, 0.2])
+    emv_layer = rng.choice(["emv_vredn_cone_STA", np.nan], n, p=[0.7, 0.3])
+
+    df = pd.DataFrame(
+        {
+            "price_eur": price,
+            "size_m2": size,
+            "rooms": rng.choice([1, 2, 3, 4], n),
+            "floor": rng.integers(0, 8, n),
+            "year_built": rng.integers(1965, 2021, n),
+            "latitude": rng.uniform(45.8, 46.9, n),
+            "longitude": rng.uniform(13.6, 16.5, n),
+            "property_type": rng.choice(["stanovanje", "hisa"], n, p=[0.75, 0.25]),
+            "municipality": rng.choice(["Ljubljana", "Maribor", "Koper"], n),
+            "statistical_region": rng.choice(["Osrednjeslovenska", "Podravska"], n),
+            "lega_v_stavbi": rng.choice(["vmes", "pritlicje", np.nan], n, p=[0.45, 0.35, 0.2]),
+            "eid_statisticna_regija": eid_region,
+            "ev_id_konstrukcija": rng.choice([1.0, 2.0, np.nan], n, p=[0.45, 0.35, 0.2]),
+            "ev_id_tip_stavbe": rng.choice([10.0, 20.0, np.nan], n, p=[0.4, 0.4, 0.2]),
+            "ev_id_lega": rng.choice([33.0, 44.0, np.nan], n, p=[0.4, 0.4, 0.2]),
+            "ev_id_dr_dst": rng.choice([29.0, 41.0, np.nan], n, p=[0.4, 0.4, 0.2]),
+            "emv_zone_name": rng.choice(["Center", "Obrobje", np.nan], n, p=[0.35, 0.35, 0.3]),
+            "emv_zone_model": emv_model,
+            "emv_zone_layer": emv_layer,
+        }
+    )
+    df.to_csv(csv_path, index=False)
+
+    result = ms.train_from_csv(str(csv_path))
+
+    assert result["combined_metrics"] is not None
+    assert result["global_metrics"]["n_train"] > 0
+
+
+def test_normalize_categorical_columns_returns_only_strings_for_missing_and_numeric_values():
+    import app.services.model_service as ms
+
+    df = pd.DataFrame(
+        {
+            "eid_statisticna_regija": [1111001.0, np.nan, "1112002"],
+            "emv_zone_model": ["STA", None, "  "],
+        }
+    )
+
+    normalized = ms._normalize_categorical_columns(
+        df,
+        ["eid_statisticna_regija", "emv_zone_model"],
+    )
+
+    assert normalized["eid_statisticna_regija"].tolist() == ["1111001.0", "unknown", "1112002"]
+    assert normalized["emv_zone_model"].tolist() == ["STA", "unknown", "unknown"]
+    assert {type(value).__name__ for value in normalized["eid_statisticna_regija"]} == {"str"}
+    assert {type(value).__name__ for value in normalized["emv_zone_model"]} == {"str"}
+
+
 def test_build_normalized_payload_accepts_new_training_features():
     import app.services.model_service as ms
 
@@ -280,6 +441,7 @@ def test_predict_combined_routed_batches_predictions_by_property_type():
             "stanovanje": {"pipeline": stanovanje_pipeline},
             "hisa": {"pipeline": hisa_pipeline},
         },
+        target_transform="raw",
     )
 
     assert predicted.tolist() == [200.0, 300.0, 200.0, 100.0]
@@ -325,6 +487,25 @@ _FAKE_MODEL_INFO = {
     "rows": 100,
     "duration_sec": 5.0,
     "global_metrics": {"mae": 10_000, "rmse": 15_000, "r2": 0.85},
+    "variant_matrix": {
+        "etn_only": {
+            "label": "ETN only",
+            "variant_label": "etn_only",
+            "enabled_sources": {"rn": False, "ev": False, "kn": False, "gji": False, "emv": False},
+            "global_metrics": {"mae": 12_000, "rmse": 17_000, "r2": 0.8},
+            "combined_metrics": {"mae": 12_200, "rmse": 17_200, "r2": 0.79},
+            "per_type_metrics": {},
+            "per_type_count": 0,
+        }
+    },
+    "variant_benchmarks": {
+        "etn_only": {
+            "label": "ETN only",
+            "variant_label": "etn_only",
+            "enabled_sources": {"rn": False, "ev": False, "kn": False, "gji": False, "emv": False},
+            "metrics": {"mae": 12_000, "rmse": 17_000, "r2": 0.8},
+        }
+    },
     "per_type_metrics": {},
     "per_region_metrics": {},
     "global_importance": {"size_m2": 0.5, "rooms": 0.3},
@@ -415,6 +596,9 @@ async def test_model_diagnostics_with_model(client: AsyncClient, admin_headers: 
     assert "global_metrics" in data
     assert "per_type_metrics" in data
     assert "per_region_metrics" in data
+    assert "ev_baseline_metrics" in data
+    assert "variant_matrix" in data
+    assert "variant_benchmarks" in data
     assert "segment_diagnostics" in data
 
 
@@ -467,6 +651,33 @@ _ENHANCED_MODEL_INFO = {
     "used_features": ["size_m2", "rooms", "floor"],
     "model_type": "HistGradientBoostingRegressor",
     "data_preparation": {"source": "etn_kpp_bulk", "filter_summary": {"building": [], "land": []}},
+    "ev_baseline_metrics": {
+        "coverage_rows": 12,
+        "coverage_ratio": 0.6,
+        "benchmark_metrics": {"mae": 25000, "rmse": 31000, "r2": 0.5, "mape": 11.2, "median_ae": 21000},
+        "model_metrics_on_coverage": {"mae": 18000, "rmse": 25000, "r2": 0.72, "mape": 8.3, "median_ae": 15000},
+        "delta_vs_model": {"mae": 7000, "rmse": 6000, "r2": 0.22, "mape": 2.9, "median_ae": 6000},
+    },
+    "variant_benchmarks": {
+        "etn_only": {
+            "label": "ETN only",
+            "variant_label": "etn_only",
+            "enabled_sources": {"rn": False, "ev": False, "kn": False, "gji": False, "emv": False},
+            "metrics": {"mae": 22000, "rmse": 30000, "r2": 0.61, "mape": 11.0, "median_ae": 18000},
+            "delta_vs_full_global": {"mae": 4000, "rmse": 5000, "r2": -0.09, "mape": 1.3, "median_ae": 2500},
+        }
+    },
+    "variant_matrix": {
+        "etn_only": {
+            "label": "ETN only",
+            "variant_label": "etn_only",
+            "enabled_sources": {"rn": False, "ev": False, "kn": False, "gji": False, "emv": False},
+            "global_metrics": {"mae": 22000, "rmse": 30000, "r2": 0.61, "mape": 11.0, "median_ae": 18000},
+            "combined_metrics": {"mae": 22300, "rmse": 30100, "r2": 0.6, "mape": 11.3, "median_ae": 18200},
+            "per_type_metrics": {},
+            "per_type_count": 0,
+        }
+    },
 }
 
 
@@ -482,4 +693,7 @@ async def test_diagnostics_includes_enhanced_fields(client: AsyncClient, admin_h
     assert data["used_features"] == ["size_m2", "rooms", "floor"]
     assert data["model_type"] == "HistGradientBoostingRegressor"
     assert data["data_preparation"]["source"] == "etn_kpp_bulk"
+    assert data["ev_baseline_metrics"]["coverage_rows"] == 12
+    assert data["variant_matrix"]["etn_only"]["variant_label"] == "etn_only"
+    assert data["variant_benchmarks"]["etn_only"]["variant_label"] == "etn_only"
     assert data["segment_diagnostics"]["property_type"][0]["segment"] == "parcela"

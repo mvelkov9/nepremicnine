@@ -81,6 +81,9 @@ export default defineConfig(({ mode }) => {
     server: {
       host: '0.0.0.0',
       port: 5173,
+      watch: {
+        ignored: ['**/.pnpm-store/**', '**/node_modules/.cache/**'],
+      },
       proxy: {
         '/api': {
           target: backendUrl,

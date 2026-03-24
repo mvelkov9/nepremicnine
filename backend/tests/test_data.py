@@ -1,6 +1,7 @@
 """Data endpoint tests."""
 
 import io
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -10,6 +11,7 @@ from httpx import AsyncClient
 from app.api.data import DATA_DIR
 from app.schemas.dataset import TrainingDatasetResponse
 from app.services.data_processing_service import prepare_training_csv_from_etn_kpp_bulk
+from app.tasks.training_worker import PREPARE_ACTIVE_KEY, PREPARE_JOB_PREFIX
 
 
 async def _get_admin_token(client: AsyncClient) -> str:
@@ -184,7 +186,7 @@ async def test_prepare_etn_bulk_resolves_relative_paths(client: AsyncClient, mon
 
     recorded = {}
 
-    def fake_prepare(pairs, output_csv_path):
+    def fake_prepare(pairs, output_csv_path, **kwargs):
         recorded["pairs"] = pairs
         recorded["output_csv_path"] = output_csv_path
         return {
@@ -300,6 +302,133 @@ def test_prepare_etn_bulk_uses_stable_source_keys_for_dedup_and_reports_per_year
     assert result["per_year"] == {"2024": 3}
     assert "filter_summary" in result
     assert output_csv.with_name("train.csv.metadata.json").exists()
+
+
+def test_prepare_etn_bulk_emits_progress_updates(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    frame = pd.DataFrame(
+        [
+            {
+                "source_row_key": "deal-1:part-1",
+                "size_m2": 50,
+                "year_built": 2001,
+                "municipality": "ljubljana",
+                "property_type": "stanovanje",
+                "price_eur": 200000,
+            }
+        ]
+    )
+
+    monkeypatch.setattr("app.services.data_processing_service.read_csv_flexible", lambda _path: pd.DataFrame())
+    monkeypatch.setattr(
+        "app.services.data_processing_service.build_training_df_from_etn_kpp",
+        lambda *_args, **_kwargs: (frame.copy(), {"filter_stats": {"stages": []}}),
+    )
+    monkeypatch.setattr(
+        "app.services.data_processing_service.apply_gurs_deterministic_enrichment",
+        lambda prepared, upload_dir, enrichment_options=None: (prepared, {"rn": {"available": True}}),
+    )
+
+    updates: list[dict] = []
+    output_csv = tmp_path / "train.csv"
+
+    result = prepare_training_csv_from_etn_kpp_bulk(
+        [{"posli_csv_path": "2024_posli.csv", "delistavb_csv_path": "2024_deli.csv", "label": "2024"}],
+        str(output_csv),
+        status_callback=lambda **payload: updates.append(payload),
+    )
+
+    stages = [update["stage"] for update in updates]
+    assert stages[0] == "initializing"
+    assert "loading_pair" in stages
+    assert "building_rows" in stages
+    assert "enriching_buildings" in stages
+    assert "merging_outputs" in stages
+    assert stages[-1] == "completed"
+    assert updates[-1]["progress"] == 100
+    assert result["rows"] == 1
+
+
+@pytest.mark.asyncio
+async def test_prepare_etn_bulk_start_and_status_use_async_job_flow(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+):
+    token = await _get_admin_token(client)
+    uploads_dir = Path(DATA_DIR) / "uploads"
+    posli = uploads_dir / "posli.csv"
+    deli = uploads_dir / "deli.csv"
+    posli.parent.mkdir(parents=True, exist_ok=True)
+    posli.write_text("id\n1\n", encoding="utf-8")
+    deli.write_text("id\n1\n", encoding="utf-8")
+
+    transport = client._transport
+    redis = transport.app.state.redis
+
+    resp = await client.post(
+        "/api/data/prepare-etn-kpp-bulk/start",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "pairs": [
+                {
+                    "posli_csv_path": "uploads/posli.csv",
+                    "delistavb_csv_path": "uploads/deli.csv",
+                    "year": "2024",
+                    "label": "2024",
+                }
+            ],
+            "enrichment_options": {
+                "enable_rn": True,
+                "enable_ev": False,
+                "enable_emv": True,
+                "variant_label": "rn+emv",
+            },
+        },
+    )
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["status"] == "queued"
+    assert payload["progress"] == 0
+    assert payload["total_pairs"] == 1
+    assert redis.enqueued_jobs[0][0] == "run_prepare_etn_bulk"
+    assert redis.enqueued_jobs[0][1][3] == {
+        "enable_rn": True,
+        "enable_ev": False,
+        "enable_emv": True,
+        "variant_label": "rn+emv",
+    }
+
+    job_id = payload["job_id"]
+    monkeypatch.setattr(
+        "app.api.data._get_training_dataset_metadata",
+        lambda: TrainingDatasetResponse(exists=True, relative_path="raw/train.csv", rows=3, columns=["price_eur"]),
+    )
+    await redis.set(
+        f"{PREPARE_JOB_PREFIX}{job_id}",
+        json.dumps(
+            {
+                "status": "completed",
+                "stage": "completed",
+                "progress": 100,
+                "result": {
+                    "rows": 3,
+                    "columns": ["price_eur"],
+                    "output_csv_path": str((Path(DATA_DIR) / "raw" / "train.csv").resolve()),
+                },
+            }
+        ),
+    )
+    await redis.delete(PREPARE_ACTIVE_KEY)
+
+    status_resp = await client.get(
+        f"/api/data/prepare-etn-kpp-bulk/status/{job_id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert status_resp.status_code == 200
+    status_payload = status_resp.json()
+    assert status_payload["status"] == "completed"
+    assert status_payload["result"]["output_csv_path"] == "raw/train.csv"
+    assert status_payload["result"]["training_dataset"]["rows"] == 3
 
 
 @pytest.mark.asyncio

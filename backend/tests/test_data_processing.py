@@ -1,11 +1,14 @@
 """Tests for data_processing_service: CC-SI mapping and municipality normalization."""
 
+import numpy as np
 import pandas as pd
 import pytest
 
 from app.api import data as data_api
+from app.services import data_processing_service as dps
 from app.services.data_processing_service import (
     _CC_SI_PREFIX_MAP,
+    _emv_layers_for_row,
     _parse_fractional_numeric_series,
     build_training_df_from_etn_kpp,
     build_training_df_from_etn_kpp_land,
@@ -13,6 +16,9 @@ from app.services.data_processing_service import (
     group_property_type,
     load_training_metadata,
     prepare_training_csv,
+    prepare_training_csv_from_etn_kpp,
+    prepare_training_csv_from_etn_kpp_bulk,
+    resolve_enrichment_options,
 )
 from app.utils.slovenian_labels import format_municipality_label
 
@@ -39,6 +45,54 @@ def test_group_property_type_with_ccsi_code():
     assert group_property_type("1242") == "garaza"
 
 
+def test_emv_layers_for_row_prefers_land_type_specific_layers_for_parcela():
+    assert _emv_layers_for_row("parcela", "stavbno") == ["emv_vredn_cone_STZ"]
+    assert _emv_layers_for_row("parcela", "7") == ["emv_vredn_cone_STZ"]
+    assert _emv_layers_for_row("parcela", "kmetijsko") == ["emv_vredn_cone_KME"]
+    assert _emv_layers_for_row("parcela", "gozd") == ["emv_vredn_cone_GOZ"]
+
+
+def test_emv_layers_for_row_falls_back_to_property_type_mapping_when_land_type_unknown():
+    assert _emv_layers_for_row("parcela", "drugo") == [
+        "emv_vredn_cone_STZ",
+        "emv_vredn_cone_PNB",
+        "emv_vredn_cone_PNE",
+        "emv_vredn_cone_PNP",
+        "emv_vredn_cone_KME",
+        "emv_vredn_cone_GOZ",
+    ]
+
+
+def test_resolve_vector_gpkg_path_accepts_extracted_shapefile_zip(tmp_path, monkeypatch):
+    zip_path = tmp_path / "KN_SLO_KAT_OBCINE_20260315.zip"
+    zip_path.write_bytes(b"zip")
+    extract_dir = tmp_path / "unzipped_kn"
+    extract_dir.mkdir()
+    shp_path = extract_dir / "KN_SLO_KAT_OBCINE_KATASTRSKE_OBCINE_poligon.shp"
+    shp_path.write_text("shp")
+
+    monkeypatch.setattr(dps, "_extract_vector_zip_cached", lambda _source_path, _mtime: str(extract_dir))
+
+    resolved = dps._resolve_vector_gpkg_path(str(zip_path), "kat_obcine")
+
+    assert resolved == str(shp_path)
+
+
+def test_resolve_emv_gpkg_path_accepts_extracted_shapefile_bundle(tmp_path, monkeypatch):
+    zip_path = tmp_path / "emv_vredn_cone_17_VSE_2025.zip"
+    zip_path.write_bytes(b"zip")
+    extract_dir = tmp_path / "unzipped_emv"
+    extract_dir.mkdir()
+    (extract_dir / "emv_vredn_cone_STA.shp").write_text("shp")
+    (extract_dir / "emv_vredn_cone_HIS.shp").write_text("shp")
+
+    monkeypatch.setattr(dps, "_extract_vector_zip_cached", lambda _source_path, _mtime: str(extract_dir))
+
+    resolved = dps._resolve_emv_gpkg_path(str(zip_path))
+
+    assert resolved == str(extract_dir)
+
+
 def test_enrich_training_df_preserves_display_names_and_adds_normalized_column():
     df = pd.DataFrame(
         {
@@ -57,6 +111,12 @@ def test_enrich_training_df_preserves_display_names_and_adds_normalized_column()
 def test_format_municipality_label_handles_ascii_and_hyphenated_names():
     assert format_municipality_label("skofja loka") == "Škofja Loka"
     assert format_municipality_label("race-fram") == "Rače - Fram"
+
+
+def test_normalize_house_number_key_strips_spreadsheet_decimal_suffix():
+    assert dps._normalize_house_number_key("16.0") == "16"
+    assert dps._normalize_house_number_key(27.0) == "27"
+    assert dps._normalize_house_number_key("3A") == "3a"
 
 
 def test_format_municipality_label_canonicalizes_aliases_and_unknowns():
@@ -286,3 +346,441 @@ def test_prepare_training_csv_preserves_optional_requested_features(tmp_path):
     assert prepared.loc[0, "prodani_delez_parcele"] == pytest.approx(0.6)
     assert prepared.loc[0, "prodani_delez_dela_stavbe"] == pytest.approx(1.0)
     assert prepared.loc[0, "gradbena_faza"] == pytest.approx(5.0)
+
+
+def test_prepare_training_csv_from_etn_kpp_applies_rn_ev_and_emv_enrichment(tmp_path, monkeypatch):
+    posli_csv = tmp_path / "ETN_SLO_2026_KPP_KPP_POSLI_20260301.csv"
+    deli_csv = tmp_path / "ETN_SLO_2026_KPP_KPP_DELISTAVB_20260301.csv"
+    output_csv = tmp_path / "train.csv"
+    rn_csv = tmp_path / "x_RN_SLO_NASLOVI_register_naslovov_20260301.csv"
+    ev_stavba_csv = tmp_path / "x_EV_SLO_EVIDENCA_VREDNOTENJA_stavba_20260314.csv"
+    ev_del_csv = tmp_path / "x_EV_SLO_EVIDENCA_VREDNOTENJA_del_stavbe_20260314.csv"
+    ev_del_enota_csv = tmp_path / "x_EV_SLO_EVIDENCA_VREDNOTENJA_del_stavbe_enota_20260314.csv"
+    emv_zip = tmp_path / "x_emv_vredn_cone_17_VSE_2025.zip"
+
+    pd.DataFrame(
+        {
+            "ID_POSLA": ["100"],
+            "POGODBENA_CENA_ODSKODNINA": [240000],
+            "TRZNOST_POSLA": [1],
+            "VRSTA_KUPOPRODAJNEGA_POSLA": [1],
+            "RPE_OBCINE_SIFRA": [61],
+            "IME_OBCINE": ["Ljubljana"],
+        }
+    ).to_csv(posli_csv, index=False)
+
+    pd.DataFrame(
+        {
+            "ID_POSLA": ["100"],
+            "ID_DELA_STAVBE": ["77"],
+            "SIFRA_KO": [1333],
+            "IME_KO": ["Moste"],
+            "OBCINA": ["Ljubljana"],
+            "STEVILKA_STAVBE": [194],
+            "STEVILKA_DELA_STAVBE": [1],
+            "NASELJE": ["Ljubljana"],
+            "ULICA": ["Polje cesta V"],
+            "HISNA_STEVILKA": [4],
+            "DODATEK_HS": [""],
+            "PRODANA_POVRSINA": [80],
+            "STEVILO_SOB": [3],
+            "DEJANSKA_RABA_DELA_STAVBE": [2],
+            "LETO_IZGRADNJE_DELA_STAVBE": [2001],
+            "E_CENTROID": [np.nan],
+            "N_CENTROID": [np.nan],
+        }
+    ).to_csv(deli_csv, index=False)
+
+    pd.DataFrame(
+        {
+            "OBCINA_SIFRA": [61],
+            "OBCINA_NAZIV": ["Ljubljana"],
+            "NASELJE_NAZIV": ["Ljubljana"],
+            "ULICA_NAZIV": ["Polje cesta V"],
+            "HS_STEVILKA": [4],
+            "HS_DODATEK": [""],
+            "E": [467169],
+            "N": [101799],
+            "EID_NASLOV": [101400002022822009],
+            "EID_NASELJE": [110300000101100844],
+            "EID_ULICA": [110400000162051687],
+            "EID_STAVBA": [100200000260407131],
+            "EID_STATISTICNA_REGIJA": [111100000183622954],
+        }
+    ).to_csv(rn_csv, index=False)
+
+    pd.DataFrame(
+        {
+            "EID_STAVBA": [100200000260407131],
+            "KO_SIFKO": [1333],
+            "STEV_ST": [194],
+            "ST_ETAZ": [2],
+            "LETO_IZG_STA": [1900],
+            "LETO_OBN_STREHE": [1978],
+            "LETO_OBN_FASADE": [2005],
+            "ID_KONSTRUKCIJA": [4],
+            "IMA_VODOVOD_DN": [1],
+            "IMA_ELEKTRIKO_DN": [1],
+            "IMA_KANALIZACIJO_DN": [1],
+            "IMA_PLIN_DN": [0],
+            "ID_TIP_STAVBE": [1],
+            "ST_STANOVANJ": [4],
+            "ST_POSLOVNIH_PROSTOROV": [0],
+            "POV_STAVBE": [120],
+            "RPE_OBCINE_SIFRA": [61],
+        }
+    ).to_csv(ev_stavba_csv, index=False)
+
+    pd.DataFrame(
+        {
+            "EID_DEL_STAVBE": [100300000309048267],
+            "EID_STAVBA": [100200000260407131],
+            "STEV_DST": [1],
+            "POVRSINA": [80],
+            "UPOR_POV": [76],
+            "LETO_OBN_OKEN": [2010],
+            "LETO_OBN_INST": [2012],
+            "ST_NADSTROPJA": [2],
+            "ID_LEGA": [33],
+            "IMA_DVIGALO_DN": [1],
+            "VISINA_ETAZE": [2.7],
+            "ID_DR_DST": [29],
+            "ZPS_DST": [100],
+        }
+    ).to_csv(ev_del_csv, index=False)
+
+    pd.DataFrame(
+        {
+            "EID_DEL_STAVBE": [100300000309048267],
+            "ID_MODEL": ["GAR"],
+            "RAVEN": ["10/20"],
+            "VPLIV": [""],
+            "POSPLOSENA_VREDNOST": [10800],
+        }
+    ).to_csv(ev_del_enota_csv, index=False)
+
+    emv_zip.write_bytes(b"placeholder")
+
+    monkeypatch.setattr(dps, "_get_optional_geopandas", lambda: object())
+    monkeypatch.setattr(dps, "_resolve_emv_gpkg_path", lambda _path: str(tmp_path / "emv.gpkg"))
+
+    def fake_match_emv_layer_to_rows(frame, row_index, *, gpkg_path, layer_name):
+        if layer_name != "emv_vredn_cone_STA":
+            return pd.DataFrame(index=row_index)
+        return pd.DataFrame(
+            {
+                "IME": ["Ljubljana center"],
+                "MODEL": ["STA"],
+                "ID": ["STA-001"],
+                "ST_RAVNI": [4],
+                "DAT_VELJ": ["2025-01-01"],
+            },
+            index=row_index,
+        )
+
+    monkeypatch.setattr(dps, "_match_emv_layer_to_rows", fake_match_emv_layer_to_rows)
+
+    result = prepare_training_csv_from_etn_kpp(str(posli_csv), str(deli_csv), str(output_csv))
+
+    prepared = pd.read_csv(output_csv)
+    metadata = load_training_metadata(str(output_csv))
+
+    assert result["enrichment_summary"]["rn"]["rows_with_exact_address"] == 1
+    assert result["enrichment_summary"]["ev"]["rows_with_building_match"] == 1
+    assert prepared.loc[0, "rn_address_match"] == pytest.approx(1.0)
+    assert prepared.loc[0, "ev_st_etaz"] == pytest.approx(2.0)
+    assert prepared.loc[0, "ev_del_upor_pov"] == pytest.approx(76.0)
+    assert prepared.loc[0, "ev_ima_dvigalo"] == pytest.approx(1.0)
+    assert prepared.loc[0, "ev_benchmark_price_eur"] == pytest.approx(10800.0)
+    assert prepared.loc[0, "ev_benchmark_price_per_m2"] == pytest.approx(135.0)
+    assert prepared.loc[0, "emv_zone_match"] == pytest.approx(1.0)
+    assert prepared.loc[0, "emv_zone_level"] == pytest.approx(4.0)
+    assert prepared.loc[0, "emv_zone_model"] == "STA"
+    assert prepared.loc[0, "emv_zone_name"] == "Ljubljana center"
+    assert prepared.loc[0, "longitude"] == pytest.approx(467169.0)
+    assert prepared.loc[0, "latitude"] == pytest.approx(101799.0)
+    assert metadata is not None
+    assert metadata["enrichment_summary"]["rn"]["available"] is True
+    assert metadata["reports"][0]["enrichment_summary"]["ev"]["rows_with_building_match"] == 1
+    assert metadata["reports"][0]["enrichment_summary"]["ev"]["rows_with_building_value_match"] == 1
+    assert result["enrichment_summary"]["emv"]["available"] is True
+    assert result["enrichment_summary"]["emv"]["rows_with_zone_match"] == 1
+    assert metadata["reports"][0]["enrichment_summary"]["emv"]["matched_by_layer"]["emv_vredn_cone_STA"] == 1
+
+
+def test_ev_benchmark_adjusted_by_sold_share(tmp_path, monkeypatch):
+    """ev_benchmark_price_eur must be scaled by the sold-share fraction."""
+    from app.services.data_processing_service import apply_gurs_deterministic_enrichment
+
+    # Use small EIDs that survive float64 → int roundtrip (large EIDs lose precision)
+    ev_del_enota_csv = tmp_path / "x_EV_SLO_EVIDENCA_VREDNOTENJA_del_stavbe_enota_20260314.csv"
+    pd.DataFrame(
+        {
+            "EID_DEL_STAVBE": [9001, 9002],
+            "ID_MODEL": ["STA", "STA"],
+            "RAVEN": ["10/20", "10/20"],
+            "VPLIV": ["", ""],
+            "POSPLOSENA_VREDNOST": [200000, 100000],
+        }
+    ).to_csv(ev_del_enota_csv, index=False)
+
+    ev_stavba_csv = tmp_path / "x_EV_SLO_EVIDENCA_VREDNOTENJA_stavba_20260314.csv"
+    pd.DataFrame(
+        {"EID_STAVBA": [8001], "KO_SIFKO": [1333], "STEV_ST": [194], "ST_ETAZ": [2]}
+    ).to_csv(ev_stavba_csv, index=False)
+
+    ev_del_csv = tmp_path / "x_EV_SLO_EVIDENCA_VREDNOTENJA_del_stavbe_20260314.csv"
+    pd.DataFrame(
+        {
+            "EID_DEL_STAVBE": [9001, 9002],
+            "EID_STAVBA": [8001, 8001],
+            "STEV_DST": [1, 2],
+            "POVRSINA": [80, 50],
+            "UPOR_POV": [76, 48],
+        }
+    ).to_csv(ev_del_csv, index=False)
+
+    training_df = pd.DataFrame(
+        {
+            "sifra_ko": [1333, 1333],
+            "stevilka_stavbe": [194, 194],
+            "stevilka_dela_stavbe": [1, 2],
+            "size_m2": [80, 50],
+            "price_eur": [100000, 100000],
+            "prodani_delez_dela_stavbe": [0.5, 1.0],
+            "prodani_delez_parcele": [np.nan, np.nan],
+            "property_type": ["stanovanje", "stanovanje"],
+            "municipality": ["Ljubljana", "Ljubljana"],
+        }
+    )
+
+    result, _ = apply_gurs_deterministic_enrichment(
+        training_df, upload_dir=str(tmp_path), enrichment_options={"enable_rn": False, "enable_emv": False}
+    )
+
+    # Row 0: 50% share → 200000 * 0.5 = 100000
+    assert result.loc[0, "ev_benchmark_price_eur"] == pytest.approx(100000.0)
+    # Row 1: 100% share → no adjustment → stays 100000
+    assert result.loc[1, "ev_benchmark_price_eur"] == pytest.approx(100000.0)
+
+
+def test_prepare_training_csv_from_etn_kpp_bulk_passes_enrichment_options(tmp_path, monkeypatch):
+    captured: list[dict | None] = []
+    frame = pd.DataFrame(
+        [
+            {
+                "source_row_key": "deal-1:part-1",
+                "size_m2": 50,
+                "year_built": 2001,
+                "municipality": "ljubljana",
+                "property_type": "stanovanje",
+                "price_eur": 200000,
+            }
+        ]
+    )
+
+    monkeypatch.setattr("app.services.data_processing_service.read_csv_flexible", lambda _path: pd.DataFrame())
+    monkeypatch.setattr(
+        "app.services.data_processing_service.build_training_df_from_etn_kpp",
+        lambda *_args, **_kwargs: (frame.copy(), {"filter_stats": {"stages": []}}),
+    )
+
+    def fake_enrichment(prepared, *, upload_dir, enrichment_options=None):
+        captured.append(enrichment_options)
+        return prepared, {"options": enrichment_options or {}}
+
+    monkeypatch.setattr(
+        "app.services.data_processing_service.apply_gurs_deterministic_enrichment",
+        fake_enrichment,
+    )
+
+    options = {
+        "enable_rn": True,
+        "enable_ev": False,
+        "enable_kn": True,
+        "enable_gji": False,
+        "enable_emv": False,
+        "variant_label": "rn_only",
+    }
+    output_csv = tmp_path / "train.csv"
+
+    result = prepare_training_csv_from_etn_kpp_bulk(
+        [{"posli_csv_path": "2024_posli.csv", "delistavb_csv_path": "2024_deli.csv", "label": "2024"}],
+        str(output_csv),
+        enrichment_options=options,
+    )
+
+    assert captured == [options]
+    assert result["enrichment_options"] == options
+
+
+def test_resolve_enrichment_options_includes_kn_and_gji_in_variant_label():
+    resolved = resolve_enrichment_options(
+        {
+            "enable_rn": True,
+            "enable_ev": True,
+            "enable_kn": False,
+            "enable_gji": True,
+            "enable_emv": False,
+        }
+    )
+
+    assert resolved["variant_label"] == "rn+ev+gji"
+
+
+def test_apply_gurs_deterministic_enrichment_applies_kn_and_gji_summaries(tmp_path, monkeypatch):
+    training_df = pd.DataFrame(
+        {
+            "sifra_ko": [1333],
+            "longitude": [467169],
+            "latitude": [101799],
+            "size_m2": [80],
+            "price_eur": [240000],
+            "property_type": ["stanovanje"],
+            "municipality": ["Ljubljana"],
+        }
+    )
+
+    monkeypatch.setattr(
+        "app.services.data_processing_service.discover_gurs_enrichment_sources",
+        lambda _upload_dir: {
+            "kn_kat_obcine": str(tmp_path / "KN_SLO_KAT_OBCINE_20260315.zip"),
+            "gji_vodovod": str(tmp_path / "KGI_SLO_GJI_VODOVOD_linije_20260314.gpkg"),
+            "gji_kanalizacija": str(tmp_path / "KGI_SLO_GJI_KANALIZACIJA_linije_20260314.gpkg"),
+        },
+    )
+
+    def fake_kn(prepared, *, discovered_sources):
+        prepared = prepared.copy()
+        prepared["kn_ko_polygon_match"] = 1
+        prepared["kn_ko_name"] = "Moste"
+        prepared["kn_in_ggo"] = 0
+        return prepared, {
+            "available": True,
+            "ggo_available": False,
+            "polygon_enabled": True,
+            "gpkg_ready": True,
+            "rows_with_coordinates": 1,
+            "rows_with_sifra_ko_match": 1,
+            "rows_with_polygon_match": 1,
+            "rows_with_ggo_match": 0,
+        }
+
+    def fake_gji(prepared, *, discovered_sources):
+        prepared = prepared.copy()
+        prepared["gji_vodovod_distance_m"] = 35.0
+        prepared["gji_vodovod_nearby_100m"] = 1.0
+        prepared["gji_kanalizacija_distance_m"] = 110.0
+        prepared["gji_kanalizacija_nearby_100m"] = 0.0
+        return prepared, {
+            "available": True,
+            "spatial_enabled": True,
+            "rows_with_coordinates": 1,
+            "vodovod_available": True,
+            "kanalizacija_available": True,
+            "rows_with_vodovod_distance": 1,
+            "rows_with_kanalizacija_distance": 1,
+        }
+
+    monkeypatch.setattr("app.services.data_processing_service._apply_kn_polygon_enrichment", fake_kn)
+    monkeypatch.setattr("app.services.data_processing_service._apply_gji_infrastructure_enrichment", fake_gji)
+
+    result, summary = dps.apply_gurs_deterministic_enrichment(
+        training_df,
+        upload_dir=str(tmp_path),
+        enrichment_options={
+            "enable_rn": False,
+            "enable_ev": False,
+            "enable_kn": True,
+            "enable_gji": True,
+            "enable_emv": False,
+        },
+    )
+
+    assert result.loc[0, "kn_ko_polygon_match"] == pytest.approx(1.0)
+    assert result.loc[0, "kn_ko_name"] == "Moste"
+    assert result.loc[0, "gji_vodovod_distance_m"] == pytest.approx(35.0)
+    assert summary["kn"]["rows_with_polygon_match"] == 1
+    assert summary["gji"]["rows_with_vodovod_distance"] == 1
+
+
+def test_apply_gji_infrastructure_enrichment_tracks_nearby_counts(tmp_path, monkeypatch):
+    training_df = pd.DataFrame(
+        {
+            "longitude": [467169.0, 467500.0],
+            "latitude": [101799.0, 102100.0],
+        }
+    )
+
+    monkeypatch.setattr(dps, "_get_optional_geopandas", lambda: object())
+    monkeypatch.setattr(dps, "_resolve_vector_gpkg_path", lambda source_path, preferred_name='': source_path)
+
+    distances = {
+        str(tmp_path / "vodovod.gpkg"): pd.Series([35.0, 130.0], index=training_df.index, dtype="float64"),
+        str(tmp_path / "kanalizacija.gpkg"): pd.Series([210.0, 80.0], index=training_df.index, dtype="float64"),
+    }
+
+    def fake_nearest(frame, row_index, *, gpkg_path, layer_name=None):
+        return distances[gpkg_path].reindex(row_index)
+
+    monkeypatch.setattr(dps, "_nearest_distances_to_layer", fake_nearest)
+
+    result, summary = dps._apply_gji_infrastructure_enrichment(
+        training_df,
+        discovered_sources={
+            "gji_vodovod": str(tmp_path / "vodovod.gpkg"),
+            "gji_kanalizacija": str(tmp_path / "kanalizacija.gpkg"),
+        },
+    )
+
+    assert result["gji_vodovod_nearby_100m"].tolist() == pytest.approx([1.0, 0.0])
+    assert result["gji_kanalizacija_nearby_100m"].tolist() == pytest.approx([0.0, 1.0])
+    assert summary["rows_with_vodovod_distance"] == 2
+    assert summary["rows_with_kanalizacija_distance"] == 2
+    assert summary["rows_with_vodovod_nearby_100m"] == 1
+    assert summary["rows_with_kanalizacija_nearby_100m"] == 1
+
+
+def test_apply_gurs_deterministic_enrichment_falls_back_to_municipality_name_for_rn(tmp_path):
+    rn_csv = tmp_path / "x_RN_SLO_NASLOVI_register_naslovov_20260301.csv"
+    pd.DataFrame(
+        {
+            "OBCINA_SIFRA": [23],
+            "OBCINA_NAZIV": ["Domzale"],
+            "NASELJE_NAZIV": ["DOMZALE"],
+            "ULICA_NAZIV": ["VODNIKOVA ULICA"],
+            "HS_STEVILKA": [3],
+            "HS_DODATEK": ["A"],
+            "E": [467169],
+            "N": [101799],
+            "EID_NASLOV": [12345],
+            "EID_NASELJE": [23456],
+            "EID_ULICA": [34567],
+            "EID_STAVBA": [45678],
+            "EID_STATISTICNA_REGIJA": [56789],
+        }
+    ).to_csv(rn_csv, index=False)
+
+    training_df = pd.DataFrame(
+        {
+            "municipality": ["Domzale"],
+            "rpe_obcine_sifra": [np.nan],
+            "naselje": ["DOMZALE"],
+            "ulica": ["VODNIKOVA ULICA"],
+            "hisna_stevilka": ["3.0"],
+            "dodatek_hs": ["a"],
+            "property_type": ["stanovanje"],
+            "price_eur": [200000],
+            "size_m2": [80],
+        }
+    )
+
+    result, summary = dps.apply_gurs_deterministic_enrichment(
+        training_df,
+        upload_dir=str(tmp_path),
+        enrichment_options={"enable_rn": True, "enable_ev": False, "enable_kn": False, "enable_gji": False, "enable_emv": False},
+    )
+
+    assert result.loc[0, "rn_address_match"] == pytest.approx(1.0)
+    assert result.loc[0, "eid_statisticna_regija"] == pytest.approx(56789)
+    assert summary["rn"]["rows_with_exact_address"] == 1

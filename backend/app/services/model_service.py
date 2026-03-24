@@ -66,6 +66,41 @@ NUMERIC_FEATURES = [
     # Type-specific comparable-sales features (computed per-type from training data)
     "comp_type_muni_ppm2",
     "comp_type_ko_ppm2",
+    # ── Enrichment features (EV/EMV/GJI/KN/RN registers) ──
+    "emv_zone_level",
+    "emv_zone_id",
+    "ev_ima_dvigalo",
+    "ev_ima_vodovod",
+    "ev_ima_kanalizacijo",
+    "ev_ima_elektriko",
+    "ev_ima_plin",
+    "ev_leto_izg_stavbe",
+    "ev_st_etaz",
+    "ev_st_stanovanj",
+    "ev_st_poslovnih_prostorov",
+    "ev_del_st_nadstropja",
+    "ev_del_povrsina",
+    "ev_del_upor_pov",
+    "ev_pov_stavbe",
+    "ev_visina_etaze",
+    "ev_id_lega",
+    "ev_id_dr_dst",
+    "ev_id_tip_stavbe",
+    "ev_leto_obn_strehe",
+    "ev_leto_obn_fasade",
+    "ev_leto_obn_oken",
+    "ev_leto_obn_inst",
+    "ev_parcela_povrsina",
+    "ev_boniteta",
+    "ev_odprtost",
+    "gji_kanalizacija_distance_m",
+    "gji_kanalizacija_nearby_100m",
+    "gji_vodovod_distance_m",
+    "gji_vodovod_nearby_100m",
+    "kn_ggo_openness",
+    "rn_address_match",
+    "stopnja_ddv",
+    "vrsta_dela_stavbe",
 ]
 
 CATEGORICAL_FEATURES = [
@@ -106,6 +141,7 @@ ALWAYS_INCLUDE_NUMERIC = {
     "dist_coast",
     "comp_type_muni_ppm2",
     "comp_type_ko_ppm2",
+    "emv_zone_level",
 }
 
 ALWAYS_INCLUDE_CATEGORICAL = {
@@ -159,6 +195,41 @@ FEATURE_LABELS_SL: dict[str, str] = {
     "dist_coast": "Razdalja do obale",
     "comp_type_muni_ppm2": "€/m² tip+občina",
     "comp_type_ko_ppm2": "€/m² tip+KO",
+    # Enrichment feature labels
+    "emv_zone_level": "EMV raven cone",
+    "emv_zone_id": "EMV cona ID",
+    "ev_ima_dvigalo": "Dvigalo",
+    "ev_ima_vodovod": "Vodovod",
+    "ev_ima_kanalizacijo": "Kanalizacija",
+    "ev_ima_elektriko": "Elektrika",
+    "ev_ima_plin": "Plin",
+    "ev_leto_izg_stavbe": "Leto izgradnje (EV)",
+    "ev_st_etaz": "Št. etaž",
+    "ev_st_stanovanj": "Št. stanovanj",
+    "ev_st_poslovnih_prostorov": "Št. poslovnih prostorov",
+    "ev_del_st_nadstropja": "Nadstropje (EV)",
+    "ev_del_povrsina": "Površina dela (EV)",
+    "ev_del_upor_pov": "Uporabna površina (EV)",
+    "ev_pov_stavbe": "Površina stavbe",
+    "ev_visina_etaze": "Višina etaže",
+    "ev_id_lega": "Lega (EV)",
+    "ev_id_dr_dst": "Vrsta dela stavbe (EV)",
+    "ev_id_tip_stavbe": "Tip stavbe (EV)",
+    "ev_leto_obn_strehe": "Obnova strehe",
+    "ev_leto_obn_fasade": "Obnova fasade",
+    "ev_leto_obn_oken": "Obnova oken",
+    "ev_leto_obn_inst": "Obnova instalacij",
+    "ev_parcela_povrsina": "Površina parcele (EV)",
+    "ev_boniteta": "Boniteta",
+    "ev_odprtost": "Odprtost",
+    "gji_kanalizacija_distance_m": "Razdalja do kanalizacije",
+    "gji_kanalizacija_nearby_100m": "Kanalizacija v 100m",
+    "gji_vodovod_distance_m": "Razdalja do vodovoda",
+    "gji_vodovod_nearby_100m": "Vodovod v 100m",
+    "kn_ggo_openness": "GGO odprtost",
+    "rn_address_match": "Ujemanje naslova",
+    "stopnja_ddv": "Stopnja DDV",
+    "vrsta_dela_stavbe": "Vrsta dela stavbe",
 }
 
 MODEL_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "models")
@@ -186,6 +257,15 @@ PARCELA_ALWAYS_INCLUDE_NUMERIC = {
     "dist_coast",
     "comp_type_muni_ppm2",
     "comp_type_ko_ppm2",
+    # Enrichment: strongest correlators for parcela (|r|=0.30–0.76)
+    "emv_zone_id",
+    "emv_zone_level",
+    "gji_kanalizacija_nearby_100m",
+    "gji_vodovod_nearby_100m",
+    "gji_kanalizacija_distance_m",
+    "gji_vodovod_distance_m",
+    "ev_parcela_povrsina",
+    "ev_boniteta",
 }
 
 PARCELA_ALWAYS_INCLUDE_CATEGORICAL = {
@@ -218,6 +298,19 @@ TYPE_FEATURE_CONFIGS: dict[str, dict[str, set[str]]] = {
             "stavba_je_dokoncana",
             "uporabna_povrsina",
             "num_prostori",
+            # Enrichment (|r| > 0.15, fill > 25%)
+            "emv_zone_level",       # r=0.65
+            "ev_st_etaz",           # r=0.26
+            "ev_ima_kanalizacijo",  # r=0.26
+            "ev_id_dr_dst",         # r=-0.26
+            "gji_kanalizacija_nearby_100m",  # r=0.24
+            "ev_leto_izg_stavbe",   # r=0.23
+            "ev_st_stanovanj",      # r=0.22
+            "ev_ima_dvigalo",       # r=0.21
+            "gji_kanalizacija_distance_m",  # r=-0.20
+            "ev_del_st_nadstropja", # r=0.19
+            "vrsta_dela_stavbe",    # r=-0.18
+            "ev_pov_stavbe",        # r=0.17
         }
         | _SPATIAL_ALWAYS,
         "always_categorical": {
@@ -245,6 +338,21 @@ TYPE_FEATURE_CONFIGS: dict[str, dict[str, set[str]]] = {
             "latitude",
             "longitude",
             "has_parking",
+            # Enrichment (|r| > 0.15, fill > 15%)
+            "emv_zone_level",       # r=0.59
+            "ev_leto_izg_stavbe",   # r=0.28
+            "ev_ima_kanalizacijo",  # r=0.28
+            "ev_leto_obn_strehe",   # r=0.26
+            "ev_leto_obn_fasade",   # r=0.25
+            "gji_kanalizacija_nearby_100m",  # r=0.24
+            "ev_leto_obn_oken",     # r=0.23
+            "ev_ima_plin",          # r=0.22
+            "ev_id_tip_stavbe",     # r=0.22
+            "ev_leto_obn_inst",     # r=0.22
+            "gji_kanalizacija_distance_m",  # r=-0.21
+            "ev_ima_vodovod",       # r=0.19
+            "emv_zone_id",          # r=-0.19
+            "rn_address_match",     # r=0.16
         }
         | _SPATIAL_ALWAYS,
         "always_categorical": {
@@ -270,6 +378,12 @@ TYPE_FEATURE_CONFIGS: dict[str, dict[str, set[str]]] = {
             "price_per_m2_region",
             "price_per_m2_municipality",
             "ddv_vkljucen",
+            # Enrichment (|r| > 0.12, fill > 10%)
+            "emv_zone_level",       # r=0.38
+            "gji_kanalizacija_distance_m",  # r=-0.17
+            "ev_leto_izg_stavbe",   # r=0.15
+            "gji_kanalizacija_nearby_100m",  # r=0.13
+            "ev_del_upor_pov",      # r=-0.12
         }
         | _SPATIAL_ALWAYS,
         "always_categorical": {
@@ -292,6 +406,19 @@ TYPE_FEATURE_CONFIGS: dict[str, dict[str, set[str]]] = {
             "stavba_je_dokoncana",
             "ddv_vkljucen",
             "prodani_delez_dela_stavbe",
+            # Enrichment (|r| > 0.20, fill > 30%)
+            "emv_zone_level",       # r=0.45
+            "ev_leto_izg_stavbe",   # r=0.40
+            "stopnja_ddv",          # r=-0.40
+            "ev_ima_dvigalo",       # r=0.37
+            "ev_ima_vodovod",       # r=0.36
+            "ev_ima_kanalizacijo",  # r=0.35
+            "ev_id_lega",           # r=-0.33
+            "ev_ima_elektriko",     # r=0.33
+            "gji_kanalizacija_nearby_100m",  # r=0.23
+            "ev_del_st_nadstropja", # r=-0.22
+            "ev_st_etaz",           # r=0.22
+            "ev_ima_plin",          # r=0.23
         }
         | _SPATIAL_ALWAYS,
         "always_categorical": {
@@ -316,6 +443,14 @@ TYPE_FEATURE_CONFIGS: dict[str, dict[str, set[str]]] = {
             "prodani_delez_dela_stavbe",
             "stavba_je_dokoncana",
             "ddv_vkljucen",
+            # Enrichment (|r| > 0.15, fill > 15%)
+            "emv_zone_level",       # r=0.59
+            "ev_ima_dvigalo",       # r=0.29
+            "ev_ima_kanalizacijo",  # r=0.29
+            "ev_st_etaz",           # r=0.24
+            "gji_kanalizacija_nearby_100m",  # r=0.18
+            "ev_st_poslovnih_prostorov",  # r=0.17
+            "ev_leto_izg_stavbe",   # r=0.15
         }
         | _SPATIAL_ALWAYS,
         "always_categorical": {
@@ -340,6 +475,16 @@ TYPE_FEATURE_CONFIGS: dict[str, dict[str, set[str]]] = {
             "parcela_m2",
             "prodani_delez_dela_stavbe",
             "stavba_je_dokoncana",
+            # Enrichment (|r| > 0.18, fill > 30%)
+            "ev_ima_dvigalo",       # r=0.55
+            "emv_zone_level",       # r=0.34
+            "ev_id_dr_dst",         # r=-0.33
+            "ev_ima_vodovod",       # r=0.29
+            "ev_ima_kanalizacijo",  # r=0.28
+            "ev_ima_elektriko",     # r=0.25
+            "ev_st_etaz",           # r=0.24
+            "ev_del_upor_pov",      # r=-0.23
+            "rn_address_match",     # r=0.19
         }
         | _SPATIAL_ALWAYS,
         "always_categorical": {
@@ -362,6 +507,15 @@ TYPE_FEATURE_CONFIGS: dict[str, dict[str, set[str]]] = {
             "uporabna_povrsina",
             "prodani_delez_dela_stavbe",
             "stavba_je_dokoncana",
+            # Enrichment (|r| > 0.15, fill > 30%)
+            "emv_zone_level",       # r=0.52
+            "ev_ima_dvigalo",       # r=0.45
+            "gji_kanalizacija_nearby_100m",  # r=0.32
+            "ev_ima_kanalizacijo",  # r=0.23
+            "ev_del_povrsina",      # r=-0.20
+            "ev_st_etaz",           # r=0.20
+            "ev_del_upor_pov",      # r=-0.19
+            "gji_kanalizacija_distance_m",  # r=-0.18
         }
         | _SPATIAL_ALWAYS,
         "always_categorical": {
@@ -382,6 +536,15 @@ TYPE_FEATURE_CONFIGS: dict[str, dict[str, set[str]]] = {
             "price_per_m2_municipality",
             "uporabna_povrsina",
             "stavba_je_dokoncana",
+            # Enrichment (|r| > 0.14, fill > 30%)
+            "emv_zone_level",       # r=0.52
+            "ev_ima_kanalizacijo",  # r=0.20
+            "emv_zone_id",          # r=-0.20
+            "gji_kanalizacija_nearby_100m",  # r=0.18
+            "ev_st_stanovanj",      # r=0.16
+            "ev_ima_vodovod",       # r=0.16
+            "ev_st_poslovnih_prostorov",  # r=0.16
+            "ev_st_etaz",           # r=0.15
         }
         | _SPATIAL_ALWAYS,
         "always_categorical": {
@@ -390,6 +553,52 @@ TYPE_FEATURE_CONFIGS: dict[str, dict[str, set[str]]] = {
         },
     },
 }
+
+
+# ── Enrichment source definitions (for variant benchmarking) ─────────
+_ENRICHMENT_PREFIXES: dict[str, tuple[str, ...]] = {
+    "rn": ("rn_",),
+    "ev": ("ev_",),
+    "kn": ("kn_",),
+    "gji": ("gji_",),
+    "emv": ("emv_",),
+}
+
+_VARIANT_CONFIGS: dict[str, dict[str, bool]] = {
+    "etn_only": {"rn": False, "ev": False, "kn": False, "gji": False, "emv": False},
+    "deterministic": {"rn": True, "ev": True, "kn": True, "gji": False, "emv": False},
+    "full_global": {"rn": True, "ev": True, "kn": True, "gji": True, "emv": True},
+}
+
+
+def _normalize_categorical_columns(df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
+    """Normalize mixed-type categorical columns to uniform strings."""
+    df = df.copy()
+    for col in columns:
+        if col not in df.columns:
+            continue
+        df[col] = df[col].apply(
+            lambda v: "unknown" if v is None or (isinstance(v, float) and np.isnan(v)) else str(v)
+        )
+        df[col] = df[col].apply(lambda v: "unknown" if not v or v.isspace() else v)
+    return df
+
+
+def _filter_features_by_source(
+    features: list[str], enabled_sources: dict[str, bool]
+) -> list[str]:
+    """Filter feature list based on which enrichment sources are enabled."""
+    result = []
+    for f in features:
+        excluded = False
+        for source, prefixes in _ENRICHMENT_PREFIXES.items():
+            if any(f.startswith(p) for p in prefixes):
+                if not enabled_sources.get(source, True):
+                    excluded = True
+                break
+        if not excluded:
+            result.append(f)
+    return result
 
 
 def _filter_features(
@@ -416,58 +625,66 @@ def _filter_features(
 
 
 def _adaptive_hyperparams(n_samples: int) -> dict:
+    if n_samples > 50_000:
+        return {
+            "max_iter": 4000,
+            "learning_rate": 0.01,
+            "max_depth": 10,
+            "min_samples_leaf": 30,
+            "l2_regularization": 0.03,
+        }
     if n_samples > 20_000:
+        return {
+            "max_iter": 3000,
+            "learning_rate": 0.015,
+            "max_depth": 9,
+            "min_samples_leaf": 25,
+            "l2_regularization": 0.04,
+        }
+    if n_samples > 5000:
         return {
             "max_iter": 2000,
             "learning_rate": 0.02,
             "max_depth": 8,
-            "min_samples_leaf": 30,
+            "min_samples_leaf": 20,
             "l2_regularization": 0.05,
-        }
-    if n_samples > 5000:
-        return {
-            "max_iter": 1500,
-            "learning_rate": 0.03,
-            "max_depth": 8,
-            "min_samples_leaf": 25,
-            "l2_regularization": 0.1,
         }
     if n_samples > 1000:
         return {
-            "max_iter": 1000,
-            "learning_rate": 0.04,
+            "max_iter": 1500,
+            "learning_rate": 0.03,
             "max_depth": 7,
-            "min_samples_leaf": 20,
-            "l2_regularization": 0.15,
+            "min_samples_leaf": 15,
+            "l2_regularization": 0.1,
         }
     if n_samples > 500:
         return {
-            "max_iter": 800,
-            "learning_rate": 0.05,
+            "max_iter": 1000,
+            "learning_rate": 0.04,
             "max_depth": 6,
-            "min_samples_leaf": 15,
-            "l2_regularization": 0.2,
+            "min_samples_leaf": 12,
+            "l2_regularization": 0.15,
         }
     return {
-        "max_iter": 500,
-        "learning_rate": 0.06,
+        "max_iter": 600,
+        "learning_rate": 0.05,
         "max_depth": 5,
         "min_samples_leaf": 10,
-        "l2_regularization": 0.3,
+        "l2_regularization": 0.25,
     }
 
 
 def _adaptive_max_extras(n_samples: int) -> tuple[int, int]:
     """Return (max_extra_numeric, max_extra_categorical) based on dataset size."""
     if n_samples > 10_000:
-        return 12, 10
+        return 20, 12
     if n_samples > 3000:
-        return 10, 8
+        return 16, 10
     if n_samples > 1000:
-        return 8, 6
+        return 12, 8
     if n_samples > 500:
-        return 6, 4
-    return 4, 3
+        return 8, 6
+    return 6, 4
 
 
 def _safe_abs(value: float | None) -> float:
@@ -591,7 +808,7 @@ def _build_pipeline(
             l2_regularization=hp.get("l2_regularization", 0.1),
             early_stopping=True,
             validation_fraction=0.12,
-            n_iter_no_change=30,
+            n_iter_no_change=50,
             random_state=42,
             warm_start=False,
             verbose=0,
@@ -904,6 +1121,12 @@ def train_from_csv(
     y = df["price_eur"].values
     X = df.drop(columns=["price_eur"], errors="ignore")
 
+    # Force all NUMERIC_FEATURES columns to proper numeric dtype
+    # (enrichment columns may arrive as mixed str/float from CSV)
+    for col in NUMERIC_FEATURES:
+        if col in X.columns:
+            X[col] = pd.to_numeric(X[col], errors="coerce")
+
     emit_status("feature_prep", 14, rows=len(df))
 
     # Stratified split preserves type distribution in train and test sets
@@ -1088,7 +1311,9 @@ def train_from_csv(
             n_before = len(yt)
             size_vals = pd.to_numeric(Xt.get("size_m2"), errors="coerce").clip(lower=1).values
             log_ppm2 = np.log(yt / size_vals)
-            lo, hi = np.percentile(log_ppm2, [2, 98])
+            # Tighter clipping for large types, standard for small
+            lo_pct, hi_pct = (1, 99) if n_before > 5000 else (2, 98)
+            lo, hi = np.percentile(log_ppm2, [lo_pct, hi_pct])
             outlier_mask = (log_ppm2 >= lo) & (log_ppm2 <= hi)
             if outlier_mask.sum() >= MIN_SAMPLES_PER_TYPE:
                 Xt = Xt[outlier_mask]
@@ -1186,6 +1411,123 @@ def train_from_csv(
 
     segment_diagnostics = _build_segment_diagnostics(X_test, y_test, y_pred_combined)
 
+    # ── EV baseline comparison ─────────────────────────────────────────
+    ev_baseline_metrics = None
+    ev_benchmark_col = "ev_benchmark_price_eur"
+    if ev_benchmark_col in X_test.columns:
+        ev_vals = pd.to_numeric(X_test[ev_benchmark_col], errors="coerce")
+        ev_mask = ev_vals.notna() & (ev_vals > 0)
+        coverage_rows = int(ev_mask.sum())
+        if coverage_rows >= 10:
+            ev_pred = ev_vals[ev_mask].values
+            ev_actual = y_test[ev_mask.values]
+            benchmark_m = _compute_metrics(ev_actual, ev_pred)
+            model_m = _compute_metrics(ev_actual, y_pred_combined[ev_mask.values])
+            delta = {}
+            for k in ("r2", "mae", "rmse", "mape", "median_ae"):
+                bv = benchmark_m.get(k)
+                mv = model_m.get(k)
+                if bv is not None and mv is not None:
+                    delta[k] = round(mv - bv, 6)
+            ev_baseline_metrics = {
+                "coverage_rows": coverage_rows,
+                "benchmark_metrics": benchmark_m,
+                "model_metrics_on_coverage": model_m,
+                "delta_vs_model": delta,
+            }
+
+    # ── Variant benchmarks & matrix ────────────────────────────────────
+    variant_benchmarks: dict[str, Any] = {}
+    variant_matrix: dict[str, Any] = {}
+    for variant_name, enabled_sources in _VARIANT_CONFIGS.items():
+        v_num = _filter_features_by_source(global_num, enabled_sources)
+        v_cat = _filter_features_by_source(global_cat, enabled_sources)
+        if not v_num:
+            v_num = [f for f in global_num if not any(f.startswith(p) for ps in _ENRICHMENT_PREFIXES.values() for p in ps)]
+        if not v_num:
+            continue
+        # Lightweight global model for this variant
+        v_pipeline = _build_pipeline(v_num, v_cat, len(X_train), use_early_stopping=True)
+        v_reg = v_pipeline.named_steps["regressor"]
+        v_reg.max_iter = max(100, v_reg.max_iter // 4)
+        v_reg.n_iter_no_change = 15
+        v_result = _train_single_model(
+            v_pipeline, X_train, y_train, X_test, y_test,
+            f"variant:{variant_name}", None, target_transform="log_ppm2",
+        )
+        variant_benchmarks[variant_name] = {
+            "label": variant_name,
+            "variant_label": variant_name,
+            "enabled_sources": enabled_sources,
+            "metrics": v_result["metrics"],
+        }
+        # Full-global delta
+        if variant_name != "full_global" and "full_global" in variant_benchmarks:
+            fg = variant_benchmarks["full_global"]["metrics"]
+            vm = v_result["metrics"]
+            variant_benchmarks[variant_name]["delta_vs_full_global"] = {
+                k: round(vm.get(k, 0) - fg.get(k, 0), 6)
+                for k in ("r2", "mae", "rmse", "mape")
+                if k in vm and k in fg
+            }
+        # Variant matrix entry: per-type metrics with lightweight per-type models
+        v_pt_models: dict[str, dict] = {}
+        v_pt_metrics: dict[str, dict] = {}
+        if eligible:
+            for ptype in eligible:
+                mask_tr = X_train["property_type"] == ptype
+                mask_te = X_test["property_type"] == ptype
+                Xvt = X_train[mask_tr]
+                yvt = y_train[mask_tr]
+                Xvte = X_test[mask_te]
+                yvte = y_test[mask_te]
+                if len(Xvte) < 10 or len(Xvt) < MIN_SAMPLES_PER_TYPE:
+                    continue
+                vpt_num = _filter_features_by_source(
+                    [f for f in PERTYPE_NUMERIC if f in Xvt.columns], enabled_sources
+                )
+                vpt_cat = _filter_features_by_source(
+                    [f for f in PERTYPE_CATEGORICAL if f in Xvt.columns], enabled_sources
+                )
+                vpt_num, vpt_cat = _filter_features(Xvt, vpt_num, vpt_cat)
+                if not vpt_num:
+                    continue
+                vpt_pipe = _build_pipeline(vpt_num, vpt_cat, len(Xvt), use_early_stopping=True)
+                vpt_reg = vpt_pipe.named_steps["regressor"]
+                vpt_reg.max_iter = max(100, vpt_reg.max_iter // 4)
+                vpt_reg.n_iter_no_change = 15
+                vpt_res = _train_single_model(
+                    vpt_pipe, Xvt, yvt, Xvte, yvte,
+                    f"variant:{variant_name}:{ptype}", None, target_transform="log_ppm2",
+                )
+                v_pt_models[ptype] = {"pipeline": vpt_pipe}
+                v_pt_metrics[ptype] = vpt_res["metrics"]
+        # Combined variant metrics
+        if v_pt_models:
+            y_var_combined = _predict_combined_routed(
+                X_test, v_pipeline, v_pt_models, target_transform="log_ppm2"
+            )
+            v_combined_m = _compute_metrics(y_test, y_var_combined)
+        else:
+            v_combined_m = v_result["metrics"]
+        variant_matrix[variant_name] = {
+            "label": variant_name,
+            "variant_label": variant_name,
+            "enabled_sources": enabled_sources,
+            "global_metrics": v_result["metrics"],
+            "combined_metrics": v_combined_m,
+            "per_type_metrics": v_pt_metrics,
+            "per_type_count": len(v_pt_models),
+        }
+
+    # Production combined entry in variant_benchmarks
+    variant_benchmarks["production_combined"] = {
+        "label": "production_combined",
+        "variant_label": "production_combined",
+        "enabled_sources": {s: True for s in _ENRICHMENT_PREFIXES},
+        "metrics": combined_metrics,
+    }
+
     # Municipality coordinates
     emit_status("artifact_save", 96, rows=len(df), total_models=total_models)
     coords_by_municipality: dict[str, dict] = {}
@@ -1207,7 +1549,7 @@ def train_from_csv(
     os.makedirs(MODEL_DIR, exist_ok=True)
     emit_status("finalizing", 99, rows=len(df), total_models=total_models)
     artifact = {
-        "version": "6.1",
+        "version": "7.1",
         "target_transform": "log_ppm2",
         "log_target": True,  # backward compat
         "global_model": {
@@ -1241,6 +1583,9 @@ def train_from_csv(
         "per_type_features": per_type_feature_usage,
         "data_preparation": data_preparation,
         "segment_diagnostics": segment_diagnostics,
+        "ev_baseline_metrics": ev_baseline_metrics,
+        "variant_benchmarks": variant_benchmarks,
+        "variant_matrix": variant_matrix,
         "model_type": "HistGradientBoostingRegressor",
         "duration_sec": duration,
     }
@@ -1262,6 +1607,9 @@ def train_from_csv(
         "per_type_features": per_type_feature_usage,
         "data_preparation": data_preparation,
         "segment_diagnostics": segment_diagnostics,
+        "ev_baseline_metrics": ev_baseline_metrics,
+        "variant_benchmarks": variant_benchmarks,
+        "variant_matrix": variant_matrix,
         "model_type": "HistGradientBoostingRegressor",
     }
 
@@ -1555,4 +1903,7 @@ def get_model_info() -> dict[str, Any] | None:
         "csv_path": artifact.get("csv_path"),
         "data_preparation": artifact.get("data_preparation"),
         "segment_diagnostics": artifact.get("segment_diagnostics"),
+        "ev_baseline_metrics": artifact.get("ev_baseline_metrics"),
+        "variant_benchmarks": artifact.get("variant_benchmarks"),
+        "variant_matrix": artifact.get("variant_matrix"),
     }

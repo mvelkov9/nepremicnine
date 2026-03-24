@@ -46,3 +46,17 @@ class TrainingDatasetResponse(BaseModel):
     updated_at: datetime | None = None
     size_bytes: int | None = None
     preparation_metadata: dict | None = None
+
+
+class PrepareJobStatusResponse(BaseModel):
+    job_id: str
+    status: str
+    stage: str | None = None
+    progress: int = 0
+    total_pairs: int | None = None
+    current_pair_index: int | None = None
+    current_label: str | None = None
+    pairs_completed: int | None = None
+    rows: int | None = None
+    result: dict | None = None
+    error: str | None = None

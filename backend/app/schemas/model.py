@@ -106,6 +106,8 @@ class ModelInfoResponse(BaseModel):
     per_type_count: int = 0
     coords_by_municipality: dict[str, dict] | None = None
     combined_metrics: dict | None = None
+    variant_matrix: dict | None = None
+    variant_benchmarks: dict | None = None
     type_models_trained: list[str] | None = None
     used_features: list[str] | None = None
     model_type: str | None = None

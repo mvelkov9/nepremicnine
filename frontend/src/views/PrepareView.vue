@@ -1,5 +1,5 @@
 <script setup lang="ts">
-  import { ref, onMounted, computed, reactive } from 'vue'
+  import { ref, onMounted, onUnmounted, computed, reactive } from 'vue'
   import { useRouter } from 'vue-router'
   import { useI18n } from 'vue-i18n'
   import PageHeader from '../components/PageHeader.vue'
@@ -8,6 +8,7 @@
   import { useModelStore } from '../stores/model'
   import api from '../composables/useApi'
   import { getApiErrorMessage } from '../utils/apiError'
+  import { buildGursEnrichmentRows, summarizeGursEnrichment } from '../utils/enrichmentSummary'
   import { formatNumber } from '../utils/format'
 
   const { t } = useI18n()
@@ -18,6 +19,30 @@
   const loading = ref(false)
   const error = ref('')
   const result = ref(null)
+  const prepareStatus = ref(null)
+  const preparePollTimer = ref<ReturnType<typeof setInterval> | null>(null)
+  const enrichmentOptions = reactive({
+    enable_rn: true,
+    enable_ev: true,
+    enable_kn: true,
+    enable_gji: true,
+    enable_emv: true,
+    variant_label: '',
+  })
+
+  interface PrepareJobStatus {
+    job_id: string
+    status: 'queued' | 'running' | 'completed' | 'failed'
+    stage: string | null
+    progress: number
+    total_pairs?: number | null
+    current_pair_index?: number | null
+    current_label?: string | null
+    pairs_completed?: number | null
+    rows?: number | null
+    result?: Record<string, unknown> | null
+    error?: string | null
+  }
 
   // ETN pair mode
   const etnMode = ref('bulk') // 'bulk' | 'single' | 'manual'
@@ -46,6 +71,11 @@
       dataStore.fetchTrainingDataset(),
       modelStore.fetchActiveTraining(),
     ])
+    await syncExistingPrepareJob()
+  })
+
+  onUnmounted(() => {
+    stopPreparePolling()
   })
 
   // --- Dataset role & year helpers (mirrors v1 logic) ---
@@ -159,33 +189,126 @@
     return api.post(url, payload, { timeout: PREPARE_REQUEST_TIMEOUT_MS })
   }
 
-  async function prepareEtnBulk() {
+  function buildEnrichmentOptionsPayload() {
+    return {
+      enable_rn: enrichmentOptions.enable_rn,
+      enable_ev: enrichmentOptions.enable_ev,
+      enable_kn: enrichmentOptions.enable_kn,
+      enable_gji: enrichmentOptions.enable_gji,
+      enable_emv: enrichmentOptions.enable_emv,
+      variant_label: enrichmentOptions.variant_label.trim() || undefined,
+    }
+  }
+
+  function isTerminalPrepareStatus(status) {
+    return status === 'completed' || status === 'failed'
+  }
+
+  function stopPreparePolling() {
+    if (preparePollTimer.value) {
+      clearInterval(preparePollTimer.value)
+      preparePollTimer.value = null
+    }
+  }
+
+  async function handlePrepareStatus(data: PrepareJobStatus | null) {
+    prepareStatus.value = data
+    loading.value = !!data && !isTerminalPrepareStatus(data.status)
+
+    if (!data) return
+
+    if (data.status === 'completed') {
+      result.value = data.result || null
+      if (!result.value?.training_dataset) {
+        await dataStore.fetchTrainingDataset()
+      }
+      stopPreparePolling()
+      loading.value = false
+      error.value = ''
+      return
+    }
+
+    if (data.status === 'failed') {
+      stopPreparePolling()
+      loading.value = false
+      error.value = data.error || t('prepare.jobFailed')
+    }
+  }
+
+  async function pollPrepareStatus(jobId) {
+    try {
+      const { data } = await api.get(`/api/data/prepare-etn-kpp-bulk/status/${jobId}`)
+      await handlePrepareStatus(data)
+      return data
+    } catch (e) {
+      loading.value = false
+      stopPreparePolling()
+      error.value = getPrepareErrorMessage(e)
+      return null
+    }
+  }
+
+  function startPreparePolling(jobId) {
+    stopPreparePolling()
+    preparePollTimer.value = setInterval(() => {
+      void pollPrepareStatus(jobId)
+    }, 1800)
+  }
+
+  async function syncExistingPrepareJob() {
+    try {
+      const { data } = await api.get('/api/data/prepare-etn-kpp-bulk/active')
+      await handlePrepareStatus(data)
+      if (data?.job_id && !isTerminalPrepareStatus(data.status)) {
+        startPreparePolling(data.job_id)
+      }
+    } catch {
+      prepareStatus.value = null
+    }
+  }
+
+  async function startBulkPrepareJob(pairs) {
     loading.value = true
     error.value = ''
     result.value = null
+
     try {
-      const selected = selectedPairs()
-      if (!selected.length) {
-        error.value = t('prepare.noPairs')
+      const { data } = await api.post('/api/data/prepare-etn-kpp-bulk/start', {
+        pairs,
+        enrichment_options: buildEnrichmentOptionsPayload(),
+      })
+      await handlePrepareStatus(data)
+      startPreparePolling(data.job_id)
+    } catch (e) {
+      const activeJob = e?.response?.status === 409 ? e?.response?.data?.detail : null
+      if (activeJob?.job_id) {
+        error.value = t('prepare.jobAlreadyRunning')
+        await handlePrepareStatus(activeJob)
+        startPreparePolling(activeJob.job_id)
         return
       }
 
-      const pairs = selected.map((p) => ({
-        posli_csv_path: p.posli.relative_path,
-        delistavb_csv_path: p.delistavb.relative_path,
-        ...(p.zemljisca ? { zemljisca_csv_path: p.zemljisca.relative_path } : {}),
-        year: String(p.year),
-        label: String(p.year),
-      }))
-
-      const { data } = await postPrepare('/api/data/prepare-etn-kpp-bulk', { pairs })
-      result.value = data
-      await dataStore.fetchTrainingDataset()
-    } catch (e) {
-      error.value = getPrepareErrorMessage(e)
-    } finally {
       loading.value = false
+      error.value = getPrepareErrorMessage(e)
     }
+  }
+
+  async function prepareEtnBulk() {
+    const selected = selectedPairs()
+    if (!selected.length) {
+      error.value = t('prepare.noPairs')
+      return
+    }
+
+    const pairs = selected.map((p) => ({
+      posli_csv_path: p.posli.relative_path,
+      delistavb_csv_path: p.delistavb.relative_path,
+      ...(p.zemljisca ? { zemljisca_csv_path: p.zemljisca.relative_path } : {}),
+      year: String(p.year),
+      label: String(p.year),
+    }))
+
+    await startBulkPrepareJob(pairs)
   }
 
   async function prepareEtnSingle() {
@@ -196,6 +319,7 @@
       const { data } = await postPrepare('/api/data/prepare-etn-kpp', {
         posli_csv_path: singlePosli.value,
         delistavb_csv_path: singleDelistavb.value,
+        enrichment_options: buildEnrichmentOptionsPayload(),
       })
       result.value = data
       await dataStore.fetchTrainingDataset()
@@ -286,6 +410,113 @@
       rows,
     }))
   })
+
+  const enrichmentRows = computed(() =>
+    buildGursEnrichmentRows(result.value?.reports, result.value?.enrichment_summary),
+  )
+
+  const selectedVariantLabel = computed(
+    () => result.value?.enrichment_options?.variant_label || enrichmentOptions.variant_label.trim() || t('prepare.defaultVariantLabel'),
+  )
+
+  const enrichmentTotals = computed(() => summarizeGursEnrichment(enrichmentRows.value))
+
+  function enrichmentRunLabel(label) {
+    return label === 'single' ? t('prepare.currentRun') : String(label)
+  }
+
+  function enrichmentSeverity(available, matched) {
+    if (matched) return 'success'
+    if (available) return 'warn'
+    return 'contrast'
+  }
+
+  function enrichmentSourcesLabel(row) {
+    if (row.matchedSources.length) return row.matchedSources.join(', ')
+    if (row.sources.length) {
+      return t('prepare.detectedOnlySources', { sources: row.sources.join(', ') })
+    }
+    return t('common.noData')
+  }
+
+  const prepareProgressVisible = computed(
+    () => !!prepareStatus.value && (loading.value || prepareStatus.value?.status === 'failed'),
+  )
+
+  const prepareStatusSeverity = computed(() => {
+    const status = prepareStatus.value?.status
+    if (status === 'completed') return 'success'
+    if (status === 'failed') return 'danger'
+    if (status === 'queued') return 'warn'
+    return 'info'
+  })
+
+  const prepareStatusLabel = computed(() => {
+    const status = prepareStatus.value?.status
+    if (status === 'queued') return t('prepare.jobQueued')
+    if (status === 'failed') return t('prepare.jobFailedShort')
+    if (status === 'completed') return t('prepare.jobCompleted')
+    return t('prepare.jobRunning')
+  })
+
+  const prepareStageLabel = computed(() => {
+    const status = prepareStatus.value
+    if (!status) return ''
+    const label = status.current_label ? String(status.current_label) : t('prepare.unknownYear')
+
+    switch (status.stage) {
+      case 'queued':
+        return t('prepare.stageQueued')
+      case 'initializing':
+        return t('prepare.stageInitializing')
+      case 'loading_pair':
+        return t('prepare.stageLoadingPair', { label })
+      case 'building_rows':
+        return t('prepare.stageBuildingRows', { label })
+      case 'enriching_buildings':
+        return t('prepare.stageEnrichingBuildings', { label })
+      case 'enriching_land':
+        return t('prepare.stageEnrichingLand', { label })
+      case 'finalizing_pair':
+        return t('prepare.stageFinalizingPair', { label })
+      case 'merging_outputs':
+        return t('prepare.stageMergingOutputs')
+      case 'completed':
+        return t('prepare.stageCompleted')
+      case 'error':
+        return t('prepare.stageError')
+      default:
+        return t('prepare.stageInitializing')
+    }
+  })
+
+  const prepareProgressCards = computed(() => {
+    const status = prepareStatus.value
+    if (!status) return []
+
+    return [
+      {
+        label: t('prepare.currentYear'),
+        value: status.current_label || t('prepare.unknownYear'),
+        meta: status.current_pair_index && status.total_pairs
+          ? t('prepare.currentPairMeta', {
+              current: status.current_pair_index,
+              total: status.total_pairs,
+            })
+          : t('common.noData'),
+      },
+      {
+        label: t('prepare.pairsCompleted'),
+        value: fmt(status.pairs_completed || 0),
+        meta: status.total_pairs ? t('prepare.totalPairsMeta', { total: status.total_pairs }) : t('common.noData'),
+      },
+      {
+        label: t('prepare.prepareProgress'),
+        value: `${status.progress || 0}%`,
+        meta: prepareStageLabel.value,
+      },
+    ]
+  })
 </script>
 
 <template>
@@ -323,6 +554,44 @@
               </div>
 
               <div v-else>
+                <div class="enrichment-config-card mb-4">
+                  <div class="enrichment-config-head">
+                    <h3>{{ t('prepare.enrichmentOptions') }}</h3>
+                    <p class="muted">{{ t('prepare.enrichmentOptionsDesc') }}</p>
+                  </div>
+
+                  <div class="toggle-grid">
+                    <label class="toggle-chip">
+                      <ToggleSwitch v-model="enrichmentOptions.enable_rn" />
+                      <span>{{ t('prepare.enableRn') }}</span>
+                    </label>
+                    <label class="toggle-chip">
+                      <ToggleSwitch v-model="enrichmentOptions.enable_ev" />
+                      <span>{{ t('prepare.enableEv') }}</span>
+                    </label>
+                    <label class="toggle-chip">
+                      <ToggleSwitch v-model="enrichmentOptions.enable_kn" />
+                      <span>{{ t('prepare.enableKn') }}</span>
+                    </label>
+                    <label class="toggle-chip">
+                      <ToggleSwitch v-model="enrichmentOptions.enable_gji" />
+                      <span>{{ t('prepare.enableGji') }}</span>
+                    </label>
+                    <label class="toggle-chip">
+                      <ToggleSwitch v-model="enrichmentOptions.enable_emv" />
+                      <span>{{ t('prepare.enableEmv') }}</span>
+                    </label>
+                  </div>
+
+                  <div class="variant-field mt-3">
+                    <label class="form-label">{{ t('prepare.variantLabel') }}</label>
+                    <InputText
+                      v-model="enrichmentOptions.variant_label"
+                      :placeholder="t('prepare.variantLabelPlaceholder')"
+                    />
+                  </div>
+                </div>
+
                 <div class="selection-toolbar">
                   <Button
                     size="small"
@@ -416,6 +685,44 @@
                 </div>
               </div>
 
+              <div class="enrichment-config-card mt-4">
+                <div class="enrichment-config-head">
+                  <h3>{{ t('prepare.enrichmentOptions') }}</h3>
+                  <p class="muted">{{ t('prepare.enrichmentOptionsDesc') }}</p>
+                </div>
+
+                <div class="toggle-grid">
+                  <label class="toggle-chip">
+                    <ToggleSwitch v-model="enrichmentOptions.enable_rn" />
+                    <span>{{ t('prepare.enableRn') }}</span>
+                  </label>
+                  <label class="toggle-chip">
+                    <ToggleSwitch v-model="enrichmentOptions.enable_ev" />
+                    <span>{{ t('prepare.enableEv') }}</span>
+                  </label>
+                  <label class="toggle-chip">
+                    <ToggleSwitch v-model="enrichmentOptions.enable_kn" />
+                    <span>{{ t('prepare.enableKn') }}</span>
+                  </label>
+                  <label class="toggle-chip">
+                    <ToggleSwitch v-model="enrichmentOptions.enable_gji" />
+                    <span>{{ t('prepare.enableGji') }}</span>
+                  </label>
+                  <label class="toggle-chip">
+                    <ToggleSwitch v-model="enrichmentOptions.enable_emv" />
+                    <span>{{ t('prepare.enableEmv') }}</span>
+                  </label>
+                </div>
+
+                <div class="variant-field mt-3">
+                  <label class="form-label">{{ t('prepare.variantLabel') }}</label>
+                  <InputText
+                    v-model="enrichmentOptions.variant_label"
+                    :placeholder="t('prepare.variantLabelPlaceholder')"
+                  />
+                </div>
+              </div>
+
               <Button
                 class="mt-4"
                 icon="pi pi-cog"
@@ -475,6 +782,33 @@
     <!-- Error -->
     <p v-if="error" class="error-text mt-4">{{ error }}</p>
 
+    <div v-if="prepareProgressVisible" class="card progress-card">
+      <PageHeader
+        compact
+        :eyebrow="t('prepare.prepareProgress')"
+        :title="prepareStageLabel"
+        :description="t('prepare.jobProgressDesc')"
+      >
+        <template #actions>
+          <Tag :severity="prepareStatusSeverity" :value="prepareStatusLabel" />
+        </template>
+      </PageHeader>
+
+      <ProgressBar :value="prepareStatus?.progress || 0" :show-value="false" />
+
+      <div class="result-metrics compact-metrics">
+        <MetricCard
+          v-for="card in prepareProgressCards"
+          :key="card.label"
+          :label="card.label"
+          :value="card.value"
+          :meta="card.meta"
+        />
+      </div>
+
+      <p v-if="prepareStatus?.error" class="error-text">{{ prepareStatus.error }}</p>
+    </div>
+
     <!-- Result -->
     <div v-if="result" class="card result-card mt-6">
       <PageHeader compact :eyebrow="t('prepare.result')" :title="t('prepare.readyForModel')" />
@@ -494,6 +828,10 @@
           v-if="result.per_year"
           :label="t('prepare.yearsCovered')"
           :value="fmt(Object.keys(result.per_year).length)"
+        />
+        <MetricCard
+          :label="t('prepare.variantLabel')"
+          :value="selectedVariantLabel"
         />
       </div>
 
@@ -540,6 +878,133 @@
         </DataTable>
       </div>
 
+      <div v-if="enrichmentRows.length" class="card inner-card mt-4">
+        <PageHeader
+          compact
+          :eyebrow="t('prepare.result')"
+          :title="t('prepare.gursEnrichment')"
+          :description="t('prepare.gursEnrichmentDesc')"
+        />
+
+        <div class="result-metrics">
+          <MetricCard
+            :label="t('prepare.exactAddressMatches')"
+            :value="fmt(enrichmentTotals.rnExactAddress)"
+          />
+          <MetricCard
+            :label="t('prepare.regionIdsRecovered')"
+            :value="fmt(enrichmentTotals.rnRegionId)"
+          />
+          <MetricCard
+            :label="t('prepare.evBuildingMatches')"
+            :value="fmt(enrichmentTotals.evBuildingMatch)"
+          />
+          <MetricCard
+            :label="t('prepare.evParcelMatches')"
+            :value="fmt(enrichmentTotals.evParcelMatch)"
+          />
+          <MetricCard
+            :label="t('prepare.knPolygonMatches')"
+            :value="fmt(enrichmentTotals.knPolygonMatch)"
+          />
+          <MetricCard
+            :label="t('prepare.gjiVodovodMatches')"
+            :value="fmt(enrichmentTotals.gjiVodovodNearby)"
+          />
+          <MetricCard
+            :label="t('prepare.gjiKanalizacijaMatches')"
+            :value="fmt(enrichmentTotals.gjiKanalizacijaNearby)"
+          />
+          <MetricCard
+            :label="t('prepare.emvZoneMatches')"
+            :value="fmt(enrichmentTotals.emvZoneMatch)"
+          />
+        </div>
+
+        <DataTable :value="enrichmentRows" striped-rows size="small">
+          <Column :header="t('prepare.year')">
+            <template #body="{ data: row }">
+              <Tag :value="enrichmentRunLabel(row.label)" severity="info" />
+            </template>
+          </Column>
+          <Column :header="t('prepare.sourceCoverage')">
+            <template #body="{ data: row }">
+              <div class="coverage-tags">
+                <Tag
+                  :value="t('prepare.rnRegister')"
+                  :severity="enrichmentSeverity(row.rnAvailable, row.rnExactAddress > 0 || row.rnRegionId > 0)"
+                />
+                <Tag
+                  :value="t('prepare.evBuildings')"
+                  :severity="enrichmentSeverity(row.evBuildingAvailable, row.evBuildingMatch > 0)"
+                />
+                <Tag
+                  :value="t('prepare.evParcels')"
+                  :severity="enrichmentSeverity(row.evParcelAvailable, row.evParcelMatch > 0)"
+                />
+                <Tag
+                  :value="t('prepare.knPolygons')"
+                  :severity="enrichmentSeverity(row.knAvailable, row.knPolygonMatch > 0)"
+                />
+                <Tag
+                  :value="t('prepare.gjiInfrastructure')"
+                  :severity="enrichmentSeverity(row.gjiAvailable, row.gjiVodovodNearby > 0 || row.gjiKanalizacijaNearby > 0)"
+                />
+                <Tag
+                  :value="t('prepare.emvZones')"
+                  :severity="enrichmentSeverity(row.emvAvailable || row.emvSpatialEnabled, row.emvZoneMatch > 0)"
+                />
+              </div>
+            </template>
+          </Column>
+          <Column field="rnExactAddress" :header="t('prepare.exactAddressMatches')" sortable>
+            <template #body="{ data: row }">
+              {{ fmt(row.rnExactAddress) }}
+            </template>
+          </Column>
+          <Column field="rnRegionId" :header="t('prepare.regionIdsRecovered')" sortable>
+            <template #body="{ data: row }">
+              {{ fmt(row.rnRegionId) }}
+            </template>
+          </Column>
+          <Column field="evBuildingMatch" :header="t('prepare.evBuildingMatches')" sortable>
+            <template #body="{ data: row }">
+              {{ fmt(row.evBuildingMatch) }}
+            </template>
+          </Column>
+          <Column field="evParcelMatch" :header="t('prepare.evParcelMatches')" sortable>
+            <template #body="{ data: row }">
+              {{ fmt(row.evParcelMatch) }}
+            </template>
+          </Column>
+          <Column field="knPolygonMatch" :header="t('prepare.knPolygonMatches')" sortable>
+            <template #body="{ data: row }">
+              {{ fmt(row.knPolygonMatch) }}
+            </template>
+          </Column>
+          <Column field="gjiVodovodNearby" :header="t('prepare.gjiVodovodMatches')" sortable>
+            <template #body="{ data: row }">
+              {{ fmt(row.gjiVodovodNearby) }}
+            </template>
+          </Column>
+          <Column field="gjiKanalizacijaNearby" :header="t('prepare.gjiKanalizacijaMatches')" sortable>
+            <template #body="{ data: row }">
+              {{ fmt(row.gjiKanalizacijaNearby) }}
+            </template>
+          </Column>
+          <Column field="emvZoneMatch" :header="t('prepare.emvZoneMatches')" sortable>
+            <template #body="{ data: row }">
+              {{ fmt(row.emvZoneMatch) }}
+            </template>
+          </Column>
+          <Column :header="t('prepare.enrichmentSources')">
+            <template #body="{ data: row }">
+              <span class="muted source-cell">{{ enrichmentSourcesLabel(row) }}</span>
+            </template>
+          </Column>
+        </DataTable>
+      </div>
+
       <div v-if="result.training_dataset" class="card inner-card mt-4 ready-card">
         <PageHeader compact :eyebrow="t('prepare.result')" :title="t('prepare.readyForModel')" />
 
@@ -576,6 +1041,7 @@
 
   .prepare-hero,
   .prepare-workbench,
+  .progress-card,
   .result-card {
     display: grid;
     gap: 1rem;
@@ -597,11 +1063,51 @@
   }
 
   .selection-toolbar,
+  .coverage-tags,
   .result-metrics {
     display: flex;
     align-items: center;
     gap: 0.75rem;
     flex-wrap: wrap;
+  }
+
+  .toggle-grid {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .toggle-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.65rem;
+    padding: 0.65rem 0.9rem;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface-muted);
+  }
+
+  .enrichment-config-card {
+    display: grid;
+    gap: 0.9rem;
+    padding: 1rem;
+    border: 1px solid var(--border);
+    border-radius: 1rem;
+    background: color-mix(in srgb, var(--surface-muted) 78%, white);
+  }
+
+  .enrichment-config-head {
+    display: grid;
+    gap: 0.35rem;
+  }
+
+  .enrichment-config-head h3 {
+    margin: 0;
+    font-size: 1rem;
+  }
+
+  .variant-field {
+    max-width: 24rem;
   }
 
   .result-metrics {
@@ -610,6 +1116,10 @@
 
   .result-metrics :deep(.metric-card) {
     flex: 1 1 220px;
+  }
+
+  .compact-metrics :deep(.metric-card) {
+    min-width: 12rem;
   }
 
   .code-textarea {
@@ -623,8 +1133,23 @@
     border-left: 4px solid var(--success);
   }
 
+  .coverage-tags {
+    align-items: center;
+  }
+
+  .source-cell {
+    display: inline-block;
+    max-width: 28rem;
+    white-space: normal;
+    word-break: break-word;
+  }
+
   .ready-card {
     border-color: color-mix(in srgb, var(--success) 32%, var(--border));
+  }
+
+  .progress-card {
+    border-left: 4px solid var(--info);
   }
 
   @media (max-width: 720px) {

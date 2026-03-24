@@ -15,6 +15,7 @@ from datetime import UTC, datetime
 from typing import Literal
 
 import pandas as pd
+from arq import create_pool
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
@@ -30,6 +31,7 @@ from app.schemas.dataset import (
     DatasetFileResponse,
     DatasetPreviewResponse,
     DatasetUploadResponse,
+    PrepareJobStatusResponse,
     TrainingDatasetResponse,
     UploadCapacityResponse,
 )
@@ -51,6 +53,7 @@ from app.services.data_processing_service import (
     prepare_training_csv_from_etn_kpp_bulk,
     read_csv_flexible,
 )
+from app.tasks.training_worker import PREPARE_ACTIVE_KEY, PREPARE_JOB_PREFIX, _parse_redis_url
 from app.services.regions_service import CANONICAL_REGION_ROWS
 from app.utils.cache import invalidate_request_caches
 from app.utils.municipality import normalize_municipality_name
@@ -572,9 +575,84 @@ async def delete_datasets_bulk(
 TRAIN_CSV = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "raw", "train.csv")
 
 
+def _coerce_progress(value: object, fallback: int = 0) -> int:
+    try:
+        return max(0, min(100, int(round(float(value)))))
+    except (TypeError, ValueError):
+        return fallback
+
+
+async def _read_prepare_job_state(redis, job_id: str) -> dict | None:
+    raw = await redis.get(f"{PREPARE_JOB_PREFIX}{job_id}")
+    if raw is None:
+        return None
+    if isinstance(raw, bytes):
+        raw = raw.decode("utf-8", errors="ignore")
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        logger.warning("Ignoring invalid Redis prepare payload for job %s", job_id)
+        return None
+
+
+def _serialize_prepare_job(job_id: str, payload: dict | None) -> PrepareJobStatusResponse:
+    data = payload or {}
+    result = data.get("result")
+    if isinstance(result, dict) and result.get("output_csv_path"):
+        result = {
+            **result,
+            "output_csv_path": _to_relative_data_path(str(result["output_csv_path"])),
+        }
+        if result.get("status") == "completed" or data.get("status") == "completed":
+            result["training_dataset"] = _get_training_dataset_metadata().model_dump(mode="json")
+    return PrepareJobStatusResponse(
+        job_id=job_id,
+        status=str(data.get("status") or "unknown"),
+        stage=data.get("stage"),
+        progress=_coerce_progress(data.get("progress")),
+        total_pairs=data.get("total_pairs"),
+        current_pair_index=data.get("current_pair_index"),
+        current_label=data.get("current_label"),
+        pairs_completed=data.get("pairs_completed"),
+        rows=data.get("rows"),
+        result=result,
+        error=data.get("error"),
+    )
+
+
+async def _get_active_prepare_job(redis) -> tuple[str | None, dict | None]:
+    active_job_id = await redis.get(PREPARE_ACTIVE_KEY)
+    if isinstance(active_job_id, bytes):
+        active_job_id = active_job_id.decode("utf-8", errors="ignore")
+    if not active_job_id:
+        return None, None
+
+    state = await _read_prepare_job_state(redis, str(active_job_id))
+    if state is None:
+        await redis.delete(PREPARE_ACTIVE_KEY)
+        return None, None
+
+    status_value = str(state.get("status") or "unknown")
+    if status_value in {"completed", "failed"}:
+        await redis.delete(PREPARE_ACTIVE_KEY)
+        return None, None
+
+    return str(active_job_id), state
+
+
+async def _get_prepare_enqueue_redis(request: Request):
+    shared_redis = request.app.state.redis
+    if hasattr(shared_redis, "enqueued_jobs"):
+        return shared_redis, False
+
+    redis = await create_pool(_parse_redis_url(get_settings().redis_url))
+    return redis, True
+
+
 class EtnPrepareRequest(BaseModel):
     posli_csv_path: str
     delistavb_csv_path: str
+    enrichment_options: dict | None = None
 
 
 @router.post("/prepare-etn-kpp")
@@ -587,7 +665,7 @@ async def prepare_etn_kpp(
     posli = _validate_path_within_data_dir(req.posli_csv_path)
     delistavb = _validate_path_within_data_dir(req.delistavb_csv_path)
     try:
-        result = prepare_training_csv_from_etn_kpp(posli, delistavb, TRAIN_CSV)
+        result = prepare_training_csv_from_etn_kpp(posli, delistavb, TRAIN_CSV, req.enrichment_options)
     except ValueError as exc:
         logger.warning("ETN KPP preparation rejected: %s", exc)
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
@@ -612,6 +690,87 @@ class EtnBulkPair(BaseModel):
 
 class EtnBulkRequest(BaseModel):
     pairs: list[EtnBulkPair] = Field(..., max_length=50)
+    enrichment_options: dict | None = None
+
+
+@router.post("/prepare-etn-kpp-bulk/start", response_model=PrepareJobStatusResponse)
+async def start_prepare_etn_kpp_bulk(
+    req: EtnBulkRequest,
+    request: Request,
+    _user: User = Depends(require_admin),
+):
+    """Start an async ETN bulk preparation job."""
+    pairs_dicts = []
+    for pair in req.pairs:
+        resolved_pair = pair.model_dump()
+        resolved_pair["posli_csv_path"] = _validate_path_within_data_dir(pair.posli_csv_path)
+        resolved_pair["delistavb_csv_path"] = _validate_path_within_data_dir(pair.delistavb_csv_path)
+        if pair.zemljisca_csv_path:
+            resolved_pair["zemljisca_csv_path"] = _validate_path_within_data_dir(pair.zemljisca_csv_path)
+        pairs_dicts.append(resolved_pair)
+
+    redis, should_close = await _get_prepare_enqueue_redis(request)
+    try:
+        active_job_id, active_state = await _get_active_prepare_job(redis)
+        if active_job_id and active_state:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                detail={
+                    "message": "A preparation job is already queued or running",
+                    **_serialize_prepare_job(active_job_id, active_state).model_dump(),
+                },
+            )
+
+        job_id = uuid.uuid4().hex[:16]
+        initial_payload = {
+            "status": "queued",
+            "stage": "queued",
+            "progress": 0,
+            "total_pairs": len(pairs_dicts),
+            "pairs_completed": 0,
+        }
+        await redis.set(f"{PREPARE_JOB_PREFIX}{job_id}", json.dumps(initial_payload), ex=86400)
+        await redis.set(PREPARE_ACTIVE_KEY, job_id, ex=86400)
+        enqueued_job = await redis.enqueue_job("run_prepare_etn_bulk", job_id, pairs_dicts, TRAIN_CSV, req.enrichment_options)
+        if should_close and enqueued_job is None:
+            logger.error("Failed to enqueue prepare job %s", job_id)
+            await redis.delete(PREPARE_ACTIVE_KEY)
+            await redis.delete(f"{PREPARE_JOB_PREFIX}{job_id}")
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Preparation worker queue is unavailable")
+        logger.info("Queued prepare job %s for %d pairs", job_id, len(pairs_dicts))
+        return _serialize_prepare_job(job_id, initial_payload)
+    finally:
+        if should_close:
+            await redis.close()
+
+
+@router.get("/prepare-etn-kpp-bulk/active", response_model=PrepareJobStatusResponse)
+async def get_active_prepare_etn_kpp_bulk(
+    request: Request,
+    _user: User = Depends(get_current_user),
+):
+    """Return the currently active ETN bulk preparation job, if any."""
+    job_id, state = await _get_active_prepare_job(request.app.state.redis)
+    if not job_id or not state:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No active preparation job")
+    return _serialize_prepare_job(job_id, state)
+
+
+@router.get("/prepare-etn-kpp-bulk/status/{job_id}", response_model=PrepareJobStatusResponse)
+async def get_prepare_etn_kpp_bulk_status(
+    job_id: str,
+    request: Request,
+    _user: User = Depends(get_current_user),
+):
+    """Return ETN bulk preparation status from Redis."""
+    state = await _read_prepare_job_state(request.app.state.redis, job_id)
+    if state is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Preparation job not found")
+
+    if str(state.get("status") or "") == "completed":
+        await invalidate_request_caches(request)
+
+    return _serialize_prepare_job(job_id, state)
 
 
 @router.post("/prepare-etn-kpp-bulk")
@@ -630,7 +789,7 @@ async def prepare_etn_kpp_bulk(
             resolved_pair["zemljisca_csv_path"] = _validate_path_within_data_dir(pair.zemljisca_csv_path)
         pairs_dicts.append(resolved_pair)
     try:
-        result = prepare_training_csv_from_etn_kpp_bulk(pairs_dicts, TRAIN_CSV)
+        result = prepare_training_csv_from_etn_kpp_bulk(pairs_dicts, TRAIN_CSV, enrichment_options=req.enrichment_options)
     except ValueError as exc:
         logger.warning("ETN KPP bulk preparation rejected: %s", exc)
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc

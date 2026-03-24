@@ -20,6 +20,7 @@
   import PageHeader from '../components/PageHeader.vue'
   import { useDataStore } from '../stores/data'
   import { useModelStore } from '../stores/model'
+  import { buildGursEnrichmentRows, summarizeGursEnrichment } from '../utils/enrichmentSummary'
   import { formatCurrency, formatDateTime, formatNumber, formatPercent } from '../utils/format'
   import { getPropertyTypeLabel } from '../utils/propertyType'
 
@@ -206,6 +207,126 @@
     ]
   })
 
+  const variantBenchmarks = computed(() => model.diagnostics?.variant_benchmarks || null)
+  const variantMatrix = computed(() => model.diagnostics?.variant_matrix || null)
+
+  const variantBenchmarkCards = computed(() => {
+    const variants = variantBenchmarks.value
+    if (!variants) return []
+
+    const production = variants.production_combined?.metrics
+    const etnOnly = variants.etn_only?.metrics
+    const deterministic = variants.deterministic?.metrics
+    const fullGlobal = variants.full_global?.metrics
+    if (!production || !etnOnly || !deterministic || !fullGlobal) return []
+
+    return [
+      {
+        label: t('diag.productionR2'),
+        value: formatMetric(production.r2, 3),
+        meta: t('diag.productionR2Desc'),
+      },
+      {
+        label: t('diag.detVsEtnR2'),
+        value: formatSignedNumber(deterministic.r2 - etnOnly.r2, 3),
+        meta: t('diag.detVsEtnR2Desc'),
+      },
+      {
+        label: t('diag.fullVsDetR2'),
+        value: formatSignedNumber(fullGlobal.r2 - deterministic.r2, 3),
+        meta: t('diag.fullVsDetR2Desc'),
+      },
+      {
+        label: t('diag.prodVsFullMae'),
+        value: formatSignedCurrency(production.mae - fullGlobal.mae),
+        meta: t('diag.prodVsFullMaeDesc'),
+      },
+    ]
+  })
+
+  const variantBenchmarkRows = computed(() => {
+    const variants = variantBenchmarks.value
+    if (!variants) return []
+
+    return Object.entries(variants).map(([key, variant]: [string, any]) => ({
+      key,
+      label: variant.label || key,
+      sources: variant.enabled_sources || {},
+      mae: variant.metrics?.mae,
+      rmse: variant.metrics?.rmse,
+      r2: variant.metrics?.r2,
+      mape: variant.metrics?.mape,
+      delta_r2: variant.delta_vs_full_global?.r2,
+      delta_mae: variant.delta_vs_full_global?.mae,
+      removedFeatures: Array.isArray(variant.removed_features) ? variant.removed_features : [],
+    }))
+  })
+
+  const variantMatrixRows = computed(() => {
+    const variants = variantMatrix.value
+    if (!variants) return []
+
+    return Object.entries(variants).map(([key, variant]: [string, any]) => ({
+      key,
+      label: variant.label || key,
+      sources: variant.enabled_sources || {},
+      globalR2: variant.global_metrics?.r2,
+      globalMae: variant.global_metrics?.mae,
+      combinedR2: variant.combined_metrics?.r2,
+      combinedMae: variant.combined_metrics?.mae,
+      perTypeCount: variant.per_type_count ?? 0,
+    }))
+  })
+
+  const evBaseline = computed(() => model.diagnostics?.ev_baseline_metrics || null)
+
+  const evBaselineCards = computed(() => {
+    const baseline = evBaseline.value
+    if (!baseline?.benchmark_metrics || !baseline?.model_metrics_on_coverage) return []
+    const coveragePct =
+      baseline.coverage_ratio == null
+        ? ''
+        : ` (${formatPercent(baseline.coverage_ratio, { minimumFractionDigits: 1 })})`
+    return [
+      {
+        label: t('diag.evCoverageRows'),
+        value: `${formatNumber(baseline.coverage_rows)}${coveragePct}`,
+        meta: t('diag.evCoverageRowsDesc'),
+      },
+      {
+        label: t('diag.modelMaeOnCoverage'),
+        value: formatCurrency(baseline.model_metrics_on_coverage.mae),
+        meta: t('diag.modelMaeOnCoverageDesc'),
+      },
+      {
+        label: t('diag.evBenchmarkMae'),
+        value: formatCurrency(baseline.benchmark_metrics.mae),
+        meta: t('diag.evBenchmarkMaeDesc'),
+      },
+      {
+        label: t('diag.modelEdgeR2'),
+        value: formatSignedNumber(baseline.delta_vs_model?.r2, 3),
+        meta: t('diag.modelEdgeR2Desc'),
+      },
+    ]
+  })
+
+  const evBaselinePerTypeRows = computed(() => {
+    const rows = evBaseline.value?.per_type_metrics
+    if (!rows) return []
+    return Object.entries(rows).map(([propertyType, metricsData]: [string, any]) => ({
+      propertyType,
+      typeLabel: formatType(propertyType),
+      n: metricsData.n,
+      mae: metricsData.mae,
+      rmse: metricsData.rmse,
+      r2: metricsData.r2,
+      model_mae: metricsData.model_mae,
+      model_r2: metricsData.model_r2,
+      delta_mae: metricsData.mae - metricsData.model_mae,
+    }))
+  })
+
   const modelDetailsRows = computed(() => {
     if (!model.info) return []
     const rows = [
@@ -289,6 +410,15 @@
     )
   })
 
+  const enrichmentRows = computed(() =>
+    buildGursEnrichmentRows(
+      preparationMetadata.value?.reports,
+      preparationMetadata.value?.enrichment_summary,
+    ),
+  )
+
+  const enrichmentTotals = computed(() => summarizeGursEnrichment(enrichmentRows.value))
+
   const segmentRows = computed(
     () => model.diagnostics?.segment_diagnostics?.[selectedSegmentGroup.value] || [],
   )
@@ -331,6 +461,44 @@
 
   function formatMape(mape) {
     return mape == null ? '—' : formatPercent(mape, { scale: 0.01, minimumFractionDigits: 1 })
+  }
+
+  function formatSignedNumber(value, digits = 2) {
+    if (value == null || Number.isNaN(Number(value))) return '—'
+    const sign = Number(value) > 0 ? '+' : ''
+    return `${sign}${formatMetric(value, digits)}`
+  }
+
+  function formatSignedCurrency(value) {
+    if (value == null || Number.isNaN(Number(value))) return '—'
+    const sign = Number(value) > 0 ? '+' : ''
+    return `${sign}${formatCurrency(value)}`
+  }
+
+  function variantSourceSummary(sources) {
+    const labels = []
+    if (sources?.rn) labels.push('RN')
+    if (sources?.ev) labels.push('EV')
+    if (sources?.emv) labels.push('EMV')
+    return labels.length ? labels.join(' + ') : t('diag.etnOnly')
+  }
+
+  function enrichmentRunLabel(label) {
+    return label === 'single' ? t('diag.currentRun') : String(label)
+  }
+
+  function enrichmentSeverity(available, matched) {
+    if (matched) return 'success'
+    if (available) return 'warn'
+    return 'contrast'
+  }
+
+  function enrichmentSourcesLabel(row) {
+    if (row.matchedSources.length) return row.matchedSources.join(', ')
+    if (row.sources.length) {
+      return t('diag.detectedOnlySources', { sources: row.sources.join(', ') })
+    }
+    return t('common.noData')
   }
 
   onMounted(async () => {
@@ -414,6 +582,160 @@
         </div>
       </div>
 
+      <div v-if="variantBenchmarkRows.length" class="card diagnostics-card">
+        <PageHeader
+          compact
+          :eyebrow="t('diag.variantBenchmarks')"
+          :title="t('diag.variantBenchmarks')"
+          :description="t('diag.variantBenchmarksDesc')"
+        />
+
+        <div v-if="variantBenchmarkCards.length" class="kpi-grid">
+          <MetricCard
+            v-for="item in variantBenchmarkCards"
+            :key="item.label"
+            :label="item.label"
+            :value="item.value"
+            :meta="item.meta"
+          />
+        </div>
+
+        <DataTable :value="variantBenchmarkRows" size="small" striped-rows table-style="min-width: 100%">
+          <Column field="label" :header="t('diag.variant')" sortable />
+          <Column :header="t('diag.sources')">
+            <template #body="{ data }">
+              <span class="muted source-cell">{{ variantSourceSummary(data.sources) }}</span>
+            </template>
+          </Column>
+          <Column field="r2" header="R²" sortable>
+            <template #body="{ data }">
+              <Tag :value="formatMetric(data.r2, 3)" :severity="r2Severity(data.r2)" />
+            </template>
+          </Column>
+          <Column field="mae" header="MAE" sortable>
+            <template #body="{ data }">{{ formatCurrency(data.mae) }}</template>
+          </Column>
+          <Column field="rmse" header="RMSE" sortable>
+            <template #body="{ data }">{{ formatCurrency(data.rmse) }}</template>
+          </Column>
+          <Column field="mape" header="MAPE" sortable>
+            <template #body="{ data }">{{ formatMape(data.mape) }}</template>
+          </Column>
+          <Column field="delta_r2" :header="t('diag.deltaVsFullR2')" sortable>
+            <template #body="{ data }">{{ formatSignedNumber(data.delta_r2, 3) }}</template>
+          </Column>
+          <Column field="delta_mae" :header="t('diag.deltaVsFullMae')" sortable>
+            <template #body="{ data }">{{ formatSignedCurrency(data.delta_mae) }}</template>
+          </Column>
+          <Column :header="t('diag.variantRemovedFeatures')">
+            <template #body="{ data }">
+              <span class="muted source-cell">
+                {{ data.removedFeatures.length ? data.removedFeatures.join(', ') : t('common.noData') }}
+              </span>
+            </template>
+          </Column>
+        </DataTable>
+      </div>
+
+      <div v-if="variantMatrixRows.length" class="card diagnostics-card">
+        <PageHeader
+          compact
+          :eyebrow="t('diag.variantMatrix')"
+          :title="t('diag.variantMatrix')"
+          :description="t('diag.variantMatrixDesc')"
+        />
+
+        <DataTable :value="variantMatrixRows" size="small" striped-rows table-style="min-width: 100%">
+          <Column field="label" :header="t('diag.variant')" sortable />
+          <Column :header="t('diag.sources')">
+            <template #body="{ data }">
+              <span class="muted source-cell">{{ variantSourceSummary(data.sources) }}</span>
+            </template>
+          </Column>
+          <Column field="globalR2" header="Global R²" sortable>
+            <template #body="{ data }">{{ formatMetric(data.globalR2, 3) }}</template>
+          </Column>
+          <Column field="combinedR2" header="Routed R²" sortable>
+            <template #body="{ data }">{{ formatMetric(data.combinedR2, 3) }}</template>
+          </Column>
+          <Column field="globalMae" header="Global MAE" sortable>
+            <template #body="{ data }">{{ formatCurrency(data.globalMae) }}</template>
+          </Column>
+          <Column field="combinedMae" header="Routed MAE" sortable>
+            <template #body="{ data }">{{ formatCurrency(data.combinedMae) }}</template>
+          </Column>
+          <Column field="perTypeCount" :header="t('diag.perTypeModels')" sortable>
+            <template #body="{ data }">{{ formatNumber(data.perTypeCount) }}</template>
+          </Column>
+        </DataTable>
+      </div>
+
+      <div v-if="evBaselineCards.length" class="card diagnostics-card">
+        <PageHeader
+          compact
+          :eyebrow="t('diag.evBaseline')"
+          :title="t('diag.evBaseline')"
+          :description="t('diag.evBaselineDesc')"
+        />
+
+        <div class="kpi-grid">
+          <MetricCard
+            v-for="item in evBaselineCards"
+            :key="item.label"
+            :label="item.label"
+            :value="item.value"
+            :meta="item.meta"
+          />
+        </div>
+
+        <div v-if="evBaseline?.coverage_by_source" class="coverage-source-list muted">
+          <span
+            v-for="(count, source) in evBaseline.coverage_by_source"
+            :key="source"
+            class="coverage-source-item"
+          >
+            {{ source }}: {{ formatNumber(count) }}
+          </span>
+        </div>
+
+        <DataTable
+          v-if="evBaselinePerTypeRows.length"
+          :value="evBaselinePerTypeRows"
+          size="small"
+          striped-rows
+          table-style="min-width: 100%"
+        >
+          <Column field="typeLabel" :header="t('diag.type')" sortable />
+          <Column field="n" header="N" sortable>
+            <template #body="{ data }">{{ formatNumber(data.n) }}</template>
+          </Column>
+          <Column field="model_mae" :header="t('diag.modelMaeOnCoverage')" sortable>
+            <template #body="{ data }">{{ formatCurrency(data.model_mae) }}</template>
+          </Column>
+          <Column field="mae" :header="t('diag.evBenchmarkMae')" sortable>
+            <template #body="{ data }">{{ formatCurrency(data.mae) }}</template>
+          </Column>
+          <Column field="delta_mae" :header="t('diag.evMaeSaved')" sortable>
+            <template #body="{ data }">
+              <Tag
+                :value="formatSignedCurrency(data.delta_mae)"
+                :severity="data.delta_mae > 0 ? 'success' : 'danger'"
+              />
+            </template>
+          </Column>
+          <Column field="model_r2" :header="t('diag.modelR2OnCoverage')" sortable>
+            <template #body="{ data }">
+              <Tag :value="formatMetric(data.model_r2, 3)" :severity="r2Severity(data.model_r2)" />
+            </template>
+          </Column>
+          <Column field="r2" :header="t('diag.evBenchmarkR2')" sortable>
+            <template #body="{ data }">
+              <Tag :value="formatMetric(data.r2, 3)" :severity="r2Severity(data.r2)" />
+            </template>
+          </Column>
+        </DataTable>
+      </div>
+
       <!-- Model details table -->
       <div class="card diagnostics-card">
         <PageHeader compact :eyebrow="t('diag.modelDetails')" :title="t('diag.modelDetails')" />
@@ -495,6 +817,117 @@
           </Column>
           <Column field="reports" :header="t('diag.yearsCovered')" sortable>
             <template #body="{ data }">{{ formatNumber(data.reports) }}</template>
+          </Column>
+        </DataTable>
+      </div>
+
+      <div v-if="enrichmentRows.length" class="card diagnostics-card">
+        <PageHeader
+          compact
+          :eyebrow="t('diag.datasetEnrichment')"
+          :title="t('diag.datasetEnrichment')"
+          :description="t('diag.datasetEnrichmentDesc')"
+        />
+
+        <div class="kpi-grid">
+          <MetricCard
+            :label="t('diag.exactAddressMatches')"
+            :value="formatNumber(enrichmentTotals.rnExactAddress)"
+          />
+          <MetricCard
+            :label="t('diag.regionIdsRecovered')"
+            :value="formatNumber(enrichmentTotals.rnRegionId)"
+          />
+          <MetricCard
+            :label="t('diag.evBuildingMatches')"
+            :value="formatNumber(enrichmentTotals.evBuildingMatch)"
+          />
+          <MetricCard
+            :label="t('diag.evParcelMatches')"
+            :value="formatNumber(enrichmentTotals.evParcelMatch)"
+          />
+          <MetricCard
+            :label="t('diag.knPolygonMatches')"
+            :value="formatNumber(enrichmentTotals.knPolygonMatch)"
+          />
+          <MetricCard
+            :label="t('diag.gjiVodovodMatches')"
+            :value="formatNumber(enrichmentTotals.gjiVodovodNearby)"
+          />
+          <MetricCard
+            :label="t('diag.gjiKanalizacijaMatches')"
+            :value="formatNumber(enrichmentTotals.gjiKanalizacijaNearby)"
+          />
+          <MetricCard
+            :label="t('diag.emvZoneMatches')"
+            :value="formatNumber(enrichmentTotals.emvZoneMatch)"
+          />
+        </div>
+
+        <DataTable :value="enrichmentRows" size="small" striped-rows table-style="min-width: 100%">
+          <Column :header="t('diag.yearsCovered')" sortable>
+            <template #body="{ data: row }">
+              <Tag :value="enrichmentRunLabel(row.label)" severity="info" />
+            </template>
+          </Column>
+          <Column :header="t('diag.sourceCoverage')">
+            <template #body="{ data: row }">
+              <div class="coverage-tags">
+                <Tag
+                  :value="t('diag.rnRegister')"
+                  :severity="enrichmentSeverity(row.rnAvailable, row.rnExactAddress > 0 || row.rnRegionId > 0)"
+                />
+                <Tag
+                  :value="t('diag.evBuildings')"
+                  :severity="enrichmentSeverity(row.evBuildingAvailable, row.evBuildingMatch > 0)"
+                />
+                <Tag
+                  :value="t('diag.evParcels')"
+                  :severity="enrichmentSeverity(row.evParcelAvailable, row.evParcelMatch > 0)"
+                />
+                <Tag
+                  :value="t('diag.knPolygons')"
+                  :severity="enrichmentSeverity(row.knAvailable, row.knPolygonMatch > 0)"
+                />
+                <Tag
+                  :value="t('diag.gjiInfrastructure')"
+                  :severity="enrichmentSeverity(row.gjiAvailable, row.gjiVodovodNearby > 0 || row.gjiKanalizacijaNearby > 0)"
+                />
+                <Tag
+                  :value="t('diag.emvZones')"
+                  :severity="enrichmentSeverity(row.emvAvailable || row.emvSpatialEnabled, row.emvZoneMatch > 0)"
+                />
+              </div>
+            </template>
+          </Column>
+          <Column field="rnExactAddress" :header="t('diag.exactAddressMatches')" sortable>
+            <template #body="{ data: row }">{{ formatNumber(row.rnExactAddress) }}</template>
+          </Column>
+          <Column field="rnRegionId" :header="t('diag.regionIdsRecovered')" sortable>
+            <template #body="{ data: row }">{{ formatNumber(row.rnRegionId) }}</template>
+          </Column>
+          <Column field="evBuildingMatch" :header="t('diag.evBuildingMatches')" sortable>
+            <template #body="{ data: row }">{{ formatNumber(row.evBuildingMatch) }}</template>
+          </Column>
+          <Column field="evParcelMatch" :header="t('diag.evParcelMatches')" sortable>
+            <template #body="{ data: row }">{{ formatNumber(row.evParcelMatch) }}</template>
+          </Column>
+          <Column field="knPolygonMatch" :header="t('diag.knPolygonMatches')" sortable>
+            <template #body="{ data: row }">{{ formatNumber(row.knPolygonMatch) }}</template>
+          </Column>
+          <Column field="gjiVodovodNearby" :header="t('diag.gjiVodovodMatches')" sortable>
+            <template #body="{ data: row }">{{ formatNumber(row.gjiVodovodNearby) }}</template>
+          </Column>
+          <Column field="gjiKanalizacijaNearby" :header="t('diag.gjiKanalizacijaMatches')" sortable>
+            <template #body="{ data: row }">{{ formatNumber(row.gjiKanalizacijaNearby) }}</template>
+          </Column>
+          <Column field="emvZoneMatch" :header="t('diag.emvZoneMatches')" sortable>
+            <template #body="{ data: row }">{{ formatNumber(row.emvZoneMatch) }}</template>
+          </Column>
+          <Column :header="t('diag.enrichmentSources')">
+            <template #body="{ data: row }">
+              <span class="muted source-cell">{{ enrichmentSourcesLabel(row) }}</span>
+            </template>
           </Column>
         </DataTable>
       </div>
@@ -645,6 +1078,25 @@
     flex-wrap: wrap;
   }
 
+  .coverage-tags {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .coverage-source-list {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .coverage-source-item {
+    padding: 0.35rem 0.6rem;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface-muted);
+  }
+
   .section-title,
   .focus-head h2 {
     margin: 0;
@@ -711,6 +1163,13 @@
       var(--primary),
       color-mix(in srgb, var(--primary) 40%, white)
     );
+  }
+
+  .source-cell {
+    display: inline-block;
+    max-width: 28rem;
+    white-space: normal;
+    word-break: break-word;
   }
 
   :deep(.active-focus-row) {
