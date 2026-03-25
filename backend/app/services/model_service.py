@@ -112,6 +112,10 @@ CATEGORICAL_FEATURES = [
     "naselje",
     "vrsta_zemljisca",
     "vrsta_kupoprodajnega_posla",
+    # Enrichment categoricals — strong location proxies
+    "emv_zone_name",
+    "emv_zone_model",
+    "kn_ggo_section",
 ]
 
 PERTYPE_NUMERIC = [f for f in NUMERIC_FEATURES if f != "price_per_m2_type"]
@@ -148,6 +152,7 @@ ALWAYS_INCLUDE_CATEGORICAL = {
     "municipality_normalized",
     "statistical_region",
     "lega_v_stavbi",
+    "emv_zone_name",
 }
 
 FEATURE_LABELS_SL: dict[str, str] = {
@@ -195,6 +200,8 @@ FEATURE_LABELS_SL: dict[str, str] = {
     "dist_coast": "Razdalja do obale",
     "comp_type_muni_ppm2": "€/m² tip+občina",
     "comp_type_ko_ppm2": "€/m² tip+KO",
+    "comp_type_zone_ppm2": "€/m² tip+EMV cona",
+    "comp_type_naselje_ppm2": "€/m² tip+naselje",
     # Enrichment feature labels
     "emv_zone_level": "EMV raven cone",
     "emv_zone_id": "EMV cona ID",
@@ -230,9 +237,12 @@ FEATURE_LABELS_SL: dict[str, str] = {
     "rn_address_match": "Ujemanje naslova",
     "stopnja_ddv": "Stopnja DDV",
     "vrsta_dela_stavbe": "Vrsta dela stavbe",
+    "emv_zone_name": "EMV cona ime",
+    "emv_zone_model": "EMV model vrednotenja",
+    "kn_ggo_section": "GGO odsek",
 }
 
-MODEL_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "models")
+MODEL_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "models")
 
 _MIN_FILL_RATE = 0.10
 _MIN_SIGNAL_SCORE = 0.01
@@ -266,6 +276,7 @@ PARCELA_ALWAYS_INCLUDE_NUMERIC = {
     "gji_vodovod_distance_m",
     "ev_parcela_povrsina",
     "ev_boniteta",
+    "kn_ggo_openness",
 }
 
 PARCELA_ALWAYS_INCLUDE_CATEGORICAL = {
@@ -274,6 +285,7 @@ PARCELA_ALWAYS_INCLUDE_CATEGORICAL = {
     "ime_ko",
     "naselje",
     "vrsta_zemljisca",
+    "emv_zone_name",
 }
 
 # ── Type-specific feature configurations ─────────────────────────────
@@ -300,6 +312,7 @@ TYPE_FEATURE_CONFIGS: dict[str, dict[str, set[str]]] = {
             "num_prostori",
             # Enrichment (|r| > 0.15, fill > 25%)
             "emv_zone_level",       # r=0.65
+            "emv_zone_id",          # zone granularity
             "ev_st_etaz",           # r=0.26
             "ev_ima_kanalizacijo",  # r=0.26
             "ev_id_dr_dst",         # r=-0.26
@@ -319,6 +332,7 @@ TYPE_FEATURE_CONFIGS: dict[str, dict[str, set[str]]] = {
             "lega_v_stavbi",
             "ime_ko",
             "naselje",
+            "emv_zone_name",
         },
     },
     "hisa": {
@@ -360,6 +374,7 @@ TYPE_FEATURE_CONFIGS: dict[str, dict[str, set[str]]] = {
             "statistical_region",
             "ime_ko",
             "naselje",
+            "emv_zone_name",
         },
     },
     "parcela": {
@@ -380,10 +395,14 @@ TYPE_FEATURE_CONFIGS: dict[str, dict[str, set[str]]] = {
             "ddv_vkljucen",
             # Enrichment (|r| > 0.12, fill > 10%)
             "emv_zone_level",       # r=0.38
+            "emv_zone_id",
             "gji_kanalizacija_distance_m",  # r=-0.17
+            "gji_vodovod_distance_m",
             "ev_leto_izg_stavbe",   # r=0.15
             "gji_kanalizacija_nearby_100m",  # r=0.13
             "ev_del_upor_pov",      # r=-0.12
+            "ev_boniteta",
+            "kn_ggo_openness",
         }
         | _SPATIAL_ALWAYS,
         "always_categorical": {
@@ -391,6 +410,8 @@ TYPE_FEATURE_CONFIGS: dict[str, dict[str, set[str]]] = {
             "statistical_region",
             "vrsta_zemljisca",
             "ime_ko",
+            "emv_zone_name",
+            "kn_ggo_section",
         },
     },
     "garaza": {
@@ -406,8 +427,11 @@ TYPE_FEATURE_CONFIGS: dict[str, dict[str, set[str]]] = {
             "stavba_je_dokoncana",
             "ddv_vkljucen",
             "prodani_delez_dela_stavbe",
+            "latitude",
+            "longitude",
             # Enrichment (|r| > 0.20, fill > 30%)
             "emv_zone_level",       # r=0.45
+            "emv_zone_id",
             "ev_leto_izg_stavbe",   # r=0.40
             "stopnja_ddv",          # r=-0.40
             "ev_ima_dvigalo",       # r=0.37
@@ -426,6 +450,7 @@ TYPE_FEATURE_CONFIGS: dict[str, dict[str, set[str]]] = {
             "statistical_region",
             "lega_v_stavbi",
             "ime_ko",
+            "emv_zone_name",
         },
     },
     "poslovni_prostor": {
@@ -445,6 +470,7 @@ TYPE_FEATURE_CONFIGS: dict[str, dict[str, set[str]]] = {
             "ddv_vkljucen",
             # Enrichment (|r| > 0.15, fill > 15%)
             "emv_zone_level",       # r=0.59
+            "emv_zone_id",
             "ev_ima_dvigalo",       # r=0.29
             "ev_ima_kanalizacijo",  # r=0.29
             "ev_st_etaz",           # r=0.24
@@ -459,6 +485,7 @@ TYPE_FEATURE_CONFIGS: dict[str, dict[str, set[str]]] = {
             "lega_v_stavbi",
             "ime_ko",
             "naselje",
+            "emv_zone_name",
         },
     },
     "industrijski": {
@@ -475,9 +502,12 @@ TYPE_FEATURE_CONFIGS: dict[str, dict[str, set[str]]] = {
             "parcela_m2",
             "prodani_delez_dela_stavbe",
             "stavba_je_dokoncana",
+            "latitude",
+            "longitude",
             # Enrichment (|r| > 0.18, fill > 30%)
             "ev_ima_dvigalo",       # r=0.55
             "emv_zone_level",       # r=0.34
+            "emv_zone_id",
             "ev_id_dr_dst",         # r=-0.33
             "ev_ima_vodovod",       # r=0.29
             "ev_ima_kanalizacijo",  # r=0.28
@@ -491,6 +521,7 @@ TYPE_FEATURE_CONFIGS: dict[str, dict[str, set[str]]] = {
             "municipality_normalized",
             "statistical_region",
             "ime_ko",
+            "emv_zone_name",
         },
     },
     "turisticni": {
@@ -507,8 +538,11 @@ TYPE_FEATURE_CONFIGS: dict[str, dict[str, set[str]]] = {
             "uporabna_povrsina",
             "prodani_delez_dela_stavbe",
             "stavba_je_dokoncana",
+            "latitude",
+            "longitude",
             # Enrichment (|r| > 0.15, fill > 30%)
             "emv_zone_level",       # r=0.52
+            "emv_zone_id",
             "ev_ima_dvigalo",       # r=0.45
             "gji_kanalizacija_nearby_100m",  # r=0.32
             "ev_ima_kanalizacijo",  # r=0.23
@@ -523,6 +557,7 @@ TYPE_FEATURE_CONFIGS: dict[str, dict[str, set[str]]] = {
             "statistical_region",
             "ime_ko",
             "naselje",
+            "emv_zone_name",
         },
     },
     "gostinstvo": {
@@ -536,6 +571,8 @@ TYPE_FEATURE_CONFIGS: dict[str, dict[str, set[str]]] = {
             "price_per_m2_municipality",
             "uporabna_povrsina",
             "stavba_je_dokoncana",
+            "latitude",
+            "longitude",
             # Enrichment (|r| > 0.14, fill > 30%)
             "emv_zone_level",       # r=0.52
             "ev_ima_kanalizacijo",  # r=0.20
@@ -550,6 +587,8 @@ TYPE_FEATURE_CONFIGS: dict[str, dict[str, set[str]]] = {
         "always_categorical": {
             "municipality_normalized",
             "statistical_region",
+            "ime_ko",
+            "emv_zone_name",
         },
     },
 }
@@ -627,50 +666,50 @@ def _filter_features(
 def _adaptive_hyperparams(n_samples: int) -> dict:
     if n_samples > 50_000:
         return {
-            "max_iter": 4000,
-            "learning_rate": 0.01,
+            "max_iter": 6000,
+            "learning_rate": 0.008,
             "max_depth": 10,
-            "min_samples_leaf": 30,
-            "l2_regularization": 0.03,
+            "min_samples_leaf": 25,
+            "l2_regularization": 0.02,
         }
     if n_samples > 20_000:
         return {
-            "max_iter": 3000,
-            "learning_rate": 0.015,
+            "max_iter": 5000,
+            "learning_rate": 0.01,
             "max_depth": 9,
-            "min_samples_leaf": 25,
-            "l2_regularization": 0.04,
+            "min_samples_leaf": 20,
+            "l2_regularization": 0.03,
         }
     if n_samples > 5000:
         return {
-            "max_iter": 2000,
-            "learning_rate": 0.02,
+            "max_iter": 4000,
+            "learning_rate": 0.015,
             "max_depth": 8,
-            "min_samples_leaf": 20,
-            "l2_regularization": 0.05,
+            "min_samples_leaf": 15,
+            "l2_regularization": 0.04,
         }
     if n_samples > 1000:
         return {
-            "max_iter": 1500,
-            "learning_rate": 0.03,
+            "max_iter": 3000,
+            "learning_rate": 0.02,
             "max_depth": 7,
-            "min_samples_leaf": 15,
-            "l2_regularization": 0.1,
+            "min_samples_leaf": 12,
+            "l2_regularization": 0.06,
         }
     if n_samples > 500:
         return {
-            "max_iter": 1000,
-            "learning_rate": 0.04,
+            "max_iter": 2000,
+            "learning_rate": 0.03,
             "max_depth": 6,
-            "min_samples_leaf": 12,
-            "l2_regularization": 0.15,
+            "min_samples_leaf": 10,
+            "l2_regularization": 0.1,
         }
     return {
-        "max_iter": 600,
-        "learning_rate": 0.05,
+        "max_iter": 1500,
+        "learning_rate": 0.04,
         "max_depth": 5,
-        "min_samples_leaf": 10,
-        "l2_regularization": 0.25,
+        "min_samples_leaf": 8,
+        "l2_regularization": 0.15,
     }
 
 
@@ -799,7 +838,7 @@ def _build_pipeline(
     # Per-type models use early stopping; global model uses warm_start for progress.
     if use_early_stopping:
         model = HistGradientBoostingRegressor(
-            loss="absolute_error",
+            loss="squared_error",
             max_iter=hp["max_iter"],
             learning_rate=hp["learning_rate"],
             max_depth=hp["max_depth"],
@@ -808,14 +847,14 @@ def _build_pipeline(
             l2_regularization=hp.get("l2_regularization", 0.1),
             early_stopping=True,
             validation_fraction=0.12,
-            n_iter_no_change=50,
+            n_iter_no_change=80,
             random_state=42,
             warm_start=False,
             verbose=0,
         )
     else:
         model = HistGradientBoostingRegressor(
-            loss="absolute_error",
+            loss="squared_error",
             max_iter=hp["max_iter"],
             learning_rate=hp["learning_rate"],
             max_depth=hp["max_depth"],
@@ -1107,6 +1146,25 @@ def train_from_csv(
         df = df.drop(columns=["_ppm2_tmp"])
         logger.info("Mixed-type deal cleaning: %d → %d rows", n_before_deal_clean, len(df))
 
+    # ── Global IQR-based outlier removal PER TYPE before train/test split ─
+    # Removes extreme log(ppm2) values per type so both train AND test sets
+    # are clean. Uses 2.5×IQR fence which removes ~0.3-1.5% per type.
+    n_before_global_outlier = len(df)
+    if "property_type" in df.columns:
+        df["_log_ppm2_tmp"] = np.log(df["price_eur"] / df["size_m2"])
+        keep_mask = pd.Series(True, index=df.index)
+        for ptype in df["property_type"].unique():
+            type_mask = df["property_type"] == ptype
+            lp = df.loc[type_mask, "_log_ppm2_tmp"]
+            q1, q3 = lp.quantile(0.25), lp.quantile(0.75)
+            iqr = q3 - q1
+            fence_lo, fence_hi = q1 - 2.5 * iqr, q3 + 2.5 * iqr
+            type_outlier = type_mask & ((df["_log_ppm2_tmp"] < fence_lo) | (df["_log_ppm2_tmp"] > fence_hi))
+            keep_mask = keep_mask & ~type_outlier
+        df = df[keep_mask]
+        df = df.drop(columns=["_log_ppm2_tmp"])
+        logger.info("Global outlier removal: %d → %d rows", n_before_global_outlier, len(df))
+
     # ── Spatial distance features from ETRS89/TM coordinates ───────────
     # These are metric coordinates, so Euclidean distance gives meters.
     _LJ_E, _LJ_N = 461000, 100000  # Ljubljana
@@ -1184,11 +1242,13 @@ def train_from_csv(
     )
 
     # ── Type-specific comparable-sales features ────────────────────────
-    # Median log(ppm2) per type+municipality and type+KO — much more targeted
-    # than the global ppm2 medians above.
+    # Median log(ppm2) per type+municipality, type+KO, and type+EMV zone.
+    # These are "comp features" — the strongest location-based price signals.
     valid["log_ppm2"] = np.log(valid["ppm2"].clip(lower=0.01))
     type_muni_comp: dict[str, dict[str, float]] = {}
     type_ko_comp: dict[str, dict[str, float]] = {}
+    type_zone_comp: dict[str, dict[str, float]] = {}
+    type_naselje_comp: dict[str, dict[str, float]] = {}
     if "property_type" in valid.columns:
         for ptype_grp, ptype_data in valid.groupby("property_type"):
             ptype_key = str(ptype_grp)
@@ -1205,12 +1265,28 @@ def train_from_csv(
                 for ko, kgrp in ptype_data.groupby("ime_ko"):
                     ko_med[str(ko)] = float(kgrp["log_ppm2"].median()) if len(kgrp) >= 5 else type_median_log
             type_ko_comp[ptype_key] = ko_med
+            # EMV zone comp (finest spatial granularity — valuation zone)
+            zone_med = {}
+            if "emv_zone_name" in ptype_data.columns:
+                for zone, zgrp in ptype_data.groupby("emv_zone_name"):
+                    if str(zone) != "unknown" and len(zgrp) >= 3:
+                        zone_med[str(zone)] = float(zgrp["log_ppm2"].median())
+            type_zone_comp[ptype_key] = zone_med
+            # Naselje comp
+            naselje_med = {}
+            if "naselje" in ptype_data.columns:
+                for nas, ngrp in ptype_data.groupby("naselje"):
+                    if str(nas) != "unknown" and len(ngrp) >= 5:
+                        naselje_med[str(nas)] = float(ngrp["log_ppm2"].median())
+            type_naselje_comp[ptype_key] = naselje_med
 
     # Apply comp features to train and test
     global_log_ppm2 = float(valid["log_ppm2"].median()) if len(valid) > 0 else np.log(2000.0)
     for split_X in (X_train, X_test):
         comp_muni_vals = np.full(len(split_X), global_log_ppm2)
         comp_ko_vals = np.full(len(split_X), global_log_ppm2)
+        comp_zone_vals = np.full(len(split_X), np.nan)
+        comp_naselje_vals = np.full(len(split_X), np.nan)
         if "property_type" in split_X.columns:
             for ptype_key, muni_map in type_muni_comp.items():
                 mask = split_X["property_type"] == ptype_key
@@ -1227,8 +1303,22 @@ def train_from_csv(
                     comp_ko_vals[mask.values] = (
                         split_X.loc[mask, "ime_ko"].map(ko_map).fillna(global_log_ppm2).values
                     )
+            for ptype_key, zone_map in type_zone_comp.items():
+                mask = split_X["property_type"] == ptype_key
+                if mask.any() and zone_map and "emv_zone_name" in split_X.columns:
+                    comp_zone_vals[mask.values] = (
+                        split_X.loc[mask, "emv_zone_name"].map(zone_map).values
+                    )
+            for ptype_key, naselje_map in type_naselje_comp.items():
+                mask = split_X["property_type"] == ptype_key
+                if mask.any() and naselje_map and "naselje" in split_X.columns:
+                    comp_naselje_vals[mask.values] = (
+                        split_X.loc[mask, "naselje"].map(naselje_map).values
+                    )
         split_X["comp_type_muni_ppm2"] = comp_muni_vals
         split_X["comp_type_ko_ppm2"] = comp_ko_vals
+        split_X["comp_type_zone_ppm2"] = comp_zone_vals
+        split_X["comp_type_naselje_ppm2"] = comp_naselje_vals
 
     global_num, global_cat = _filter_features(X_train, NUMERIC_FEATURES, CATEGORICAL_FEATURES)
     data_preparation = load_training_metadata(csv_path)
@@ -1308,12 +1398,15 @@ def train_from_csv(
                 continue
 
             # ── Per-type outlier removal in log(ppm2) space ──────────────
+            # IQR-based: removes heavy tails that survived global cleanup
             n_before = len(yt)
             size_vals = pd.to_numeric(Xt.get("size_m2"), errors="coerce").clip(lower=1).values
             log_ppm2 = np.log(yt / size_vals)
-            # Tighter clipping for large types, standard for small
-            lo_pct, hi_pct = (1, 99) if n_before > 5000 else (2, 98)
-            lo, hi = np.percentile(log_ppm2, [lo_pct, hi_pct])
+            q1, q3 = np.percentile(log_ppm2, [25, 75])
+            iqr = q3 - q1
+            # Tighter fence for large types (1.8×IQR), relaxed for small (2.2×IQR)
+            iqr_mult = 1.8 if n_before > 5000 else 2.2
+            lo, hi = q1 - iqr_mult * iqr, q3 + iqr_mult * iqr
             outlier_mask = (log_ppm2 >= lo) & (log_ppm2 <= hi)
             if outlier_mask.sum() >= MIN_SAMPLES_PER_TYPE:
                 Xt = Xt[outlier_mask]
@@ -1549,7 +1642,7 @@ def train_from_csv(
     os.makedirs(MODEL_DIR, exist_ok=True)
     emit_status("finalizing", 99, rows=len(df), total_models=total_models)
     artifact = {
-        "version": "7.1",
+        "version": "7.2",
         "target_transform": "log_ppm2",
         "log_target": True,  # backward compat
         "global_model": {
@@ -1566,6 +1659,8 @@ def train_from_csv(
         "global_median_ppm2": global_median_ppm2,
         "type_muni_comp": type_muni_comp,
         "type_ko_comp": type_ko_comp,
+        "type_zone_comp": type_zone_comp,
+        "type_naselje_comp": type_naselje_comp,
         "global_log_ppm2": global_log_ppm2,
         "global_metrics": global_result["metrics"],
         "global_importance": global_result["importance"],
@@ -1810,6 +1905,16 @@ def _build_normalized_payload(
         ko_map = type_ko_comp.get(ptype_key, {})
         ko_key = payload.get("ime_ko", "unknown")
         row["comp_type_ko_ppm2"] = ko_map.get(str(ko_key), global_log_ppm2)
+    if "comp_type_zone_ppm2" in numeric_features:
+        type_zone_comp = artifact.get("type_zone_comp", {})
+        zone_map = type_zone_comp.get(ptype_key, {})
+        zone_key = payload.get("emv_zone_name", "unknown")
+        row["comp_type_zone_ppm2"] = zone_map.get(str(zone_key), np.nan)
+    if "comp_type_naselje_ppm2" in numeric_features:
+        type_naselje_comp = artifact.get("type_naselje_comp", {})
+        naselje_map = type_naselje_comp.get(ptype_key, {})
+        naselje_key = payload.get("naselje", "unknown")
+        row["comp_type_naselje_ppm2"] = naselje_map.get(str(naselje_key), np.nan)
 
     return row
 

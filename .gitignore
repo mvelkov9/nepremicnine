@@ -36,6 +36,7 @@ backend/data/processed/*
 
 # Models
 backend/models/*.joblib
+backend/data/models/*.joblib
 
 # Database
 *.db
