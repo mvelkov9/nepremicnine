@@ -30,7 +30,7 @@
 | Database | PostgreSQL 17 + SQLAlchemy 2.x (async) + Alembic |
 | Cache | Redis 7 (caching + task queue + token blacklist) |
 | Task Queue | ARQ + Redis 7 |
-| ML | scikit-learn HistGradientBoostingRegressor (per property type) |
+| ML | CatBoostRegressor (per property type + global, native categorical handling) |
 | Security | slowapi rate limiting, security headers, SecretStr passwords, input validation |
 | Frontend | Vue 3 (Composition API) + TypeScript + Pinia + VueUse + Vite 8 + PrimeVue 4 + Tailwind CSS 4 |
 | Testing | Vitest (unit) + Playwright (E2E) + pytest (backend) |

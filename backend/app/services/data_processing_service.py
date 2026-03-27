@@ -132,6 +132,10 @@ _LATEST_UPLOAD_PATTERNS = {
     "kn_ggo": "_KN_SLO_GGO_",
     "gji_vodovod": "_KGI_SLO_GJI_VODOVOD_linije_",
     "gji_kanalizacija": "_KGI_SLO_GJI_KANALIZACIJA_linije_",
+    "gji_elektrika": "_KGI_SLO_GJI_ELEKTRICNA_ENERGIJA_linije_",
+    "gji_plin": "_KGI_SLO_GJI_ZEM_PLIN_linije_",
+    "gji_ceste": "_KGI_SLO_GJI_CESTE_linije_",
+    "gji_toplota": "_KGI_SLO_GJI_TOPLOTNA_ENERGIJA_linije_",
     "emv": "_emv_vredn_cone_",
 }
 
@@ -1776,21 +1780,17 @@ def _apply_gji_infrastructure_enrichment(
         "available": False,
         "spatial_enabled": False,
         "rows_with_coordinates": 0,
-        "vodovod_available": False,
-        "kanalizacija_available": False,
-        "rows_with_vodovod_distance": 0,
-        "rows_with_kanalizacija_distance": 0,
-        "rows_with_vodovod_nearby_100m": 0,
-        "rows_with_kanalizacija_nearby_100m": 0,
     }
+    for _lbl in ["vodovod", "kanalizacija", "elektrika", "plin", "ceste", "toplota"]:
+        summary[f"{_lbl}_available"] = False
+        summary[f"rows_with_{_lbl}_distance"] = 0
+        summary[f"rows_with_{_lbl}_nearby_100m"] = 0
 
-    for numeric_column in [
-        "gji_vodovod_distance_m",
-        "gji_vodovod_nearby_100m",
-        "gji_kanalizacija_distance_m",
-        "gji_kanalizacija_nearby_100m",
-    ]:
-        result[numeric_column] = pd.to_numeric(result.get(numeric_column, np.nan), errors="coerce")
+    _gji_types = ["vodovod", "kanalizacija", "elektrika", "plin", "ceste", "toplota"]
+    for label in _gji_types:
+        for suffix in ["distance_m", "nearby_100m"]:
+            col = f"gji_{label}_{suffix}"
+            result[col] = pd.to_numeric(result.get(col, np.nan), errors="coerce")
 
     longitude = _coordinate_numeric_series(result, "longitude")
     latitude = _coordinate_numeric_series(result, "latitude")
@@ -1808,6 +1808,10 @@ def _apply_gji_infrastructure_enrichment(
     for source_name, layer_label in [
         ("gji_vodovod", "vodovod"),
         ("gji_kanalizacija", "kanalizacija"),
+        ("gji_elektrika", "elektrika"),
+        ("gji_plin", "plin"),
+        ("gji_ceste", "ceste"),
+        ("gji_toplota", "toplota"),
     ]:
         source_path = discovered_sources.get(source_name)
         if source_path is None:

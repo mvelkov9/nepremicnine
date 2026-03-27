@@ -6,12 +6,12 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 
 | Item | Value |
 |------|-------|
-| **Version** | 0.13.0 |
+| **Version** | 0.14.0 |
 | **Repo** | [github.com/mvelkov9/nepremicnine](https://github.com/mvelkov9/nepremicnine) |
 | **Backend** | FastAPI + Python 3.13 + PostgreSQL 17 + SQLAlchemy 2.x async |
 | **Frontend** | Vue 3 Composition API + TypeScript + Pinia + VueUse + pnpm 9, Vite 8 |
 | **Testing** | Backend: pytest (async) · Frontend: Vitest + Playwright E2E |
-| **ML** | scikit-learn HistGradientBoostingRegressor (per-type) |
+| **ML** | CatBoostRegressor (per-type + global, native categorical handling) |
 | **Auth** | JWT (access 15 min + refresh 7 days, SecretStr passwords), admin/viewer roles |
 | **i18n** | Slovenian (default) + English |
 | **CI/CD** | GitHub Actions → GHCR → VPS (SSH), Trivy security scanning, Dependabot |
@@ -40,6 +40,18 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 | [Phase 24](PHASE_24_REDESIGN.md) | Full frontend redesign: PrimeVue component migration, layout decomposition, dark mode fixes, CSS cleanup | ✅ Complete | working tree |
 
 ## Changelog
+
+### v0.14.0
+
+- **ML: CatBoost migration**: Replaced scikit-learn HistGradientBoostingRegressor with CatBoostRegressor — native categorical handling (no TargetEncoder), built-in NaN support, early stopping with overfitting detector
+- **ML: Adaptive boosting strategy**: Plain boosting for large types (>2000 rows, 2-3x faster), Ordered boosting for small types (<2000 rows, better generalisation on gostinstvo/turisticni/industrijski)
+- **ML: Per-type feature optimisation**: Small types (<2000 rows) exclude high-cardinality categoricals (ime_ko ~2600, naselje ~5000) to prevent overfitting; gostinstvo trimmed from 38→13 always-include numeric features
+- **ML: KNN spatial features**: knn_5_log_ppm2, knn_20_log_ppm2, knn_type_10_log_ppm2 added to all per-type models via _SPATIAL_ALWAYS set; ko_vs_muni_premium, muni_vs_region_premium, price_per_m2_ko added
+- **ML: GJI infrastructure enrichment**: 6 infrastructure types (vodovod, kanalizacija, elektrika, plin, ceste, toplota) × distance_m + nearby_100m + 4 × nearby_500m variants
+- **ML: Training speed**: 54 min total (was 170 min with v1 CatBoost params, ~3h with HistGBR+GPU false positive); global model depth 7 (was 8), 2000 iterations (was 3000), rsm=0.8 feature subsampling
+- **ML: Results**: 8/9 types beat previous HistGBR — turisticni +9.3%, parcela +2.2%, industrijski +1.9%, garaza +1.0%, stanovanje +0.8%, poslovni_prostor +0.7%, gostinstvo +0.5%, hisa +0.3%; only kmetijsko -1.7%
+- **Infra: CPU-only**: Hardcoded CPU mode — removed GPU detection that gave false positives on laptops without dedicated GPUs
+- **Version**: 0.13.0 → 0.14.0
 
 ### v0.12.0
 
@@ -382,7 +394,7 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 | DB Driver | asyncpg | 0.30+ |
 | Auth | python-jose (JWT, SecretStr) + bcrypt | — |
 | Task Queue | ARQ | 0.26+ |
-| ML | scikit-learn (HistGBR) | 1.6+ |
+| ML | CatBoost (CatBoostRegressor) | 1.2+ |
 | Rate Limiting | slowapi | 0.1.9+ |
 | Monitoring | prometheus-fastapi-instrumentator | 7.0+ |
 | Data | pandas + numpy | — |
