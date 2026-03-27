@@ -28,6 +28,7 @@ from app.models.dataset import DatasetFile
 from app.models.user import User
 from app.rate_limit import limiter
 from app.schemas.dataset import (
+    DatasetRescanResponse,
     DatasetFileResponse,
     DatasetPreviewResponse,
     DatasetUploadResponse,
@@ -109,6 +110,92 @@ def _get_upload_capacity() -> UploadCapacityResponse:
 def _remove_file_if_exists(path: str) -> None:
     with contextlib.suppress(FileNotFoundError):
         os.remove(path)
+
+
+def _is_path_within(base_dir: str, candidate_path: str) -> bool:
+    base_real = os.path.realpath(base_dir)
+    cand_real = os.path.realpath(candidate_path)
+    return cand_real == base_real or cand_real.startswith(base_real + os.sep)
+
+
+async def _sync_upload_directory_records(db: AsyncSession) -> tuple[int, int]:
+    """Index manually added upload files so they appear in the dataset library."""
+    indexed_count = 0
+    deleted_count = 0
+
+    existing_records = (await db.execute(select(DatasetFile))).scalars().all()
+    existing_by_path: dict[str, DatasetFile] = {}
+    existing_hash_counts: dict[str, int] = {}
+
+    for record in existing_records:
+        resolved = os.path.realpath(record.stored_path)
+        existing_by_path[resolved] = record
+        existing_hash_counts[record.file_hash] = existing_hash_counts.get(record.file_hash, 0) + 1
+
+    for record in existing_records:
+        if os.path.exists(record.stored_path):
+            continue
+
+        resolved = os.path.realpath(record.stored_path)
+        existing_by_path.pop(resolved, None)
+
+        remaining_hash_refs = existing_hash_counts.get(record.file_hash, 0) - 1
+        if remaining_hash_refs <= 0:
+            existing_hash_counts.pop(record.file_hash, None)
+        else:
+            existing_hash_counts[record.file_hash] = remaining_hash_refs
+
+        await db.delete(record)
+        deleted_count += 1
+
+    for root, _, files in os.walk(UPLOAD_DIR):
+        for filename in files:
+            ext = os.path.splitext(filename)[1].lower()
+            if ext not in ALLOWED_EXTENSIONS:
+                continue
+
+            stored_path = os.path.realpath(os.path.join(root, filename))
+            if not _is_path_within(UPLOAD_DIR, stored_path):
+                continue
+            if stored_path in existing_by_path:
+                continue
+
+            # Keep manual rescan fast: avoid reading large files just to register them.
+            # We derive a stable signature from relative path + file stat metadata.
+            try:
+                stat = os.stat(stored_path)
+                relative_path = _to_relative_data_path(stored_path)
+                signature = f"{relative_path}|{int(stat.st_size)}|{int(stat.st_mtime_ns)}"
+                file_hash = hashlib.sha256(signature.encode("utf-8", errors="ignore")).hexdigest()
+            except OSError:
+                logger.exception("Failed to stat upload candidate %s", stored_path)
+                continue
+
+            if file_hash in existing_hash_counts:
+                continue
+
+            source_type = "zip" if ext == ".zip" else ("gpkg" if ext == ".gpkg" else "csv")
+            row_count = None
+            columns_json = None
+
+            record = DatasetFile(
+                original_name=filename,
+                stored_path=stored_path,
+                source_type=source_type,
+                row_count=row_count,
+                columns_json=columns_json,
+                file_hash=file_hash,
+                uploaded_by=None,
+            )
+            db.add(record)
+            existing_hash_counts[file_hash] = 1
+            existing_by_path[stored_path] = record
+            indexed_count += 1
+
+    if indexed_count > 0 or deleted_count > 0:
+        await db.commit()
+
+    return indexed_count, deleted_count
 
 
 async def _stream_upload_to_disk(file: UploadFile, destination_path: str) -> tuple[int, str]:
@@ -437,10 +524,16 @@ async def upload_files(
 async def list_datasets(
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=200),
+    sync: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
     import math
+
+    if sync:
+        indexed, deleted = await _sync_upload_directory_records(db)
+        if indexed or deleted:
+            logger.info("Dataset registry sync finished: indexed=%d deleted_stale=%d", indexed, deleted)
 
     offset = (page - 1) * per_page
     stmt = (
@@ -461,6 +554,16 @@ async def list_datasets(
         "per_page": per_page,
         "pages": pages,
     }
+
+
+@router.post("/datasets/rescan", response_model=DatasetRescanResponse)
+async def rescan_datasets(
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(require_admin),
+):
+    indexed, deleted = await _sync_upload_directory_records(db)
+    message = f"Dataset registry sync finished: indexed={indexed}, deleted_stale={deleted}"
+    return DatasetRescanResponse(indexed=indexed, deleted_stale=deleted, message=message)
 
 
 @router.get("/training-dataset", response_model=TrainingDatasetResponse)

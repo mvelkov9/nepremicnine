@@ -2,6 +2,7 @@
 
 import io
 import json
+import uuid
 from pathlib import Path
 
 import pandas as pd
@@ -92,6 +93,53 @@ async def test_upload_and_list(client: AsyncClient):
     assert resp.status_code == 200
     assert len(resp.json()["items"]) == 1
     assert resp.json()["items"][0]["relative_path"].startswith("uploads/")
+
+
+@pytest.mark.asyncio
+async def test_list_datasets_indexes_manual_upload_files(client: AsyncClient):
+    token = await _get_admin_token(client)
+    uploads_dir = Path(DATA_DIR) / "uploads"
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+    filename = f"manual_{uuid.uuid4().hex[:8]}.csv"
+    manual_csv = uploads_dir / filename
+    manual_csv.write_text("col1,col2\n1,2\n", encoding="utf-8")
+
+    try:
+        resp = await client.get(
+            "/api/data/datasets?sync=true",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200
+        items = resp.json()["items"]
+        relative_paths = {item["relative_path"] for item in items}
+        assert f"uploads/{filename}" in relative_paths
+    finally:
+        if manual_csv.exists():
+            manual_csv.unlink()
+
+
+@pytest.mark.asyncio
+async def test_rescan_endpoint_indexes_manual_upload_file(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    token = await _get_admin_token(client)
+    upload_dir = tmp_path / "uploads"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    manual_csv = upload_dir / "manual.csv"
+    manual_csv.write_text("col1,col2\n1,2\n", encoding="utf-8")
+
+    monkeypatch.setattr("app.api.data.UPLOAD_DIR", str(upload_dir))
+
+    resp = await client.post(
+        "/api/data/datasets/rescan",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["indexed"] == 1
+    assert payload["deleted_stale"] == 0
 
 
 @pytest.mark.asyncio

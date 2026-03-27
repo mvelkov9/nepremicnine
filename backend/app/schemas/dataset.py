@@ -32,6 +32,12 @@ class UploadCapacityResponse(BaseModel):
     recommended_max_upload_bytes: int
 
 
+class DatasetRescanResponse(BaseModel):
+    indexed: int
+    deleted_stale: int
+    message: str
+
+
 class DatasetPreviewResponse(BaseModel):
     columns: list[str]
     rows: list[dict]

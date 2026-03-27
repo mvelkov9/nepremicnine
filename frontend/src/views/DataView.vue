@@ -29,6 +29,7 @@
   const isDragActive = ref(false)
   const error = ref('')
   const datasetFilter = ref('')
+  const rescanning = ref(false)
 
   type UploadItemStatus =
     | 'queued'
@@ -215,12 +216,17 @@
   })
 
   async function loadDataView() {
-    await Promise.all([
+    const results = await Promise.allSettled([
       dataStore.fetchDatasets(),
       dataStore.fetchTrainingDataset(),
       auth.isAdmin ? dataStore.fetchQualitySummary() : Promise.resolve(),
       auth.isAdmin ? dataStore.fetchUploadCapacity() : Promise.resolve(),
     ])
+
+    const firstFailure = results.find((result) => result.status === 'rejected')
+    if (firstFailure && firstFailure.status === 'rejected') {
+      throw firstFailure.reason
+    }
   }
 
   onMounted(async () => {
@@ -502,6 +508,26 @@
         }
       },
     })
+  }
+
+  async function handleRescan() {
+    if (rescanning.value) return
+    error.value = ''
+    rescanning.value = true
+    try {
+      const result = await dataStore.rescanDatasets()
+      showToast(
+        t('data.rescanSuccessToast', {
+          indexed: Number(result?.indexed || 0),
+          removed: Number(result?.deleted_stale || 0),
+        }),
+        'success',
+      )
+    } catch (e) {
+      error.value = getApiErrorMessage(e, t)
+    } finally {
+      rescanning.value = false
+    }
   }
 
   function formatDate(iso) {
@@ -817,6 +843,15 @@
               <InputIcon class="pi pi-search" />
               <InputText v-model="datasetFilter" :placeholder="t('common.search')" />
             </IconField>
+            <Button
+              v-if="auth.isAdmin"
+              severity="secondary"
+              outlined
+              icon="pi pi-refresh"
+              :label="t('data.rescanUploads')"
+              :loading="rescanning"
+              @click="handleRescan"
+            />
             <Button
               v-if="auth.isAdmin && dataStore.datasets.length"
               severity="danger"

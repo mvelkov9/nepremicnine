@@ -39,7 +39,7 @@ export const useDataStore = defineStore('data', () => {
   const uploading = ref(false)
   const uploadProgress = ref(0)
 
-  async function fetchDatasets() {
+  async function fetchDatasets(withSync = false) {
     loading.value = true
     try {
       const perPage = 200
@@ -49,7 +49,7 @@ export const useDataStore = defineStore('data', () => {
 
       do {
         const { data } = await api.get('/api/data/datasets', {
-          params: { page, per_page: perPage },
+          params: { page, per_page: perPage, sync: withSync && page === 1 },
         })
         const items = Array.isArray(data) ? data : data.items || []
         allItems.push(...items)
@@ -190,6 +190,12 @@ export const useDataStore = defineStore('data', () => {
     return data
   }
 
+  async function rescanDatasets() {
+    const { data } = await api.post('/api/data/datasets/rescan', null, { timeout: 0 })
+    await fetchDatasets(false)
+    return data
+  }
+
   return {
     datasets,
     trainingDataset,
@@ -206,5 +212,6 @@ export const useDataStore = defineStore('data', () => {
     fetchTrainingDataset,
     fetchQualitySummary,
     fetchUploadCapacity,
+    rescanDatasets,
   }
 })

@@ -247,6 +247,8 @@
     "datasets": "Nabori podatkov",
     "datasetLibrary": "Knjižnica naloženih naborov",
     "datasetLibraryHint": "Vsaka datoteka ostane na voljo za predogled, pripravo in sledljivost vira modela.",
+    "rescanUploads": "Ponovno preberi uploads",
+    "rescanSuccessToast": "Sinhronizacija uploadov je koncana. Dodanih: {indexed}, odstranjenih zastarelih zapisov: {removed}.",
     "preparedDataset": "Pripravljen učni nabor",
     "noPreparedDataset": "Pripravljeni nabor še ni ustvarjen",
     "fileName": "Ime datoteke",

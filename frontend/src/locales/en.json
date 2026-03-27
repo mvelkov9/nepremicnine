@@ -247,6 +247,8 @@
     "datasets": "Datasets",
     "datasetLibrary": "Uploaded dataset library",
     "datasetLibraryHint": "Each file remains available for preview, preparation, and model-source traceability.",
+    "rescanUploads": "Rescan uploads",
+    "rescanSuccessToast": "Upload sync finished. Indexed: {indexed}, removed stale records: {removed}.",
     "preparedDataset": "Prepared training dataset",
     "noPreparedDataset": "No prepared dataset yet",
     "fileName": "File Name",
