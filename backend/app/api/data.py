@@ -9,7 +9,6 @@ import pathlib
 import re
 import sqlite3
 import uuid
-import zipfile
 from collections import Counter
 from datetime import UTC, datetime
 from typing import Literal
@@ -28,9 +27,9 @@ from app.models.dataset import DatasetFile
 from app.models.user import User
 from app.rate_limit import limiter
 from app.schemas.dataset import (
-    DatasetRescanResponse,
     DatasetFileResponse,
     DatasetPreviewResponse,
+    DatasetRescanResponse,
     DatasetUploadResponse,
     PrepareJobStatusResponse,
     TrainingDatasetResponse,
@@ -40,22 +39,20 @@ from app.services.data_processing_service import (
     compute_file_sha256,
     ensure_directory_headroom,
     estimate_zip_uncompressed_size,
-    extract_zip_csvs,
     extract_zip_supported_files,
     get_available_disk_bytes,
     import_rpe_rn,
-    inspect_shapefile_zip,
-    inspect_shapefile_zip_with_cache,
-    inspect_gpkg,
     inspect_csv,
+    inspect_gpkg,
+    inspect_shapefile_zip_with_cache,
     load_training_metadata,
     prepare_training_csv,
     prepare_training_csv_from_etn_kpp,
     prepare_training_csv_from_etn_kpp_bulk,
     read_csv_flexible,
 )
-from app.tasks.training_worker import PREPARE_ACTIVE_KEY, PREPARE_JOB_PREFIX, _parse_redis_url
 from app.services.regions_service import CANONICAL_REGION_ROWS
+from app.tasks.training_worker import PREPARE_ACTIVE_KEY, PREPARE_JOB_PREFIX, _parse_redis_url
 from app.utils.cache import invalidate_request_caches
 from app.utils.municipality import normalize_municipality_name
 from app.utils.slovenian_labels import format_municipality_label, is_unknown_label
@@ -615,7 +612,9 @@ async def preview_dataset(
             )
         except ValueError:
             logger.exception("Cannot preview shapefile ZIP %s", dataset.stored_path)
-            raise HTTPException(status_code=422, detail="ZIP does not contain any previewable shapefile attribute tables") from None
+            raise HTTPException(
+                status_code=422, detail="ZIP does not contain any previewable shapefile attribute tables"
+            ) from None
         except OSError:
             logger.exception("Cannot read shapefile ZIP %s for preview", dataset.stored_path)
             raise HTTPException(status_code=500, detail="Cannot read the shapefile ZIP") from None
@@ -834,7 +833,9 @@ async def start_prepare_etn_kpp_bulk(
         }
         await redis.set(f"{PREPARE_JOB_PREFIX}{job_id}", json.dumps(initial_payload), ex=86400)
         await redis.set(PREPARE_ACTIVE_KEY, job_id, ex=86400)
-        enqueued_job = await redis.enqueue_job("run_prepare_etn_bulk", job_id, pairs_dicts, TRAIN_CSV, req.enrichment_options)
+        enqueued_job = await redis.enqueue_job(
+            "run_prepare_etn_bulk", job_id, pairs_dicts, TRAIN_CSV, req.enrichment_options
+        )
         if should_close and enqueued_job is None:
             logger.error("Failed to enqueue prepare job %s", job_id)
             await redis.delete(PREPARE_ACTIVE_KEY)
@@ -892,7 +893,9 @@ async def prepare_etn_kpp_bulk(
             resolved_pair["zemljisca_csv_path"] = _validate_path_within_data_dir(pair.zemljisca_csv_path)
         pairs_dicts.append(resolved_pair)
     try:
-        result = prepare_training_csv_from_etn_kpp_bulk(pairs_dicts, TRAIN_CSV, enrichment_options=req.enrichment_options)
+        result = prepare_training_csv_from_etn_kpp_bulk(
+            pairs_dicts, TRAIN_CSV, enrichment_options=req.enrichment_options
+        )
     except ValueError as exc:
         logger.warning("ETN KPP bulk preparation rejected: %s", exc)
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc

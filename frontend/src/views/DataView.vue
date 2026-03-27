@@ -568,7 +568,10 @@
           <div class="upload-meta">
             <Tag severity="contrast" :value="t('data.acceptedFormats')" />
             <Tag severity="secondary" :value="maxUploadLabel" />
-            <Tag :severity="capacityTone" :value="t('data.serverFreeValue', { size: serverFreeLabel })" />
+            <Tag
+              :severity="capacityTone"
+              :value="t('data.serverFreeValue', { size: serverFreeLabel })"
+            />
           </div>
         </div>
         <div class="upload-actions">
@@ -624,10 +627,7 @@
             <span class="upload-status-label">{{ t('data.uploadQueue') }}</span>
             <strong>{{ uploadStatusMessage }}</strong>
           </div>
-          <Tag
-            :severity="uploadStatusTone"
-            :value="uploadStatusBadge"
-          />
+          <Tag :severity="uploadStatusTone" :value="uploadStatusBadge" />
         </div>
 
         <div class="upload-summary-grid">
@@ -659,7 +659,9 @@
 
         <div class="capacity-banner" :class="capacityTone">
           <strong>{{ capacityMessage }}</strong>
-          <span>{{ t('data.capacityBody', { free: serverFreeLabel, reserve: reserveLabel }) }}</span>
+          <span>{{
+            t('data.capacityBody', { free: serverFreeLabel, reserve: reserveLabel })
+          }}</span>
         </div>
 
         <div v-if="dataStore.uploading" class="upload-progress-panel">
@@ -683,7 +685,10 @@
                 <span>{{ formatFileSize(item.file.size || 0) }}</span>
               </div>
               <div class="upload-file-status">
-                <Tag :severity="getUploadItemTone(item.status)" :value="getUploadItemLabel(item.status)" />
+                <Tag
+                  :severity="getUploadItemTone(item.status)"
+                  :value="getUploadItemLabel(item.status)"
+                />
                 <span v-if="item.status === 'uploading' || item.status === 'processing'">
                   {{ item.progress }}%
                 </span>
@@ -702,13 +707,17 @@
                 <div v-if="item.uploadedNames.length" class="upload-file-detail success">
                   <span class="upload-status-label">{{ t('data.uploadedFilesLabel') }}</span>
                   <ul>
-                    <li v-for="name in item.uploadedNames" :key="`${item.key}-uploaded-${name}`">{{ name }}</li>
+                    <li v-for="name in item.uploadedNames" :key="`${item.key}-uploaded-${name}`">
+                      {{ name }}
+                    </li>
                   </ul>
                 </div>
                 <div v-if="item.skippedNames.length" class="upload-file-detail warn">
                   <span class="upload-status-label">{{ t('data.skippedFilesLabel') }}</span>
                   <ul>
-                    <li v-for="name in item.skippedNames" :key="`${item.key}-skipped-${name}`">{{ name }}</li>
+                    <li v-for="name in item.skippedNames" :key="`${item.key}-skipped-${name}`">
+                      {{ name }}
+                    </li>
                   </ul>
                 </div>
               </div>
@@ -925,7 +934,9 @@
     >
       <div v-if="previewData" class="preview-dialog">
         <p class="muted">{{ t('data.columns') }}: {{ previewData.columns?.join(', ') }}</p>
-        <p class="muted">{{ t('data.previewRows', { count: formatNumber(previewData.total_rows || 0) }) }}</p>
+        <p class="muted">
+          {{ t('data.previewRows', { count: formatNumber(previewData.total_rows || 0) }) }}
+        </p>
         <DataTable
           :value="previewData.rows || []"
           scrollable

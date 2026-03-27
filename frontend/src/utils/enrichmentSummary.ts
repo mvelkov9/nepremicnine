@@ -114,7 +114,10 @@ function buildRow(label: string, summaries: unknown[]): GursEnrichmentRow {
       }
     }
 
-    if (toInt(gji.rows_with_vodovod_nearby_100m) > 0 || toInt(gji.rows_with_kanalizacija_nearby_100m) > 0) {
+    if (
+      toInt(gji.rows_with_vodovod_nearby_100m) > 0 ||
+      toInt(gji.rows_with_kanalizacija_nearby_100m) > 0
+    ) {
       for (const key of ['gji_vodovod', 'gji_kanalizacija']) {
         if (sourceMap[key]) {
           matchedSources.add(String(sourceMap[key]))

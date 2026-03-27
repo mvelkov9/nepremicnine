@@ -416,7 +416,10 @@
   )
 
   const selectedVariantLabel = computed(
-    () => result.value?.enrichment_options?.variant_label || enrichmentOptions.variant_label.trim() || t('prepare.defaultVariantLabel'),
+    () =>
+      result.value?.enrichment_options?.variant_label ||
+      enrichmentOptions.variant_label.trim() ||
+      t('prepare.defaultVariantLabel'),
   )
 
   const enrichmentTotals = computed(() => summarizeGursEnrichment(enrichmentRows.value))
@@ -498,17 +501,20 @@
       {
         label: t('prepare.currentYear'),
         value: status.current_label || t('prepare.unknownYear'),
-        meta: status.current_pair_index && status.total_pairs
-          ? t('prepare.currentPairMeta', {
-              current: status.current_pair_index,
-              total: status.total_pairs,
-            })
-          : t('common.noData'),
+        meta:
+          status.current_pair_index && status.total_pairs
+            ? t('prepare.currentPairMeta', {
+                current: status.current_pair_index,
+                total: status.total_pairs,
+              })
+            : t('common.noData'),
       },
       {
         label: t('prepare.pairsCompleted'),
         value: fmt(status.pairs_completed || 0),
-        meta: status.total_pairs ? t('prepare.totalPairsMeta', { total: status.total_pairs }) : t('common.noData'),
+        meta: status.total_pairs
+          ? t('prepare.totalPairsMeta', { total: status.total_pairs })
+          : t('common.noData'),
       },
       {
         label: t('prepare.prepareProgress'),
@@ -829,10 +835,7 @@
           :label="t('prepare.yearsCovered')"
           :value="fmt(Object.keys(result.per_year).length)"
         />
-        <MetricCard
-          :label="t('prepare.variantLabel')"
-          :value="selectedVariantLabel"
-        />
+        <MetricCard :label="t('prepare.variantLabel')" :value="selectedVariantLabel" />
       </div>
 
       <div v-if="result.per_year" class="mt-4">
@@ -932,7 +935,12 @@
               <div class="coverage-tags">
                 <Tag
                   :value="t('prepare.rnRegister')"
-                  :severity="enrichmentSeverity(row.rnAvailable, row.rnExactAddress > 0 || row.rnRegionId > 0)"
+                  :severity="
+                    enrichmentSeverity(
+                      row.rnAvailable,
+                      row.rnExactAddress > 0 || row.rnRegionId > 0,
+                    )
+                  "
                 />
                 <Tag
                   :value="t('prepare.evBuildings')"
@@ -948,11 +956,21 @@
                 />
                 <Tag
                   :value="t('prepare.gjiInfrastructure')"
-                  :severity="enrichmentSeverity(row.gjiAvailable, row.gjiVodovodNearby > 0 || row.gjiKanalizacijaNearby > 0)"
+                  :severity="
+                    enrichmentSeverity(
+                      row.gjiAvailable,
+                      row.gjiVodovodNearby > 0 || row.gjiKanalizacijaNearby > 0,
+                    )
+                  "
                 />
                 <Tag
                   :value="t('prepare.emvZones')"
-                  :severity="enrichmentSeverity(row.emvAvailable || row.emvSpatialEnabled, row.emvZoneMatch > 0)"
+                  :severity="
+                    enrichmentSeverity(
+                      row.emvAvailable || row.emvSpatialEnabled,
+                      row.emvZoneMatch > 0,
+                    )
+                  "
                 />
               </div>
             </template>
@@ -987,7 +1005,11 @@
               {{ fmt(row.gjiVodovodNearby) }}
             </template>
           </Column>
-          <Column field="gjiKanalizacijaNearby" :header="t('prepare.gjiKanalizacijaMatches')" sortable>
+          <Column
+            field="gjiKanalizacijaNearby"
+            :header="t('prepare.gjiKanalizacijaMatches')"
+            sortable
+          >
             <template #body="{ data: row }">
               {{ fmt(row.gjiKanalizacijaNearby) }}
             </template>

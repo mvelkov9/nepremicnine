@@ -15,8 +15,9 @@ import tempfile
 import unicodedata
 import uuid
 import zipfile
+from collections.abc import Callable
 from functools import lru_cache
-from typing import Any, Callable
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -213,7 +214,9 @@ def _classify_land_type_for_emv(raw_value: Any) -> str | None:
         return "gozdno"
     if normalized in {"1", "2", "3", "4", "5", "kmetijsko"}:
         return "kmetijsko"
-    if any(token in compact for token in ["kmetij", "njiv", "trav", "pasnik", "pasnik", "vinograd", "sadovnjak", "hmelj"]):
+    if any(
+        token in compact for token in ["kmetij", "njiv", "trav", "pasnik", "pasnik", "vinograd", "sadovnjak", "hmelj"]
+    ):
         return "kmetijsko"
     return None
 
@@ -552,7 +555,9 @@ def _load_rn_lookup(rn_csv_path: str) -> pd.DataFrame:
 
 
 @lru_cache(maxsize=4)
-def _load_ev_building_lookup_cached(stavba_csv_path: str, del_csv_path: str, stavba_mtime: float, del_mtime: float) -> pd.DataFrame:
+def _load_ev_building_lookup_cached(
+    stavba_csv_path: str, del_csv_path: str, stavba_mtime: float, del_mtime: float
+) -> pd.DataFrame:
     stavba_cols = [
         "EID_STAVBA",
         "KO_SIFKO",
@@ -634,9 +639,7 @@ def _load_ev_building_value_lookup_cached(del_enota_csv_path: str, mtime: float)
     value_df["EID_DEL_STAVBE_KEY"] = _normalize_numeric_key_series(value_df["EID_DEL_STAVBE"])
     value_df["POSPLOSENA_VREDNOST"] = pd.to_numeric(value_df["POSPLOSENA_VREDNOST"], errors="coerce")
     value_df = value_df.dropna(subset=["EID_DEL_STAVBE_KEY", "POSPLOSENA_VREDNOST"])
-    grouped = (
-        value_df.groupby("EID_DEL_STAVBE_KEY", as_index=False)["POSPLOSENA_VREDNOST"].sum(min_count=1)
-    )
+    grouped = value_df.groupby("EID_DEL_STAVBE_KEY", as_index=False)["POSPLOSENA_VREDNOST"].sum(min_count=1)
     return grouped
 
 
@@ -696,7 +699,12 @@ def apply_gurs_deterministic_enrichment(
     summary: dict[str, Any] = {
         "options": resolved_options,
         "sources": {name: os.path.basename(path) for name, path in discovered_sources.items()},
-        "rn": {"enabled": resolved_options["enable_rn"], "available": False, "rows_with_exact_address": 0, "rows_with_region_id": 0},
+        "rn": {
+            "enabled": resolved_options["enable_rn"],
+            "available": False,
+            "rows_with_exact_address": 0,
+            "rows_with_region_id": 0,
+        },
         "ev": {
             "enabled": resolved_options["enable_ev"],
             "building_available": False,
@@ -788,7 +796,11 @@ def apply_gurs_deterministic_enrichment(
         matched_rn = rn_lookup.reindex(result["address_join_key"]).set_axis(result.index)
         matched_rn_by_name = rn_lookup_by_name.reindex(result["address_join_key_by_name"]).set_axis(result.index)
         matched_rn = matched_rn.where(matched_rn.notna(), matched_rn_by_name)
-        rn_match_mask = matched_rn["EID_NASLOV"].notna() if "EID_NASLOV" in matched_rn.columns else pd.Series(False, index=result.index)
+        rn_match_mask = (
+            matched_rn["EID_NASLOV"].notna()
+            if "EID_NASLOV" in matched_rn.columns
+            else pd.Series(False, index=result.index)
+        )
         result.loc[rn_match_mask.values, "rn_address_match"] = 1
         for target_col, source_col in [
             ("eid_statisticna_regija", "EID_STATISTICNA_REGIJA"),
@@ -822,7 +834,9 @@ def apply_gurs_deterministic_enrichment(
             for ko, stavba, del_stavbe in zip(
                 _normalize_numeric_key_series(result.get("sifra_ko", pd.Series(np.nan, index=result.index))),
                 _normalize_numeric_key_series(result.get("stevilka_stavbe", pd.Series(np.nan, index=result.index))),
-                _normalize_numeric_key_series(result.get("stevilka_dela_stavbe", pd.Series(np.nan, index=result.index))),
+                _normalize_numeric_key_series(
+                    result.get("stevilka_dela_stavbe", pd.Series(np.nan, index=result.index))
+                ),
                 strict=False,
             )
         ]
@@ -941,10 +955,9 @@ def apply_gurs_deterministic_enrichment(
             result.loc[parc_adj_mask, "ev_benchmark_price_eur"] * parcel_share[parc_adj_mask]
         )
 
-    result["ev_benchmark_price_per_m2"] = (
-        pd.to_numeric(result["ev_benchmark_price_eur"], errors="coerce")
-        / pd.to_numeric(result.get("size_m2"), errors="coerce").clip(lower=1)
-    )
+    result["ev_benchmark_price_per_m2"] = pd.to_numeric(
+        result["ev_benchmark_price_eur"], errors="coerce"
+    ) / pd.to_numeric(result.get("size_m2"), errors="coerce").clip(lower=1)
     result.loc[result["ev_benchmark_price_eur"].isna(), "ev_benchmark_source"] = "unknown"
 
     if resolved_options["enable_kn"]:
@@ -1171,7 +1184,7 @@ def _expand_nested_zips(extract_dir: str, reserve_bytes: int = 0) -> None:
         discovered_any = False
         for root, _, files in os.walk(extract_dir):
             for fname in files:
-                if not fname.lower().endswith('.zip'):
+                if not fname.lower().endswith(".zip"):
                     continue
 
                 nested_path = os.path.realpath(os.path.join(root, fname))
@@ -1184,7 +1197,7 @@ def _expand_nested_zips(extract_dir: str, reserve_bytes: int = 0) -> None:
                 nested_dir = os.path.join(root, f"inner_{os.path.splitext(fname)[0]}")
                 os.makedirs(nested_dir, exist_ok=True)
                 try:
-                    with zipfile.ZipFile(nested_path, 'r') as nested:
+                    with zipfile.ZipFile(nested_path, "r") as nested:
                         _safe_extractall(nested, nested_dir, reserve_bytes)
                 except (zipfile.BadZipFile, ValueError):
                     continue
@@ -1220,7 +1233,7 @@ def inspect_gpkg(gpkg_path: str, preview_rows: int = 8) -> dict[str, Any]:
                 ORDER BY name
                 """
             ).fetchall()
-            layer_rows = [(name, 'table', '') for (name,) in fallback_tables]
+            layer_rows = [(name, "table", "") for (name,) in fallback_tables]
 
         layers: list[dict[str, Any]] = []
         for table_name, data_type, geometry_column in layer_rows:
@@ -1228,18 +1241,18 @@ def inspect_gpkg(gpkg_path: str, preview_rows: int = 8) -> dict[str, Any]:
             column_names = [row[1] for row in table_info]
             layers.append(
                 {
-                    'table_name': table_name,
-                    'data_type': data_type,
-                    'geometry_column': geometry_column or None,
-                    'columns': [name for name in column_names if name != geometry_column],
+                    "table_name": table_name,
+                    "data_type": data_type,
+                    "geometry_column": geometry_column or None,
+                    "columns": [name for name in column_names if name != geometry_column],
                 }
             )
 
         if len(layers) == 1 and preview_rows > 0:
             layer = layers[0]
-            selected_columns = layer['columns'][: min(len(layer['columns']), 24)]
+            selected_columns = layer["columns"][: min(len(layer["columns"]), 24)]
             if selected_columns:
-                select_list = ', '.join(_quote_sql_identifier(name) for name in selected_columns)
+                select_list = ", ".join(_quote_sql_identifier(name) for name in selected_columns)
                 df = pd.read_sql_query(
                     f"SELECT {select_list} FROM {_quote_sql_identifier(layer['table_name'])} LIMIT {int(preview_rows)}",
                     conn,
@@ -1248,26 +1261,26 @@ def inspect_gpkg(gpkg_path: str, preview_rows: int = 8) -> dict[str, Any]:
                     f"SELECT COUNT(*) FROM {_quote_sql_identifier(layer['table_name'])}"
                 ).fetchone()[0]
                 return {
-                    'layers': layers,
-                    'columns': list(df.columns),
-                    'rows': df.fillna('').to_dict(orient='records'),
-                    'total_rows': int(total_rows),
+                    "layers": layers,
+                    "columns": list(df.columns),
+                    "rows": df.fillna("").to_dict(orient="records"),
+                    "total_rows": int(total_rows),
                 }
 
         summary_rows = [
             {
-                'layer_name': layer['table_name'],
-                'data_type': layer['data_type'],
-                'geometry_column': layer['geometry_column'] or '',
-                'columns': ', '.join(layer['columns'][:12]),
+                "layer_name": layer["table_name"],
+                "data_type": layer["data_type"],
+                "geometry_column": layer["geometry_column"] or "",
+                "columns": ", ".join(layer["columns"][:12]),
             }
             for layer in layers
         ]
         return {
-            'layers': layers,
-            'columns': ['layer_name', 'data_type', 'geometry_column', 'columns'],
-            'rows': summary_rows,
-            'total_rows': len(summary_rows),
+            "layers": layers,
+            "columns": ["layer_name", "data_type", "geometry_column", "columns"],
+            "rows": summary_rows,
+            "total_rows": len(summary_rows),
         }
 
 
@@ -1436,7 +1449,9 @@ def _normalize_vector_layer(layer_gdf: Any, *, keep_columns: list[str] | None = 
     return layer_gdf
 
 
-def _read_vector_table(gpkg_path: str, layer_name: str | None = None, *, columns: list[str] | None = None) -> pd.DataFrame | None:
+def _read_vector_table(
+    gpkg_path: str, layer_name: str | None = None, *, columns: list[str] | None = None
+) -> pd.DataFrame | None:
     gpd = _get_optional_geopandas()
     if gpd is None:
         raise RuntimeError("geopandas is not installed")
@@ -1503,7 +1518,9 @@ def _load_vector_layer(
             try:
                 layer_gdf = gpd.read_file(gpkg_path, **fallback_kwargs)
             except Exception as fallback_exc:
-                logger.debug("Fallback vector layer load failed for %s from %s: %s", selected_layer, gpkg_path, fallback_exc)
+                logger.debug(
+                    "Fallback vector layer load failed for %s from %s: %s", selected_layer, gpkg_path, fallback_exc
+                )
                 return None
         else:
             return None
@@ -1515,7 +1532,9 @@ def _resolve_shapefile_path(extract_dir: str, preferred_name: str) -> str | None
     preferred_key = preferred_name.lower()
     shapefiles = _find_extracted_vector_paths(extract_dir, suffixes=(".shp",))
     preferred = [
-        path for path in shapefiles if preferred_key and preferred_key in os.path.splitext(os.path.basename(path))[0].lower()
+        path
+        for path in shapefiles
+        if preferred_key and preferred_key in os.path.splitext(os.path.basename(path))[0].lower()
     ]
     candidates = preferred or shapefiles
     if not candidates:
@@ -1620,7 +1639,9 @@ def _nearest_distances_to_layer(
             distance_col="_distance_m",
         )
         joined = joined.loc[~joined.index.duplicated(keep="first")]
-        distances.loc[batch_index] = pd.to_numeric(joined.get("_distance_m"), errors="coerce").reindex(batch_index).values
+        distances.loc[batch_index] = (
+            pd.to_numeric(joined.get("_distance_m"), errors="coerce").reindex(batch_index).values
+        )
 
     return distances
 
@@ -1717,7 +1738,11 @@ def _apply_kn_polygon_enrichment(
                 predicate="intersects",
             )
             spatial_join = spatial_join.loc[~spatial_join.index.duplicated(keep="first")]
-            polygon_mask = spatial_join["SIFKO"].notna() if "SIFKO" in spatial_join.columns else pd.Series(False, index=spatial_join.index)
+            polygon_mask = (
+                spatial_join["SIFKO"].notna()
+                if "SIFKO" in spatial_join.columns
+                else pd.Series(False, index=spatial_join.index)
+            )
             if not polygon_mask.any():
                 continue
             idx = spatial_join.index[polygon_mask]
@@ -1754,13 +1779,17 @@ def _apply_kn_polygon_enrichment(
                     predicate="intersects",
                 )
                 ggo_join = ggo_join.loc[~ggo_join.index.duplicated(keep="first")]
-                ggo_mask = ggo_join["ODSEK"].notna() if "ODSEK" in ggo_join.columns else pd.Series(False, index=ggo_join.index)
+                ggo_mask = (
+                    ggo_join["ODSEK"].notna() if "ODSEK" in ggo_join.columns else pd.Series(False, index=ggo_join.index)
+                )
                 if not ggo_mask.any():
                     continue
                 idx = ggo_join.index[ggo_mask]
                 result.loc[idx, "kn_in_ggo"] = 1
                 if "ODPRTOST" in ggo_join.columns:
-                    result.loc[idx, "kn_ggo_openness"] = pd.to_numeric(ggo_join.loc[idx, "ODPRTOST"], errors="coerce").values
+                    result.loc[idx, "kn_ggo_openness"] = pd.to_numeric(
+                        ggo_join.loc[idx, "ODPRTOST"], errors="coerce"
+                    ).values
                 if "ODSEK" in ggo_join.columns:
                     result.loc[idx, "kn_ggo_section"] = ggo_join.loc[idx, "ODSEK"].values
                 summary["rows_with_ggo_match"] += int(len(idx))
@@ -1920,7 +1949,13 @@ def _apply_emv_spatial_enrichment(
 
     for numeric_column in ["emv_zone_match", "emv_zone_level"]:
         result[numeric_column] = pd.to_numeric(result.get(numeric_column, np.nan), errors="coerce")
-    for categorical_column in ["emv_zone_name", "emv_zone_model", "emv_zone_layer", "emv_zone_id", "emv_zone_valid_from"]:
+    for categorical_column in [
+        "emv_zone_name",
+        "emv_zone_model",
+        "emv_zone_layer",
+        "emv_zone_id",
+        "emv_zone_valid_from",
+    ]:
         if categorical_column not in result.columns:
             result[categorical_column] = pd.Series(pd.NA, index=result.index, dtype="object")
 
@@ -1944,9 +1979,9 @@ def _apply_emv_spatial_enrichment(
     summary["gpkg_ready"] = True
     summary["gpkg_file"] = os.path.basename(gpkg_path)
 
-    coordinate_mask = _coordinate_numeric_series(result, "longitude").notna() & _coordinate_numeric_series(
-        result, "latitude"
-    ).notna()
+    coordinate_mask = (
+        _coordinate_numeric_series(result, "longitude").notna() & _coordinate_numeric_series(result, "latitude").notna()
+    )
     summary["rows_with_coordinates"] = int(coordinate_mask.sum())
     if not coordinate_mask.any() or "property_type" not in result.columns:
         return result, summary
@@ -1973,14 +2008,18 @@ def _apply_emv_spatial_enrichment(
             if matches.empty:
                 continue
 
-            matched_mask = matches.get("ID").notna() if "ID" in matches.columns else pd.Series(False, index=matches.index)
+            matched_mask = (
+                matches.get("ID").notna() if "ID" in matches.columns else pd.Series(False, index=matches.index)
+            )
             if not matched_mask.any():
                 continue
 
             matched_index = matches.index[matched_mask]
             result.loc[matched_index, "emv_zone_match"] = 1.0
             if "ST_RAVNI" in matches.columns:
-                result.loc[matched_index, "emv_zone_level"] = pd.to_numeric(matches.loc[matched_index, "ST_RAVNI"], errors="coerce")
+                result.loc[matched_index, "emv_zone_level"] = pd.to_numeric(
+                    matches.loc[matched_index, "ST_RAVNI"], errors="coerce"
+                )
             if "IME" in matches.columns:
                 result.loc[matched_index, "emv_zone_name"] = matches.loc[matched_index, "IME"].astype(str).values
             if "MODEL" in matches.columns:
@@ -1988,10 +2027,14 @@ def _apply_emv_spatial_enrichment(
             if "ID" in matches.columns:
                 result.loc[matched_index, "emv_zone_id"] = matches.loc[matched_index, "ID"].astype(str).values
             if "DAT_VELJ" in matches.columns:
-                result.loc[matched_index, "emv_zone_valid_from"] = matches.loc[matched_index, "DAT_VELJ"].astype(str).values
+                result.loc[matched_index, "emv_zone_valid_from"] = (
+                    matches.loc[matched_index, "DAT_VELJ"].astype(str).values
+                )
             result.loc[matched_index, "emv_zone_layer"] = layer_name
 
-            summary["matched_by_layer"][layer_name] = summary["matched_by_layer"].get(layer_name, 0) + int(len(matched_index))
+            summary["matched_by_layer"][layer_name] = summary["matched_by_layer"].get(layer_name, 0) + int(
+                len(matched_index)
+            )
             row_index = row_index[result.loc[row_index, "emv_zone_match"].isna()]
 
     result["emv_zone_match"] = pd.to_numeric(result["emv_zone_match"], errors="coerce").fillna(0.0)
@@ -2067,14 +2110,14 @@ def _read_dbf_header(fh) -> tuple[int, int, int, list[tuple[str, int]]]:
 
     fields: list[tuple[str, int]] = []
     while fh.tell() < header_size:
-      descriptor = fh.read(32)
-      if not descriptor:
-          break
-      if descriptor[0] == 0x0D:
-          break
-      fname = descriptor[0:11].split(b"\x00")[0].decode("ascii")
-      fsize = descriptor[16]
-      fields.append((fname, fsize))
+        descriptor = fh.read(32)
+        if not descriptor:
+            break
+        if descriptor[0] == 0x0D:
+            break
+        fname = descriptor[0:11].split(b"\x00")[0].decode("ascii")
+        fsize = descriptor[16]
+        fields.append((fname, fsize))
 
     return num_records, header_size, record_size, fields
 
@@ -2142,7 +2185,6 @@ def inspect_shapefile_zip_with_cache(zip_path: str, upload_dir: str, preview_row
 
     preview = inspect_shapefile_zip(zip_path, upload_dir, preview_rows=max(preview_rows, 50))
     save_shape_zip_preview_cache(zip_path, preview)
-    rows: list[dict[str, str]] = []
     return {
         "layers": preview.get("layers", []),
         "columns": preview.get("columns", []),
@@ -2455,9 +2497,7 @@ def build_training_df_from_etn_kpp(
 
     training_df["sifra_ko"] = pd.to_numeric(merged.get("SIFRA_KO", np.nan), errors="coerce")
     training_df["stevilka_stavbe"] = pd.to_numeric(merged.get("STEVILKA_STAVBE", np.nan), errors="coerce")
-    training_df["stevilka_dela_stavbe"] = pd.to_numeric(
-        merged.get("STEVILKA_DELA_STAVBE", np.nan), errors="coerce"
-    )
+    training_df["stevilka_dela_stavbe"] = pd.to_numeric(merged.get("STEVILKA_DELA_STAVBE", np.nan), errors="coerce")
     training_df["parcelna_stevilka"] = (
         merged["PARCELNA_STEVILKA_ZA_GEOLOKACIJO"].apply(clean_display_text)
         if "PARCELNA_STEVILKA_ZA_GEOLOKACIJO" in merged.columns
@@ -2467,7 +2507,9 @@ def build_training_df_from_etn_kpp(
     training_df["hisna_stevilka"] = (
         merged["HISNA_STEVILKA"].apply(clean_display_text) if "HISNA_STEVILKA" in merged.columns else "unknown"
     )
-    training_df["dodatek_hs"] = merged["DODATEK_HS"].apply(clean_display_text) if "DODATEK_HS" in merged.columns else "unknown"
+    training_df["dodatek_hs"] = (
+        merged["DODATEK_HS"].apply(clean_display_text) if "DODATEK_HS" in merged.columns else "unknown"
+    )
     training_df["rpe_obcine_sifra"] = pd.to_numeric(merged.get("RPE_OBCINE_SIFRA", np.nan), errors="coerce")
 
     training_df["size_m2"] = pd.to_numeric(merged[size_col], errors="coerce")

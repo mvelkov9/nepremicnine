@@ -525,9 +525,9 @@ def test_ev_benchmark_adjusted_by_sold_share(tmp_path, monkeypatch):
     ).to_csv(ev_del_enota_csv, index=False)
 
     ev_stavba_csv = tmp_path / "x_EV_SLO_EVIDENCA_VREDNOTENJA_stavba_20260314.csv"
-    pd.DataFrame(
-        {"EID_STAVBA": [8001], "KO_SIFKO": [1333], "STEV_ST": [194], "ST_ETAZ": [2]}
-    ).to_csv(ev_stavba_csv, index=False)
+    pd.DataFrame({"EID_STAVBA": [8001], "KO_SIFKO": [1333], "STEV_ST": [194], "ST_ETAZ": [2]}).to_csv(
+        ev_stavba_csv, index=False
+    )
 
     ev_del_csv = tmp_path / "x_EV_SLO_EVIDENCA_VREDNOTENJA_del_stavbe_20260314.csv"
     pd.DataFrame(
@@ -713,7 +713,7 @@ def test_apply_gji_infrastructure_enrichment_tracks_nearby_counts(tmp_path, monk
     )
 
     monkeypatch.setattr(dps, "_get_optional_geopandas", lambda: object())
-    monkeypatch.setattr(dps, "_resolve_vector_gpkg_path", lambda source_path, preferred_name='': source_path)
+    monkeypatch.setattr(dps, "_resolve_vector_gpkg_path", lambda source_path, preferred_name="": source_path)
 
     distances = {
         str(tmp_path / "vodovod.gpkg"): pd.Series([35.0, 130.0], index=training_df.index, dtype="float64"),
@@ -778,7 +778,13 @@ def test_apply_gurs_deterministic_enrichment_falls_back_to_municipality_name_for
     result, summary = dps.apply_gurs_deterministic_enrichment(
         training_df,
         upload_dir=str(tmp_path),
-        enrichment_options={"enable_rn": True, "enable_ev": False, "enable_kn": False, "enable_gji": False, "enable_emv": False},
+        enrichment_options={
+            "enable_rn": True,
+            "enable_ev": False,
+            "enable_kn": False,
+            "enable_gji": False,
+            "enable_emv": False,
+        },
     )
 
     assert result.loc[0, "rn_address_match"] == pytest.approx(1.0)

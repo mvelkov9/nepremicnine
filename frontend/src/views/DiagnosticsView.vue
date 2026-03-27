@@ -600,7 +600,12 @@
           />
         </div>
 
-        <DataTable :value="variantBenchmarkRows" size="small" striped-rows table-style="min-width: 100%">
+        <DataTable
+          :value="variantBenchmarkRows"
+          size="small"
+          striped-rows
+          table-style="min-width: 100%"
+        >
           <Column field="label" :header="t('diag.variant')" sortable />
           <Column :header="t('diag.sources')">
             <template #body="{ data }">
@@ -630,7 +635,9 @@
           <Column :header="t('diag.variantRemovedFeatures')">
             <template #body="{ data }">
               <span class="muted source-cell">
-                {{ data.removedFeatures.length ? data.removedFeatures.join(', ') : t('common.noData') }}
+                {{
+                  data.removedFeatures.length ? data.removedFeatures.join(', ') : t('common.noData')
+                }}
               </span>
             </template>
           </Column>
@@ -645,7 +652,12 @@
           :description="t('diag.variantMatrixDesc')"
         />
 
-        <DataTable :value="variantMatrixRows" size="small" striped-rows table-style="min-width: 100%">
+        <DataTable
+          :value="variantMatrixRows"
+          size="small"
+          striped-rows
+          table-style="min-width: 100%"
+        >
           <Column field="label" :header="t('diag.variant')" sortable />
           <Column :header="t('diag.sources')">
             <template #body="{ data }">
@@ -875,7 +887,12 @@
               <div class="coverage-tags">
                 <Tag
                   :value="t('diag.rnRegister')"
-                  :severity="enrichmentSeverity(row.rnAvailable, row.rnExactAddress > 0 || row.rnRegionId > 0)"
+                  :severity="
+                    enrichmentSeverity(
+                      row.rnAvailable,
+                      row.rnExactAddress > 0 || row.rnRegionId > 0,
+                    )
+                  "
                 />
                 <Tag
                   :value="t('diag.evBuildings')"
@@ -891,11 +908,21 @@
                 />
                 <Tag
                   :value="t('diag.gjiInfrastructure')"
-                  :severity="enrichmentSeverity(row.gjiAvailable, row.gjiVodovodNearby > 0 || row.gjiKanalizacijaNearby > 0)"
+                  :severity="
+                    enrichmentSeverity(
+                      row.gjiAvailable,
+                      row.gjiVodovodNearby > 0 || row.gjiKanalizacijaNearby > 0,
+                    )
+                  "
                 />
                 <Tag
                   :value="t('diag.emvZones')"
-                  :severity="enrichmentSeverity(row.emvAvailable || row.emvSpatialEnabled, row.emvZoneMatch > 0)"
+                  :severity="
+                    enrichmentSeverity(
+                      row.emvAvailable || row.emvSpatialEnabled,
+                      row.emvZoneMatch > 0,
+                    )
+                  "
                 />
               </div>
             </template>

@@ -46,7 +46,11 @@ function translateDetail(detail, t) {
     return t('errorDetail.zipWithoutCsv')
   }
 
-  if (detail.startsWith('ZIP contains no supported CSV, GeoPackage, or shapefile attribute data to preview')) {
+  if (
+    detail.startsWith(
+      'ZIP contains no supported CSV, GeoPackage, or shapefile attribute data to preview',
+    )
+  ) {
     return t('errorDetail.zipWithoutCsv')
   }
 
