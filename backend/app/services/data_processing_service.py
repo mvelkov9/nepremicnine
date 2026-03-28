@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import io
 import json
 import logging
 import os
@@ -137,6 +138,10 @@ _LATEST_UPLOAD_PATTERNS = {
     "gji_plin": "_KGI_SLO_GJI_ZEM_PLIN_linije_",
     "gji_ceste": "_KGI_SLO_GJI_CESTE_linije_",
     "gji_toplota": "_KGI_SLO_GJI_TOPLOTNA_ENERGIJA_linije_",
+    "gji_zeleznice": "_KGI_SLO_GJI_ZELEZNICE_",
+    "gji_letalisca": "_KGI_SLO_GJI_LETALISCA_",
+    "gji_opt": "_KGI_SLO_OPT_",
+    "dtm_hidrografija": "_DTM_SLO_HIDROGRAFIJA_",
     "emv": "_emv_vredn_cone_",
 }
 
@@ -687,6 +692,75 @@ def _load_ev_parcel_value_lookup(parc_enota_csv_path: str) -> pd.DataFrame:
     ).copy()
 
 
+_NP_VRSTA_TO_PROPERTY_TYPE: dict[str, str] = {
+    "1": "stanovanje",
+    "2": "stanovanje",
+    "3": "poslovni_prostor",
+    "4": "poslovni_prostor",
+    "5": "garaza",
+    "6": "garaza",
+    "7": "poslovni_prostor",
+    "8": "poslovni_prostor",
+}
+
+
+def _compute_np_rental_comparables(upload_dir: str) -> dict[tuple[str, str], float]:
+    """Scan NP rental ZIP files and return median rental €/m²/month by (municipality_normalized, property_type)."""
+    from app.utils.municipality import normalize_municipality_name as _norm_muni
+
+    import glob as _glob
+    np_zips = sorted(_glob.glob(os.path.join(upload_dir, "*ETN_SLO_*_NP_*.zip")))
+    if not np_zips:
+        return {}
+
+    frames: list[pd.DataFrame] = []
+    for zip_path in np_zips:
+        try:
+            with zipfile.ZipFile(zip_path, "r") as zf:
+                posli_m = _find_etn_csv_in_zip(zf, "NP_POSLI")
+                deli_m = _find_etn_csv_in_zip(zf, "NP_DELISTAVB")
+                if not posli_m or not deli_m:
+                    continue
+                posli_data = zf.read(posli_m)
+                deli_data = zf.read(deli_m)
+            posli_df = pd.read_csv(io.BytesIO(posli_data), encoding="cp1250", sep=";", low_memory=False)
+            deli_df = pd.read_csv(io.BytesIO(deli_data), encoding="cp1250", sep=";", low_memory=False)
+            merged = posli_df.merge(deli_df, on="ID_POSLA", how="inner", suffixes=("_posli", "_deli"))
+            merged["najemnina"] = pd.to_numeric(
+                merged.get("POGODBENA_NAJEMNINA", pd.Series(dtype=float)), errors="coerce"
+            )
+            merged["povrsina"] = pd.to_numeric(
+                merged.get("POVRSINA_ODDANIH_PROSTOROV", pd.Series(dtype=float)), errors="coerce"
+            )
+            merged = merged[merged["najemnina"] > 0]
+            merged = merged[merged["povrsina"] > 5]
+            merged["rental_ppm2"] = merged["najemnina"] / merged["povrsina"]
+            # Filter extreme outliers
+            merged = merged[merged["rental_ppm2"].between(0.5, 200)]
+            muni_col = next((c for c in ["OBCINA", "OBCINA_posli"] if c in merged.columns), None)
+            vrsta_col = next((c for c in ["VRSTA_ODDANIH_PROSTOROV", "VRSTA_ODDANIH_PROSTOROV_deli"] if c in merged.columns), None)
+            if muni_col is None:
+                continue
+            merged["_muni_norm"] = merged[muni_col].astype(str).apply(_norm_muni)
+            if vrsta_col is not None:
+                merged["_ptype"] = merged[vrsta_col].astype(str).map(_NP_VRSTA_TO_PROPERTY_TYPE).fillna("other")
+            else:
+                merged["_ptype"] = "stanovanje"
+            frames.append(merged[["_muni_norm", "_ptype", "rental_ppm2"]])
+        except Exception:
+            continue
+
+    if not frames:
+        return {}
+
+    all_data = pd.concat(frames, ignore_index=True)
+    result: dict[tuple[str, str], float] = {}
+    for (muni, ptype), group in all_data.groupby(["_muni_norm", "_ptype"]):
+        if len(group) >= 3:
+            result[(str(muni), str(ptype))] = float(group["rental_ppm2"].median())
+    return result
+
+
 def apply_gurs_deterministic_enrichment(
     training_df: pd.DataFrame,
     *,
@@ -969,11 +1043,34 @@ def apply_gurs_deterministic_enrichment(
         result, gji_summary = _apply_gji_infrastructure_enrichment(result, discovered_sources=discovered_sources)
         gji_summary["enabled"] = True
         summary["gji"] = gji_summary
+        result, dtm_summary = _apply_dtm_enrichment(result, discovered_sources=discovered_sources)
+        dtm_summary["enabled"] = True
+        summary["dtm"] = dtm_summary
 
     if resolved_options["enable_emv"]:
         result, emv_summary = _apply_emv_spatial_enrichment(result, discovered_sources=discovered_sources)
         emv_summary["enabled"] = True
         summary["emv"] = emv_summary
+
+    # Rental market comparable (NP data)
+    result["rental_median_ppm2_muni"] = np.nan
+    try:
+        rental_map = _compute_np_rental_comparables(upload_dir)
+        if rental_map:
+            muni_col = "municipality_normalized" if "municipality_normalized" in result.columns else "municipality"
+            ptype_col = "property_type" if "property_type" in result.columns else None
+            if muni_col in result.columns and ptype_col:
+                rental_vals = result.apply(
+                    lambda row: rental_map.get(
+                        (str(row.get(muni_col, "")), str(row.get(ptype_col, ""))), np.nan
+                    ),
+                    axis=1,
+                )
+                result["rental_median_ppm2_muni"] = pd.to_numeric(rental_vals, errors="coerce")
+            summary["rental_comparables"] = {"available": True, "groups": len(rental_map)}
+    except Exception:
+        logger.exception("Failed to compute rental market comparables")
+        summary["rental_comparables"] = {"available": False}
 
     for helper_col in ["address_join_key", "building_part_join_key", "parcel_join_key"]:
         if helper_col in result.columns:
@@ -1810,16 +1907,18 @@ def _apply_gji_infrastructure_enrichment(
         "spatial_enabled": False,
         "rows_with_coordinates": 0,
     }
-    for _lbl in ["vodovod", "kanalizacija", "elektrika", "plin", "ceste", "toplota"]:
+    _gji_all_labels = ["vodovod", "kanalizacija", "elektrika", "plin", "ceste", "toplota",
+                       "zeleznice", "letalisca", "opt"]
+    for _lbl in _gji_all_labels:
         summary[f"{_lbl}_available"] = False
         summary[f"rows_with_{_lbl}_distance"] = 0
-        summary[f"rows_with_{_lbl}_nearby_100m"] = 0
 
-    _gji_types = ["vodovod", "kanalizacija", "elektrika", "plin", "ceste", "toplota"]
-    for label in _gji_types:
+    # Standard nearby threshold columns (100m for utilities/fiber, 1000m for railways)
+    for label in _gji_all_labels:
         for suffix in ["distance_m", "nearby_100m"]:
             col = f"gji_{label}_{suffix}"
             result[col] = pd.to_numeric(result.get(col, np.nan), errors="coerce")
+    result["gji_zeleznice_nearby_1000m"] = pd.to_numeric(result.get("gji_zeleznice_nearby_1000m", np.nan), errors="coerce")
 
     longitude = _coordinate_numeric_series(result, "longitude")
     latitude = _coordinate_numeric_series(result, "latitude")
@@ -1834,13 +1933,16 @@ def _apply_gji_infrastructure_enrichment(
 
     summary["spatial_enabled"] = True
 
-    for source_name, layer_label in [
-        ("gji_vodovod", "vodovod"),
-        ("gji_kanalizacija", "kanalizacija"),
-        ("gji_elektrika", "elektrika"),
-        ("gji_plin", "plin"),
-        ("gji_ceste", "ceste"),
-        ("gji_toplota", "toplota"),
+    for source_name, layer_label, preferred_gpkg_name, nearby_threshold_m in [
+        ("gji_vodovod", "vodovod", "linije", _GJI_NEARBY_DISTANCE_M),
+        ("gji_kanalizacija", "kanalizacija", "linije", _GJI_NEARBY_DISTANCE_M),
+        ("gji_elektrika", "elektrika", "linije", _GJI_NEARBY_DISTANCE_M),
+        ("gji_plin", "plin", "linije", _GJI_NEARBY_DISTANCE_M),
+        ("gji_ceste", "ceste", "linije", _GJI_NEARBY_DISTANCE_M),
+        ("gji_toplota", "toplota", "linije", _GJI_NEARBY_DISTANCE_M),
+        ("gji_zeleznice", "zeleznice", "linije", 1000.0),
+        ("gji_letalisca", "letalisca", "linije", 5000.0),
+        ("gji_opt", "opt", "deli_stavb", _GJI_NEARBY_DISTANCE_M),
     ]:
         source_path = discovered_sources.get(source_name)
         if source_path is None:
@@ -1848,19 +1950,58 @@ def _apply_gji_infrastructure_enrichment(
 
         summary["available"] = True
         summary[f"{layer_label}_available"] = True
-        gpkg_path = _resolve_vector_gpkg_path(source_path, layer_label)
+        gpkg_path = _resolve_vector_gpkg_path(source_path, preferred_gpkg_name)
         if gpkg_path is None:
             continue
 
         distance_series = _nearest_distances_to_layer(result, point_index, gpkg_path=gpkg_path)
         distance_col = f"gji_{layer_label}_distance_m"
         nearby_col = f"gji_{layer_label}_nearby_100m"
-        nearby_series = (distance_series <= _GJI_NEARBY_DISTANCE_M).astype(float)
+        nearby_series = (distance_series <= nearby_threshold_m).astype(float)
         result.loc[point_index, distance_col] = distance_series.values
         result.loc[point_index, nearby_col] = nearby_series.values
         summary[f"rows_with_{layer_label}_distance"] = int(distance_series.notna().sum())
-        summary[f"rows_with_{layer_label}_nearby_100m"] = int((nearby_series > 0).sum())
+        # Also add a 1000m column for railways
+        if layer_label == "zeleznice":
+            result.loc[point_index, "gji_zeleznice_nearby_1000m"] = nearby_series.values
 
+    return result, summary
+
+
+def _apply_dtm_enrichment(
+    training_df: pd.DataFrame,
+    *,
+    discovered_sources: dict[str, str],
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """Enrich with DTM water distance feature."""
+    result = training_df.copy()
+    summary: dict[str, Any] = {"available": False, "spatial_enabled": False}
+    result["dtm_voda_distance_m"] = pd.to_numeric(result.get("dtm_voda_distance_m", np.nan), errors="coerce")
+
+    source_path = discovered_sources.get("dtm_hidrografija")
+    if source_path is None:
+        return result, summary
+
+    if _get_optional_geopandas() is None:
+        summary["reason"] = "geopandas_not_installed"
+        return result, summary
+
+    longitude = _coordinate_numeric_series(result, "longitude")
+    latitude = _coordinate_numeric_series(result, "latitude")
+    point_index = result.index[longitude.notna() & latitude.notna()]
+    if point_index.empty:
+        return result, summary
+
+    # Prefer the natural water objects line layer (rivers, streams)
+    gpkg_path = _resolve_vector_gpkg_path(source_path, "NARAVNI_VODNI_OBJEKTI_L")
+    if gpkg_path is None:
+        return result, summary
+
+    summary["available"] = True
+    summary["spatial_enabled"] = True
+    distance_series = _nearest_distances_to_layer(result, point_index, gpkg_path=gpkg_path)
+    result.loc[point_index, "dtm_voda_distance_m"] = distance_series.values
+    summary["rows_with_voda_distance"] = int(distance_series.notna().sum())
     return result, summary
 
 
@@ -2658,8 +2799,13 @@ def build_training_df_from_etn_kpp(
     if date_col is not None:
         date_parsed = pd.to_datetime(merged[date_col], errors="coerce", dayfirst=True)
         training_df["transaction_quarter"] = date_parsed.dt.quarter.astype("float64")
+        training_df["transaction_month"] = date_parsed.dt.month.astype("float64")
+        _month_to_season = {12: 4, 1: 4, 2: 4, 3: 1, 4: 1, 5: 1, 6: 2, 7: 2, 8: 2, 9: 3, 10: 3, 11: 3}
+        training_df["transaction_season"] = date_parsed.dt.month.map(_month_to_season).astype("float64")
     else:
         training_df["transaction_quarter"] = np.nan
+        training_df["transaction_month"] = np.nan
+        training_df["transaction_season"] = np.nan
 
     # Municipality
     municipality_source = None
@@ -2968,8 +3114,13 @@ def build_training_df_from_etn_kpp_land(
     if land_date_col is not None:
         land_date_parsed = pd.to_datetime(merged[land_date_col], errors="coerce", dayfirst=True)
         training_df["transaction_quarter"] = land_date_parsed.dt.quarter.astype("float64")
+        training_df["transaction_month"] = land_date_parsed.dt.month.astype("float64")
+        _month_to_season = {12: 4, 1: 4, 2: 4, 3: 1, 4: 1, 5: 1, 6: 2, 7: 2, 8: 2, 9: 3, 10: 3, 11: 3}
+        training_df["transaction_season"] = land_date_parsed.dt.month.map(_month_to_season).astype("float64")
     else:
         training_df["transaction_quarter"] = np.nan
+        training_df["transaction_month"] = np.nan
+        training_df["transaction_season"] = np.nan
 
     municipality_series = None
     for muni_candidate in ["OBCINA", "IME_OBCINE", "RPE_OBCINE_IME", "OBCINA_POSLI", "IME_OBCINE_POSLI"]:
@@ -3058,6 +3209,55 @@ def build_training_df_from_etn_kpp_land(
     }
 
 
+def _find_etn_csv_in_zip(zf: "zipfile.ZipFile", keyword: str) -> str | None:
+    """Return the ZipFile member name whose filename contains *keyword* (case-insensitive)."""
+    for member in zf.namelist():
+        if keyword.lower() in os.path.basename(member).lower() and member.lower().endswith(".csv"):
+            return member
+    return None
+
+
+def _extract_etn_zip_csvs(
+    zip_path: str,
+    tmp_dir: str,
+) -> tuple[str, str, str | None]:
+    """Extract POSLI, DELISTAVB, and optionally ZEMLJISCA CSVs from an ETN KPP ZIP.
+
+    Returns (posli_path, delistavb_path, zemljisca_path_or_None).
+    """
+    import zipfile as _zipfile  # local import to avoid circular issues at module level
+    with _zipfile.ZipFile(zip_path, "r") as zf:
+        posli_member = _find_etn_csv_in_zip(zf, "KPP_POSLI") or _find_etn_csv_in_zip(zf, "POSLI")
+        deli_member = _find_etn_csv_in_zip(zf, "KPP_DELISTAVB") or _find_etn_csv_in_zip(zf, "DELISTAVB")
+        zem_member = _find_etn_csv_in_zip(zf, "KPP_ZEMLJISCA") or _find_etn_csv_in_zip(zf, "ZEMLJISCA")
+        if not posli_member or not deli_member:
+            raise ValueError(
+                f"ZIP {os.path.basename(zip_path)} does not contain expected KPP_POSLI/KPP_DELISTAVB CSVs"
+            )
+        zf.extract(posli_member, tmp_dir)
+        zf.extract(deli_member, tmp_dir)
+        if zem_member:
+            zf.extract(zem_member, tmp_dir)
+
+    posli_path = os.path.join(tmp_dir, posli_member)
+    deli_path = os.path.join(tmp_dir, deli_member)
+    zem_path = os.path.join(tmp_dir, zem_member) if zem_member else None
+    return posli_path, deli_path, zem_path
+
+
+def _resolve_etn_paths_from_zip_if_needed(
+    posli_csv_path: str,
+    delistavb_csv_path: str,
+    zemljisca_csv_path: str | None,
+    tmp_dir: str,
+) -> tuple[str, str, str | None]:
+    """If posli_csv_path is a ZIP, extract its CSVs and return resolved paths."""
+    if not posli_csv_path.lower().endswith(".zip"):
+        return posli_csv_path, delistavb_csv_path, zemljisca_csv_path
+    # Both posli and delistavb may point to the same ZIP (common when manually placed)
+    return _extract_etn_zip_csvs(posli_csv_path, tmp_dir)
+
+
 def prepare_training_csv_from_etn_kpp(
     posli_csv_path: str,
     delistavb_csv_path: str,
@@ -3065,12 +3265,17 @@ def prepare_training_csv_from_etn_kpp(
     enrichment_options: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Prepare training CSV from ETN KPP posli + delistavb pair."""
-    posli_df = read_csv_flexible(posli_csv_path)
-    deli_df = read_csv_flexible(delistavb_csv_path)
+    upload_dir = os.path.dirname(os.path.realpath(posli_csv_path))
+    with tempfile.TemporaryDirectory(prefix="etn_zip_resolve_") as tmp_dir:
+        posli_csv_path, delistavb_csv_path, _ = _resolve_etn_paths_from_zip_if_needed(
+            posli_csv_path, delistavb_csv_path, None, tmp_dir
+        )
+        posli_df = read_csv_flexible(posli_csv_path)
+        deli_df = read_csv_flexible(delistavb_csv_path)
     training_df, meta = build_training_df_from_etn_kpp(posli_df, deli_df)
     training_df, enrichment_summary = apply_gurs_deterministic_enrichment(
         training_df,
-        upload_dir=os.path.dirname(posli_csv_path),
+        upload_dir=upload_dir,
         enrichment_options=enrichment_options,
     )
     resolved_options = resolve_enrichment_options(enrichment_options)
@@ -3226,6 +3431,8 @@ def prepare_training_csv_from_etn_kpp_bulk(
 
     with tempfile.TemporaryDirectory(prefix="prepared_etn_bulk_") as staging_dir:
         staged_csv_paths: list[str] = []
+        zip_extract_dir = os.path.join(staging_dir, "_zip_extract")
+        os.makedirs(zip_extract_dir, exist_ok=True)
 
         for pair_index, pair in enumerate(pairs):
             posli_csv_path = pair.get("posli_csv_path")
@@ -3243,6 +3450,15 @@ def prepare_training_csv_from_etn_kpp_bulk(
                 "loading_pair",
                 current_label=label,
                 current_pair_index=pair_index + 1,
+            )
+
+            # Capture upload_dir from the original path before ZIP extraction resolves it
+            pair_upload_dir = os.path.dirname(os.path.realpath(posli_csv_path))
+            # Auto-extract ETN ZIP if paths point to a ZIP file
+            pair_extract_dir = os.path.join(zip_extract_dir, f"pair_{pair_index}")
+            os.makedirs(pair_extract_dir, exist_ok=True)
+            posli_csv_path, delistavb_csv_path, zemljisca_csv_path = _resolve_etn_paths_from_zip_if_needed(
+                posli_csv_path, delistavb_csv_path, zemljisca_csv_path, pair_extract_dir
             )
 
             posli_df = read_csv_flexible(posli_csv_path)
@@ -3270,7 +3486,7 @@ def prepare_training_csv_from_etn_kpp_bulk(
                 )
                 frame, enrichment_summary = apply_gurs_deterministic_enrichment(
                     frame,
-                    upload_dir=os.path.dirname(posli_csv_path),
+                    upload_dir=pair_upload_dir,
                     enrichment_options=resolved_options,
                 )
                 frame["source_label"] = label

@@ -2,6 +2,7 @@
 
 import contextlib
 import hashlib
+import io
 import json
 import logging
 import os
@@ -9,6 +10,7 @@ import pathlib
 import re
 import sqlite3
 import uuid
+import zipfile
 from collections import Counter
 from datetime import UTC, datetime
 from typing import Literal
@@ -61,6 +63,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/data", tags=["data"])
 
+# ETN files follow the pattern ETN_SLO_YYYY_{KPP|NP}_<date>.zip
+_ETN_ZIP_PATTERN = re.compile(r"^ETN_SLO_\d{4}_(KPP|NP)_", re.IGNORECASE)
+
 DATA_DIR = os.path.realpath(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data"))
 UPLOAD_DIR = os.path.join(DATA_DIR, "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -107,6 +112,38 @@ def _get_upload_capacity() -> UploadCapacityResponse:
 def _remove_file_if_exists(path: str) -> None:
     with contextlib.suppress(FileNotFoundError):
         os.remove(path)
+
+
+def _peek_zip_for_csv_preview(zip_path: str, limit: int) -> dict:
+    """Open a ZIP and preview the first CSV found inside it."""
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        csv_members = sorted(
+            m for m in zf.namelist()
+            if m.lower().endswith(".csv") and not m.startswith("__MACOSX")
+        )
+        if not csv_members:
+            raise ValueError("No CSV found inside ZIP")
+        csv_data = zf.read(csv_members[0])
+
+    df = None
+    last_exc: Exception | None = None
+    for encoding in ("utf-8", "cp1250", "latin1"):
+        for sep in (",", ";", "\t"):
+            try:
+                df = pd.read_csv(io.BytesIO(csv_data), encoding=encoding, sep=sep, nrows=limit, low_memory=False)
+                break
+            except Exception as e:
+                last_exc = e
+        if df is not None:
+            break
+    if df is None:
+        raise ValueError(f"Cannot parse CSV inside ZIP: {last_exc}")
+
+    return {
+        "columns": list(df.columns),
+        "rows": df.fillna("").to_dict(orient="records"),
+        "total_rows": len(df),
+    }
 
 
 def _is_path_within(base_dir: str, candidate_path: str) -> bool:
@@ -171,7 +208,14 @@ async def _sync_upload_directory_records(db: AsyncSession) -> tuple[int, int]:
             if file_hash in existing_hash_counts:
                 continue
 
-            source_type = "zip" if ext == ".zip" else ("gpkg" if ext == ".gpkg" else "csv")
+            if ext == ".zip" and _ETN_ZIP_PATTERN.match(filename):
+                source_type = "etn"
+            elif ext == ".zip":
+                source_type = "zip"
+            elif ext == ".gpkg":
+                source_type = "gpkg"
+            else:
+                source_type = "csv"
             row_count = None
             columns_json = None
 
@@ -619,8 +663,20 @@ async def preview_dataset(
             logger.exception("Cannot read shapefile ZIP %s for preview", dataset.stored_path)
             raise HTTPException(status_code=500, detail="Cannot read the shapefile ZIP") from None
 
+    if dataset.source_type in ("zip", "etn") or dataset.stored_path.lower().endswith(".zip"):
+        try:
+            preview = _peek_zip_for_csv_preview(dataset.stored_path, limit)
+            return DatasetPreviewResponse(
+                columns=preview["columns"],
+                rows=preview["rows"],
+                total_rows=dataset.row_count or preview["total_rows"],
+            )
+        except (OSError, zipfile.BadZipFile, ValueError):
+            logger.exception("Cannot peek ZIP %s for preview", dataset.stored_path)
+            raise HTTPException(status_code=500, detail="Cannot read the dataset file") from None
+
     try:
-        df = pd.read_csv(dataset.stored_path, nrows=limit)
+        df = read_csv_flexible(dataset.stored_path, nrows=limit)
         return DatasetPreviewResponse(
             columns=list(df.columns),
             rows=df.fillna("").to_dict(orient="records"),

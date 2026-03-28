@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
+import subprocess
 import time
 from collections.abc import Callable
 from math import isnan
@@ -104,10 +105,23 @@ NUMERIC_FEATURES = [
     "gji_plin_nearby_500m",
     "gji_ceste_nearby_500m",
     "gji_toplota_nearby_500m",
+    # ── New GJI transport & fiber features ──
+    "gji_zeleznice_distance_m",       # Distance to nearest railway line
+    "gji_zeleznice_nearby_1000m",     # Railway within 1 km (accessibility)
+    "gji_letalisca_distance_m",       # Distance to nearest airport geometry
+    "gji_opt_distance_m",             # Distance to nearest optical fiber endpoint
+    "gji_opt_nearby_100m",            # Fiber within 100 m (broadband access)
+    # ── New DTM water proximity feature ──
+    "dtm_voda_distance_m",            # Distance to nearest natural water object
+    # ── Rental market comparable ──
+    "rental_median_ppm2_muni",        # Median rental €/m²/month in same municipality+type
     "kn_ggo_openness",
     "rn_address_match",
     "stopnja_ddv",
     "vrsta_dela_stavbe",
+    # ── Transaction time features ──
+    "transaction_month",              # Month of transaction (1–12)
+    "transaction_season",             # Season (1=spring, 2=summer, 3=autumn, 4=winter)
     # ── Engineered features (computed from training data) ──
     "knn_3_log_ppm2",  # Median log(€/m²) of 3 nearest neighbours (hyper-local)
     "knn_5_log_ppm2",  # Median log(€/m²) of 5 nearest neighbours (all types)
@@ -277,6 +291,15 @@ FEATURE_LABELS_SL: dict[str, str] = {
     "gji_plin_nearby_500m": "Plin v 500m",
     "gji_ceste_nearby_500m": "Ceste v 500m",
     "gji_toplota_nearby_500m": "Toplota v 500m",
+    "gji_zeleznice_distance_m": "Razdalja do železnice (m)",
+    "gji_zeleznice_nearby_1000m": "Železnica v 1 km",
+    "gji_letalisca_distance_m": "Razdalja do letališča (m)",
+    "gji_opt_distance_m": "Razdalja do optike (m)",
+    "gji_opt_nearby_100m": "Optika v 100 m",
+    "dtm_voda_distance_m": "Razdalja do vode (m)",
+    "rental_median_ppm2_muni": "Mediana najemnine €/m²/mes (občina)",
+    "transaction_month": "Mesec transakcije",
+    "transaction_season": "Sezona transakcije",
     "kn_ggo_openness": "GGO odprtost",
     "rn_address_match": "Ujemanje naslova",
     "emv_zone_name": "EMV cona ime",
@@ -825,12 +848,57 @@ def _filter_features(
 
 
 # ── CatBoost configuration ─────────────────────────────────────────
-# Force CPU — GPU detection on laptops gives false positives and wastes time
-_CATBOOST_TASK_TYPE = "CPU"
+
+
+def _detect_catboost_task_type() -> str:
+    """Auto-detect NVIDIA GPU via nvidia-smi. Falls back to CPU if not found."""
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            gpu_name = result.stdout.strip().splitlines()[0].strip()
+            logger.info("GPU detected: %s — enabling CatBoost GPU mode", gpu_name)
+            return "GPU"
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        pass
+    logger.info("No GPU detected — using CPU for CatBoost training")
+    return "CPU"
+
+
+_CATBOOST_TASK_TYPE = _detect_catboost_task_type()
 
 
 def _get_catboost_task_type() -> str:
     return _CATBOOST_TASK_TYPE
+
+
+def _apply_gpu_param_adjustments(params: dict) -> dict:
+    """Adjust hyperparameters for GPU compatibility and take advantage of GPU speed."""
+    if params.get("task_type") != "GPU":
+        return params
+    params = dict(params)
+    # MVS bootstrap is CPU-only → switch to Poisson (supports subsample on GPU)
+    if params.get("bootstrap_type") == "MVS":
+        params["bootstrap_type"] = "Poisson"
+        params.setdefault("subsample", 0.8)
+    # Ordered boosting is CPU-only → switch to Plain
+    if params.get("boosting_type") == "Ordered":
+        params["boosting_type"] = "Plain"
+    # GPU manages parallelism internally — thread_count is ignored/errors on GPU
+    params.pop("thread_count", None)
+    # GPU trains 10–50× faster: double iterations, lower LR for better convergence
+    base_iters = params.get("iterations", 2000)
+    params["iterations"] = min(int(base_iters * 2), 5000)
+    if params.get("learning_rate", 1.0) >= 0.07:
+        params["learning_rate"] = 0.04
+    # GPU handles deeper trees efficiently
+    if params.get("depth", 7) <= 7:
+        params["depth"] = params["depth"] + 1
+    return params
 
 
 class CatBoostModel:
@@ -1030,7 +1098,7 @@ def _adaptive_hyperparams(n_samples: int) -> dict:
                 "max_ctr_complexity": 1,
             }
         )
-    return base
+    return _apply_gpu_param_adjustments(base)
 
 
 def _adaptive_max_extras(n_samples: int) -> tuple[int, int]:
@@ -1341,11 +1409,16 @@ def _build_model(
     n_samples: int,
     *,
     hp_overrides: dict | None = None,
+    use_lossguide: bool = False,
 ) -> CatBoostModel:
     """Build a CatBoostModel with adaptive hyperparameters."""
     hp = _adaptive_hyperparams(n_samples)
     if hp_overrides:
         hp.update(hp_overrides)
+    # Lossguide (leaf-wise like LightGBM) is faster and often better on GPU for large datasets
+    if use_lossguide and hp.get("task_type") == "GPU":
+        hp["grow_policy"] = "Lossguide"
+        hp["max_leaves"] = 64
     return CatBoostModel(numeric_feats, categorical_feats, hp)
 
 
@@ -1870,7 +1943,12 @@ def train_from_csv(
                 len(pt_cat),
             )
             pt_hp_overrides = TYPE_HP_OVERRIDES.get(ptype)
-            pt_model = _build_model(pt_num, pt_cat, len(Xt), hp_overrides=pt_hp_overrides)
+            _LARGE_TYPES = {"stanovanje", "hisa", "parcela"}
+            pt_model = _build_model(
+                pt_num, pt_cat, len(Xt),
+                hp_overrides=pt_hp_overrides,
+                use_lossguide=ptype in _LARGE_TYPES,
+            )
             emit_status(
                 "per_type_models",
                 _overall_training_progress(eligible.index(ptype) + 2, total_models, 0, pt_model.iterations),
