@@ -137,6 +137,11 @@ Dependabot automatically opens PRs for outdated dependencies (pip weekly, npm we
 
 Production deployment is handled through git-based CI/CD; normal releases no longer require manual SSH update steps on the VPS.
 
+Prepared datasets and trained model artifacts are separate from code deploys. If you
+prepare ETN data and train locally, promote only the resulting CSV/model artifacts to
+production with [backend/scripts/promote_local_artifacts_to_production.py](backend/scripts/promote_local_artifacts_to_production.py)
+instead of uploading raw `backend/data/uploads` contents to the VPS.
+
 Required GitHub Actions secrets:
 
 | Secret | Description |

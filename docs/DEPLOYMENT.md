@@ -173,6 +173,36 @@ docker compose exec backend alembic upgrade head
 docker image prune -f
 ```
 
+## Promoting Local Prepared Data And Models
+
+If you prepare ETN data and train models locally, you do not need to upload the raw
+`backend/data/uploads` payloads to production.
+
+The production app can present:
+- the prepared dataset artifact as `/app/data/raw/train.csv`
+- the trained model artifact as `/app/models/price_model.joblib`
+- optional training summaries in `/app/data/models/*.json`
+
+Use the promotion script from your local machine:
+
+```bash
+python backend/scripts/promote_local_artifacts_to_production.py \
+  --host nepremicnine-hetzner \
+  --remote-app-dir /root/nepremicnine \
+  --dataset-csv backend/data/models/research_queue/prepared/train_2010_2026.csv \
+  --model-path backend/data/models/price_model.joblib
+```
+
+What it does:
+- uploads only the prepared artifacts over SSH/SCP
+- installs the dataset as production `train.csv`
+- installs the model to both runtime model locations
+- removes the cached quality summary so coverage is recalculated
+- restarts `backend` and `worker`
+
+This keeps production lightweight while still exposing the full prepared transaction
+history in dashboard/statistics surfaces.
+
 ## Custom Domain Setup (napoved-nepremicnin.com)
 
 ### 1. DNS Configuration
