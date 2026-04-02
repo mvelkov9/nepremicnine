@@ -14,8 +14,10 @@ class Settings(BaseSettings):
 
     # App
     app_env: str = "development"
-    app_version: str = "0.12.0"
+    app_version: str = "0.14.0"
     max_upload_size_mb: int = 10240
+    upload_disk_reserve_mb: int = 2048
+    sql_echo: bool = False
 
     # Postgres
     database_url: str = "postgresql+asyncpg://nepremicnine:changeme_in_production@postgres:5432/nepremicnine"

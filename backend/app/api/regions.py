@@ -1,6 +1,6 @@
 """Region and municipality reference data routes."""
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy import distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,6 +10,7 @@ from app.models.region import RegionLookup
 from app.models.user import User
 from app.schemas.region import RegionListResponse, RegionLookupResponse
 from app.services.regions_service import CANONICAL_REGION_ROWS
+from app.utils.cache import cache_get, cache_set
 from app.utils.slovenian_labels import (
     format_municipality_label,
     format_region_label,
@@ -22,12 +23,18 @@ router = APIRouter(tags=["regions"])
 
 @router.get("/regions", response_model=RegionListResponse)
 async def get_regions(
+    request: Request,
     response: Response,
     stats: bool = Query(False, description="Include fallback data"),
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
     response.headers["Cache-Control"] = "public, max-age=3600"
+    cache_key = f"cache:regions:list:{'stats' if stats else 'default'}"
+    cached = await cache_get(request, cache_key)
+    if cached is not None:
+        return RegionListResponse(**cached)
+
     result = await db.execute(select(RegionLookup).order_by(RegionLookup.regija_naziv, RegionLookup.obcina_naziv))
     rows = result.scalars().all()
 
@@ -43,9 +50,11 @@ async def get_regions(
             )
             for row in CANONICAL_REGION_ROWS
         ]
-        return RegionListResponse(regions=fallback, total=len(fallback))
+        result_payload = RegionListResponse(regions=fallback, total=len(fallback))
+        await cache_set(request, cache_key, result_payload.model_dump(mode="json"))
+        return result_payload
 
-    return RegionListResponse(
+    result_payload = RegionListResponse(
         regions=[
             RegionLookupResponse(
                 id=row.id,
@@ -58,13 +67,23 @@ async def get_regions(
         ],
         total=len(rows),
     )
+    await cache_set(request, cache_key, result_payload.model_dump(mode="json"))
+    return result_payload
 
 
 @router.get("/regions/stats")
 async def get_region_stats(
+    request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
+    response.headers["Cache-Control"] = "public, max-age=3600"
+    cache_key = "cache:regions:stats"
+    cached = await cache_get(request, cache_key)
+    if cached is not None:
+        return cached
+
     result = await db.execute(
         select(
             RegionLookup.regija_naziv,
@@ -79,23 +98,35 @@ async def get_region_stats(
         from collections import Counter
 
         counts = Counter(str(row["regija_naziv"]) for row in CANONICAL_REGION_ROWS)
-        return [{"region": r, "municipality_count": c} for r, c in sorted(counts.items())]
-    return [
+        payload = [{"region": r, "municipality_count": c} for r, c in sorted(counts.items())]
+        await cache_set(request, cache_key, payload)
+        return payload
+    payload = [
         {
             "region": format_region_label(row.regija_naziv) or row.regija_naziv,
             "municipality_count": row.municipality_count,
         }
         for row in rows
     ]
+    await cache_set(request, cache_key, payload)
+    return payload
 
 
 @router.get("/regions/municipalities")
 @router.get("/municipalities")
 async def get_municipalities(
+    request: Request,
+    response: Response,
     region: str | None = None,
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
+    response.headers["Cache-Control"] = "public, max-age=3600"
+    cache_key = f"cache:regions:municipalities:{region or 'all'}"
+    cached = await cache_get(request, cache_key)
+    if cached is not None:
+        return cached
+
     query = select(
         distinct(RegionLookup.obcina_naziv).label("municipality"),
         RegionLookup.regija_naziv.label("region"),
@@ -115,6 +146,7 @@ async def get_municipalities(
         ]
         if region:
             items = [item for item in items if labels_match(item["region"], region)]
+        await cache_set(request, cache_key, items)
         return items
 
     items = [
@@ -127,4 +159,5 @@ async def get_municipalities(
     ]
     if region:
         items = [item for item in items if labels_match(item["region"], region)]
+    await cache_set(request, cache_key, items)
     return items

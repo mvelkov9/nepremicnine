@@ -89,3 +89,198 @@ export interface HealthStatus {
   redis: string
   model: string | null
 }
+
+export interface TrendPoint {
+  year: number | string
+  count?: number
+  avg_price?: number
+  median_price?: number
+  avg_price_per_m2?: number
+  median_price_per_m2?: number
+  by_type?: Record<string, { count?: number; avg_price?: number; median_price?: number }>
+}
+
+export interface RegionStat {
+  region: string
+  count: number
+  avg_price?: number
+  median_price?: number
+  avg_price_per_m2?: number
+  median_price_per_m2?: number
+}
+
+export interface FeatureImportance {
+  feature: string
+  label: string
+  importance: number
+}
+
+export interface MunicipalityStat {
+  municipality: string
+  slug: string
+  region?: string
+  count: number
+  median_price?: number
+  median_price_per_m2?: number
+}
+
+export interface PropertyTypeMix {
+  property_type: string
+  count: number
+  share: number
+}
+
+export interface PriceDistribution {
+  bins: number[]
+  counts: number[]
+  bin_labels: string[]
+}
+
+export interface TransactionRecord {
+  id: string
+  municipality: string
+  slug: string
+  region?: string | null
+  property_type?: string | null
+  price_eur?: number | null
+  size_m2?: number | null
+  uporabna_povrsina?: number | null
+  price_per_m2?: number | null
+  year?: string | null
+  source_label?: string | null
+  year_built?: number | null
+  rooms?: number | null
+  floor?: number | null
+  num_prostori?: number | null
+  lega_v_stavbi?: string | null
+  lat?: number | null
+  lon?: number | null
+  novogradnja?: number | null
+  has_garaza?: number | null
+  has_klet?: number | null
+  has_terasa?: number | null
+  has_shramba?: number | null
+  stavba_je_dokoncana?: number | null
+  ddv_vkljucen?: number | null
+  similarity_score?: number | null
+  size_delta_m2?: number | null
+  price_delta_eur?: number | null
+  price_delta_pct?: number | null
+}
+
+export interface ExplorerFilters {
+  property_type?: string | null
+  region?: string | null
+  municipality?: string | null
+  year?: string | null
+  search?: string | null
+}
+
+export interface ExplorerResponse<T> {
+  items: T[]
+  total: number
+  page: number
+  page_size: number
+  pages: number
+  filters: ExplorerFilters
+  sort: string
+  order: string
+}
+
+export interface MunicipalityExplorerItem extends MunicipalityStat {
+  avg_price?: number | null
+  avg_price_per_m2?: number | null
+  latest_year?: string | null
+}
+
+export interface RegionExplorerItem extends RegionStat {
+  municipality_count?: number
+  latest_year?: string | null
+}
+
+export interface SavedWorkspace {
+  id: number
+  name: string
+  scope: string
+  page: string
+  filters: Record<string, unknown>
+  tab?: string | null
+  sort?: string | null
+  columns: string[]
+  pinned: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface WatchlistItem {
+  id: number
+  entity_type: string
+  entity_key: string
+  display_label: string
+  metadata: Record<string, unknown>
+  created_at: string
+}
+
+export interface WatchlistFeedItem {
+  id: string
+  entity_type: string
+  entity_key: string
+  display_label: string
+  headline_value?: number | null
+  headline_label?: string | null
+  trend_value?: number | null
+  trend_label?: string | null
+  link?: string | null
+  context: Record<string, unknown>
+}
+
+export interface ActivityFeedItem {
+  id: string
+  category: string
+  title: string
+  body?: string | null
+  link?: string | null
+  scope: string
+  is_read: boolean
+  created_at: string
+  payload: Record<string, unknown>
+}
+
+export interface AdminRunSummary {
+  id: string
+  run_type: string
+  status: string
+  stage?: string | null
+  progress?: number | null
+  title: string
+  summary?: string | null
+  created_at: string
+  updated_at?: string | null
+}
+
+export interface AdminRunDetail extends AdminRunSummary {
+  timeline: Array<Record<string, unknown>>
+  metrics: Array<Record<string, unknown>>
+  artifacts: Array<Record<string, unknown>>
+  context: Record<string, unknown>
+}
+
+export interface TableViewState {
+  page?: string
+  filters: Record<string, unknown>
+  tab?: string | null
+  sort?: string | null
+  columns?: string[]
+  pinned?: boolean
+}
+
+export interface CompareTrayItem {
+  id: string
+  entity_type: string
+  label: string
+  slug?: string
+  region?: string | null
+  metadata?: Record<string, unknown>
+}
+
+export interface NotificationItem extends ActivityFeedItem {}

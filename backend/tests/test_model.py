@@ -51,9 +51,13 @@ def test_train_from_csv_returns_expected_keys(tmp_path, monkeypatch):
         "per_type_metrics",
         "per_region_metrics",
         "per_type_count",
+        "training_window",
         "segment_diagnostics",
     }
     assert required_keys.issubset(result.keys()), f"Missing keys: {required_keys - result.keys()}"
+    assert isinstance(result["training_window"], dict)
+    assert "rows_before" in result["training_window"]
+    assert "rows_after" in result["training_window"]
 
 
 def test_train_from_csv_global_metrics(tmp_path, monkeypatch):
@@ -99,6 +103,25 @@ def test_train_from_csv_model_file_saved(tmp_path, monkeypatch):
     assert os.path.exists(result["model_path"]), "Model .joblib file was not saved"
 
 
+def test_train_from_csv_supports_custom_artifact_path_without_overwriting_default(tmp_path, monkeypatch):
+    import app.services.model_service as ms
+
+    monkeypatch.setattr(ms, "MODEL_DIR", str(tmp_path / "models"))
+    csv_path = str(tmp_path / "synthetic.csv")
+    _make_synthetic_csv(csv_path, n=80)
+
+    custom_model_path = tmp_path / "research" / "price_model_2020_2026.joblib"
+    result = ms.train_from_csv(
+        csv_path,
+        model_output_path=str(custom_model_path),
+        artifact_metadata={"variant_label": "recent_only_2020_2026"},
+    )
+
+    assert result["model_path"] == str(custom_model_path.resolve())
+    assert custom_model_path.exists()
+    assert not (tmp_path / "models" / "price_model.joblib").exists()
+
+
 def test_train_from_csv_loads_training_data_preparation_metadata(tmp_path, monkeypatch):
     import app.services.model_service as ms
 
@@ -114,6 +137,20 @@ def test_train_from_csv_loads_training_data_preparation_metadata(tmp_path, monke
     result = ms.train_from_csv(str(csv_path))
 
     assert result["data_preparation"]["source"] == "etn_kpp_bulk"
+
+
+def test_select_best_training_candidate_prefers_lower_mape_then_higher_r2():
+    import app.services.model_service as ms
+
+    candidates = [
+        {"metrics": {"mape": 30.0, "r2": 0.7, "mae": 10000}},
+        {"metrics": {"mape": 28.0, "r2": 0.65, "mae": 12000}},
+        {"metrics": {"mape": 28.0, "r2": 0.8, "mae": 11000}},
+    ]
+
+    best = ms._select_best_training_candidate(candidates)
+
+    assert best == candidates[2]
 
 
 def test_train_from_csv_reports_ev_baseline_metrics(tmp_path, monkeypatch):
@@ -339,6 +376,62 @@ def test_build_normalized_payload_accepts_new_training_features():
     assert row["vrsta_kupoprodajnega_posla"] == "1"
 
 
+def test_build_normalized_payload_prefers_recent_deployment_maps():
+    import app.services.model_service as ms
+
+    row = ms._build_normalized_payload(
+        {
+            "size_m2": 72,
+            "municipality": "Ljubljana",
+            "property_type": "Stanovanje",
+            "statistical_region": "Osrednjeslovenska",
+            "ime_ko": "Bezigrad",
+            "naselje": "Ljubljana",
+        },
+        [
+            "size_m2",
+            "price_per_m2_region",
+            "price_per_m2_type",
+            "price_per_m2_municipality",
+            "comp_type_muni_ppm2",
+            "comp_type_ko_ppm2",
+            "comp_type_naselje_ppm2",
+            "price_per_m2_ko",
+        ],
+        ["municipality_normalized", "ime_ko", "naselje", "statistical_region"],
+        {
+            "coords_by_municipality": {},
+            "coords_by_naselje": {},
+            "region_medians": {"osrednjeslovenska": 1800.0},
+            "type_medians": {"stanovanje": 1900.0},
+            "municipality_medians": {"ljubljana": 2000.0},
+            "global_median_ppm2": 1700.0,
+            "type_muni_comp": {"stanovanje": {"ljubljana": np.log(2100.0)}},
+            "type_ko_comp": {"stanovanje": {"bezigrad": np.log(2200.0)}},
+            "type_naselje_comp": {"stanovanje": {"ljubljana": np.log(2300.0)}},
+            "global_log_ppm2": np.log(1700.0),
+            "eng_artifacts": {"ko_ppm2_map": {"bezigrad": 2050.0}, "global_median_ppm2_for_ko": 1700.0},
+            "deploy_region_medians": {"osrednjeslovenska": 3200.0},
+            "deploy_type_medians": {"stanovanje": 3300.0},
+            "deploy_municipality_medians": {"ljubljana": 3400.0},
+            "deploy_global_median_ppm2": 3000.0,
+            "deploy_type_muni_comp": {"stanovanje": {"ljubljana": np.log(3500.0)}},
+            "deploy_type_ko_comp": {"stanovanje": {"bezigrad": np.log(3600.0)}},
+            "deploy_type_naselje_comp": {"stanovanje": {"ljubljana": np.log(3700.0)}},
+            "deploy_global_log_ppm2": np.log(3000.0),
+            "deploy_eng_artifacts": {"ko_ppm2_map": {"bezigrad": 3650.0}, "global_median_ppm2_for_ko": 3000.0},
+        },
+    )
+
+    assert row["price_per_m2_region"] == pytest.approx(3200.0)
+    assert row["price_per_m2_type"] == pytest.approx(3300.0)
+    assert row["price_per_m2_municipality"] == pytest.approx(3400.0)
+    assert row["comp_type_muni_ppm2"] == pytest.approx(np.log(3500.0))
+    assert row["comp_type_ko_ppm2"] == pytest.approx(np.log(3600.0))
+    assert row["comp_type_naselje_ppm2"] == pytest.approx(np.log(3700.0))
+    assert row["price_per_m2_ko"] == pytest.approx(3650.0)
+
+
 def test_select_type_specific_features_prefers_signal_over_noise():
     import app.services.model_service as ms
 
@@ -371,13 +464,143 @@ def test_select_type_specific_features_prefers_signal_over_noise():
     assert scores["signal_cat"] > scores["noise_cat"]
 
 
+def test_sparse_residential_floor_strengthens_with_multiple_local_anchors():
+    import app.services.model_service as ms
+
+    floor = ms._sparse_residential_floor_eur(
+        {
+            "property_type": "stanovanje",
+            "latitude": 100800,
+            "longitude": 460900,
+            "ime_ko": "Bezigrad",
+            "naselje": "Ljubljana",
+        },
+        {
+            "size_m2": 72,
+            "comp_type_naselje_ppm2": np.log(3800.0),
+            "comp_type_ko_ppm2": np.log(3850.0),
+            "comp_type_muni_ppm2": np.log(3750.0),
+            "knn_type_10_log_ppm2": np.log(2900.0),
+            "price_per_m2_ko": 3025.0,
+            "price_per_m2_municipality": 3050.0,
+        },
+        "stanovanje",
+    )
+
+    assert floor == pytest.approx(0.8 * np.median([3800.0, 3850.0, 3750.0, 2900.0, 3025.0, 3050.0]) * 72)
+
+
+def test_full_share_market_filter_drops_partial_sales():
+    import app.services.model_service as ms
+
+    df = pd.DataFrame(
+        {
+            "property_type": ["stanovanje", "stanovanje", "parcela", "parcela"],
+            "prodani_delez_dela_stavbe": [1.0, 0.5, np.nan, np.nan],
+            "prodani_delez_parcele": [np.nan, np.nan, 1.0, 0.25],
+            "price_eur": [100000.0, 40000.0, 8000.0, 2000.0],
+        }
+    )
+
+    filtered, info = ms._apply_full_share_market_filter(df)
+
+    assert len(filtered) == 2
+    assert info["rows_before"] == 4
+    assert info["rows_after"] == 2
+    assert info["rows_dropped"] == 2
+    assert info["per_type"]["stanovanje"]["rows_after"] == 1
+    assert info["per_type"]["parcela"]["rows_after"] == 1
+
+
+def test_compute_per_type_blend_weight_searches_for_best_mape():
+    import app.services.model_service as ms
+
+    y_true = np.array([100.0, 200.0, 300.0, 400.0, 500.0] * 10)
+    global_pred = np.array([120.0, 220.0, 320.0, 420.0, 520.0] * 10)
+    per_type_pred = np.array([90.0, 190.0, 290.0, 390.0, 490.0] * 10)
+
+    weight, metrics = ms._compute_per_type_blend_weight(y_true, global_pred, per_type_pred, len(y_true))
+
+    assert 0.0 < weight < 1.0
+    assert metrics["mape"] < ms._compute_metrics(y_true, global_pred)["mape"]
+    assert metrics["mape"] < ms._compute_metrics(y_true, per_type_pred)["mape"]
+
+
+def test_compute_engineered_features_handles_missing_optional_columns():
+    import app.services.model_service as ms
+
+    rng = np.random.default_rng(123)
+    n_train = 40
+    n_test = 12
+
+    X_train = pd.DataFrame(
+        {
+            "size_m2": rng.uniform(35, 180, n_train),
+            "longitude": rng.uniform(13.6, 16.5, n_train),
+            "latitude": rng.uniform(45.8, 46.9, n_train),
+        }
+    )
+    X_test = pd.DataFrame(
+        {
+            "size_m2": rng.uniform(35, 180, n_test),
+            "longitude": rng.uniform(13.6, 16.5, n_test),
+            "latitude": rng.uniform(45.8, 46.9, n_test),
+        }
+    )
+    y_train = rng.uniform(60_000, 500_000, n_train)
+
+    out_train, out_test, _ = ms._compute_engineered_features(X_train, y_train, X_test)
+
+    assert "has_ev_data" in out_train.columns
+    assert "has_ev_data" in out_test.columns
+    assert out_train["has_ev_data"].sum() == 0
+    assert out_test["has_ev_data"].sum() == 0
+    assert "time_index" in out_train.columns
+    assert "time_index" in out_test.columns
+
+
+def test_catboost_model_fit_skips_user_callbacks_on_gpu(monkeypatch):
+    import app.services.model_service as ms
+
+    captured_fit_kwargs = {}
+
+    class FakeCatBoostRegressor:
+        def __init__(self, **params):
+            self.params = params
+            self.best_iteration_ = None
+            self.tree_count_ = 9
+
+        def fit(self, _train_pool, **kwargs):
+            captured_fit_kwargs.update(kwargs)
+
+    monkeypatch.setattr(ms, "CatBoostRegressor", FakeCatBoostRegressor)
+
+    model = ms.CatBoostModel(
+        numeric_features=["size_m2"],
+        categorical_features=["property_type"],
+        params={
+            "iterations": 9,
+            "depth": 3,
+            "learning_rate": 0.1,
+            "task_type": "GPU",
+        },
+    )
+
+    X = pd.DataFrame({"size_m2": [55.0, 65.0, 75.0], "property_type": ["stanovanje", "stanovanje", "hisa"]})
+    y = np.array([120000.0, 150000.0, 210000.0])
+
+    model.fit(X, y, label="gpu-test", progress_callback=lambda *_args, **_kwargs: None)
+
+    assert "callbacks" not in captured_fit_kwargs
+
+
 def test_train_from_csv_uses_parcela_specific_feature_selection(tmp_path, monkeypatch):
     import app.services.model_service as ms
 
     monkeypatch.setattr(ms, "MODEL_DIR", str(tmp_path / "models"))
 
     rng = np.random.default_rng(7)
-    n = 320
+    n = 420
     size = rng.uniform(300, 2500, n)
     land_kind = rng.choice(["stavbno", "kmetijsko"], size=n, p=[0.55, 0.45])
     municipality = rng.choice(["ljubljana", "kranj", "koper"], n)
@@ -388,7 +611,7 @@ def test_train_from_csv_uses_parcela_specific_feature_selection(tmp_path, monkey
             "price_eur": np.clip(price, 5000, None),
             "size_m2": size,
             "parcela_m2": size,
-            "prodani_delez_parcele": rng.choice([0.5, 1.0], n),
+            "prodani_delez_parcele": np.ones(n),
             "latitude": rng.uniform(45.8, 46.8, n),
             "longitude": rng.uniform(13.6, 16.3, n),
             "property_type": ["parcela"] * n,
@@ -448,6 +671,229 @@ def test_predict_combined_routed_batches_predictions_by_property_type():
     assert global_pipeline.calls == [4]
     assert stanovanje_pipeline.calls == [2]
     assert hisa_pipeline.calls == [1]
+
+
+def test_predict_combined_routed_applies_blend_weight():
+    import app.services.model_service as ms
+
+    class FakePipeline:
+        def __init__(self, value):
+            self.value = value
+
+        def predict(self, frame):
+            return np.full(len(frame), self.value, dtype=float)
+
+    X_test = pd.DataFrame(
+        {
+            "property_type": ["stanovanje", "hisa"],
+            "size_m2": [100.0, 100.0],
+        }
+    )
+
+    global_pipeline = FakePipeline(np.log(1000.0))
+    stanovanje_pipeline = FakePipeline(np.log(2000.0))
+
+    predicted = ms._predict_combined_routed(
+        X_test,
+        global_pipeline,
+        {
+            "stanovanje": {"pipeline": stanovanje_pipeline, "blend_weight": 0.25},
+        },
+        target_transform="log_ppm2",
+    )
+
+    # stanovanje: 25% per-type (200k) + 75% global (100k) = 125k
+    assert predicted[0] == pytest.approx(125_000.0)
+    # hisa: no type model => global only
+    assert predicted[1] == pytest.approx(100_000.0)
+
+
+def test_predict_combined_routed_honors_per_type_target_transform_override():
+    import app.services.model_service as ms
+
+    class FakePipeline:
+        def __init__(self, value):
+            self.value = value
+
+        def predict(self, frame):
+            return np.full(len(frame), self.value, dtype=float)
+
+    X_test = pd.DataFrame(
+        {
+            "property_type": ["stanovanje", "hisa"],
+            "size_m2": [100.0, 100.0],
+        }
+    )
+
+    global_pipeline = FakePipeline(np.log(1000.0))
+    stanovanje_pipeline = FakePipeline(np.log1p(220_000.0))
+
+    predicted = ms._predict_combined_routed(
+        X_test,
+        global_pipeline,
+        {
+            "stanovanje": {
+                "pipeline": stanovanje_pipeline,
+                "blend_weight": 1.0,
+                "target_transform": "log_price",
+            },
+        },
+        target_transform="log_ppm2",
+    )
+
+    assert predicted[0] == pytest.approx(220_000.0)
+    assert predicted[1] == pytest.approx(100_000.0)
+
+
+def test_compute_per_type_blend_weight_can_choose_global_per_type_or_blend():
+    import app.services.model_service as ms
+
+    y_true = np.array([100.0, 110.0, 120.0, 130.0] * 20)
+
+    global_best_weight, _ = ms._compute_per_type_blend_weight(
+        y_true,
+        global_pred=y_true.copy(),
+        per_type_pred=np.full_like(y_true, 50.0),
+        n_test=len(y_true),
+    )
+    per_type_best_weight, _ = ms._compute_per_type_blend_weight(
+        y_true,
+        global_pred=np.full_like(y_true, 50.0),
+        per_type_pred=y_true.copy(),
+        n_test=len(y_true),
+    )
+    blend_best_weight, _ = ms._compute_per_type_blend_weight(
+        y_true,
+        global_pred=np.full_like(y_true, 80.0),
+        per_type_pred=np.full_like(y_true, 160.0),
+        n_test=len(y_true),
+    )
+
+    assert global_best_weight <= 0.05
+    assert per_type_best_weight >= 0.95
+    assert 0.0 < blend_best_weight < 1.0
+
+
+def test_fit_calibration_maps_builds_price_band_factors_for_large_type():
+    import app.services.model_service as ms
+
+    n = 180
+    X_test = pd.DataFrame(
+        {
+            "property_type": ["hisa"] * n,
+            "municipality_normalized": ["ljubljana"] * n,
+            "naselje": ["ljubljana"] * n,
+        }
+    )
+    y_pred = np.linspace(50_000.0, 300_000.0, n)
+    y_true = np.where(y_pred < 130_000.0, y_pred * 0.65, y_pred * 1.8)
+
+    calibration = ms._fit_calibration_maps(X_test, y_true, y_pred)
+
+    assert "hisa" in calibration["price_band"]
+    band_meta = calibration["price_band"]["hisa"]
+    assert len(band_meta["factors"]) >= 2
+    assert min(band_meta["factors"]) < 1.0
+    assert max(band_meta["factors"]) > 1.0
+
+
+def test_fit_calibration_maps_can_select_segment_feature_for_land_type():
+    import app.services.model_service as ms
+
+    n = 240
+    land_use = (["41"] * (n // 2)) + (["3"] * (n // 2))
+    X_test = pd.DataFrame(
+        {
+            "property_type": ["parcela"] * n,
+            "municipality_normalized": ["koper"] * n,
+            "naselje": ["koper"] * n,
+            "parcela_namenska_raba": land_use,
+            "vrsta_zemljisca": land_use,
+        }
+    )
+    y_pred = np.full(n, 20_000.0)
+    y_true = np.array([9_000.0] * (n // 2) + [42_000.0] * (n // 2))
+
+    calibration = ms._fit_calibration_maps(X_test, y_true, y_pred)
+
+    assert "parcela" in calibration["segment"]
+    segment_meta = calibration["segment"]["parcela"]
+    assert segment_meta["feature"] in {"parcela_namenska_raba", "vrsta_zemljisca"}
+    assert min(segment_meta["factors"].values()) < 1.0
+    assert max(segment_meta["factors"].values()) > 1.0
+
+
+def test_lookup_calibration_factor_combines_location_and_price_band():
+    import app.services.model_service as ms
+
+    calibration = {
+        "type": {"hisa": 1.2},
+        "municipality": {"hisa": {"ljubljana": 1.1}},
+        "naselje": {"hisa": {"bezigrad": 1.05}},
+        "segment": {"hisa": {"feature": "kn_ggo_section", "factors": {"urban": 1.15}}},
+        "price_band": {"hisa": {"edges": [200_000.0], "factors": [0.7, 1.8]}},
+        "combined_clip": [0.35, 3.2],
+    }
+
+    factor_low, source_low = ms._lookup_calibration_factor(
+        calibration,
+        "hisa",
+        "ljubljana",
+        "bezigrad",
+        120_000.0,
+        row_context={"kn_ggo_section": "urban"},
+    )
+    factor_high, source_high = ms._lookup_calibration_factor(
+        calibration,
+        "hisa",
+        "ljubljana",
+        "bezigrad",
+        260_000.0,
+        row_context={"kn_ggo_section": "urban"},
+    )
+
+    assert factor_low == pytest.approx(1.05 * 1.15 * 0.7)
+    assert source_low == "naselje+segment:kn_ggo_section+price_band_0"
+    assert factor_high == pytest.approx(1.05 * 1.15 * 1.8)
+    assert source_high == "naselje+segment:kn_ggo_section+price_band_1"
+
+
+def test_apply_market_validity_filter_drops_low_value_tail_for_target_types():
+    import app.services.model_service as ms
+
+    df = pd.DataFrame(
+        {
+            "property_type": ["parcela", "parcela", "kmetijsko", "kmetijsko", "hisa", "garaza", "stanovanje"],
+            "price_eur": [1000.0, 6000.0, 2000.0, 9000.0, 8000.0, 3000.0, 120000.0],
+            "size_m2": [2000.0, 1000.0, 30.0, 20.0, 80.0, 10.0, 60.0],
+            "municipality_normalized": ["koper", "koper", "unknown", "maribor", "celje", "celje", "ljubljana"],
+        }
+    )
+
+    filtered, info = ms._apply_market_validity_filter(df, enabled=True)
+
+    assert filtered["property_type"].tolist() == ["parcela", "kmetijsko", "stanovanje"]
+    assert info["per_type"]["parcela"]["rows_dropped"] == 1
+    assert info["per_type"]["kmetijsko"]["rows_dropped"] == 1
+    assert info["per_type"]["hisa"]["rows_dropped"] == 1
+    assert info["per_type"]["garaza"]["rows_dropped"] == 1
+
+
+def test_apply_market_validity_filter_noops_when_disabled():
+    import app.services.model_service as ms
+
+    df = pd.DataFrame(
+        {
+            "property_type": ["parcela", "hisa"],
+            "price_eur": [1000.0, 5000.0],
+            "size_m2": [2000.0, 50.0],
+        }
+    )
+
+    filtered, info = ms._apply_market_validity_filter(df, enabled=False)
+
+    assert filtered.equals(df)
+    assert info["rows_after"] == len(df)
 
 
 def test_train_from_csv_emits_staged_progress_updates(tmp_path, monkeypatch):

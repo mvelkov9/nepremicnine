@@ -17,7 +17,6 @@ import pandas as pd
 from catboost import CatBoostRegressor, Pool
 from scipy.spatial import KDTree
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-from sklearn.model_selection import train_test_split
 
 from app.services.data_processing_service import (
     EXCLUDED_PROPERTY_TYPES,
@@ -64,6 +63,12 @@ NUMERIC_FEATURES = [
     # Type-specific comparable-sales features (computed per-type from training data)
     "comp_type_muni_ppm2",
     "comp_type_ko_ppm2",
+    "comp_type_naselje_ppm2",
+    "emv_zone_match",
+    "emv_zone_level",
+    "dtm_nadm_visina_stavbe",
+    "opt_zmogljivost",
+    "kn_etazna_lastnina",
     # ── Enrichment features (EV/GJI/KN/RN registers) ──
     "ev_ima_dvigalo",
     "ev_ima_vodovod",
@@ -106,22 +111,22 @@ NUMERIC_FEATURES = [
     "gji_ceste_nearby_500m",
     "gji_toplota_nearby_500m",
     # ── New GJI transport & fiber features ──
-    "gji_zeleznice_distance_m",       # Distance to nearest railway line
-    "gji_zeleznice_nearby_1000m",     # Railway within 1 km (accessibility)
-    "gji_letalisca_distance_m",       # Distance to nearest airport geometry
-    "gji_opt_distance_m",             # Distance to nearest optical fiber endpoint
-    "gji_opt_nearby_100m",            # Fiber within 100 m (broadband access)
+    "gji_zeleznice_distance_m",  # Distance to nearest railway line
+    "gji_zeleznice_nearby_1000m",  # Railway within 1 km (accessibility)
+    "gji_letalisca_distance_m",  # Distance to nearest airport geometry
+    "gji_opt_distance_m",  # Distance to nearest optical fiber endpoint
+    "gji_opt_nearby_100m",  # Fiber within 100 m (broadband access)
     # ── New DTM water proximity feature ──
-    "dtm_voda_distance_m",            # Distance to nearest natural water object
+    "dtm_voda_distance_m",  # Distance to nearest natural water object
     # ── Rental market comparable ──
-    "rental_median_ppm2_muni",        # Median rental €/m²/month in same municipality+type
+    "rental_median_ppm2_muni",  # Median rental €/m²/month in same municipality+type
     "kn_ggo_openness",
     "rn_address_match",
     "stopnja_ddv",
     "vrsta_dela_stavbe",
     # ── Transaction time features ──
-    "transaction_month",              # Month of transaction (1–12)
-    "transaction_season",             # Season (1=spring, 2=summer, 3=autumn, 4=winter)
+    "transaction_month",  # Month of transaction (1–12)
+    "transaction_season",  # Season (1=spring, 2=summer, 3=autumn, 4=winter)
     # ── Engineered features (computed from training data) ──
     "knn_3_log_ppm2",  # Median log(€/m²) of 3 nearest neighbours (hyper-local)
     "knn_5_log_ppm2",  # Median log(€/m²) of 5 nearest neighbours (all types)
@@ -153,6 +158,11 @@ CATEGORICAL_FEATURES = [
     "vrsta_zemljisca",
     "vrsta_kupoprodajnega_posla",
     "kn_ggo_section",
+    "dtm_pokritost_tal",
+    "parcela_namenska_raba",
+    "emv_zone_model",
+    "emv_zone_id",
+    "emv_zone_name",
 ]
 
 PERTYPE_NUMERIC = [f for f in NUMERIC_FEATURES if f != "price_per_m2_type"]
@@ -182,6 +192,12 @@ ALWAYS_INCLUDE_NUMERIC = {
     "dist_coast",
     "comp_type_muni_ppm2",
     "comp_type_ko_ppm2",
+    "comp_type_naselje_ppm2",
+    "emv_zone_match",
+    "emv_zone_level",
+    "dtm_nadm_visina_stavbe",
+    "opt_zmogljivost",
+    "kn_etazna_lastnina",
     # High-signal engineered features
     "knn_3_log_ppm2",
     "knn_5_log_ppm2",
@@ -199,6 +215,20 @@ ALWAYS_INCLUDE_CATEGORICAL = {
     "municipality_normalized",
     "statistical_region",
     "lega_v_stavbi",
+    "dtm_pokritost_tal",
+    "parcela_namenska_raba",
+}
+
+CALIBRATION_SEGMENT_PRIORITIES: dict[str, list[str]] = {
+    "parcela": ["parcela_namenska_raba", "vrsta_zemljisca", "kn_ggo_section"],
+    "kmetijsko": ["vrsta_zemljisca", "kn_ggo_section", "ime_ko"],
+    "hisa": ["kn_ggo_section", "ime_ko", "ev_id_tip_stavbe"],
+    "stanovanje": ["kn_ggo_section", "lega_v_stavbi", "ime_ko"],
+    "garaza": ["kn_ggo_section", "vrsta_dela_stavbe", "ime_ko"],
+    "poslovni_prostor": ["kn_ggo_section", "vrsta_dela_stavbe", "ime_ko"],
+    "industrijski": ["kn_ggo_section", "ime_ko", "emv_zone_id"],
+    "turisticni": ["kn_ggo_section", "ime_ko", "emv_zone_id"],
+    "gostinstvo": ["kn_ggo_section", "ime_ko", "emv_zone_id"],
 }
 
 FEATURE_LABELS_SL: dict[str, str] = {
@@ -249,8 +279,14 @@ FEATURE_LABELS_SL: dict[str, str] = {
     "comp_type_zone_ppm2": "€/m² tip+EMV cona",
     "comp_type_naselje_ppm2": "€/m² tip+naselje",
     # Enrichment feature labels
+    "emv_zone_match": "EMV ujemanje cone",
     "emv_zone_level": "EMV raven cone",
     "emv_zone_id": "EMV cona ID",
+    "dtm_nadm_visina_stavbe": "DTM nadmorska višina temelja",
+    "opt_zmogljivost": "Optika minimalna zmogljivost",
+    "kn_etazna_lastnina": "Etažna lastnina",
+    "dtm_pokritost_tal": "DTM pokritost tal",
+    "parcela_namenska_raba": "Namenska raba parcele",
     "ev_ima_dvigalo": "Dvigalo",
     "ev_ima_vodovod": "Vodovod",
     "ev_ima_kanalizacijo": "Kanalizacija",
@@ -327,11 +363,49 @@ FEATURE_LABELS_SL: dict[str, str] = {
 }
 
 MODEL_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "models")
+DEFAULT_MODEL_FILENAME = "price_model.joblib"
 
 _MIN_FILL_RATE = 0.10
 _MIN_SIGNAL_SCORE = 0.01
 _MAX_EXTRA_NUMERIC = 8
 _MAX_EXTRA_CATEGORICAL = 8
+
+
+def _default_model_path() -> str:
+    return os.path.join(MODEL_DIR, DEFAULT_MODEL_FILENAME)
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    with contextlib.suppress(TypeError, ValueError):
+        return int(raw)
+    return default
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    with contextlib.suppress(TypeError, ValueError):
+        return float(raw)
+    return default
+
+
+_RECENT_WINDOW_MONTHS = max(0, _env_int("MODEL_RECENT_WINDOW_MONTHS", 0))
+_RECENT_WINDOW_MIN_ROWS = max(1000, _env_int("MODEL_RECENT_MIN_ROWS", 30000))
+_RECENT_WINDOW_MAX_YEARS = max(2, _env_int("MODEL_RECENT_MAX_YEARS", 4))
+_MIN_FULL_SHARE = min(max(_env_float("MODEL_MIN_FULL_SHARE", 0.95), 0.0), 1.0)
+_ENABLE_MARKET_VALIDITY_FILTER = bool(_env_int("MODEL_ENABLE_MARKET_VALIDITY_FILTER", 0))
+
+MARKET_VALIDITY_RULES: dict[str, dict[str, Any]] = {
+    "parcela": {"min_price_eur": 1200.0, "min_ppm2": 0.45},
+    "kmetijsko": {"min_price_eur": 2500.0, "min_ppm2": 70.0, "drop_unknown_municipality": True},
+    "hisa": {"min_price_eur": 12000.0, "min_ppm2": 120.0},
+    "garaza": {"min_price_eur": 4500.0, "min_ppm2": 300.0},
+}
+
 _model_cache: dict | None = None
 _model_cache_mtime: float = 0.0
 
@@ -372,6 +446,7 @@ PARCELA_ALWAYS_INCLUDE_NUMERIC = {
     "ev_parcela_povrsina",  # r=-0.76
     "ev_boniteta",  # r=0.34
     "ev_odprtost",  # r=0.22
+    "opt_zmogljivost",
     "kn_ggo_openness",
     "vrsta_kupoprodajnega_posla",  # r=0.17
     # New GJI: plin/toplota discriminate urban vs rural parcels
@@ -390,6 +465,8 @@ PARCELA_ALWAYS_INCLUDE_CATEGORICAL = {
     "naselje",
     "vrsta_zemljisca",  # CRITICAL: 100x price variation by subtype
     "kn_ggo_section",
+    "dtm_pokritost_tal",
+    "parcela_namenska_raba",
 }
 
 # ── Type-specific feature configurations ─────────────────────────────
@@ -401,6 +478,9 @@ _SPATIAL_ALWAYS = {
     "dist_coast",
     "comp_type_muni_ppm2",
     "comp_type_ko_ppm2",
+    "comp_type_naselje_ppm2",
+    "emv_zone_match",
+    "emv_zone_level",
     # KNN spatial features (always include — highest signal for all types)
     "knn_3_log_ppm2",
     "knn_5_log_ppm2",
@@ -455,6 +535,9 @@ TYPE_FEATURE_CONFIGS: dict[str, dict[str, set[str]]] = {
             "gji_plin_distance_m",
             "gji_toplota_nearby_100m",
             "gji_toplota_distance_m",
+            "opt_zmogljivost",
+            "kn_etazna_lastnina",
+            "dtm_nadm_visina_stavbe",
         }
         | _SPATIAL_ALWAYS,
         "always_categorical": {
@@ -463,6 +546,7 @@ TYPE_FEATURE_CONFIGS: dict[str, dict[str, set[str]]] = {
             "lega_v_stavbi",
             "ime_ko",
             "naselje",
+            "dtm_pokritost_tal",
         },
     },
     "hisa": {
@@ -520,6 +604,8 @@ TYPE_FEATURE_CONFIGS: dict[str, dict[str, set[str]]] = {
             "gji_toplota_nearby_100m",
             "gji_toplota_distance_m",
             "gji_elektrika_distance_m",
+            "opt_zmogljivost",
+            "dtm_nadm_visina_stavbe",
         }
         | _SPATIAL_ALWAYS,
         "always_categorical": {
@@ -530,6 +616,7 @@ TYPE_FEATURE_CONFIGS: dict[str, dict[str, set[str]]] = {
             "lega_v_stavbi",
             "kn_ggo_section",
             "vrsta_kupoprodajnega_posla",
+            "dtm_pokritost_tal",
         },
     },
     "parcela": {
@@ -567,6 +654,7 @@ TYPE_FEATURE_CONFIGS: dict[str, dict[str, set[str]]] = {
             "gji_toplota_distance_m",
             "gji_elektrika_distance_m",
             "gji_ceste_distance_m",
+            "dtm_nadm_visina_stavbe",
         }
         | _SPATIAL_ALWAYS,
         "always_categorical": {
@@ -576,6 +664,8 @@ TYPE_FEATURE_CONFIGS: dict[str, dict[str, set[str]]] = {
             "ime_ko",
             "kn_ggo_section",
             "naselje",
+            "dtm_pokritost_tal",
+            "parcela_namenska_raba",
         },
     },
     "garaza": {
@@ -612,6 +702,9 @@ TYPE_FEATURE_CONFIGS: dict[str, dict[str, set[str]]] = {
             # New GJI infrastructure
             "gji_plin_nearby_100m",
             "gji_toplota_nearby_100m",
+            "opt_zmogljivost",
+            "kn_etazna_lastnina",
+            "dtm_nadm_visina_stavbe",
         }
         | _SPATIAL_ALWAYS,
         "always_categorical": {
@@ -619,6 +712,7 @@ TYPE_FEATURE_CONFIGS: dict[str, dict[str, set[str]]] = {
             "statistical_region",
             "lega_v_stavbi",
             "ime_ko",
+            "dtm_pokritost_tal",
         },
     },
     "poslovni_prostor": {
@@ -652,6 +746,9 @@ TYPE_FEATURE_CONFIGS: dict[str, dict[str, set[str]]] = {
             # New GJI infrastructure
             "gji_plin_nearby_100m",
             "gji_toplota_nearby_100m",
+            "opt_zmogljivost",
+            "kn_etazna_lastnina",
+            "dtm_nadm_visina_stavbe",
         }
         | _SPATIAL_ALWAYS,
         "always_categorical": {
@@ -662,6 +759,7 @@ TYPE_FEATURE_CONFIGS: dict[str, dict[str, set[str]]] = {
             "naselje",
             "vrsta_kupoprodajnega_posla",
             "kn_ggo_section",
+            "dtm_pokritost_tal",
         },
     },
     "industrijski": {
@@ -687,12 +785,15 @@ TYPE_FEATURE_CONFIGS: dict[str, dict[str, set[str]]] = {
             "ev_leto_izg_stavbe",  # r=0.33
             "rn_address_match",  # r=0.32
             "ev_pov_stavbe",  # r=0.30
+            "opt_zmogljivost",
+            "dtm_nadm_visina_stavbe",
         }
         | _SPATIAL_ALWAYS,
         "always_categorical": {
             "municipality_normalized",
             "statistical_region",
             # ime_ko too high-cardinality for ~1181 rows
+            "dtm_pokritost_tal",
         },
     },
     "turisticni": {
@@ -718,12 +819,15 @@ TYPE_FEATURE_CONFIGS: dict[str, dict[str, set[str]]] = {
             "ev_st_etaz",  # r=0.28
             "ev_st_poslovnih_prostorov",  # r=0.26
             "ev_ima_kanalizacijo",  # r=0.20
+            "opt_zmogljivost",
+            "dtm_nadm_visina_stavbe",
         }
         | _SPATIAL_ALWAYS,
         "always_categorical": {
             "municipality_normalized",
             "statistical_region",
             # ime_ko and naselje too high-cardinality for 1134 rows
+            "dtm_pokritost_tal",
         },
     },
     "gostinstvo": {
@@ -744,12 +848,15 @@ TYPE_FEATURE_CONFIGS: dict[str, dict[str, set[str]]] = {
             "ev_leto_izg_stavbe",  # r=0.25
             "ev_pov_stavbe",  # r=0.24
             "ev_ima_plin",  # r=0.23
+            "opt_zmogljivost",
+            "dtm_nadm_visina_stavbe",
         }
         | _SPATIAL_ALWAYS,
         "always_categorical": {
             "statistical_region",
             # municipality_normalized has ~200 values for 445 rows — skip
             "vrsta_kupoprodajnega_posla",
+            "dtm_pokritost_tal",
         },
     },
 }
@@ -851,7 +958,27 @@ def _filter_features(
 
 
 def _detect_catboost_task_type() -> str:
-    """Auto-detect NVIDIA GPU via nvidia-smi. Falls back to CPU if not found."""
+    """Detect CatBoost task type with optional env override and container-aware GPU checks."""
+    forced = os.getenv("CATBOOST_TASK_TYPE", "").strip().upper()
+    if forced in {"CPU", "GPU"}:
+        logger.info("CATBOOST_TASK_TYPE=%s override detected", forced)
+        return forced
+
+    nvidia_visible = os.getenv("NVIDIA_VISIBLE_DEVICES", "").strip().lower()
+    if os.name != "nt" and not os.path.exists("/dev/nvidia0") and nvidia_visible in {"", "none", "void"}:
+        logger.info("No NVIDIA device exposed to process (/dev/nvidia0 missing) — using CPU for CatBoost training")
+        return "CPU"
+
+    try:
+        from catboost.utils import get_gpu_device_count
+
+        gpu_count = int(get_gpu_device_count())
+        if gpu_count > 0:
+            logger.info("CatBoost detected %d GPU device(s) — enabling GPU mode", gpu_count)
+            return "GPU"
+    except Exception as exc:  # pragma: no cover - depends on host GPU runtime
+        logger.warning("CatBoost GPU probe failed: %s", exc)
+
     try:
         result = subprocess.run(
             ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
@@ -881,6 +1008,8 @@ def _apply_gpu_param_adjustments(params: dict) -> dict:
     if params.get("task_type") != "GPU":
         return params
     params = dict(params)
+    # rsm is only supported on GPU for pairwise objectives, not RMSE regression.
+    params.pop("rsm", None)
     # MVS bootstrap is CPU-only → switch to Poisson (supports subsample on GPU)
     if params.get("bootstrap_type") == "MVS":
         params["bootstrap_type"] = "Poisson"
@@ -916,18 +1045,12 @@ class CatBoostModel:
 
     def _prepare(self, X: pd.DataFrame) -> pd.DataFrame:
         """Select and prepare features — CatBoost handles NaN natively for numerics."""
-        df = pd.DataFrame(index=X.index)
+        columns: dict[str, Any] = {}
         for col in self.numeric_features:
-            if col in X.columns:
-                df[col] = pd.to_numeric(X[col], errors="coerce")
-            else:
-                df[col] = np.nan
+            columns[col] = pd.to_numeric(X[col], errors="coerce") if col in X.columns else np.nan
         for col in self.categorical_features:
-            if col in X.columns:
-                df[col] = X[col].fillna("unknown").astype(str)
-            else:
-                df[col] = "unknown"
-        return df
+            columns[col] = X[col].fillna("unknown").astype(str) if col in X.columns else "unknown"
+        return pd.DataFrame(columns, index=X.index)
 
     def fit(
         self,
@@ -935,7 +1058,10 @@ class CatBoostModel:
         y_train: np.ndarray,
         X_eval: pd.DataFrame | None = None,
         y_eval: np.ndarray | None = None,
+        sample_weight: np.ndarray | None = None,
+        eval_sample_weight: np.ndarray | None = None,
         label: str = "",
+        progress_callback: Callable[[str, int, int], None] | None = None,
     ) -> CatBoostModel:
         t0 = time.time()
         logger.info(
@@ -946,12 +1072,12 @@ class CatBoostModel:
             len(self.categorical_features),
         )
         df_train = self._prepare(X_train)
-        train_pool = Pool(df_train, y_train, cat_features=self._cat_indices)
+        train_pool = Pool(df_train, y_train, cat_features=self._cat_indices, weight=sample_weight)
 
         eval_pool = None
         if X_eval is not None and y_eval is not None:
             df_eval = self._prepare(X_eval)
-            eval_pool = Pool(df_eval, y_eval, cat_features=self._cat_indices)
+            eval_pool = Pool(df_eval, y_eval, cat_features=self._cat_indices, weight=eval_sample_weight)
 
         logger.info(
             "[%s] Starting CatBoost fit: %d iters, depth=%d, lr=%.3f, boosting=%s",
@@ -964,7 +1090,43 @@ class CatBoostModel:
         self.model = CatBoostRegressor(**self.params)
         # Log every 200 iterations so we see progress
         verbose_interval = max(100, self.iterations // 10)
-        self.model.fit(train_pool, eval_set=eval_pool, verbose=verbose_interval, use_best_model=eval_pool is not None)
+
+        callbacks = None
+        task_type = str(self.params.get("task_type", "CPU")).upper()
+        callbacks_supported = task_type != "GPU"
+        if progress_callback is not None and callbacks_supported:
+            report_every = max(100, self.iterations // 20)
+
+            class _ProgressCallback:
+                def __init__(self):
+                    self.last_reported_iter = 0
+
+                def after_iteration(self, info) -> bool:
+                    current_iter = int(getattr(info, "iteration", 0)) + 1
+                    if current_iter == 1 or current_iter >= self.last_reported_iter + report_every:
+                        self.last_reported_iter = current_iter
+                        progress_callback(label, current_iter, self_total_iters)
+                    return True
+
+            self_total_iters = self.iterations
+            callbacks = [_ProgressCallback()]
+        elif progress_callback is not None and not callbacks_supported:
+            logger.info(
+                "[%s] GPU mode does not support CatBoost user callbacks; using stage-level progress only", label
+            )
+
+        fit_kwargs = {
+            "eval_set": eval_pool,
+            "verbose": verbose_interval,
+            "use_best_model": eval_pool is not None,
+        }
+        if callbacks is not None:
+            fit_kwargs["callbacks"] = callbacks
+
+        self.model.fit(
+            train_pool,
+            **fit_kwargs,
+        )
         self.best_iteration = getattr(self.model, "best_iteration_", None) or self.model.tree_count_
         elapsed = time.time() - t0
         logger.info(
@@ -1127,6 +1289,11 @@ def _compute_engineered_features(
     t0 = time.time()
     artifacts: dict[str, Any] = {}
 
+    # Defragment upfront because this function adds many columns and callers may
+    # pass already-fragmented frames from prior feature construction.
+    X_train = X_train.copy()
+    X_test = X_test.copy()
+
     # ── Coordinates ──────────────────────────────────────────────────
     train_lon = pd.to_numeric(X_train.get("longitude"), errors="coerce").fillna(0).values
     train_lat = pd.to_numeric(X_train.get("latitude"), errors="coerce").fillna(0).values
@@ -1205,6 +1372,8 @@ def _compute_engineered_features(
     # ── 3. Count / frequency features ────────────────────────────────
     logger.info("  Engineering: count features ...")
     count_maps: dict[str, dict[str, int]] = {}
+    train_count_features: dict[str, pd.Series] = {}
+    test_count_features: dict[str, pd.Series] = {}
     for group_col, feat_col in [
         ("ime_ko", "ko_transaction_count"),
         ("municipality_normalized", "muni_transaction_count"),
@@ -1213,11 +1382,18 @@ def _compute_engineered_features(
         if group_col in X_train.columns:
             counts = X_train[group_col].fillna("unknown").astype(str).value_counts().to_dict()
             count_maps[group_col] = counts
-            X_train[feat_col] = X_train[group_col].fillna("unknown").astype(str).map(counts).fillna(0).astype(float)
-            X_test[feat_col] = X_test[group_col].fillna("unknown").astype(str).map(counts).fillna(0).astype(float)
+            train_count_features[feat_col] = (
+                X_train[group_col].fillna("unknown").astype(str).map(counts).fillna(0).astype(float)
+            )
+            test_count_features[feat_col] = (
+                X_test[group_col].fillna("unknown").astype(str).map(counts).fillna(0).astype(float)
+            )
         else:
-            X_train[feat_col] = 0.0
-            X_test[feat_col] = 0.0
+            train_count_features[feat_col] = pd.Series(0.0, index=X_train.index)
+            test_count_features[feat_col] = pd.Series(0.0, index=X_test.index)
+
+    X_train = pd.concat([X_train, pd.DataFrame(train_count_features, index=X_train.index)], axis=1)
+    X_test = pd.concat([X_test, pd.DataFrame(test_count_features, index=X_test.index)], axis=1)
     artifacts["count_maps"] = count_maps
 
     # ── 4. KO-level price per m² (all types combined) ────────────────
@@ -1232,30 +1408,57 @@ def _compute_engineered_features(
     global_median_ppm2_train = float(np.median(y_train / X_train["size_m2"].clip(lower=1).values))
     artifacts["ko_ppm2_map"] = ko_ppm2_map
     artifacts["global_median_ppm2_for_ko"] = global_median_ppm2_train
-    for split_X in (X_train, X_test):
-        if "ime_ko" in split_X.columns:
-            split_X["price_per_m2_ko"] = (
-                split_X["ime_ko"].map(ko_ppm2_map).fillna(global_median_ppm2_train).astype(float)
-            )
-        else:
-            split_X["price_per_m2_ko"] = global_median_ppm2_train
+    train_ko_ppm2 = (
+        X_train["ime_ko"].map(ko_ppm2_map).fillna(global_median_ppm2_train).astype(float)
+        if "ime_ko" in X_train.columns
+        else pd.Series(global_median_ppm2_train, index=X_train.index, dtype=float)
+    )
+    test_ko_ppm2 = (
+        X_test["ime_ko"].map(ko_ppm2_map).fillna(global_median_ppm2_train).astype(float)
+        if "ime_ko" in X_test.columns
+        else pd.Series(global_median_ppm2_train, index=X_test.index, dtype=float)
+    )
+    X_train = pd.concat([X_train, pd.DataFrame({"price_per_m2_ko": train_ko_ppm2}, index=X_train.index)], axis=1)
+    X_test = pd.concat([X_test, pd.DataFrame({"price_per_m2_ko": test_ko_ppm2}, index=X_test.index)], axis=1)
 
     # ── 5. Price ratio features ──────────────────────────────────────
     logger.info("  Engineering: price ratios ...")
-    for split_X in (X_train, X_test):
+
+    def _price_ratio_features(split_X: pd.DataFrame) -> pd.DataFrame:
         comp_ko = split_X.get("comp_type_ko_ppm2", pd.Series(0.0, index=split_X.index)).fillna(0)
         comp_muni = split_X.get("comp_type_muni_ppm2", pd.Series(0.0, index=split_X.index)).fillna(0)
-        split_X["ko_vs_muni_premium"] = (comp_ko - comp_muni).astype(float)
+        muni_ppm2 = (
+            pd.to_numeric(
+                split_X.get("price_per_m2_municipality", pd.Series(np.nan, index=split_X.index)),
+                errors="coerce",
+            )
+            .clip(lower=1)
+            .fillna(1)
+        )
+        region_ppm2 = (
+            pd.to_numeric(
+                split_X.get("price_per_m2_region", pd.Series(np.nan, index=split_X.index)),
+                errors="coerce",
+            )
+            .clip(lower=1)
+            .fillna(1)
+        )
+        return pd.DataFrame(
+            {
+                "ko_vs_muni_premium": (comp_ko - comp_muni).astype(float),
+                "muni_vs_region_premium": np.log(muni_ppm2 / region_ppm2).astype(float),
+            },
+            index=split_X.index,
+        )
 
-        muni_ppm2 = pd.to_numeric(split_X.get("price_per_m2_municipality"), errors="coerce").clip(lower=1).fillna(1)
-        region_ppm2 = pd.to_numeric(split_X.get("price_per_m2_region"), errors="coerce").clip(lower=1).fillna(1)
-        split_X["muni_vs_region_premium"] = np.log(muni_ppm2 / region_ppm2).astype(float)
+    X_train = pd.concat([X_train, _price_ratio_features(X_train)], axis=1)
+    X_test = pd.concat([X_test, _price_ratio_features(X_test)], axis=1)
 
     # ── 6. Size percentile within type ───────────────────────────────
     logger.info("  Engineering: size percentiles ...")
     size_quantiles: dict[str, np.ndarray] = {}
-    X_train["size_percentile"] = 0.5
-    X_test["size_percentile"] = 0.5
+    size_pct_train = pd.Series(0.5, index=X_train.index, dtype=float)
+    size_pct_test = pd.Series(0.5, index=X_test.index, dtype=float)
     if "property_type" in X_train.columns:
         for ptype in X_train["property_type"].unique():
             mask_tr = X_train["property_type"] == ptype
@@ -1264,49 +1467,93 @@ def _compute_engineered_features(
                 continue
             sizes_sorted = np.sort(X_train.loc[mask_tr, "size_m2"].values)
             size_quantiles[str(ptype)] = sizes_sorted
-            X_train.loc[mask_tr, "size_percentile"] = X_train.loc[mask_tr, "size_m2"].rank(pct=True).values
+            size_pct_train.loc[mask_tr] = X_train.loc[mask_tr, "size_m2"].rank(pct=True).values
             if mask_te.any():
-                X_test.loc[mask_te, "size_percentile"] = np.searchsorted(
-                    sizes_sorted, X_test.loc[mask_te, "size_m2"].values
-                ) / len(sizes_sorted)
+                size_pct_test.loc[mask_te] = np.searchsorted(sizes_sorted, X_test.loc[mask_te, "size_m2"].values) / len(
+                    sizes_sorted
+                )
+    X_train = pd.concat([X_train, pd.DataFrame({"size_percentile": size_pct_train}, index=X_train.index)], axis=1)
+    X_test = pd.concat([X_test, pd.DataFrame({"size_percentile": size_pct_test}, index=X_test.index)], axis=1)
     artifacts["size_quantiles"] = size_quantiles
 
     # ── 7. Data quality indicators ───────────────────────────────────
-    for split_X in (X_train, X_test):
-        split_X["has_ev_data"] = pd.to_numeric(split_X.get("ev_leto_izg_stavbe"), errors="coerce").notna().astype(float)
+    def _quality_indicators(split_X: pd.DataFrame) -> pd.DataFrame:
+        ev_year = pd.to_numeric(
+            split_X.get("ev_leto_izg_stavbe", pd.Series(np.nan, index=split_X.index)),
+            errors="coerce",
+        )
         reno_cols = ["ev_leto_obn_strehe", "ev_leto_obn_fasade", "ev_leto_obn_oken", "ev_leto_obn_inst"]
         has_reno = pd.Series(False, index=split_X.index)
         for rc in reno_cols:
             if rc in split_X.columns:
                 has_reno = has_reno | pd.to_numeric(split_X[rc], errors="coerce").notna()
-        split_X["has_renovation_data"] = has_reno.astype(float)
+        return pd.DataFrame(
+            {
+                "has_ev_data": ev_year.notna().astype(float),
+                "has_renovation_data": has_reno.astype(float),
+            },
+            index=split_X.index,
+        )
+
+    X_train = pd.concat([X_train, _quality_indicators(X_train)], axis=1)
+    X_test = pd.concat([X_test, _quality_indicators(X_test)], axis=1)
 
     # ── 8. Time index ────────────────────────────────────────────────
     min_year = float(X_train["transaction_year"].min()) if "transaction_year" in X_train.columns else 2020.0
     artifacts["min_year"] = min_year
-    for split_X in (X_train, X_test):
-        yr = pd.to_numeric(split_X.get("transaction_year"), errors="coerce").fillna(min_year)
-        qtr = pd.to_numeric(split_X.get("transaction_quarter"), errors="coerce").fillna(1)
-        split_X["time_index"] = ((yr - min_year) * 4 + qtr).astype(float)
+
+    def _time_index_feature(split_X: pd.DataFrame) -> pd.DataFrame:
+        yr = pd.to_numeric(
+            split_X.get("transaction_year", pd.Series(np.nan, index=split_X.index)),
+            errors="coerce",
+        ).fillna(min_year)
+        qtr = pd.to_numeric(
+            split_X.get("transaction_quarter", pd.Series(np.nan, index=split_X.index)),
+            errors="coerce",
+        ).fillna(1)
+        return pd.DataFrame({"time_index": ((yr - min_year) * 4 + qtr).astype(float)}, index=split_X.index)
+
+    X_train = pd.concat([X_train, _time_index_feature(X_train)], axis=1)
+    X_test = pd.concat([X_test, _time_index_feature(X_test)], axis=1)
 
     # ── 9. Renovation recency ────────────────────────────────────────
     reno_cols = ["ev_leto_obn_strehe", "ev_leto_obn_fasade", "ev_leto_obn_oken", "ev_leto_obn_inst"]
-    for split_X in (X_train, X_test):
+
+    def _reno_recency_features(split_X: pd.DataFrame) -> pd.DataFrame:
         reno_df = pd.DataFrame(index=split_X.index)
         for rc in reno_cols:
             if rc in split_X.columns:
                 reno_df[rc] = pd.to_numeric(split_X[rc], errors="coerce")
-        if len(reno_df.columns) > 0:
-            split_X["latest_renovation_year"] = reno_df.max(axis=1)
-        else:
-            split_X["latest_renovation_year"] = np.nan
-        yr = pd.to_numeric(split_X.get("transaction_year"), errors="coerce")
-        split_X["years_since_renovation"] = yr - split_X["latest_renovation_year"]
+        latest = reno_df.max(axis=1) if len(reno_df.columns) > 0 else pd.Series(np.nan, index=split_X.index)
+        yr = pd.to_numeric(split_X.get("transaction_year", pd.Series(np.nan, index=split_X.index)), errors="coerce")
+        return pd.DataFrame(
+            {
+                "latest_renovation_year": latest,
+                "years_since_renovation": yr - latest,
+            },
+            index=split_X.index,
+        )
+
+    X_train = pd.concat([X_train, _reno_recency_features(X_train)], axis=1)
+    X_test = pd.concat([X_test, _reno_recency_features(X_test)], axis=1)
 
     # ── 10. Parcel sold fraction ─────────────────────────────────────
-    for split_X in (X_train, X_test):
-        parcela_m2 = pd.to_numeric(split_X.get("parcela_m2"), errors="coerce").clip(lower=1)
-        split_X["parcel_sold_fraction"] = (split_X["size_m2"] / parcela_m2).clip(upper=1.0).astype(float)
+    def _parcel_fraction_feature(split_X: pd.DataFrame) -> pd.DataFrame:
+        parcela_m2 = pd.to_numeric(
+            split_X.get("parcela_m2", pd.Series(np.nan, index=split_X.index)),
+            errors="coerce",
+        ).clip(lower=1)
+        return pd.DataFrame(
+            {"parcel_sold_fraction": (split_X["size_m2"] / parcela_m2).clip(upper=1.0).astype(float)},
+            index=split_X.index,
+        )
+
+    X_train = pd.concat([X_train, _parcel_fraction_feature(X_train)], axis=1)
+    X_test = pd.concat([X_test, _parcel_fraction_feature(X_test)], axis=1)
+
+    # Final defragmentation for downstream slicing/filtering performance.
+    X_train = X_train.copy()
+    X_test = X_test.copy()
 
     elapsed = time.time() - t0
     logger.info("  Feature engineering complete in %.1fs (%d new features)", elapsed, 16)  # 16 new features added
@@ -1436,6 +1683,143 @@ def _compute_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict:
     return {"mae": mae, "rmse": rmse, "r2": r2, "mape": mape, "median_ae": median_ae}
 
 
+def _candidate_metrics_tuple(candidate: dict[str, Any]) -> tuple[float, float, float]:
+    metrics = candidate.get("metrics") or {}
+    mape = float(metrics.get("mape", float("inf")) or float("inf"))
+    r2 = float(metrics.get("r2", float("-inf")) or float("-inf"))
+    mae = float(metrics.get("mae", float("inf")) or float("inf"))
+    return mape, r2, mae
+
+
+def _select_best_training_candidate(candidates: list[dict[str, Any]]) -> dict[str, Any] | None:
+    if not candidates:
+        return None
+
+    best = candidates[0]
+    best_mape, best_r2, best_mae = _candidate_metrics_tuple(best)
+    for candidate in candidates[1:]:
+        cand_mape, cand_r2, cand_mae = _candidate_metrics_tuple(candidate)
+        if (
+            cand_mape < best_mape - 1e-9
+            or (abs(cand_mape - best_mape) <= 1e-9 and cand_r2 > best_r2 + 1e-9)
+            or (abs(cand_mape - best_mape) <= 1e-9 and abs(cand_r2 - best_r2) <= 1e-9 and cand_mae < best_mae)
+        ):
+            best = candidate
+            best_mape, best_r2, best_mae = cand_mape, cand_r2, cand_mae
+    return best
+
+
+def _build_feature_variants(
+    rich_numeric: list[str],
+    rich_categorical: list[str],
+    always_numeric: set[str],
+    always_categorical: set[str],
+) -> dict[str, dict[str, list[str]]]:
+    simple_numeric_order = [
+        "size_m2",
+        "log_size_m2",
+        "transaction_year",
+        "price_per_m2_region",
+        "price_per_m2_municipality",
+        "price_per_m2_ko",
+        "comp_type_muni_ppm2",
+        "comp_type_ko_ppm2",
+        "comp_type_naselje_ppm2",
+        "dist_ljubljana",
+        "dist_maribor",
+        "dist_coast",
+        "knn_3_log_ppm2",
+        "knn_5_log_ppm2",
+        "knn_type_10_log_ppm2",
+        "ko_transaction_count",
+        "muni_transaction_count",
+        "naselje_transaction_count",
+        "building_age",
+        "year_built",
+        "parcela_m2",
+        "prodani_delez_parcele",
+        "prodani_delez_dela_stavbe",
+    ]
+    simple_categorical_order = [
+        "municipality_normalized",
+        "statistical_region",
+        "ime_ko",
+        "naselje",
+        "vrsta_zemljisca",
+        "vrsta_kupoprodajnega_posla",
+        "lega_v_stavbi",
+        "dtm_pokritost_tal",
+        "parcela_namenska_raba",
+        "emv_zone_model",
+        "emv_zone_id",
+    ]
+    simple_numeric_keep = always_numeric | set(simple_numeric_order)
+    simple_categorical_keep = always_categorical | set(simple_categorical_order)
+
+    simple_numeric = [feature for feature in rich_numeric if feature in simple_numeric_keep]
+    simple_categorical = [feature for feature in rich_categorical if feature in simple_categorical_keep]
+
+    if not simple_numeric:
+        simple_numeric = rich_numeric[: min(len(rich_numeric), 8)]
+    if not simple_categorical and rich_categorical:
+        simple_categorical = rich_categorical[: min(len(rich_categorical), 4)]
+
+    return {
+        "simple": {
+            "numeric": simple_numeric,
+            "categorical": simple_categorical,
+        },
+        "rich": {
+            "numeric": list(rich_numeric),
+            "categorical": list(rich_categorical),
+        },
+    }
+
+
+def _compute_per_type_blend_weight(
+    y_true: np.ndarray,
+    global_pred: np.ndarray,
+    per_type_pred: np.ndarray,
+    n_test: int,
+) -> tuple[float, dict[str, Any]]:
+    """Select the best per-type/global blend on recent holdout data.
+
+    Returns `(weight, metrics)` where weight is in [0, 1]:
+    - 0.0 => global-only routing for this type
+    - 1.0 => per-type-only routing for this type
+    - (0,1) => weighted blend of per-type and global predictions
+    """
+    if n_test < 40:
+        metrics = _compute_metrics(y_true, global_pred)
+        return 0.0, metrics
+
+    best_weight = 0.0
+    best_metrics = _compute_metrics(y_true, global_pred)
+    best_mape = float(best_metrics.get("mape", float("inf")) or float("inf"))
+    best_r2 = float(best_metrics.get("r2", float("-inf")) or float("-inf"))
+    best_mae = float(best_metrics.get("mae", float("inf")) or float("inf"))
+
+    for weight in np.linspace(0.0, 1.0, 21):
+        blended = weight * per_type_pred + (1.0 - weight) * global_pred
+        metrics = _compute_metrics(y_true, blended)
+        mape = float(metrics.get("mape", float("inf")) or float("inf"))
+        r2 = float(metrics.get("r2", float("-inf")) or float("-inf"))
+        mae = float(metrics.get("mae", float("inf")) or float("inf"))
+
+        if (
+            mape < best_mape - 1e-9
+            or (abs(mape - best_mape) <= 1e-9 and r2 > best_r2 + 1e-9)
+            or (abs(mape - best_mape) <= 1e-9 and abs(r2 - best_r2) <= 1e-9 and mae < best_mae - 1e-9)
+        ):
+            best_weight = float(weight)
+            best_metrics = metrics
+            best_mape = mape
+            best_r2 = r2
+            best_mae = mae
+
+    return best_weight, best_metrics
+
+
 def _build_segment_diagnostics(
     X_test: pd.DataFrame,
     y_true: np.ndarray,
@@ -1492,6 +1876,290 @@ def _build_segment_diagnostics(
     return diagnostics
 
 
+def _effective_share_series(frame: pd.DataFrame) -> pd.Series:
+    share_series = pd.to_numeric(frame.get("prodani_delez_dela_stavbe"), errors="coerce")
+    if share_series.isna().all():
+        share_series = pd.to_numeric(frame.get("prodani_delez_parcele"), errors="coerce")
+    else:
+        parcel_share = pd.to_numeric(frame.get("prodani_delez_parcele"), errors="coerce")
+        share_series = share_series.where(share_series.notna(), parcel_share)
+    return share_series.fillna(1.0)
+
+
+def _share_bucket_labels(frame: pd.DataFrame) -> pd.Series:
+    effective_share = _effective_share_series(frame)
+    return pd.Series(
+        np.select(
+            [
+                effective_share >= 0.999,
+                effective_share >= 0.95,
+                effective_share >= 0.5,
+            ],
+            ["full", "mostly_full", "partial"],
+            default="small_share",
+        ),
+        index=frame.index,
+        dtype="object",
+    )
+
+
+def _round_quantiles(series: pd.Series, quantiles: list[float]) -> dict[str, float] | None:
+    numeric = pd.to_numeric(series, errors="coerce").replace([np.inf, -np.inf], np.nan).dropna()
+    if numeric.empty:
+        return None
+    return {f"q{int(q * 100):02d}": round(float(numeric.quantile(q)), 2) for q in quantiles}
+
+
+def _build_segment_metric_table(
+    frame: pd.DataFrame,
+    group_col: str,
+    *,
+    min_count: int = 25,
+) -> list[dict[str, Any]]:
+    if group_col not in frame.columns:
+        return []
+    rows: list[dict[str, Any]] = []
+    for segment, group in frame.groupby(group_col, dropna=False):
+        if len(group) < min_count:
+            continue
+        metrics = _compute_metrics(group["y_true"].to_numpy(), group["y_pred"].to_numpy())
+        if not metrics:
+            continue
+        rows.append(
+            {
+                "segment": "unknown" if pd.isna(segment) else str(segment),
+                "n": int(len(group)),
+                "r2": round(float(metrics.get("r2", 0.0)), 6),
+                "mae": round(float(metrics.get("mae", 0.0)), 2),
+                "mape": round(float(metrics.get("mape", 0.0)), 2) if metrics.get("mape") is not None else None,
+                "median_ae": round(float(metrics.get("median_ae", 0.0)), 2),
+            }
+        )
+    return sorted(rows, key=lambda item: (item["mape"] is None, -(item["mape"] or 0.0), -item["n"], item["segment"]))
+
+
+def _build_residual_diagnostics(
+    X_test: pd.DataFrame,
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+) -> dict[str, dict[str, Any]]:
+    target_types = ["stanovanje", "hisa", "parcela", "kmetijsko", "garaza"]
+    frame = X_test.copy()
+    if "property_type" not in frame.columns:
+        return {}
+    frame["y_true"] = y_true
+    frame["y_pred"] = y_pred
+    frame["residual_pct"] = np.where(
+        frame["y_true"] > 0, (frame["y_pred"] - frame["y_true"]) / frame["y_true"] * 100.0, np.nan
+    )
+
+    diagnostics: dict[str, dict[str, Any]] = {}
+    for property_type in target_types:
+        group = frame[frame["property_type"].astype(str) == property_type].copy()
+        if len(group) < 10:
+            continue
+        under = group[group["residual_pct"] <= -10]
+        over = group[group["residual_pct"] >= 10]
+        diagnostics[property_type] = {
+            "rows": int(len(group)),
+            "median_residual_pct": round(float(group["residual_pct"].median()), 2),
+            "underprediction": {
+                "rows": int(len(under)),
+                "share": round(float(len(under) / len(group)), 4),
+                "median_pct": round(float(under["residual_pct"].median()), 2) if len(under) else None,
+            },
+            "overprediction": {
+                "rows": int(len(over)),
+                "share": round(float(len(over) / len(group)), 4),
+                "median_pct": round(float(over["residual_pct"].median()), 2) if len(over) else None,
+            },
+        }
+    return diagnostics
+
+
+def _segment_calibration_feature_priority(property_type: str) -> list[str]:
+    property_key = str(property_type)
+    prioritized = CALIBRATION_SEGMENT_PRIORITIES.get(property_key, [])
+    fallback = ["kn_ggo_section", "vrsta_zemljisca", "parcela_namenska_raba", "ime_ko"]
+    ordered: list[str] = []
+    for feature in prioritized + fallback:
+        if feature not in ordered:
+            ordered.append(feature)
+    return ordered
+
+
+def _fit_segment_calibration_for_type(
+    group: pd.DataFrame,
+    property_type: str,
+    *,
+    clip_low: float,
+    clip_high: float,
+) -> dict[str, Any] | None:
+    if len(group) < 120:
+        return None
+
+    base_pred = group["base_pred"].to_numpy(dtype=float)
+    y_true = group["y_true"].to_numpy(dtype=float)
+    baseline_metrics = _compute_metrics(y_true, base_pred) or {}
+    baseline_mape = float(baseline_metrics.get("mape", np.inf))
+    baseline_r2 = float(baseline_metrics.get("r2", -np.inf))
+    min_rows_per_value = max(30, len(group) // 80)
+
+    best_meta: dict[str, Any] | None = None
+    for feature_name in _segment_calibration_feature_priority(property_type):
+        if feature_name not in group.columns:
+            continue
+
+        values = group[feature_name].fillna("unknown").astype(str)
+        value_counts = values[values != "unknown"].value_counts()
+        eligible_values = value_counts[value_counts >= min_rows_per_value]
+        if len(eligible_values) < 2:
+            continue
+
+        if len(eligible_values) > 24:
+            eligible_values = eligible_values.nlargest(24)
+
+        factor_map: dict[str, float] = {}
+        count_map: dict[str, int] = {}
+        segment_factor = np.ones(len(group), dtype=float)
+        for value in eligible_values.index:
+            mask = values == value
+            count = int(mask.sum())
+            if count < min_rows_per_value:
+                continue
+            factor = float(np.clip(group.loc[mask, "residual_ratio"].median(), clip_low, clip_high))
+            factor_map[str(value)] = factor
+            count_map[str(value)] = count
+            segment_factor[mask.to_numpy(dtype=bool)] = factor
+
+        if len(factor_map) < 2:
+            continue
+
+        adjusted_pred = np.maximum(base_pred * segment_factor, 1.0)
+        candidate_metrics = _compute_metrics(y_true, adjusted_pred) or {}
+        candidate_mape = float(candidate_metrics.get("mape", np.inf))
+        candidate_r2 = float(candidate_metrics.get("r2", -np.inf))
+        if not np.isfinite(candidate_mape):
+            continue
+
+        if best_meta is None:
+            best_meta = {
+                "feature": feature_name,
+                "factors": factor_map,
+                "counts": count_map,
+                "metrics": candidate_metrics,
+                "mape": candidate_mape,
+                "r2": candidate_r2,
+                "adjusted_pred": adjusted_pred,
+            }
+            continue
+
+        improved_mape = candidate_mape < best_meta["mape"] - 0.1
+        tie_break_r2 = abs(candidate_mape - best_meta["mape"]) <= 0.1 and candidate_r2 > best_meta["r2"] + 0.002
+        if improved_mape or tie_break_r2:
+            best_meta = {
+                "feature": feature_name,
+                "factors": factor_map,
+                "counts": count_map,
+                "metrics": candidate_metrics,
+                "mape": candidate_mape,
+                "r2": candidate_r2,
+                "adjusted_pred": adjusted_pred,
+            }
+
+    if best_meta is None:
+        return None
+
+    if best_meta["mape"] >= baseline_mape - 0.05 and best_meta["r2"] <= baseline_r2 + 0.002:
+        return None
+
+    return {
+        "feature": best_meta["feature"],
+        "factors": best_meta["factors"],
+        "counts": best_meta["counts"],
+        "metrics": {
+            "mape": round(float(best_meta["mape"]), 6),
+            "r2": round(float(best_meta["r2"]), 6),
+        },
+    }
+
+
+def _build_recent_research_diagnostics(
+    df: pd.DataFrame,
+    X_test: pd.DataFrame,
+    y_test: np.ndarray,
+    y_pred_combined: np.ndarray,
+    per_type_feature_usage: dict[str, dict[str, Any]],
+    routing_comparison: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    diagnostics: dict[str, Any] = {}
+    years, year_source = _extract_year_series(df)
+    valid_years = years.dropna()
+    diagnostics["dataset_window"] = {
+        "year_source": year_source,
+        "start_year": int(valid_years.min()) if not valid_years.empty else None,
+        "end_year": int(valid_years.max()) if not valid_years.empty else None,
+        "rows": int(len(df)),
+    }
+
+    working = df.copy()
+    working["ppm2"] = np.where(
+        pd.to_numeric(working.get("size_m2"), errors="coerce") > 0, working["price_eur"] / working["size_m2"], np.nan
+    )
+    if "property_type" in working.columns and "transaction_year" in working.columns:
+        counts = (
+            working.groupby(["property_type", "transaction_year"])
+            .size()
+            .reset_index(name="rows")
+            .sort_values(["property_type", "transaction_year"])
+        )
+        diagnostics["per_type_year_counts"] = counts.to_dict(orient="records")
+
+    quantiles: dict[str, Any] = {}
+    if "property_type" in working.columns:
+        for property_type, group in working.groupby("property_type"):
+            quantiles[str(property_type)] = {
+                "rows": int(len(group)),
+                "price_eur": _round_quantiles(group["price_eur"], [0.1, 0.25, 0.5, 0.75, 0.9]),
+                "ppm2": _round_quantiles(group["ppm2"], [0.1, 0.25, 0.5, 0.75, 0.9]),
+            }
+    diagnostics["per_type_value_quantiles"] = quantiles
+
+    candidate_features = [feature for feature in NUMERIC_FEATURES + CATEGORICAL_FEATURES if feature in working.columns]
+    missingness: dict[str, dict[str, Any]] = {}
+    cardinality: dict[str, dict[str, Any]] = {}
+    if "property_type" in working.columns:
+        for property_type, group in working.groupby("property_type"):
+            property_key = str(property_type)
+            missingness[property_key] = {}
+            cardinality[property_key] = {}
+            for feature in candidate_features:
+                missingness[property_key][feature] = round(float(group[feature].isna().mean()), 4)
+                if group[feature].dtype == "object" or feature in CATEGORICAL_FEATURES:
+                    cardinality[property_key][feature] = int(group[feature].fillna("unknown").astype(str).nunique())
+    diagnostics["feature_missingness"] = missingness
+    diagnostics["feature_cardinality"] = cardinality
+
+    diagnostics["feature_signal_rankings"] = {
+        property_type: usage.get("top_features", []) for property_type, usage in per_type_feature_usage.items()
+    }
+
+    holdout = X_test.copy()
+    holdout["y_true"] = y_test
+    holdout["y_pred"] = y_pred_combined
+    holdout["share_bucket"] = _share_bucket_labels(holdout)
+    diagnostics["segment_diagnostics"] = {
+        "municipality": _build_segment_metric_table(holdout, "municipality_normalized", min_count=25),
+        "naselje": _build_segment_metric_table(holdout, "naselje", min_count=20),
+        "ime_ko": _build_segment_metric_table(holdout, "ime_ko", min_count=20),
+        "sale_type": _build_segment_metric_table(holdout, "vrsta_kupoprodajnega_posla", min_count=20),
+        "share_bucket": _build_segment_metric_table(holdout, "share_bucket", min_count=20),
+    }
+    diagnostics["residual_diagnostics"] = _build_residual_diagnostics(X_test, y_test, y_pred_combined)
+    diagnostics["routing_comparison"] = routing_comparison
+    return diagnostics
+
+
 def _overall_training_progress(current_model_index: int, total_models: int, fitted: int, total: int) -> int:
     model_start = 18
     model_end = 88
@@ -1520,6 +2188,7 @@ def _train_single_model(
     progress_callback: Callable | None = None,
     *,
     target_transform: str = "log_ppm2",
+    sample_weight: np.ndarray | None = None,
 ) -> dict:
     total_trees = model.iterations
 
@@ -1544,8 +2213,19 @@ def _train_single_model(
     y_tr = y_fit[train_mask]
     X_val = X_train.iloc[val_indices]
     y_val = y_fit[val_indices]
+    train_weights = sample_weight[train_mask] if sample_weight is not None else None
+    val_weights = sample_weight[val_indices] if sample_weight is not None else None
 
-    model.fit(X_tr, y_tr, X_eval=X_val, y_eval=y_val, label=label)
+    model.fit(
+        X_tr,
+        y_tr,
+        X_eval=X_val,
+        y_eval=y_val,
+        sample_weight=train_weights,
+        eval_sample_weight=val_weights,
+        label=label,
+        progress_callback=progress_callback,
+    )
 
     if progress_callback:
         progress_callback(label, model.best_iteration or total_trees, total_trees)
@@ -1564,7 +2244,7 @@ def _train_single_model(
 
     importance = model.get_feature_importance()
 
-    return {"metrics": metrics, "importance": importance}
+    return {"metrics": metrics, "importance": importance, "predictions": y_pred}
 
 
 def _predict_combined_routed(
@@ -1592,28 +2272,850 @@ def _predict_combined_routed(
         mask = property_types == ptype
         if not mask.any():
             continue
+        blend_weight = float(model_meta.get("blend_weight", 1.0))
+        if blend_weight <= 0:
+            continue
         X_sub = X_test.loc[mask]
         pt_model = model_meta["pipeline"]  # CatBoostModel stored under "pipeline" key
         pt_raw = pt_model.predict(X_sub)
-        if target_transform == "log_ppm2":
+        pt_target_transform = str(model_meta.get("target_transform", target_transform))
+        if pt_target_transform == "log_ppm2":
             pt_size = X_sub["size_m2"].clip(lower=1).values.astype(float)
             pt_pred = np.maximum(pt_size * np.exp(pt_raw), 0)
-        elif target_transform == "log_price":
+        elif pt_target_transform == "log_price":
             pt_pred = np.maximum(np.expm1(pt_raw), 0)
         else:
             pt_pred = pt_raw
-        y_pred[mask.to_numpy()] = pt_pred
+        mask_idx = mask.to_numpy()
+        if blend_weight >= 0.999:
+            y_pred[mask_idx] = pt_pred
+        else:
+            y_pred[mask_idx] = blend_weight * pt_pred + (1.0 - blend_weight) * y_pred[mask_idx]
 
     return y_pred
+
+
+def _apply_recent_training_window(df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """Prefer recent transactions for training to match current market regime.
+
+    ETN bulk snapshots are typically annual, so a strict 12-month window is
+    approximated with the latest 2 year buckets.
+    """
+    info: dict[str, Any] = {
+        "enabled": _RECENT_WINDOW_MONTHS > 0,
+        "requested_months": _RECENT_WINDOW_MONTHS,
+        "rows_before": int(len(df)),
+        "mode": "full_history",
+    }
+    if _RECENT_WINDOW_MONTHS <= 0 or df.empty:
+        info["rows_after"] = int(len(df))
+        return df, info
+
+    year_source = None
+    year_values = pd.to_numeric(df.get("transaction_year"), errors="coerce")
+    if year_values.notna().any():
+        year_source = "transaction_year"
+    else:
+        year_values = pd.to_numeric(df.get("source_label"), errors="coerce")
+        if year_values.notna().any():
+            year_source = "source_label"
+
+    if year_source is None:
+        info["rows_after"] = int(len(df))
+        info["reason"] = "no_year_column"
+        return df, info
+
+    latest_year = float(year_values.max())
+    # With annual buckets, 12 months spans at least two calendar years.
+    target_year_buckets = max(2, int(np.ceil(_RECENT_WINDOW_MONTHS / 12.0)))
+    dynamic_min_rows = min(_RECENT_WINDOW_MIN_ROWS, max(1000, int(len(df) * 0.35)))
+
+    selected = df
+    selected_year_buckets = None
+    selected_cutoff = None
+
+    for year_buckets in range(target_year_buckets, _RECENT_WINDOW_MAX_YEARS + 1):
+        cutoff_year = latest_year - year_buckets + 1
+        candidate = df[year_values >= cutoff_year]
+        selected = candidate
+        selected_year_buckets = year_buckets
+        selected_cutoff = cutoff_year
+        if len(candidate) >= dynamic_min_rows:
+            break
+
+    if selected.empty:
+        info["rows_after"] = int(len(df))
+        info["reason"] = "recent_window_empty"
+        return df, info
+
+    info.update(
+        {
+            "mode": "recent_window",
+            "year_source": year_source,
+            "latest_year": latest_year,
+            "cutoff_year": selected_cutoff,
+            "year_buckets": selected_year_buckets,
+            "rows_after": int(len(selected)),
+            "rows_dropped": int(len(df) - len(selected)),
+        }
+    )
+    return selected.copy(), info
+
+
+def _extract_year_series(frame: pd.DataFrame) -> tuple[pd.Series, str | None]:
+    year_values = pd.to_numeric(frame.get("transaction_year"), errors="coerce")
+    if year_values.notna().any():
+        return year_values.astype("float64"), "transaction_year"
+
+    fallback_years = pd.to_numeric(frame.get("source_label"), errors="coerce")
+    if fallback_years.notna().any():
+        return fallback_years.astype("float64"), "source_label"
+
+    return pd.Series(np.nan, index=frame.index, dtype="float64"), None
+
+
+def _build_time_holdout_split(
+    X: pd.DataFrame,
+    y: np.ndarray,
+) -> tuple[pd.DataFrame, pd.DataFrame, np.ndarray, np.ndarray, dict[str, Any]]:
+    years, year_source = _extract_year_series(X)
+    info: dict[str, Any] = {
+        "strategy": "time_holdout",
+        "year_source": year_source,
+        "rows_total": int(len(X)),
+    }
+
+    if year_source is None:
+        split_at = max(int(len(X) * 0.8), 1)
+        if split_at >= len(X):
+            split_at = max(len(X) - 1, 1)
+        X_train = X.iloc[:split_at].copy()
+        X_test = X.iloc[split_at:].copy()
+        y_train = y[:split_at]
+        y_test = y[split_at:]
+        info.update({"strategy": "index_fallback", "rows_train": int(len(X_train)), "rows_test": int(len(X_test))})
+        return X_train, X_test, y_train, y_test, info
+
+    valid_years = sorted({int(year) for year in years.dropna().astype(int).tolist()})
+    if len(valid_years) < 2:
+        latest_year = valid_years[-1] if valid_years else None
+        test_mask = years == latest_year if latest_year is not None else pd.Series(False, index=X.index)
+    else:
+        target_holdout_rows = max(1000, int(len(X) * 0.12))
+        selected_years: list[int] = []
+        type_targets: dict[str, int] = {}
+        if "property_type" in X.columns:
+            type_counts = X["property_type"].astype(str).value_counts()
+            for property_type, count in type_counts.items():
+                if count < MIN_SAMPLES_PER_TYPE:
+                    continue
+                type_targets[str(property_type)] = min(80, max(20, int(count * 0.08)))
+
+        for year in reversed(valid_years):
+            selected_years.append(year)
+            candidate_mask = years.isin(selected_years)
+            enough_rows = int(candidate_mask.sum()) >= target_holdout_rows
+            enough_types = True
+            for property_type, target in type_targets.items():
+                available = int(((X["property_type"].astype(str) == property_type) & candidate_mask).sum())
+                if available < target:
+                    enough_types = False
+                    break
+            if enough_rows and enough_types:
+                break
+
+        test_mask = years.isin(selected_years)
+        info["test_years"] = sorted(selected_years)
+        info["train_years"] = [year for year in valid_years if year not in selected_years]
+        info["latest_year"] = max(valid_years)
+
+    if int(test_mask.sum()) == 0 or int((~test_mask).sum()) == 0:
+        latest_year = valid_years[-1] if valid_years else None
+        test_mask = years == latest_year if latest_year is not None else pd.Series(False, index=X.index)
+
+    if int(test_mask.sum()) == 0 or int((~test_mask).sum()) == 0:
+        split_at = max(int(len(X) * 0.8), 1)
+        if split_at >= len(X):
+            split_at = max(len(X) - 1, 1)
+        X_train = X.iloc[:split_at].copy()
+        X_test = X.iloc[split_at:].copy()
+        y_train = y[:split_at]
+        y_test = y[split_at:]
+        info.update({"strategy": "index_fallback", "rows_train": int(len(X_train)), "rows_test": int(len(X_test))})
+        return X_train, X_test, y_train, y_test, info
+
+    X_train = X.loc[~test_mask].copy()
+    X_test = X.loc[test_mask].copy()
+    y_train = y[~test_mask.to_numpy()]
+    y_test = y[test_mask.to_numpy()]
+    info.update(
+        {
+            "rows_train": int(len(X_train)),
+            "rows_test": int(len(X_test)),
+        }
+    )
+    return X_train, X_test, y_train, y_test, info
+
+
+def _build_recency_sample_weights(frame: pd.DataFrame) -> np.ndarray:
+    years, _year_source = _extract_year_series(frame)
+    if not years.notna().any():
+        return np.ones(len(frame), dtype=float)
+
+    latest_year = float(years.max())
+    age = latest_year - years
+    ramp = ((6.0 - age).clip(lower=0.0, upper=6.0) / 6.0).fillna(0.0)
+    return (1.0 + ramp).to_numpy(dtype=float)
+
+
+def _restrict_training_years(
+    X: pd.DataFrame,
+    y: np.ndarray,
+    years_back: int | None,
+) -> tuple[pd.DataFrame, np.ndarray, dict[str, Any]]:
+    if years_back is None:
+        return X.copy(), y.copy(), {"policy": "full_history_weighted", "cutoff_year": None}
+
+    years, year_source = _extract_year_series(X)
+    if year_source is None or not years.notna().any():
+        return X.copy(), y.copy(), {"policy": f"recent_{years_back}y_weighted", "cutoff_year": None, "fallback": True}
+
+    latest_year = int(years.max())
+    cutoff_year = latest_year - years_back + 1
+    mask = years >= cutoff_year
+    if int(mask.sum()) < MIN_SAMPLES_PER_TYPE:
+        return (
+            X.copy(),
+            y.copy(),
+            {
+                "policy": f"recent_{years_back}y_weighted",
+                "cutoff_year": cutoff_year,
+                "fallback": True,
+            },
+        )
+
+    return (
+        X.loc[mask].copy(),
+        y[mask.to_numpy()],
+        {"policy": f"recent_{years_back}y_weighted", "cutoff_year": cutoff_year},
+    )
+
+
+def _fit_calibration_maps(
+    X_test: pd.DataFrame,
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+) -> dict[str, Any]:
+    calibration: dict[str, Any] = {
+        "type": {},
+        "municipality": {},
+        "naselje": {},
+        "segment": {},
+        "price_band": {},
+        "clip": [0.8, 1.6],
+        "segment_clip": [0.55, 1.9],
+        "price_band_clip": [0.45, 2.4],
+        "combined_clip": [0.35, 3.2],
+    }
+    if len(X_test) == 0:
+        return calibration
+
+    frame = X_test.copy()
+    frame["y_true"] = y_true
+    frame["y_pred"] = np.maximum(y_pred, 1.0)
+    frame["ratio"] = frame["y_true"] / frame["y_pred"]
+    frame = frame.replace([np.inf, -np.inf], np.nan)
+    frame = frame[frame["ratio"].notna()]
+    if frame.empty or "property_type" not in frame.columns:
+        return calibration
+
+    clip_low, clip_high = calibration["clip"]
+    for property_type, group in frame.groupby("property_type"):
+        property_key = str(property_type)
+        if len(group) >= 10:
+            calibration["type"][property_key] = float(np.clip(group["ratio"].median(), clip_low, clip_high))
+
+        if "municipality_normalized" in group.columns:
+            municipality_map: dict[str, float] = {}
+            for municipality, municipality_group in group.groupby("municipality_normalized"):
+                if str(municipality) == "unknown" or len(municipality_group) < 30:
+                    continue
+                municipality_map[str(municipality)] = float(
+                    np.clip(municipality_group["ratio"].median(), clip_low, clip_high)
+                )
+            if municipality_map:
+                calibration["municipality"][property_key] = municipality_map
+
+        if "naselje" in group.columns:
+            naselje_map: dict[str, float] = {}
+            for naselje, naselje_group in group.groupby("naselje"):
+                if str(naselje) == "unknown" or len(naselje_group) < 20:
+                    continue
+                naselje_map[str(naselje)] = float(np.clip(naselje_group["ratio"].median(), clip_low, clip_high))
+            if naselje_map:
+                calibration["naselje"][property_key] = naselje_map
+
+    location_adjusted = frame.copy()
+    base_preds: list[float] = []
+    for property_type, municipality, naselje, predicted in zip(
+        location_adjusted["property_type"].astype(str),
+        location_adjusted.get("municipality_normalized", pd.Series("unknown", index=location_adjusted.index)).astype(
+            str
+        ),
+        location_adjusted.get("naselje", pd.Series("unknown", index=location_adjusted.index)).astype(str),
+        location_adjusted["y_pred"].astype(float),
+        strict=False,
+    ):
+        location_factor, _ = _lookup_location_calibration_factor(
+            calibration,
+            property_type,
+            municipality if municipality != "unknown" else None,
+            naselje if naselje != "unknown" else None,
+        )
+        base_preds.append(float(max(predicted * location_factor, 1.0)))
+
+    location_adjusted["base_pred"] = np.array(base_preds, dtype=float)
+    location_adjusted["residual_ratio"] = location_adjusted["y_true"] / location_adjusted["base_pred"]
+    segment_clip_low, segment_clip_high = calibration["segment_clip"]
+    segment_preds = pd.Series(
+        location_adjusted["base_pred"].to_numpy(dtype=float, copy=True), index=location_adjusted.index, dtype=float
+    )
+    for property_type, group in location_adjusted.groupby("property_type"):
+        property_key = str(property_type)
+        segment_meta = _fit_segment_calibration_for_type(
+            group,
+            property_key,
+            clip_low=segment_clip_low,
+            clip_high=segment_clip_high,
+        )
+        if not segment_meta:
+            continue
+
+        feature_name = str(segment_meta["feature"])
+        factors = dict(segment_meta.get("factors") or {})
+        counts = dict(segment_meta.get("counts") or {})
+        if not factors:
+            continue
+
+        calibration["segment"][property_key] = {
+            "feature": feature_name,
+            "factors": factors,
+            "counts": counts,
+            "metrics": dict(segment_meta.get("metrics") or {}),
+        }
+        values = group[feature_name].fillna("unknown").astype(str)
+        mapped_factors = values.map(factors).fillna(1.0).to_numpy(dtype=float)
+        segment_preds.loc[group.index] = np.maximum(group["base_pred"].to_numpy(dtype=float) * mapped_factors, 1.0)
+
+    location_adjusted["segment_pred"] = segment_preds.to_numpy(dtype=float)
+    location_adjusted["residual_ratio"] = location_adjusted["y_true"] / location_adjusted["segment_pred"]
+    band_clip_low, band_clip_high = calibration["price_band_clip"]
+    for property_type, group in location_adjusted.groupby("property_type"):
+        property_key = str(property_type)
+        if len(group) < 120:
+            continue
+        if len(group) >= 5000:
+            target_bins = 5
+        elif len(group) >= 1200:
+            target_bins = 4
+        else:
+            target_bins = 3
+
+        with contextlib.suppress(ValueError):
+            _, raw_bins = pd.qcut(group["segment_pred"], q=target_bins, retbins=True, duplicates="drop")
+            edges = [float(value) for value in raw_bins[1:-1] if np.isfinite(value)]
+            band_count = len(edges) + 1
+            if band_count < 2:
+                continue
+
+            band_index = np.searchsorted(
+                np.array(edges, dtype=float), group["segment_pred"].to_numpy(dtype=float), side="right"
+            )
+            min_rows_per_band = max(25, len(group) // (band_count * 6))
+            factors: list[float] = []
+            counts: list[int] = []
+            valid = True
+            for current_band in range(band_count):
+                mask = band_index == current_band
+                count = int(mask.sum())
+                if count < min_rows_per_band:
+                    valid = False
+                    break
+                counts.append(count)
+                factors.append(
+                    float(np.clip(group.loc[mask, "residual_ratio"].median(), band_clip_low, band_clip_high))
+                )
+            if valid:
+                calibration["price_band"][property_key] = {
+                    "edges": edges,
+                    "factors": factors,
+                    "counts": counts,
+                }
+
+    return calibration
+
+
+def _lookup_location_calibration_factor(
+    calibration: dict[str, Any] | None,
+    property_type: str,
+    municipality: str | None,
+    naselje: str | None,
+) -> tuple[float, str]:
+    if not calibration:
+        return 1.0, "none"
+
+    property_key = str(property_type)
+    if naselje:
+        factor = calibration.get("naselje", {}).get(property_key, {}).get(str(naselje))
+        if factor is not None:
+            return float(factor), "naselje"
+
+    if municipality:
+        factor = calibration.get("municipality", {}).get(property_key, {}).get(str(municipality))
+        if factor is not None:
+            return float(factor), "municipality"
+
+    factor = calibration.get("type", {}).get(property_key)
+    if factor is not None:
+        return float(factor), "property_type"
+
+    return 1.0, "none"
+
+
+def _lookup_segment_calibration_factor(
+    calibration: dict[str, Any] | None,
+    property_type: str,
+    row_context: Any | None,
+) -> tuple[float, str]:
+    if not calibration or row_context is None:
+        return 1.0, "none"
+
+    property_key = str(property_type)
+    segment_meta = calibration.get("segment", {}).get(property_key)
+    if not isinstance(segment_meta, dict):
+        return 1.0, "none"
+
+    feature_name = str(segment_meta.get("feature") or "")
+    factor_map = segment_meta.get("factors") or {}
+    if not feature_name or not isinstance(factor_map, dict):
+        return 1.0, "none"
+
+    try:
+        raw_value = row_context.get(feature_name)  # type: ignore[call-arg]
+    except AttributeError:
+        raw_value = None
+    if raw_value is None or (isinstance(raw_value, float) and np.isnan(raw_value)):
+        return 1.0, "none"
+
+    normalized_value = str(raw_value)
+    if not normalized_value or normalized_value == "unknown":
+        return 1.0, "none"
+
+    factor = factor_map.get(normalized_value)
+    if factor is None:
+        return 1.0, "none"
+    return float(factor), f"segment:{feature_name}"
+
+
+def _lookup_price_band_calibration_factor(
+    calibration: dict[str, Any] | None,
+    property_type: str,
+    predicted_price: float | None,
+) -> tuple[float, str]:
+    if not calibration or predicted_price is None:
+        return 1.0, "none"
+
+    property_key = str(property_type)
+    band_meta = calibration.get("price_band", {}).get(property_key)
+    if not isinstance(band_meta, dict):
+        return 1.0, "none"
+
+    try:
+        price_value = float(predicted_price)
+    except (TypeError, ValueError):
+        return 1.0, "none"
+    if np.isnan(price_value) or price_value <= 0:
+        return 1.0, "none"
+
+    edges = [float(value) for value in band_meta.get("edges", [])]
+    factors = [float(value) for value in band_meta.get("factors", [])]
+    if not factors:
+        return 1.0, "none"
+
+    band_index = int(np.searchsorted(np.array(edges, dtype=float), price_value, side="right"))
+    band_index = min(max(band_index, 0), len(factors) - 1)
+    return float(factors[band_index]), f"price_band_{band_index}"
+
+
+def _lookup_calibration_factor(
+    calibration: dict[str, Any] | None,
+    property_type: str,
+    municipality: str | None,
+    naselje: str | None,
+    predicted_price: float | None = None,
+    row_context: Any | None = None,
+) -> tuple[float, str]:
+    if not calibration:
+        return 1.0, "none"
+
+    location_factor, location_source = _lookup_location_calibration_factor(
+        calibration,
+        property_type,
+        municipality,
+        naselje,
+    )
+    segment_factor, segment_source = _lookup_segment_calibration_factor(
+        calibration,
+        property_type,
+        row_context,
+    )
+    base_price = None
+    if predicted_price is not None:
+        with contextlib.suppress(TypeError, ValueError):
+            base_price = float(predicted_price) * location_factor * segment_factor
+
+    band_factor, band_source = _lookup_price_band_calibration_factor(
+        calibration,
+        property_type,
+        base_price,
+    )
+    combined_factor = location_factor * segment_factor * band_factor
+    combined_clip = calibration.get("combined_clip") or []
+    if len(combined_clip) == 2:
+        combined_factor = float(np.clip(combined_factor, combined_clip[0], combined_clip[1]))
+
+    sources = [source for source in (location_source, segment_source, band_source) if source != "none"]
+    if sources:
+        return combined_factor, "+".join(sources)
+    if band_source != "none":
+        return combined_factor, band_source
+    if segment_source != "none":
+        return combined_factor, segment_source
+    return combined_factor, location_source
+
+
+def _apply_calibration_to_predictions(
+    X_frame: pd.DataFrame,
+    predictions: np.ndarray,
+    calibration: dict[str, Any] | None,
+) -> tuple[np.ndarray, list[dict[str, Any]]]:
+    adjusted = np.array(predictions, dtype=float, copy=True)
+    details: list[dict[str, Any]] = []
+    if calibration is None or len(X_frame) == 0:
+        return adjusted, details
+
+    property_types = X_frame.get("property_type", pd.Series("unknown", index=X_frame.index)).astype(str)
+    municipalities = X_frame.get("municipality_normalized", pd.Series("unknown", index=X_frame.index)).astype(str)
+    naselja = X_frame.get("naselje", pd.Series("unknown", index=X_frame.index)).astype(str)
+    row_contexts = X_frame.to_dict(orient="records")
+
+    for index, (property_type, municipality, naselje, row_context) in enumerate(
+        zip(property_types, municipalities, naselja, row_contexts, strict=False)
+    ):
+        factor, source = _lookup_calibration_factor(
+            calibration,
+            property_type,
+            municipality if municipality != "unknown" else None,
+            naselje if naselje != "unknown" else None,
+            adjusted[index],
+            row_context=row_context,
+        )
+        adjusted[index] *= factor
+        details.append({"factor": round(float(factor), 6), "source": source})
+
+    return adjusted, details
+
+
+def _build_deployment_prediction_maps(df: pd.DataFrame) -> dict[str, Any]:
+    """Build recent-market reference maps used at live prediction time."""
+    valid = df.copy()
+    valid["size_m2"] = pd.to_numeric(valid.get("size_m2"), errors="coerce")
+    valid["price_eur"] = pd.to_numeric(valid.get("price_eur"), errors="coerce")
+    valid = valid[(valid["size_m2"] > 0) & (valid["price_eur"] > 0)].copy()
+    if valid.empty:
+        return {}
+
+    valid["transaction_year"] = pd.to_numeric(valid.get("transaction_year"), errors="coerce")
+    latest_year = (
+        int(valid["transaction_year"].dropna().max())
+        if valid["transaction_year"].notna().any()
+        else int(pd.Timestamp.now().year)
+    )
+
+    selected = valid
+    deploy_window: dict[str, Any] = {
+        "mode": "full_history",
+        "latest_year": latest_year,
+        "rows_available": int(len(valid)),
+        "rows_used": int(len(valid)),
+    }
+    for years in (3, 6):
+        cutoff_year = latest_year - years + 1
+        candidate = valid[valid["transaction_year"].fillna(latest_year) >= cutoff_year].copy()
+        min_rows = 2_000 if years == 3 else 1_000
+        if len(candidate) >= min_rows:
+            selected = candidate
+            deploy_window = {
+                "mode": f"recent_{years}y",
+                "years": years,
+                "cutoff_year": int(cutoff_year),
+                "latest_year": latest_year,
+                "rows_available": int(len(valid)),
+                "rows_used": int(len(candidate)),
+            }
+            break
+
+    selected["ppm2"] = selected["price_eur"] / selected["size_m2"]
+    selected["log_ppm2"] = np.log(selected["ppm2"].clip(lower=0.01))
+
+    deploy_region_medians = (
+        selected.groupby("statistical_region")["ppm2"].median().to_dict()
+        if "statistical_region" in selected.columns
+        else {}
+    )
+    deploy_type_medians = (
+        selected.groupby("property_type")["ppm2"].median().to_dict() if "property_type" in selected.columns else {}
+    )
+    deploy_global_median_ppm2 = float(selected["ppm2"].median()) if len(selected) > 0 else 2000.0
+    deploy_global_log_ppm2 = float(selected["log_ppm2"].median()) if len(selected) > 0 else np.log(2000.0)
+
+    deploy_municipality_medians: dict[str, float] = {}
+    if "municipality_normalized" in selected.columns:
+        for municipality, group in selected.groupby("municipality_normalized"):
+            if len(group) >= 10:
+                deploy_municipality_medians[str(municipality)] = float(group["ppm2"].median())
+            else:
+                region_key = "neznana"
+                if "statistical_region" in group.columns:
+                    region_mode = group["statistical_region"].mode()
+                    if len(region_mode) > 0:
+                        region_key = str(region_mode.iloc[0])
+                deploy_municipality_medians[str(municipality)] = deploy_region_medians.get(
+                    region_key,
+                    deploy_global_median_ppm2,
+                )
+
+    deploy_type_muni_comp: dict[str, dict[str, float]] = {}
+    deploy_type_ko_comp: dict[str, dict[str, float]] = {}
+    deploy_type_naselje_comp: dict[str, dict[str, float]] = {}
+    if "property_type" in selected.columns:
+        for property_type, property_group in selected.groupby("property_type"):
+            property_key = str(property_type)
+            type_median_log = float(property_group["log_ppm2"].median())
+
+            muni_map: dict[str, float] = {}
+            if "municipality_normalized" in property_group.columns:
+                for municipality, municipality_group in property_group.groupby("municipality_normalized"):
+                    muni_map[str(municipality)] = (
+                        float(municipality_group["log_ppm2"].median())
+                        if len(municipality_group) >= 5
+                        else type_median_log
+                    )
+            deploy_type_muni_comp[property_key] = muni_map
+
+            ko_map: dict[str, float] = {}
+            if "ime_ko" in property_group.columns:
+                for ime_ko, ko_group in property_group.groupby("ime_ko"):
+                    ko_map[str(ime_ko)] = (
+                        float(ko_group["log_ppm2"].median()) if len(ko_group) >= 5 else type_median_log
+                    )
+            deploy_type_ko_comp[property_key] = ko_map
+
+            naselje_map: dict[str, float] = {}
+            if "naselje" in property_group.columns:
+                for naselje, naselje_group in property_group.groupby("naselje"):
+                    naselje_key = str(naselje)
+                    if naselje_key != "unknown" and len(naselje_group) >= 5:
+                        naselje_map[naselje_key] = float(naselje_group["log_ppm2"].median())
+            deploy_type_naselje_comp[property_key] = naselje_map
+
+    deploy_eng_artifacts: dict[str, Any] = {}
+    if "ime_ko" in selected.columns:
+        deploy_ko_ppm2_map: dict[str, float] = {}
+        for ime_ko, ko_group in selected.groupby("ime_ko"):
+            if len(ko_group) >= 5:
+                deploy_ko_ppm2_map[str(ime_ko)] = float(ko_group["ppm2"].median())
+        deploy_eng_artifacts["ko_ppm2_map"] = deploy_ko_ppm2_map
+        deploy_eng_artifacts["global_median_ppm2_for_ko"] = deploy_global_median_ppm2
+
+    return {
+        "deploy_region_medians": deploy_region_medians,
+        "deploy_type_medians": deploy_type_medians,
+        "deploy_municipality_medians": deploy_municipality_medians,
+        "deploy_global_median_ppm2": deploy_global_median_ppm2,
+        "deploy_type_muni_comp": deploy_type_muni_comp,
+        "deploy_type_ko_comp": deploy_type_ko_comp,
+        "deploy_type_naselje_comp": deploy_type_naselje_comp,
+        "deploy_global_log_ppm2": deploy_global_log_ppm2,
+        "deploy_eng_artifacts": deploy_eng_artifacts,
+        "deploy_window": deploy_window,
+    }
+
+
+def _apply_full_share_market_filter(df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """Keep near-full-share transactions for market-value model training.
+
+    The app predicts the value of an entire property, not a discounted sale of a
+    minority share. Partial-share transactions materially depress prices and can
+    pull the model away from the product goal, so we drop them by default.
+    """
+    info: dict[str, Any] = {
+        "enabled": _MIN_FULL_SHARE > 0,
+        "threshold": _MIN_FULL_SHARE,
+        "rows_before": int(len(df)),
+    }
+    if df.empty or _MIN_FULL_SHARE <= 0:
+        info["rows_after"] = int(len(df))
+        return df, info
+
+    share_series = pd.to_numeric(df.get("prodani_delez_dela_stavbe"), errors="coerce")
+    if share_series.isna().all():
+        share_series = pd.to_numeric(df.get("prodani_delez_parcele"), errors="coerce")
+    else:
+        parcel_share = pd.to_numeric(df.get("prodani_delez_parcele"), errors="coerce")
+        share_series = share_series.where(share_series.notna(), parcel_share)
+
+    effective_share = share_series.fillna(1.0)
+    keep_mask = effective_share >= _MIN_FULL_SHARE
+    filtered = df.loc[keep_mask].copy()
+
+    info["rows_after"] = int(len(filtered))
+    info["rows_dropped"] = int(len(df) - len(filtered))
+    info["missing_share_assumed_full"] = int(share_series.isna().sum())
+    info["full_share_ratio"] = round(float(keep_mask.mean()), 6) if len(df) else 1.0
+
+    if "property_type" in df.columns:
+        rows_by_type = df["property_type"].fillna("unknown").astype(str).value_counts().to_dict()
+        kept_by_type = filtered["property_type"].fillna("unknown").astype(str).value_counts().to_dict()
+        info["per_type"] = {
+            property_type: {
+                "rows_before": int(count),
+                "rows_after": int(kept_by_type.get(property_type, 0)),
+            }
+            for property_type, count in sorted(rows_by_type.items())
+        }
+
+    return filtered, info
+
+
+def _normalize_sale_type_value(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return ""
+        with contextlib.suppress(ValueError):
+            numeric = float(stripped.replace(",", "."))
+            return str(int(numeric)) if numeric.is_integer() else stripped
+        return stripped
+    with contextlib.suppress(TypeError, ValueError):
+        numeric = float(value)
+        return str(int(numeric)) if numeric.is_integer() else str(numeric)
+    return str(value).strip()
+
+
+def _apply_sale_type_filter(
+    df: pd.DataFrame,
+    allowed_sale_types: set[str] | None = None,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    info: dict[str, Any] = {
+        "enabled": bool(allowed_sale_types),
+        "rows_before": int(len(df)),
+        "allowed_sale_types": sorted(str(value) for value in (allowed_sale_types or set())),
+    }
+    if not allowed_sale_types or df.empty:
+        info["rows_after"] = int(len(df))
+        return df, info
+    if "vrsta_kupoprodajnega_posla" not in df.columns:
+        info["rows_after"] = int(len(df))
+        info["fallback"] = "missing_sale_type_column"
+        return df, info
+
+    normalized_values = df["vrsta_kupoprodajnega_posla"].map(_normalize_sale_type_value)
+    keep_mask = normalized_values.isin({str(value) for value in allowed_sale_types})
+    filtered = df.loc[keep_mask].copy()
+
+    info["rows_after"] = int(len(filtered))
+    info["rows_dropped"] = int(len(df) - len(filtered))
+    info["retained_ratio"] = round(float(keep_mask.mean()), 6) if len(df) else 1.0
+    info["observed_sale_types"] = sorted(value for value in normalized_values.dropna().unique().tolist() if value)
+    return filtered, info
+
+
+def _apply_market_validity_filter(
+    df: pd.DataFrame,
+    *,
+    enabled: bool,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    info: dict[str, Any] = {
+        "enabled": bool(enabled),
+        "rows_before": int(len(df)),
+        "rules": MARKET_VALIDITY_RULES,
+    }
+    if not enabled or df.empty or "property_type" not in df.columns:
+        info["rows_after"] = int(len(df))
+        return df, info
+
+    price_series = pd.to_numeric(df.get("price_eur"), errors="coerce")
+    size_series = pd.to_numeric(df.get("size_m2"), errors="coerce")
+    ppm2_series = price_series / size_series.replace(0, np.nan)
+
+    keep_mask = pd.Series(True, index=df.index, dtype=bool)
+    per_type: dict[str, dict[str, Any]] = {}
+    for property_type, rule in MARKET_VALIDITY_RULES.items():
+        type_mask = df["property_type"].astype(str) == str(property_type)
+        type_rows = int(type_mask.sum())
+        if type_rows == 0:
+            continue
+
+        type_keep = type_mask.copy()
+        min_price = rule.get("min_price_eur")
+        if isinstance(min_price, (int, float)):
+            type_keep &= price_series >= float(min_price)
+        min_ppm2 = rule.get("min_ppm2")
+        if isinstance(min_ppm2, (int, float)):
+            type_keep &= ppm2_series >= float(min_ppm2)
+        if rule.get("drop_unknown_municipality") and "municipality_normalized" in df.columns:
+            municipality = df["municipality_normalized"].fillna("unknown").astype(str)
+            type_keep &= municipality != "unknown"
+
+        keep_mask.loc[type_mask] = type_keep.loc[type_mask]
+        per_type[property_type] = {
+            "rows_before": type_rows,
+            "rows_after": int(type_keep.loc[type_mask].sum()),
+            "rows_dropped": int(type_rows - type_keep.loc[type_mask].sum()),
+            "drop_pct": round(float((~type_keep.loc[type_mask]).mean() * 100), 2) if type_rows else 0.0,
+        }
+
+    filtered = df.loc[keep_mask].copy()
+    info["rows_after"] = int(len(filtered))
+    info["rows_dropped"] = int(len(df) - len(filtered))
+    info["retained_ratio"] = round(float(keep_mask.mean()), 6) if len(df) else 1.0
+    info["per_type"] = per_type
+    return filtered, info
 
 
 def train_from_csv(
     csv_path: str,
     progress_callback: Callable | None = None,
     status_callback: Callable | None = None,
+    *,
+    model_output_path: str | None = None,
+    artifact_metadata: dict[str, Any] | None = None,
+    allowed_sale_types: set[str] | None = None,
+    benchmark_per_type_variants: bool = False,
 ) -> dict[str, Any]:
     """Train per-type + global models from a training CSV. Returns model metadata."""
     start = time.time()
+    artifact_metadata = dict(artifact_metadata or {})
+    resolved_model_path = os.path.abspath(model_output_path or _default_model_path())
+    enable_market_validity_filter = bool(
+        artifact_metadata.get(
+            "enable_market_validity_filter",
+            artifact_metadata.get("research_mode", False) or _ENABLE_MARKET_VALIDITY_FILTER,
+        )
+    )
 
     def emit_status(stage: str, progress: int, **extra):
         if status_callback:
@@ -1640,9 +3142,19 @@ def train_from_csv(
     if "property_type" in df.columns:
         df = df[~df["property_type"].isin(EXCLUDED_PROPERTY_TYPES)]
 
+    df, sale_type_filter = _apply_sale_type_filter(df, allowed_sale_types)
+    logger.info("Sale-type filter: kept %d / %d rows", len(df), sale_type_filter["rows_before"])
+
     # Ensure size_m2 is numeric and positive (required for log_ppm2 target transform)
     df["size_m2"] = pd.to_numeric(df.get("size_m2"), errors="coerce")
     df = df[df["size_m2"] > 0]
+
+    # Keep only near-full-share transactions so the model learns whole-property market value.
+    df, full_share_filter = _apply_full_share_market_filter(df)
+    logger.info("Full-share market-value filter: kept %d / %d rows", len(df), full_share_filter["rows_before"])
+
+    df, market_validity_filter = _apply_market_validity_filter(df, enabled=enable_market_validity_filter)
+    logger.info("Market-validity filter: kept %d / %d rows", len(df), market_validity_filter["rows_before"])
 
     # ── Mixed-type deal contamination removal ──────────────────────────
     # When a deal has multiple property types and prices are pro-rated by area,
@@ -1678,6 +3190,18 @@ def train_from_csv(
         df = df.drop(columns=["_log_ppm2_tmp"])
         logger.info("Global outlier removal: %d → %d rows", n_before_global_outlier, len(df))
 
+    training_window = {
+        "enabled": False,
+        "requested_months": _RECENT_WINDOW_MONTHS,
+        "full_share_filter": full_share_filter,
+        "sale_type_filter": sale_type_filter,
+        "market_validity_filter": market_validity_filter,
+        "rows_before": int(len(df)),
+        "rows_after": int(len(df)),
+        "mode": "policy_driven_full_history",
+        "reason": "per_type_time_holdout_selection",
+    }
+
     # ── Spatial distance features from ETRS89/TM coordinates ───────────
     # These are metric coordinates, so Euclidean distance gives meters.
     _LJ_E, _LJ_N = 461000, 100000  # Ljubljana
@@ -1700,15 +3224,8 @@ def train_from_csv(
 
     emit_status("feature_prep", 14, rows=len(df))
 
-    # Stratified split preserves type distribution in train and test sets
-    stratify_col = X["property_type"] if "property_type" in X.columns else None
-    X_train, X_test, y_train, y_test = train_test_split(
-        X,
-        y,
-        test_size=0.2,
-        random_state=42,
-        stratify=stratify_col,
-    )
+    X_train, X_test, y_train, y_test, holdout_info = _build_time_holdout_split(X, y)
+    training_window["holdout"] = holdout_info
     emit_status("training_setup", 18, rows=len(df))
 
     # Compute group medians from TRAINING SET ONLY (prevent data leakage)
@@ -1825,6 +3342,7 @@ def train_from_csv(
     per_type_models: dict[str, dict] = {}
     per_type_metrics: dict[str, dict] = {}
     per_type_feature_usage: dict[str, dict[str, Any]] = {}
+    routing_comparison: dict[str, dict[str, Any]] = {}
 
     eligible: list[str] = []
     if "property_type" in X_train.columns:
@@ -1869,6 +3387,7 @@ def train_from_csv(
         fitted_trees=0,
         total_trees=global_model.iterations,
     )
+    global_sample_weight = _build_recency_sample_weights(X_train)
     global_result = _train_single_model(
         global_model,
         X_train,
@@ -1878,6 +3397,7 @@ def train_from_csv(
         "global",
         training_progress,
         target_transform="log_ppm2",
+        sample_weight=global_sample_weight,
     )
 
     # Per-type models — signal-scored features + early stopping + aggressive outlier removal
@@ -1944,54 +3464,206 @@ def train_from_csv(
             )
             pt_hp_overrides = TYPE_HP_OVERRIDES.get(ptype)
             _LARGE_TYPES = {"stanovanje", "hisa", "parcela"}
-            pt_model = _build_model(
-                pt_num, pt_cat, len(Xt),
+            policy_candidates = [
+                ("full_history_weighted", None),
+                ("recent_6y_weighted", 6),
+                ("recent_3y_weighted", 3),
+            ]
+            target_candidates = ["log_ppm2", "log_price"] if benchmark_per_type_variants else ["log_ppm2"]
+            feature_variants = _build_feature_variants(pt_num, pt_cat, always_num, always_cat)
+            feature_variant_names = ["simple", "rich"] if benchmark_per_type_variants else ["rich"]
+            base_pt_model = _build_model(
+                pt_num,
+                pt_cat,
+                len(Xt),
                 hp_overrides=pt_hp_overrides,
                 use_lossguide=ptype in _LARGE_TYPES,
             )
             emit_status(
                 "per_type_models",
-                _overall_training_progress(eligible.index(ptype) + 2, total_models, 0, pt_model.iterations),
+                _overall_training_progress(eligible.index(ptype) + 2, total_models, 0, base_pt_model.iterations),
                 rows=len(df),
                 current_model=str(ptype),
                 current_model_index=eligible.index(ptype) + 2,
                 total_models=total_models,
                 current_model_progress=0,
                 fitted_trees=0,
-                total_trees=pt_model.iterations,
+                total_trees=base_pt_model.iterations,
             )
-            pt_result = _train_single_model(
-                pt_model,
-                Xt,
-                yt,
-                Xte,
-                yte,
-                f"type:{ptype}",
-                training_progress,
-                target_transform="log_ppm2",
-            )
+            candidate_results: list[dict[str, Any]] = []
+            for feature_variant_name in feature_variant_names:
+                variant_features = feature_variants.get(feature_variant_name, {})
+                variant_num = variant_features.get("numeric", pt_num)
+                variant_cat = variant_features.get("categorical", pt_cat)
+                if not variant_num:
+                    continue
+
+                for target_transform in target_candidates:
+                    for policy_name, years_back in policy_candidates:
+                        X_policy, y_policy, policy_info = _restrict_training_years(Xt, yt, years_back)
+                        if len(X_policy) < MIN_SAMPLES_PER_TYPE:
+                            continue
+
+                        policy_model = _build_model(
+                            variant_num,
+                            variant_cat,
+                            len(X_policy),
+                            hp_overrides=pt_hp_overrides,
+                            use_lossguide=ptype in _LARGE_TYPES,
+                        )
+                        policy_result = _train_single_model(
+                            policy_model,
+                            X_policy,
+                            y_policy,
+                            Xte,
+                            yte,
+                            f"type:{ptype}",
+                            training_progress,
+                            target_transform=target_transform,
+                            sample_weight=_build_recency_sample_weights(X_policy),
+                        )
+                        candidate_results.append(
+                            {
+                                "feature_variant": feature_variant_name,
+                                "target_transform": target_transform,
+                                "training_policy": policy_name,
+                                "policy_cutoff_year": policy_info.get("cutoff_year"),
+                                "numeric_features": list(variant_num),
+                                "categorical_features": list(variant_cat),
+                                "model": policy_model,
+                                "result": policy_result,
+                                "metrics": policy_result["metrics"],
+                            }
+                        )
+
+            best_candidate = _select_best_training_candidate(candidate_results)
+            if best_candidate is None:
+                continue
+
+            pt_model = best_candidate["model"]
+            pt_result = best_candidate["result"]
+            best_policy_name = str(best_candidate["training_policy"])
+            best_policy_cutoff = best_candidate.get("policy_cutoff_year")
+            chosen_target_transform = str(best_candidate["target_transform"])
+            chosen_feature_variant = str(best_candidate["feature_variant"])
+            chosen_numeric_features = list(best_candidate["numeric_features"])
+            chosen_categorical_features = list(best_candidate["categorical_features"])
+
+            # Compare against global baseline on this type's holdout and derive routing blend.
+            g_raw = global_model.predict(Xte)
+            if "size_m2" in Xte.columns:
+                g_size = Xte["size_m2"].clip(lower=1).values.astype(float)
+            else:
+                g_size = np.ones(len(Xte), dtype=float)
+            g_pred = np.maximum(g_size * np.exp(g_raw), 0)
+            global_type_metrics = _compute_metrics(yte, g_pred)
+            global_type_metrics["n_test"] = len(Xte)
+
+            pt_raw = pt_model.predict(Xte)
+            if chosen_target_transform == "log_ppm2":
+                pt_size = Xte["size_m2"].clip(lower=1).values.astype(float)
+                pt_pred = np.maximum(pt_size * np.exp(pt_raw), 0)
+            elif chosen_target_transform == "log_price":
+                pt_pred = np.maximum(np.expm1(pt_raw), 0)
+            else:
+                pt_pred = np.maximum(pt_raw, 0)
+
+            blend_weight, routed_metrics = _compute_per_type_blend_weight(yte, g_pred, pt_pred, len(Xte))
+            if blend_weight <= 0.0:
+                routing_mode = "global_only"
+            elif blend_weight >= 0.999:
+                routing_mode = "per_type_only"
+            else:
+                routing_mode = "blend"
+
+            routed_metrics["n_train"] = len(Xt)
+            routed_metrics["n_test"] = len(Xte)
+            routed_metrics["blend_weight"] = round(float(blend_weight), 6)
+            routed_metrics["routing_mode"] = routing_mode
             per_type_models[ptype] = {
                 "pipeline": pt_model,
-                "numeric_features": pt_num,
-                "categorical_features": pt_cat,
+                "numeric_features": chosen_numeric_features,
+                "categorical_features": chosen_categorical_features,
+                "blend_weight": float(blend_weight),
+                "training_policy": best_policy_name,
+                "policy_cutoff_year": best_policy_cutoff,
+                "target_transform": chosen_target_transform,
+                "feature_variant": chosen_feature_variant,
             }
-            per_type_metrics[ptype] = pt_result["metrics"]
+            per_type_metrics[ptype] = routed_metrics
             logger.info(
-                "  %s result: R²=%.4f  MAPE=%.1f%%",
+                "  %s result: routed R²=%.4f  routed MAPE=%.1f%%  blend=%.2f (%s)",
                 ptype,
-                pt_result["metrics"].get("r2", 0),
-                pt_result["metrics"].get("mape", 0),
+                routed_metrics.get("r2", 0),
+                routed_metrics.get("mape", 0),
+                blend_weight,
+                routing_mode,
             )
+            routing_comparison[ptype] = {
+                "global_only": {
+                    "metrics": {
+                        key: round(float(value), 6) if isinstance(value, (int, float)) else value
+                        for key, value in global_type_metrics.items()
+                    },
+                    "target_transform": "log_ppm2",
+                },
+                "per_type_only": {
+                    "metrics": {
+                        key: round(float(value), 6) if isinstance(value, (int, float)) else value
+                        for key, value in pt_result["metrics"].items()
+                    },
+                    "target_transform": chosen_target_transform,
+                    "feature_variant": chosen_feature_variant,
+                    "training_policy": best_policy_name,
+                },
+                "searched_blend": {
+                    "metrics": {
+                        key: round(float(value), 6) if isinstance(value, (int, float)) else value
+                        for key, value in routed_metrics.items()
+                        if key != "routing_mode"
+                    },
+                    "blend_weight": round(float(blend_weight), 6),
+                },
+                "chosen_routing_mode": routing_mode,
+                "chosen_target_transform": chosen_target_transform,
+                "chosen_feature_variant": chosen_feature_variant,
+            }
             per_type_feature_usage[ptype] = {
-                "numeric_features": pt_num,
-                "categorical_features": pt_cat,
+                "numeric_features": chosen_numeric_features,
+                "categorical_features": chosen_categorical_features,
                 "selection_mode": selection_mode,
+                "training_policy": best_policy_name,
+                "policy_cutoff_year": best_policy_cutoff,
+                "target_transform": chosen_target_transform,
+                "feature_variant": chosen_feature_variant,
+                "blend_weight": round(float(blend_weight), 6),
+                "routing_mode": routing_mode,
+                "raw_per_type_r2": round(float(pt_result["metrics"].get("r2", 0.0)), 6),
+                "raw_per_type_mape": round(float(pt_result["metrics"].get("mape", 0.0)), 6),
+                "global_baseline_r2": round(float(global_type_metrics.get("r2", 0.0)), 6),
+                "global_baseline_mape": round(float(global_type_metrics.get("mape", 0.0)), 6),
+                "candidate_matrix": [
+                    {
+                        "feature_variant": str(candidate["feature_variant"]),
+                        "target_transform": str(candidate["target_transform"]),
+                        "training_policy": str(candidate["training_policy"]),
+                        "policy_cutoff_year": candidate.get("policy_cutoff_year"),
+                        "metrics": {
+                            key: round(float(value), 6) if isinstance(value, (int, float)) else value
+                            for key, value in (candidate.get("metrics") or {}).items()
+                        },
+                    }
+                    for candidate in candidate_results
+                ],
             }
             if pt_scores:
+                sorted_scores = sorted(pt_scores.items(), key=lambda item: item[1], reverse=True)
                 per_type_feature_usage[ptype]["feature_scores"] = {
-                    key: round(float(value), 6)
-                    for key, value in sorted(pt_scores.items(), key=lambda item: item[1], reverse=True)
+                    key: round(float(value), 6) for key, value in sorted_scores
                 }
+                per_type_feature_usage[ptype]["top_features"] = [
+                    {"feature": key, "score": round(float(value), 6)} for key, value in sorted_scores[:20]
+                ]
     else:
         emit_status("per_type_models", 88, rows=len(df), total_models=total_models)
 
@@ -2010,12 +3682,27 @@ def train_from_csv(
     # Combined routing metrics: use per-type model when available, else global
     if per_type_models:
         y_pred_combined = _predict_combined_routed(X_test, global_model, per_type_models, target_transform="log_ppm2")
-        combined_metrics = _compute_metrics(y_test, y_pred_combined)
     else:
         size_test_combined = X_test["size_m2"].clip(lower=1).values.astype(float)
         y_pred_combined_raw = global_model.predict(X_test)
         y_pred_combined = np.maximum(size_test_combined * np.exp(y_pred_combined_raw), 0)
-        combined_metrics = global_result["metrics"]
+    calibration = _fit_calibration_maps(X_test, y_test, y_pred_combined)
+    y_pred_combined, calibration_details = _apply_calibration_to_predictions(X_test, y_pred_combined, calibration)
+    combined_metrics = _compute_metrics(y_test, y_pred_combined)
+    combined_metrics["n_train"] = len(X_train)
+    combined_metrics["n_test"] = len(X_test)
+
+    if per_type_metrics and calibration_details and "property_type" in X_test.columns:
+        calibration_frame = X_test[["property_type"]].copy()
+        calibration_frame["y_true"] = y_test
+        calibration_frame["y_pred"] = y_pred_combined
+        for property_type, group in calibration_frame.groupby("property_type"):
+            metrics = _compute_metrics(group["y_true"].to_numpy(), group["y_pred"].to_numpy())
+            existing = per_type_metrics.get(str(property_type), {})
+            if metrics:
+                existing.update(metrics)
+                existing["n_test"] = int(len(group))
+                per_type_metrics[str(property_type)] = existing
 
     segment_diagnostics = _build_segment_diagnostics(X_test, y_test, y_pred_combined)
 
@@ -2103,9 +3790,26 @@ def train_from_csv(
         "metrics": combined_metrics,
     }
 
+    dataset_years, dataset_year_source = _extract_year_series(df)
+    valid_dataset_years = dataset_years.dropna()
+    dataset_window = artifact_metadata.get("dataset_window") or {
+        "year_source": dataset_year_source,
+        "start_year": int(valid_dataset_years.min()) if not valid_dataset_years.empty else None,
+        "end_year": int(valid_dataset_years.max()) if not valid_dataset_years.empty else None,
+    }
+    recent_research_diagnostics = _build_recent_research_diagnostics(
+        df,
+        X_test,
+        y_test,
+        y_pred_combined,
+        per_type_feature_usage,
+        routing_comparison,
+    )
+
     # Municipality coordinates
     emit_status("artifact_save", 96, rows=len(df), total_models=total_models)
     coords_by_municipality: dict[str, dict] = {}
+    coords_by_naselje: dict[str, dict] = {}
     coord_key = "municipality_normalized" if "municipality_normalized" in df.columns else "municipality"
     for col_pair in [(coord_key, "latitude", "longitude")]:
         if all(c in df.columns for c in col_pair):
@@ -2117,14 +3821,34 @@ def train_from_csv(
                         "lat": float(lat),
                         "lon": float(lon),
                     }
+    if all(c in df.columns for c in ["naselje", "latitude", "longitude"]):
+        muni_series = (
+            df["municipality_normalized"]
+            if "municipality_normalized" in df.columns
+            else pd.Series("unknown", index=df.index, dtype="object")
+        )
+        naselje_frame = pd.DataFrame(
+            {
+                "municipality_normalized": muni_series.astype(str),
+                "naselje": df["naselje"].astype(str),
+                "latitude": df["latitude"],
+                "longitude": df["longitude"],
+            }
+        )
+        for (muni, naselje), grp in naselje_frame.groupby(["municipality_normalized", "naselje"]):
+            lat = pd.to_numeric(grp["latitude"], errors="coerce").median()
+            lon = pd.to_numeric(grp["longitude"], errors="coerce").median()
+            if pd.notna(lat) and pd.notna(lon):
+                coords_by_naselje[f"{muni}|{naselje}"] = {"lat": float(lat), "lon": float(lon)}
 
+    deploy_maps = _build_deployment_prediction_maps(df)
     duration = time.time() - start
 
     # Save artifact
-    os.makedirs(MODEL_DIR, exist_ok=True)
+    os.makedirs(os.path.dirname(resolved_model_path), exist_ok=True)
     emit_status("finalizing", 99, rows=len(df), total_models=total_models)
     artifact = {
-        "version": "11.2",
+        "version": "12.3",
         "target_transform": "log_ppm2",
         "log_target": True,  # backward compat
         "global_model": {
@@ -2150,28 +3874,37 @@ def train_from_csv(
         "per_type_metrics": per_type_metrics,
         "per_region_metrics": per_region_metrics,
         "combined_metrics": combined_metrics,
+        "calibration": calibration,
+        "holdout": holdout_info,
         "coords_by_municipality": coords_by_municipality,
+        "coords_by_naselje": coords_by_naselje,
+        **deploy_maps,
         "feature_labels": FEATURE_LABELS_SL,
         "trained_at": pd.Timestamp.now().isoformat(),
         "csv_path": csv_path,
+        "model_path": resolved_model_path,
         "rows": len(df),
         "train_rows": len(X_train),
         "test_rows": len(X_test),
         "used_features": global_num + global_cat,
         "per_type_features": per_type_feature_usage,
+        "routing_comparison": routing_comparison,
         "data_preparation": data_preparation,
+        "training_window": training_window,
+        "dataset_window": dataset_window,
+        "artifact_metadata": artifact_metadata,
         "segment_diagnostics": segment_diagnostics,
+        "recent_research_diagnostics": recent_research_diagnostics,
         "ev_baseline_metrics": ev_baseline_metrics,
         "variant_benchmarks": variant_benchmarks,
         "variant_matrix": variant_matrix,
         "model_type": "CatBoostRegressor",
         "duration_sec": duration,
     }
-    model_path = os.path.join(MODEL_DIR, "price_model.joblib")
-    joblib.dump(artifact, model_path, compress=3)
+    joblib.dump(artifact, resolved_model_path, compress=3)
 
     return {
-        "model_path": model_path,
+        "model_path": resolved_model_path,
         "csv_path": csv_path,
         "rows": len(df),
         "duration_sec": round(duration, 2),
@@ -2183,8 +3916,13 @@ def train_from_csv(
         "per_type_count": len(per_type_models),
         "used_features": global_num + global_cat,
         "per_type_features": per_type_feature_usage,
+        "routing_comparison": routing_comparison,
         "data_preparation": data_preparation,
+        "training_window": training_window,
+        "dataset_window": dataset_window,
+        "artifact_metadata": artifact_metadata,
         "segment_diagnostics": segment_diagnostics,
+        "recent_research_diagnostics": recent_research_diagnostics,
         "ev_baseline_metrics": ev_baseline_metrics,
         "variant_benchmarks": variant_benchmarks,
         "variant_matrix": variant_matrix,
@@ -2192,21 +3930,26 @@ def train_from_csv(
     }
 
 
-def load_model() -> dict | None:
+def load_model(model_path: str | None = None) -> dict | None:
     """Load model artifact, auto-reloading when the file changes on disk.
 
     The ARQ worker trains in a separate process, so `invalidate_model_cache()`
     only clears the worker's cache. This mtime check ensures the API process
     picks up the new model without requiring a restart.
     """
+    resolved_model_path = os.path.abspath(model_path or _default_model_path())
+    if resolved_model_path != os.path.abspath(_default_model_path()):
+        if not os.path.exists(resolved_model_path):
+            return None
+        return joblib.load(resolved_model_path)
+
     global _model_cache, _model_cache_mtime
-    model_path = os.path.join(MODEL_DIR, "price_model.joblib")
-    if not os.path.exists(model_path):
+    if not os.path.exists(resolved_model_path):
         return None
-    current_mtime = os.path.getmtime(model_path)
+    current_mtime = os.path.getmtime(resolved_model_path)
     if _model_cache is not None and current_mtime == _model_cache_mtime:
         return _model_cache
-    _model_cache = joblib.load(model_path)
+    _model_cache = joblib.load(resolved_model_path)
     _model_cache_mtime = current_mtime
     return _model_cache
 
@@ -2241,6 +3984,41 @@ def _coerce_binary(value: Any, default: int = 0) -> int:
         return default
 
 
+def _lookup_categorical_map_value(
+    mapping: dict[str, Any] | None,
+    normalized_key: str | None,
+    raw_key: str | None,
+    default: Any,
+) -> Any:
+    """Look up a categorical key with normalized/raw fallbacks."""
+    if not mapping:
+        return default
+
+    for candidate in (normalized_key, raw_key):
+        if candidate in mapping:
+            return mapping[candidate]
+
+    raw_norm = None
+    if raw_key not in (None, ""):
+        raw_norm = str(raw_key)
+    norm_norm = None
+    if normalized_key not in (None, ""):
+        norm_norm = normalize_municipality_name(str(normalized_key))
+    raw_norm = normalize_municipality_name(raw_norm) if raw_norm else None
+
+    for candidate in (norm_norm, raw_norm):
+        if candidate and candidate in mapping:
+            return mapping[candidate]
+
+    folded_raw = raw_norm or norm_norm
+    if folded_raw:
+        for existing_key, value in mapping.items():
+            if normalize_municipality_name(str(existing_key)) == folded_raw:
+                return value
+
+    return default
+
+
 def _build_normalized_payload(
     payload: dict[str, Any],
     numeric_features: list[str],
@@ -2251,9 +4029,10 @@ def _build_normalized_payload(
     from app.services.regions_service import lookup_region, normalize
 
     coords_by_muni = artifact.get("coords_by_municipality", {})
-    region_medians = artifact.get("region_medians", {})
-    type_medians = artifact.get("type_medians", {})
-    global_median = artifact.get("global_median_ppm2", 2000.0)
+    coords_by_naselje = artifact.get("coords_by_naselje", {})
+    region_medians = artifact.get("deploy_region_medians") or artifact.get("region_medians", {})
+    type_medians = artifact.get("deploy_type_medians") or artifact.get("type_medians", {})
+    global_median = artifact.get("deploy_global_median_ppm2", artifact.get("global_median_ppm2", 2000.0))
 
     row: dict[str, Any] = {}
 
@@ -2328,26 +4107,34 @@ def _build_normalized_payload(
 
     # Lat/lon imputation from municipality coords
     municipality_norm = normalize_municipality_name(payload.get("municipality"))
+    naselje_norm = normalize(str(payload.get("naselje", "unknown"))) if payload.get("naselje") else "unknown"
     for coord_key in ("latitude", "longitude"):
         val = row.get(coord_key)
         if val is None or (isinstance(val, float) and np.isnan(val)):
-            muni_coords = coords_by_muni.get(municipality_norm, {})
-            coord_val = muni_coords.get("lat" if coord_key == "latitude" else "lon")
+            coord_val = None
+            naselje_coords = coords_by_naselje.get(f"{municipality_norm}|{naselje_norm}", {})
+            if naselje_coords:
+                coord_val = naselje_coords.get("lat" if coord_key == "latitude" else "lon")
+                if coord_val is None:
+                    coord_val = naselje_coords.get(coord_key)
             if coord_val is None:
-                coord_val = muni_coords.get(coord_key)
+                muni_coords = coords_by_muni.get(municipality_norm, {})
+                coord_val = muni_coords.get("lat" if coord_key == "latitude" else "lon")
+                if coord_val is None:
+                    coord_val = muni_coords.get(coord_key)
             row[coord_key] = float(coord_val) if coord_val is not None else np.nan
 
     # Group medians
+    ptype_key = normalize(str(payload.get("property_type", row.get("property_type", "unknown"))))
     if "price_per_m2_region" in numeric_features:
         region = row.get("statistical_region", "neznana")
         row["price_per_m2_region"] = region_medians.get(region, global_median)
 
     if "price_per_m2_type" in numeric_features:
-        ptype = row.get("property_type", "unknown")
-        row["price_per_m2_type"] = type_medians.get(ptype, global_median)
+        row["price_per_m2_type"] = type_medians.get(ptype_key, global_median)
 
     if "price_per_m2_municipality" in numeric_features:
-        municipality_medians = artifact.get("municipality_medians", {})
+        municipality_medians = artifact.get("deploy_municipality_medians") or artifact.get("municipality_medians", {})
         muni_key = row.get("municipality_normalized", municipality_norm)
         row["price_per_m2_municipality"] = municipality_medians.get(
             muni_key, region_medians.get(row.get("statistical_region", "neznana"), global_median)
@@ -2376,23 +4163,34 @@ def _build_normalized_payload(
             row["dist_coast"] = np.nan
 
     # Type-specific comparable-sales features
-    global_log_ppm2 = artifact.get("global_log_ppm2", np.log(2000.0))
-    ptype_key = payload.get("property_type", "unknown")
+    global_log_ppm2 = artifact.get("deploy_global_log_ppm2", artifact.get("global_log_ppm2", np.log(2000.0)))
+    raw_ko_key = str(payload.get("ime_ko", "unknown"))
+    normalized_ko_key = str(row.get("ime_ko", normalize(raw_ko_key)))
+    raw_naselje_key = str(payload.get("naselje", "unknown"))
+    normalized_naselje_key = str(row.get("naselje", normalize(raw_naselje_key)))
     if "comp_type_muni_ppm2" in numeric_features:
-        type_muni_comp = artifact.get("type_muni_comp", {})
+        type_muni_comp = artifact.get("deploy_type_muni_comp") or artifact.get("type_muni_comp", {})
         muni_map = type_muni_comp.get(ptype_key, {})
         muni_key = row.get("municipality_normalized", municipality_norm)
         row["comp_type_muni_ppm2"] = muni_map.get(muni_key, global_log_ppm2)
     if "comp_type_ko_ppm2" in numeric_features:
-        type_ko_comp = artifact.get("type_ko_comp", {})
+        type_ko_comp = artifact.get("deploy_type_ko_comp") or artifact.get("type_ko_comp", {})
         ko_map = type_ko_comp.get(ptype_key, {})
-        ko_key = payload.get("ime_ko", "unknown")
-        row["comp_type_ko_ppm2"] = ko_map.get(str(ko_key), global_log_ppm2)
+        row["comp_type_ko_ppm2"] = _lookup_categorical_map_value(
+            ko_map,
+            normalized_ko_key,
+            raw_ko_key,
+            global_log_ppm2,
+        )
     if "comp_type_naselje_ppm2" in numeric_features:
-        type_naselje_comp = artifact.get("type_naselje_comp", {})
+        type_naselje_comp = artifact.get("deploy_type_naselje_comp") or artifact.get("type_naselje_comp", {})
         naselje_map = type_naselje_comp.get(ptype_key, {})
-        naselje_key = payload.get("naselje", "unknown")
-        row["comp_type_naselje_ppm2"] = naselje_map.get(str(naselje_key), np.nan)
+        row["comp_type_naselje_ppm2"] = _lookup_categorical_map_value(
+            naselje_map,
+            normalized_naselje_key,
+            raw_naselje_key,
+            np.nan,
+        )
 
     # ── Engineered features ──────────────────────────────────────────
     eng = artifact.get("eng_artifacts", {})
@@ -2450,19 +4248,26 @@ def _build_normalized_payload(
     count_maps = eng.get("count_maps", {})
     if "ko_transaction_count" in numeric_features:
         ko_counts = count_maps.get("ime_ko", {})
-        row["ko_transaction_count"] = float(ko_counts.get(str(payload.get("ime_ko", "unknown")), 0))
+        row["ko_transaction_count"] = float(_lookup_categorical_map_value(ko_counts, normalized_ko_key, raw_ko_key, 0))
     if "muni_transaction_count" in numeric_features:
         muni_counts = count_maps.get("municipality_normalized", {})
         row["muni_transaction_count"] = float(muni_counts.get(municipality_norm, 0))
     if "naselje_transaction_count" in numeric_features:
         naselje_counts = count_maps.get("naselje", {})
-        row["naselje_transaction_count"] = float(naselje_counts.get(str(payload.get("naselje", "unknown")), 0))
+        row["naselje_transaction_count"] = float(
+            _lookup_categorical_map_value(naselje_counts, normalized_naselje_key, raw_naselje_key, 0)
+        )
 
     # KO price per m²
     if "price_per_m2_ko" in numeric_features:
-        ko_ppm2_map = eng.get("ko_ppm2_map", {})
-        ko_key = str(payload.get("ime_ko", "unknown"))
-        row["price_per_m2_ko"] = ko_ppm2_map.get(ko_key, eng.get("global_median_ppm2_for_ko", global_median))
+        deploy_eng = artifact.get("deploy_eng_artifacts", {})
+        ko_ppm2_map = deploy_eng.get("ko_ppm2_map") or eng.get("ko_ppm2_map", {})
+        row["price_per_m2_ko"] = _lookup_categorical_map_value(
+            ko_ppm2_map,
+            normalized_ko_key,
+            raw_ko_key,
+            deploy_eng.get("global_median_ppm2_for_ko", eng.get("global_median_ppm2_for_ko", global_median)),
+        )
 
     # Price ratio features (derived from already-computed features)
     if "ko_vs_muni_premium" in numeric_features:
@@ -2524,6 +4329,68 @@ def _build_normalized_payload(
     return row
 
 
+def _sparse_residential_floor_eur(
+    payload: dict[str, Any],
+    normalized_row: dict[str, Any],
+    property_type: str,
+) -> float | None:
+    """Return a conservative price floor for sparse residential requests.
+
+    When users provide only coarse inputs (e.g. municipality + size), the routed
+    model can underpredict due to missing fine-grained location signals. In that
+    case, anchor the minimum using robust local same-type references.
+    """
+    if property_type not in {"stanovanje", "hisa"}:
+        return None
+
+    has_fine_location = any(
+        payload.get(key) not in (None, "") for key in ("latitude", "longitude", "ime_ko", "naselje")
+    )
+
+    size_m2 = normalized_row.get("size_m2")
+    if size_m2 is None:
+        return None
+    try:
+        size_val = float(size_m2)
+    except (TypeError, ValueError):
+        return None
+    if np.isnan(size_val) or size_val <= 0:
+        return None
+
+    baseline_candidates: list[float] = []
+    for key, is_log in (
+        ("comp_type_naselje_ppm2", True),
+        ("comp_type_ko_ppm2", True),
+        ("comp_type_muni_ppm2", True),
+        ("knn_type_10_log_ppm2", True),
+        ("price_per_m2_ko", False),
+        ("price_per_m2_municipality", False),
+    ):
+        value = normalized_row.get(key)
+        if value is None:
+            continue
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            continue
+        if np.isnan(numeric):
+            continue
+        baseline_candidates.append(float(np.exp(numeric)) if is_log else numeric)
+
+    if not baseline_candidates:
+        return None
+
+    # Conservative floor: stronger for sparse inputs, softer when fine location is present.
+    baseline_ppm2 = float(np.median(baseline_candidates))
+    if has_fine_location and len(baseline_candidates) >= 4:
+        floor_factor = 0.8
+    elif has_fine_location:
+        floor_factor = 0.65
+    else:
+        floor_factor = 0.75
+    return floor_factor * baseline_ppm2 * size_val
+
+
 def predict_one(features: dict[str, Any]) -> dict[str, Any]:
     """Predict price for a single property."""
     artifact = load_model()
@@ -2537,9 +4404,13 @@ def predict_one(features: dict[str, Any]) -> dict[str, Any]:
     # Route to per-type model or global
     per_type_models = artifact.get("per_type_models", {})
     global_model = artifact.get("global_model", {})
+    blend_weight = 1.0
+    routing_mode = "global_only"
 
     if ptype in per_type_models:
         tm = per_type_models[ptype]
+        blend_weight = float(tm.get("blend_weight", 1.0)) if isinstance(tm, dict) else 1.0
+        selected_target_transform = str(tm.get("target_transform", artifact.get("target_transform", "log_ppm2")))
         if isinstance(tm, dict) and "pipeline" in tm:
             pipeline = tm["pipeline"]
             num_feats = tm["numeric_features"]
@@ -2549,24 +4420,41 @@ def predict_one(features: dict[str, Any]) -> dict[str, Any]:
             pipeline = tm
             num_feats = PERTYPE_NUMERIC
             cat_feats = PERTYPE_CATEGORICAL
-        model_used = f"per_type:{ptype}"
+        if blend_weight <= 0:
+            pipeline = (
+                global_model["pipeline"] if global_model and "pipeline" in global_model else artifact["global_pipeline"]
+            )
+            num_feats = global_model.get("numeric_features", NUMERIC_FEATURES)
+            cat_feats = global_model.get("categorical_features", CATEGORICAL_FEATURES)
+            model_used = "global"
+            blend_weight = 0.0
+            routing_mode = "global_only"
+            selected_target_transform = str(artifact.get("target_transform") or "log_ppm2")
+        elif blend_weight >= 0.999:
+            model_used = f"per_type:{ptype}"
+            routing_mode = "per_type_only"
+        else:
+            model_used = f"per_type:{ptype}"
+            routing_mode = "blend"
     elif global_model and "pipeline" in global_model:
         pipeline = global_model["pipeline"]
         num_feats = global_model["numeric_features"]
         cat_feats = global_model["categorical_features"]
         model_used = "global"
+        selected_target_transform = str(artifact.get("target_transform") or "log_ppm2")
     else:
         pipeline = artifact["global_pipeline"]
         num_feats = NUMERIC_FEATURES
         cat_feats = CATEGORICAL_FEATURES
         model_used = "global"
+        selected_target_transform = str(artifact.get("target_transform") or "log_ppm2")
 
     normalized = _build_normalized_payload(features, num_feats, cat_feats, artifact)
     row = pd.DataFrame([normalized])
     raw_pred = float(pipeline.predict(row)[0])
 
     # Inverse transform based on how the model was trained
-    target_transform = artifact.get("target_transform")
+    target_transform = selected_target_transform
     if target_transform is None:
         # Backward compat: v5.0 used log_target flag
         target_transform = "log_price" if artifact.get("log_target") else "none"
@@ -2579,16 +4467,56 @@ def predict_one(features: dict[str, Any]) -> dict[str, Any]:
     else:
         predicted = max(0.0, raw_pred)
 
+    # Blend with global fallback when per-type validation quality is not strong enough.
+    if routing_mode == "blend" and global_model and "pipeline" in global_model:
+        g_num = global_model.get("numeric_features", NUMERIC_FEATURES)
+        g_cat = global_model.get("categorical_features", CATEGORICAL_FEATURES)
+        g_pipeline = global_model["pipeline"]
+        global_target_transform = str(
+            artifact.get("target_transform") or ("log_price" if artifact.get("log_target") else "none")
+        )
+        g_norm = _build_normalized_payload(features, g_num, g_cat, artifact)
+        g_row = pd.DataFrame([g_norm])
+        g_raw = float(g_pipeline.predict(g_row)[0])
+
+        if global_target_transform == "log_ppm2":
+            g_size = max(float(g_norm.get("size_m2", 1.0)), 1.0)
+            g_pred = max(0.0, g_size * float(np.exp(g_raw)))
+        elif global_target_transform == "log_price":
+            g_pred = max(0.0, float(np.expm1(g_raw)))
+        else:
+            g_pred = max(0.0, g_raw)
+
+        predicted = blend_weight * predicted + (1.0 - blend_weight) * g_pred
+
+    calibration_factor, calibration_source = _lookup_calibration_factor(
+        artifact.get("calibration"),
+        ptype,
+        str(normalized.get("municipality_normalized", "unknown")),
+        str(normalized.get("naselje", "unknown")),
+        predicted,
+        row_context={**features, **normalized},
+    )
+    predicted *= calibration_factor
+
+    floor_eur = _sparse_residential_floor_eur(features, normalized, ptype)
+    if floor_eur is not None:
+        predicted = max(predicted, floor_eur)
+
     return {
         "predicted_price_eur": round(predicted, 2),
         "model_used": model_used,
+        "routing_mode": routing_mode,
+        "type_blend_weight": round(float(blend_weight), 6),
+        "calibration_factor": round(float(calibration_factor), 6),
+        "calibration_source": calibration_source,
         "features_used": {k: str(v) for k, v in normalized.items()},
     }
 
 
-def get_model_info() -> dict[str, Any] | None:
+def get_model_info(model_path: str | None = None) -> dict[str, Any] | None:
     """Get metadata about the currently loaded model."""
-    artifact = load_model()
+    artifact = load_model(model_path=model_path)
     if artifact is None:
         return None
     return {
@@ -2609,10 +4537,19 @@ def get_model_info() -> dict[str, Any] | None:
         "per_type_features": artifact.get("per_type_features"),
         "per_type_count": len(artifact.get("per_type_models", {})),
         "type_models_trained": sorted(artifact.get("per_type_models", {}).keys()),
+        "training_window": artifact.get("training_window"),
+        "dataset_window": artifact.get("dataset_window"),
+        "deploy_window": artifact.get("deploy_window"),
+        "holdout": artifact.get("holdout"),
+        "calibration": artifact.get("calibration"),
         "coords_by_municipality": artifact.get("coords_by_municipality"),
         "csv_path": artifact.get("csv_path"),
+        "model_path": artifact.get("model_path"),
         "data_preparation": artifact.get("data_preparation"),
         "segment_diagnostics": artifact.get("segment_diagnostics"),
+        "recent_research_diagnostics": artifact.get("recent_research_diagnostics"),
+        "routing_comparison": artifact.get("routing_comparison"),
+        "artifact_metadata": artifact.get("artifact_metadata"),
         "ev_baseline_metrics": artifact.get("ev_baseline_metrics"),
         "variant_benchmarks": artifact.get("variant_benchmarks"),
         "variant_matrix": artifact.get("variant_matrix"),

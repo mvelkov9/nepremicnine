@@ -1,5 +1,7 @@
 """Tests for data_processing_service: CC-SI mapping and municipality normalization."""
 
+import os
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -12,6 +14,7 @@ from app.services.data_processing_service import (
     _parse_fractional_numeric_series,
     build_training_df_from_etn_kpp,
     build_training_df_from_etn_kpp_land,
+    discover_etn_kpp_year_pairs,
     enrich_training_df,
     group_property_type,
     load_training_metadata,
@@ -91,6 +94,125 @@ def test_resolve_emv_gpkg_path_accepts_extracted_shapefile_bundle(tmp_path, monk
     resolved = dps._resolve_emv_gpkg_path(str(zip_path))
 
     assert resolved == str(extract_dir)
+
+
+def test_discover_gurs_enrichment_sources_handles_prefixless_markers_and_prefers_vector_files(tmp_path):
+    uploads_dir = tmp_path / "uploads"
+    uploads_dir.mkdir()
+
+    rn_path = uploads_dir / "RN_009_NASLOVI_register_naslovov_ob_20260322.csv"
+    rn_path.write_text("id\n1\n", encoding="utf-8")
+
+    gji_dir = uploads_dir / "KGI_SLO_GJI_VODOVOD_20260321"
+    gji_dir.mkdir()
+    gji_vector = gji_dir / "KGI_SLO_GJI_VODOVOD_tocke_20260321.gpkg"
+    gji_vector.write_text("gpkg", encoding="utf-8")
+    gji_csv = gji_dir / "KGI_SLO_GJI_VODOVOD_udelezenci_upr_izv_20260321.csv"
+    gji_csv.write_text("csv", encoding="utf-8")
+
+    kn_dir = uploads_dir / "KN_SLO_KAT_OBCINE_20260322"
+    kn_dir.mkdir()
+    kn_shp = kn_dir / "KN_SLO_KAT_OBCINE_KATASTRSKE_OBCINE_poligon.shp"
+    kn_shp.write_text("shp", encoding="utf-8")
+    kn_cpg = kn_dir / "KN_SLO_KAT_OBCINE_KATASTRSKE_OBCINE_poligon.cpg"
+    kn_cpg.write_text("cpg", encoding="utf-8")
+
+    now = 1_900_000_000
+    os.utime(gji_vector, (now, now))
+    os.utime(gji_csv, (now + 20, now + 20))
+    os.utime(kn_shp, (now, now))
+    os.utime(kn_cpg, (now + 20, now + 20))
+
+    discovered = dps.discover_gurs_enrichment_sources(str(uploads_dir))
+
+    assert discovered["rn"].endswith("RN_009_NASLOVI_register_naslovov_ob_20260322.csv")
+    assert discovered["gji_vodovod"].endswith("KGI_SLO_GJI_VODOVOD_tocke_20260321.gpkg")
+    assert discovered["kn_kat_obcine"].endswith("KN_SLO_KAT_OBCINE_KATASTRSKE_OBCINE_poligon.shp")
+
+
+def test_resolve_upload_dir_from_csv_path_supports_etn_prefix_variants(tmp_path):
+    uploads_root = tmp_path / "uploads"
+    uploads_root.mkdir()
+
+    etn_dir = uploads_root / "ETN_009_KPP_20260322"
+    etn_dir.mkdir()
+    csv_path = etn_dir / "ETN_009_KPP_POSLI_20260322.csv"
+    csv_path.write_text("id\n1\n", encoding="utf-8")
+
+    resolved = dps._resolve_upload_dir_from_csv_path(str(csv_path))
+
+    assert resolved == str(uploads_root)
+
+
+def test_resolve_upload_dir_from_csv_path_prefers_uploads_root_for_nested_etn_tree(tmp_path):
+    uploads_root = tmp_path / "uploads"
+    uploads_root.mkdir()
+
+    etn_group = uploads_root / "ETN"
+    etn_group.mkdir()
+    etn_year_dir = etn_group / "ETN_SLO_2026_KPP_20260322"
+    etn_year_dir.mkdir()
+    csv_path = etn_year_dir / "ETN_SLO_2026_KPP_KPP_POSLI_20260322.csv"
+    csv_path.write_text("id\n1\n", encoding="utf-8")
+
+    resolved = dps._resolve_upload_dir_from_csv_path(str(csv_path))
+
+    assert resolved == str(uploads_root)
+
+
+def test_discover_etn_kpp_year_pairs_filters_requested_year_window(tmp_path):
+    uploads_root = tmp_path / "uploads"
+    uploads_root.mkdir()
+
+    for year in (2019, 2020, 2021):
+        year_dir = uploads_root / f"ETN_SLO_{year}_KPP_20260322"
+        year_dir.mkdir()
+        (year_dir / f"ETN_SLO_{year}_KPP_KPP_POSLI_20260322.csv").write_text("id\n1\n", encoding="utf-8")
+        (year_dir / f"ETN_SLO_{year}_KPP_KPP_DELISTAVB_20260322.csv").write_text("id\n1\n", encoding="utf-8")
+        (year_dir / f"ETN_SLO_{year}_KPP_KPP_ZEMLJISCA_20260322.csv").write_text("id\n1\n", encoding="utf-8")
+
+    pairs = discover_etn_kpp_year_pairs(str(uploads_root), start_year=2020, end_year=2021)
+
+    assert [pair["year"] for pair in pairs] == ["2020", "2021"]
+    assert all("2019" not in pair["posli_csv_path"] for pair in pairs)
+
+
+def test_discover_etn_kpp_year_pairs_accepts_flat_csv_layout(tmp_path):
+    uploads_root = tmp_path / "uploads"
+    uploads_root.mkdir()
+
+    (uploads_root / "ETN_SLO_2022_KPP_KPP_POSLI_20260322.csv").write_text("id\n1\n", encoding="utf-8")
+    (uploads_root / "ETN_SLO_2022_KPP_KPP_DELISTAVB_20260322.csv").write_text("id\n1\n", encoding="utf-8")
+    (uploads_root / "ETN_SLO_2022_KPP_KPP_ZEMLJISCA_20260322.csv").write_text("id\n1\n", encoding="utf-8")
+
+    pairs = discover_etn_kpp_year_pairs(str(uploads_root), start_year=2022, end_year=2022)
+
+    assert len(pairs) == 1
+    assert pairs[0]["year"] == "2022"
+
+
+def test_resolve_etn_paths_from_zip_if_needed_autocorrects_sifranti_pair_inputs(tmp_path):
+    etn_dir = tmp_path / "ETN_SLO_2026_KPP_20260322"
+    etn_dir.mkdir()
+
+    posli = etn_dir / "ETN_SLO_2026_KPP_KPP_POSLI_20260322.csv"
+    delistavb = etn_dir / "ETN_SLO_2026_KPP_KPP_DELISTAVB_20260322.csv"
+    zemljisca = etn_dir / "ETN_SLO_2026_KPP_KPP_ZEMLJISCA_20260322.csv"
+    sifranti = etn_dir / "ETN_SLO_2026_KPP_sifranti_20260322.csv"
+
+    for path in [posli, delistavb, zemljisca, sifranti]:
+        path.write_text("id\n1\n", encoding="utf-8")
+
+    resolved_posli, resolved_deli, resolved_zem = dps._resolve_etn_paths_from_zip_if_needed(
+        str(sifranti),
+        str(sifranti),
+        str(sifranti),
+        str(tmp_path / "tmp_extract"),
+    )
+
+    assert resolved_posli == str(posli)
+    assert resolved_deli == str(delistavb)
+    assert resolved_zem == str(zemljisca)
 
 
 def test_enrich_training_df_preserves_display_names_and_adds_normalized_column():
@@ -206,6 +328,64 @@ def test_build_training_df_from_etn_kpp_extracts_requested_share_and_phase_featu
     assert row["prodani_delez_dela_stavbe"] == pytest.approx(0.5)
     assert row["gradbena_faza"] == pytest.approx(4.0)
     assert row["prodani_delez_parcele"] == pytest.approx(0.875)
+
+
+def test_build_training_df_from_etn_kpp_accepts_legacy_trznost_code_4():
+    posli_df = pd.DataFrame(
+        {
+            "ID_POSLA": ["legacy-1"],
+            "POGODBENA_CENA_ODSKODNINA": [210000],
+            "TRZNOST_POSLA": [4],
+            "VRSTA_KUPOPRODAJNEGA_POSLA": [1],
+            "IME_OBCINE": ["Ljubljana"],
+        }
+    )
+    deli_df = pd.DataFrame(
+        {
+            "ID_POSLA": ["legacy-1"],
+            "ID_DELA_STAVBE": ["1"],
+            "PRODANA_POVRSINA": [72],
+            "STEVILO_SOB": [3],
+            "DEJANSKA_RABA_DELA_STAVBE": [2],
+            "VRSTA_DELA_STAVBE": ["stanovanje"],
+        }
+    )
+
+    training_df, _meta = build_training_df_from_etn_kpp(posli_df, deli_df)
+
+    assert len(training_df) == 1
+    assert training_df.iloc[0]["price_eur"] > 0
+
+
+def test_build_training_df_from_etn_kpp_coalesces_legacy_area_columns():
+    posli_df = pd.DataFrame(
+        {
+            "ID_POSLA": ["legacy-area-1"],
+            "POGODBENA_CENA_ODSKODNINA": [180000],
+            "TRZNOST_POSLA": [4],
+            "VRSTA_KUPOPRODAJNEGA_POSLA": [1],
+            "IME_OBCINE": ["Ljubljana"],
+        }
+    )
+    deli_df = pd.DataFrame(
+        {
+            "ID_POSLA": ["legacy-area-1"],
+            "ID_DELA_STAVBE": ["1"],
+            "PRODANA_POVRSINA": [np.nan],
+            "PRODANA_POVRSINA_DELA_STAVBE": [68],
+            "UPORABNA_POVRSINA": [64],
+            "POVRSINA_DELA_STAVBE": [70],
+            "STEVILO_SOB": [3],
+            "DEJANSKA_RABA_DELA_STAVBE": [2],
+            "VRSTA_DELA_STAVBE": ["stanovanje"],
+        }
+    )
+
+    training_df, meta = build_training_df_from_etn_kpp(posli_df, deli_df)
+
+    assert len(training_df) == 1
+    assert training_df.iloc[0]["size_m2"] == pytest.approx(68.0)
+    assert meta["used_size_column"] == "PRODANA_POVRSINA_DELA_STAVBE"
 
 
 def test_parse_fractional_numeric_series_handles_etn_share_formats():
@@ -585,7 +765,7 @@ def test_prepare_training_csv_from_etn_kpp_bulk_passes_enrichment_options(tmp_pa
         lambda *_args, **_kwargs: (frame.copy(), {"filter_stats": {"stages": []}}),
     )
 
-    def fake_enrichment(prepared, *, upload_dir, enrichment_options=None):
+    def fake_enrichment(prepared, *, upload_dir, enrichment_options=None, **_kwargs):
         captured.append(enrichment_options)
         return prepared, {"options": enrichment_options or {}}
 
@@ -610,8 +790,8 @@ def test_prepare_training_csv_from_etn_kpp_bulk_passes_enrichment_options(tmp_pa
         enrichment_options=options,
     )
 
-    assert captured == [options]
-    assert result["enrichment_options"] == options
+    assert captured == [{**options, "enable_dtm": True}]
+    assert result["enrichment_options"] == {**options, "enable_dtm": True}
 
 
 def test_resolve_enrichment_options_includes_kn_and_gji_in_variant_label():

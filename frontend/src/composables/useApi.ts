@@ -9,7 +9,7 @@ import { accessToken, refreshToken } from '../stores/tokens'
 const api: AxiosInstance = axios.create({
   baseURL: '',
   headers: { 'Content-Type': 'application/json' },
-  timeout: 30000,
+  timeout: 90000,
 })
 
 // Request interceptor: attach JWT
@@ -25,6 +25,20 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const original = error.config
+    const method = String(original?.method || '').toLowerCase()
+
+    // Retry a single timed-out idempotent request with a larger timeout.
+    if (
+      original &&
+      error?.code === 'ECONNABORTED' &&
+      (method === 'get' || method === 'head') &&
+      !(original as any)._retryTimeout
+    ) {
+      ;(original as any)._retryTimeout = true
+      original.timeout = Math.max(Number(original.timeout || 0), 120000)
+      return api(original)
+    }
+
     if (error.response?.status === 401 && !original._retry) {
       original._retry = true
       if (refreshToken.value) {

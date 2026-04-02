@@ -10,11 +10,15 @@
   import ProgressBar from 'primevue/progressbar'
   import Select from 'primevue/select'
   import Tag from 'primevue/tag'
+  import AdminRunDetailPanel from '../components/admin/AdminRunDetailPanel.vue'
+  import AdminWorkspaceHero from '../components/admin/AdminWorkspaceHero.vue'
+  import { adminWorkspaceLinks } from '../constants/adminWorkspace'
   import MetricCard from '../components/MetricCard.vue'
   import PageHeader from '../components/PageHeader.vue'
   import { useAuthStore } from '../stores/auth'
   import { useDataStore } from '../stores/data'
   import { useModelStore } from '../stores/model'
+  import { useWorkbenchStore } from '../stores/workbench'
   import { formatCurrency, formatDateTime, formatNumber, formatPercent } from '../utils/format'
   import { getPropertyTypeLabel } from '../utils/propertyType'
 
@@ -24,15 +28,18 @@
   const auth = useAuthStore()
   const dataStore = useDataStore()
   const model = useModelStore()
+  const workbench = useWorkbenchStore()
 
   const selectedCsv = ref('')
   const pollTimer = ref(null)
+  const selectedTrainingRunId = ref('')
 
   const isAdmin = computed(() => auth.user?.role === 'admin')
   const trainingDataset = computed(() => dataStore.trainingDataset)
   const recentJobs = computed(() => model.jobHistory.slice(0, 6))
   const recentRuns = computed(() => model.modelRuns.slice(0, 6))
   const trainingLocked = computed(() => model.training)
+  const selectedTrainingRun = computed(() => workbench.selectedTrainingRun)
 
   const uploadOptions = computed(() =>
     (Array.isArray(dataStore.datasets) ? dataStore.datasets : [])
@@ -141,6 +148,38 @@
     ]
   })
 
+  const heroSummaryCards = computed(() => [
+    {
+      label: t('model.preparedDataset'),
+      value: trainingDataset.value?.exists
+        ? t('model.preparedDatasetReady')
+        : t('model.preparedDatasetMissing'),
+      meta: trainingDataset.value?.exists
+        ? `${fmt(trainingDataset.value.rows)} ${t('data.rows')}`
+        : t('model.prepareDataFirst'),
+      tone: (trainingDataset.value?.exists ? 'success' : 'warning') as 'success' | 'warning',
+    },
+    {
+      label: t('model.currentModel'),
+      value: model.info ? t('model.modelReady') : t('model.modelMissing'),
+      meta: model.info?.trained_at ? formatDate(model.info.trained_at) : t('model.noModel'),
+      tone: (model.info ? 'success' : 'warning') as 'success' | 'warning',
+    },
+    {
+      label: t('model.trainingStatus'),
+      value: activeStatus.value ? jobStatusLabel(activeStatus.value.status) : t('common.noData'),
+      meta: activeStatus.value ? trainingStageLabel.value : t('model.trainingCtaHint'),
+    },
+    {
+      label: t('model.trainingProgress'),
+      value: activeStatus.value ? `${activeStatus.value.progress || 0}%` : '0%',
+      meta:
+        activeStatus.value?.eta_sec != null
+          ? `${t('model.eta')}: ${formatDuration(activeStatus.value.eta_sec)}`
+          : t('common.noData'),
+    },
+  ])
+
   function getChartColors() {
     const style = getComputedStyle(document.documentElement)
     return {
@@ -189,6 +228,16 @@
     { immediate: true },
   )
 
+  watch(
+    () => workbench.trainingRuns,
+    (runs) => {
+      if (!runs.length || selectedTrainingRunId.value) return
+      selectedTrainingRunId.value = runs[0].id
+      void loadTrainingRunDetail(runs[0].id)
+    },
+    { immediate: true },
+  )
+
   function fmt(value, decimals = 0) {
     return formatNumber(value, { maximumFractionDigits: decimals })
   }
@@ -232,6 +281,11 @@
 
   function stageLabel(stage) {
     return stage ? t(`model.stages.${stage}`) : '—'
+  }
+
+  async function loadTrainingRunDetail(jobId) {
+    selectedTrainingRunId.value = jobId
+    await workbench.fetchTrainingRunDetail(jobId)
   }
 
   async function train() {
@@ -291,8 +345,9 @@
       model.fetchDiagnostics(),
       model.fetchJobs(),
       model.fetchRuns(),
-      dataStore.fetchDatasets(),
+      dataStore.fetchDatasets(false, true, { perPage: 200 }),
       dataStore.fetchTrainingDataset(),
+      workbench.fetchTrainingRuns(),
     ])
     await syncExistingTraining()
   })
@@ -304,51 +359,54 @@
 
 <template>
   <div class="model-page">
-    <section v-if="isAdmin" class="card model-hero">
-      <PageHeader
-        :eyebrow="t('model.trainModel')"
-        :title="t('model.trainingTitle')"
-        :description="t('model.trainingBody')"
-      >
-        <template #actions>
-          <RouterLink v-if="!trainingDataset?.exists" to="/admin/priprava">
-            <Button
-              severity="contrast"
-              outlined
-              icon="pi pi-arrow-right"
-              :label="t('model.goToPrepare')"
-            />
-          </RouterLink>
-        </template>
-      </PageHeader>
+    <AdminWorkspaceHero
+      v-if="isAdmin"
+      :eyebrow="t('model.trainModel')"
+      :title="t('model.trainingTitle')"
+      :description="t('model.trainingBody')"
+      :metrics="heroSummaryCards"
+      :links="adminWorkspaceLinks"
+      :status="activeStatus ? jobStatusLabel(activeStatus.status) : ''"
+      :status-severity="activeStatus ? jobSeverity(activeStatus.status) : 'secondary'"
+    >
+      <template #actions>
+        <RouterLink v-if="!trainingDataset?.exists" to="/admin/priprava">
+          <Button
+            severity="contrast"
+            outlined
+            icon="pi pi-arrow-right"
+            :label="t('model.goToPrepare')"
+          />
+        </RouterLink>
+      </template>
+    </AdminWorkspaceHero>
 
-      <div class="hero-grid">
-        <MetricCard
-          :label="t('model.preparedDataset')"
-          :value="
-            trainingDataset?.exists
-              ? t('model.preparedDatasetReady')
-              : t('model.preparedDatasetMissing')
-          "
-          :meta="
-            trainingDataset?.exists
-              ? `${fmt(trainingDataset.rows)} ${t('data.rows')} · ${formatDate(trainingDataset.updated_at)}`
-              : t('model.prepareDataFirst')
-          "
-          :tone="trainingDataset?.exists ? 'success' : 'default'"
-        />
-        <MetricCard
-          :label="t('model.currentModel')"
-          :value="model.info ? t('model.modelReady') : t('model.modelMissing')"
-          :meta="
-            model.info
-              ? `${formatDate(model.info.trained_at)} · ${fmt(model.info.rows)} ${t('data.rows')}`
-              : t('model.noModel')
-          "
-          :tone="model.info ? 'success' : 'warning'"
-        />
-      </div>
-    </section>
+    <div v-if="false" class="hero-grid">
+      <MetricCard
+        :label="t('model.preparedDataset')"
+        :value="
+          trainingDataset?.exists
+            ? t('model.preparedDatasetReady')
+            : t('model.preparedDatasetMissing')
+        "
+        :meta="
+          trainingDataset?.exists
+            ? `${fmt(trainingDataset.rows)} ${t('data.rows')} · ${formatDate(trainingDataset.updated_at)}`
+            : t('model.prepareDataFirst')
+        "
+        :tone="trainingDataset?.exists ? 'success' : 'default'"
+      />
+      <MetricCard
+        :label="t('model.currentModel')"
+        :value="model.info ? t('model.modelReady') : t('model.modelMissing')"
+        :meta="
+          model.info
+            ? `${formatDate(model.info.trained_at)} · ${fmt(model.info.rows)} ${t('data.rows')}`
+            : t('model.noModel')
+        "
+        :tone="model.info ? 'success' : 'warning'"
+      />
+    </div>
 
     <section v-if="isAdmin" class="card">
       <PageHeader
@@ -481,7 +539,7 @@
         <Column field="rmse" header="RMSE" sortable>
           <template #body="{ data }">{{ fmtCurrency(data.rmse) }}</template>
         </Column>
-        <Column field="r2" header="R²" sortable>
+        <Column field="r2" :header="t('diag.r2Metric')" sortable>
           <template #body="{ data }">
             <Tag
               :severity="data.r2 >= 0.7 ? 'success' : data.r2 >= 0.4 ? 'warn' : 'danger'"
@@ -492,7 +550,7 @@
         <Column field="mape" header="MAPE" sortable>
           <template #body="{ data }">{{ fmtPercent(data.mape) }}</template>
         </Column>
-        <Column field="n_train" header="N" sortable>
+        <Column field="n_train" :header="t('diag.sampleCount')" sortable>
           <template #body="{ data }">{{ fmt(data.n_train) }}</template>
         </Column>
       </DataTable>
@@ -606,6 +664,16 @@
         </p>
       </article>
     </section>
+
+    <AdminRunDetailPanel
+      v-if="isAdmin"
+      :eyebrow="t('nav.model')"
+      :title="t('workbench.recentTrainingRuns')"
+      :description="t('workbench.trainingRunDetailHint')"
+      :runs="workbench.trainingRuns.slice(0, 8)"
+      :selected-run="selectedTrainingRun"
+      @select="loadTrainingRunDetail"
+    />
 
     <div v-if="!model.loading && !model.info" class="card empty-card">
       <p class="muted">{{ t('model.noModel') }}</p>

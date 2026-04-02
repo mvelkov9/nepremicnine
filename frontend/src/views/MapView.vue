@@ -9,7 +9,10 @@
   import LoadingSpinner from '../components/LoadingSpinner.vue'
   import MetricCard from '../components/MetricCard.vue'
   import PageHeader from '../components/PageHeader.vue'
+  import SavedWorkspaceMenu from '../components/workbench/SavedWorkspaceMenu.vue'
+  import { toLocationQuery } from '../constants/workbench'
   import api from '../composables/useApi'
+  import { useWorkbenchStore } from '../stores/workbench'
   import { getApiErrorMessage } from '../utils/apiError'
   import { buildNepremicnineSearchUrl } from '../utils/externalSearch'
   import { formatCurrency, formatNumber } from '../utils/format'
@@ -34,6 +37,7 @@
   const { t } = useI18n()
   const route = useRoute()
   const router = useRouter()
+  const workbench = useWorkbenchStore()
 
   const mapContainer = ref(null)
   let map = null
@@ -64,6 +68,8 @@
   const detailVisible = ref(false)
   const detailMode = ref('transaction')
   const selectedRecord = ref(null)
+  let syncingRoute = false
+  let writingRoute = false
 
   const overviewColor = '#3b82f6'
 
@@ -509,9 +515,82 @@
     selectedYear.value = defaultYear.value ? String(defaultYear.value) : ''
   }
 
+  function currentQuerySubset() {
+    const subset: Record<string, string> = {}
+    const keys = ['property_type', 'region', 'year', 'price_band', 'municipality', 'view']
+    for (const key of keys) {
+      const value = route.query[key]
+      if (typeof value === 'string' && value) subset[key] = value
+    }
+    return subset
+  }
+
+  function nextQuerySubset() {
+    const subset: Record<string, string> = {}
+    if (selectedType.value) subset.property_type = selectedType.value
+    if (selectedRegion.value) subset.region = selectedRegion.value
+    if (selectedYear.value) subset.year = selectedYear.value
+    if (selectedPriceBand.value) subset.price_band = selectedPriceBand.value
+    if (selectedMunicipality.value) subset.municipality = selectedMunicipality.value
+    if (viewMode.value === 'overview') subset.view = viewMode.value
+    return subset
+  }
+
+  function syncRouteQuery() {
+    const nextSubset = nextQuerySubset()
+    const currentSubset = currentQuerySubset()
+    if (JSON.stringify(nextSubset) === JSON.stringify(currentSubset)) return
+
+    const nextQuery = { ...route.query }
+    for (const key of ['property_type', 'region', 'year', 'price_band', 'municipality', 'view']) {
+      delete nextQuery[key]
+    }
+    for (const [key, value] of Object.entries(nextSubset)) nextQuery[key] = value
+    writingRoute = true
+    void router.replace({ query: nextQuery })
+  }
+
+  function viewerRouteQuery(overrides: Record<string, string | undefined> = {}) {
+    return toLocationQuery({
+      property_type: selectedType.value || undefined,
+      region: selectedRegion.value || undefined,
+      year: selectedYear.value || undefined,
+      municipality: selectedMunicipality.value || undefined,
+      ...overrides,
+    })
+  }
+
   function openMunicipality(name = selectedRecord.value?.municipality) {
     if (!name) return
-    router.push(`/obcine/${municipalitySlug(name)}`)
+    router.push({
+      path: `/obcine/${municipalitySlug(name)}`,
+      query: viewerRouteQuery(),
+    })
+  }
+
+  async function watchSelectedContext() {
+    const label = selectedRecord.value?.municipality || selectedMunicipality.value
+    if (!label) return
+    await workbench.addWatchlistItem({
+      entity_type:
+        selectedRecord.value?.region && !selectedRecord.value?.property_type
+          ? 'region'
+          : 'municipality',
+      entity_key:
+        selectedRecord.value?.region && !selectedRecord.value?.property_type
+          ? selectedRecord.value.region
+          : municipalitySlug(label),
+      display_label:
+        selectedRecord.value?.region && !selectedRecord.value?.property_type
+          ? selectedRecord.value.region
+          : label,
+      metadata: {
+        link:
+          selectedRecord.value?.region && !selectedRecord.value?.property_type
+            ? `/regije?tab=drilldown&region=${encodeURIComponent(selectedRecord.value.region)}`
+            : `/obcine/${municipalitySlug(label)}`,
+      },
+    })
   }
 
   function useForPrediction(item = selectedRecord.value) {
@@ -523,6 +602,7 @@
           selectedMunicipality.value ||
           topMunicipality.value?.municipality ||
           '',
+        naselje: item?.naselje || '',
         property_type: item?.property_type || selectedType.value || 'stanovanje',
         size_m2: item?.size_m2 || '',
         year_built: item?.year_built || '',
@@ -531,21 +611,73 @@
     })
   }
 
+  function openMarketExplorer() {
+    router.push({
+      name: 'market',
+      query: viewerRouteQuery({
+        tab: viewMode.value === 'transactions' ? 'transactions' : 'overview',
+      }),
+    })
+  }
+
+  function openAnalysis(item = selectedRecord.value) {
+    router.push({
+      name: 'analysis',
+      query: {
+        municipality:
+          item?.municipality ||
+          selectedMunicipality.value ||
+          topMunicipality.value?.municipality ||
+          '',
+        naselje: item?.naselje || '',
+        property_type: item?.property_type || selectedType.value || 'stanovanje',
+        size_m2: item?.size_m2 || '',
+        year_built: item?.year_built || '',
+        floor: item?.floor ?? '',
+        asking_price: item?.price_eur || item?.avg_price || '',
+      },
+    })
+  }
+
   function applyRouteQuery() {
+    syncingRoute = true
     selectedType.value = route.query.property_type ? String(route.query.property_type) : ''
     selectedRegion.value = route.query.region ? String(route.query.region) : ''
     selectedYear.value = route.query.year ? String(route.query.year) : ''
     selectedPriceBand.value = route.query.price_band ? String(route.query.price_band) : ''
     selectedMunicipality.value = route.query.municipality ? String(route.query.municipality) : ''
     viewMode.value = route.query.view === 'overview' ? 'overview' : 'transactions'
+    syncingRoute = false
   }
 
   watch(
     [selectedType, selectedRegion, selectedYear, selectedMunicipality, selectedPriceBand, viewMode],
     () => {
+      if (syncingRoute) return
+      syncRouteQuery()
       if (initialized.value) fetchData()
     },
   )
+
+  watch(
+    () => route.query,
+    () => {
+      if (writingRoute) {
+        writingRoute = false
+        return
+      }
+      applyRouteQuery()
+      if (initialized.value) void fetchData()
+    },
+  )
+
+  watch(selectedRegion, (region) => {
+    if (!region || !selectedMunicipality.value) return
+    const valid = allMunicipalities.value.some(
+      (item) => item.region === region && item.municipality === selectedMunicipality.value,
+    )
+    if (!valid) selectedMunicipality.value = ''
+  })
 
   onMounted(async () => {
     applyRouteQuery()
@@ -576,6 +708,17 @@
         :description="t('map.explorerBody')"
       >
         <template #actions>
+          <SavedWorkspaceMenu
+            page="map"
+            :state="{ page: 'map', filters: viewerRouteQuery({ view: viewMode }) }"
+          />
+          <Button
+            severity="secondary"
+            outlined
+            icon="pi pi-table"
+            :label="t('market.viewMarket')"
+            @click="openMarketExplorer"
+          />
           <Button
             icon="pi pi-chart-line"
             :label="t('map.useFiltersForPrediction')"
@@ -588,6 +731,13 @@
             icon="pi pi-building"
             :label="t('map.openTopMunicipality')"
             @click="openMunicipality(topMunicipality.municipality)"
+          />
+          <Button
+            severity="secondary"
+            text
+            icon="pi pi-bookmark"
+            :label="t('workbench.watch')"
+            @click="watchSelectedContext"
           />
         </template>
       </PageHeader>
@@ -990,6 +1140,13 @@
             icon="pi pi-chart-line"
             :label="t('map.useForPrediction')"
             @click="useForPrediction()"
+          />
+          <Button
+            severity="secondary"
+            outlined
+            icon="pi pi-search"
+            :label="t('nav.analysis')"
+            @click="openAnalysis()"
           />
           <a :href="comparisonUrl" target="_blank" rel="noreferrer" class="detail-link">
             <Button

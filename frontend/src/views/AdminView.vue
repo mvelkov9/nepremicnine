@@ -3,29 +3,51 @@
   import { useI18n } from 'vue-i18n'
   import { useConfirm } from 'primevue/useconfirm'
   import api from '../composables/useApi'
-  import MetricCard from '../components/MetricCard.vue'
-  import PageHeader from '../components/PageHeader.vue'
+  import AdminWorkspaceHero from '../components/admin/AdminWorkspaceHero.vue'
+  import { adminWorkspaceLinks } from '../constants/adminWorkspace'
+  import { useWorkbenchStore } from '../stores/workbench'
   import { getApiErrorMessage } from '../utils/apiError'
   import { formatDate } from '../utils/format'
 
   const { t } = useI18n()
   const confirm = useConfirm()
+  const workbench = useWorkbenchStore()
 
   const users = ref([])
   const loading = ref(false)
   const error = ref(null)
   const userFilter = ref('')
+  const roleFilter = ref('all')
+  const statusFilter = ref('all')
+
+  const roleOptions = computed(() => [
+    { label: t('admin.allRoles'), value: 'all' },
+    { label: t('layout.roleAdmin'), value: 'admin' },
+    { label: t('layout.roleViewer'), value: 'viewer' },
+  ])
+
+  const statusOptions = computed(() => [
+    { label: t('admin.allStatuses'), value: 'all' },
+    { label: t('admin.active'), value: 'active' },
+    { label: t('admin.disabled'), value: 'disabled' },
+  ])
 
   const filteredUsers = computed(() => {
     const query = userFilter.value.trim().toLowerCase()
-    if (!query) return users.value
-    return users.value.filter((user: any) =>
-      [user.full_name, user.email].some((value) =>
-        String(value || '')
-          .toLowerCase()
-          .includes(query),
-      ),
-    )
+    return users.value.filter((user: any) => {
+      const matchesQuery =
+        !query ||
+        [user.full_name, user.email].some((value) =>
+          String(value || '')
+            .toLowerCase()
+            .includes(query),
+        )
+      const matchesRole = roleFilter.value === 'all' || user.role === roleFilter.value
+      const matchesStatus =
+        statusFilter.value === 'all' ||
+        (statusFilter.value === 'active' ? user.is_active : !user.is_active)
+      return matchesQuery && matchesRole && matchesStatus
+    })
   })
 
   const summaryCards = computed(() => [
@@ -38,12 +60,18 @@
       label: t('admin.active'),
       value: String(users.value.filter((user: any) => user.is_active).length),
       meta: t('admin.status'),
-      tone: 'success',
+      tone: 'success' as const,
     },
     {
       label: t('layout.roleAdmin'),
       value: String(users.value.filter((user: any) => user.role === 'admin').length),
-      meta: t('admin.role'),
+      meta: t('admin.adminUsersHint'),
+    },
+    {
+      label: t('admin.disabled'),
+      value: String(users.value.filter((user: any) => !user.is_active).length),
+      meta: t('admin.activeUsersHint'),
+      tone: 'warning' as const,
     },
   ])
 
@@ -113,29 +141,22 @@
     return formatDate(value, { dateStyle: 'medium' })
   }
 
-  onMounted(fetchUsers)
+  onMounted(async () => {
+    await Promise.allSettled([fetchUsers(), workbench.fetchAdminActivity()])
+  })
 </script>
 
 <template>
   <div class="admin-view">
-    <section class="card admin-overview">
-      <PageHeader :title="t('admin.userManagement')" :description="t('admin.description')">
-        <template #actions>
-          <Tag severity="secondary" :value="t('admin.totalUsers', { count: users.length })" />
-        </template>
-      </PageHeader>
-
-      <div class="admin-metric-grid">
-        <MetricCard
-          v-for="card in summaryCards"
-          :key="card.label"
-          :label="card.label"
-          :value="card.value"
-          :meta="card.meta"
-          :tone="card.tone || 'default'"
-        />
-      </div>
-    </section>
+    <AdminWorkspaceHero
+      :eyebrow="t('layout.adminWorkbench')"
+      :title="t('admin.userManagement')"
+      :description="t('admin.description')"
+      :metrics="summaryCards"
+      :links="adminWorkspaceLinks"
+      :status="t('admin.totalUsers', { count: users.length })"
+      status-severity="secondary"
+    />
 
     <section class="card admin-users-panel">
       <div class="panel-toolbar">
@@ -144,10 +165,28 @@
           <h2>{{ t('admin.userManagement') }}</h2>
         </div>
 
-        <IconField class="search-field">
-          <InputIcon class="pi pi-search" />
-          <InputText v-model="userFilter" :placeholder="t('common.search')" />
-        </IconField>
+        <div class="toolbar-controls">
+          <IconField class="search-field">
+            <InputIcon class="pi pi-search" />
+            <InputText v-model="userFilter" :placeholder="t('common.search')" />
+          </IconField>
+
+          <Select
+            v-model="roleFilter"
+            :options="roleOptions"
+            option-label="label"
+            option-value="value"
+            class="toolbar-select"
+          />
+
+          <Select
+            v-model="statusFilter"
+            :options="statusOptions"
+            option-label="label"
+            option-value="value"
+            class="toolbar-select"
+          />
+        </div>
       </div>
 
       <p v-if="error" class="error-text">{{ error }}</p>
@@ -166,7 +205,7 @@
           </div>
         </template>
 
-        <Column field="id" header="ID" sortable />
+        <Column field="id" :header="t('common.id')" sortable />
         <Column field="full_name" :header="t('admin.name')" sortable />
         <Column field="email" :header="t('admin.email')" sortable />
 
@@ -226,6 +265,29 @@
         </Column>
       </DataTable>
     </section>
+
+    <section class="card admin-activity-panel">
+      <div class="panel-toolbar">
+        <div>
+          <p class="eyebrow subtle">{{ t('workbench.activityCenter') }}</p>
+          <h2>{{ t('workbench.adminTimeline') }}</h2>
+        </div>
+      </div>
+
+      <div v-if="workbench.adminActivity.length" class="activity-list">
+        <article
+          v-for="item in workbench.adminActivity.slice(0, 8)"
+          :key="item.id"
+          class="activity-row"
+        >
+          <strong>{{ item.title }}</strong>
+          <p class="muted">{{ item.body || item.category }}</p>
+        </article>
+      </div>
+      <div v-else class="empty-message">
+        {{ t('workbench.noActivity') }}
+      </div>
+    </section>
   </div>
 </template>
 
@@ -266,6 +328,17 @@
     width: min(100%, 22rem);
   }
 
+  .toolbar-controls,
+  .activity-list {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .toolbar-select {
+    min-width: 11rem;
+  }
+
   .row-actions {
     display: flex;
     align-items: center;
@@ -283,8 +356,34 @@
     color: var(--text-soft);
   }
 
+  .admin-activity-panel {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .activity-list {
+    display: grid;
+  }
+
+  .activity-row {
+    padding: 0.9rem 1rem;
+    border-radius: 1rem;
+    border: 1px solid var(--border);
+    background: color-mix(in srgb, var(--surface-soft-subtle) 84%, white 16%);
+  }
+
+  .activity-row p {
+    margin: 0.25rem 0 0;
+  }
+
   @media (max-width: 980px) {
     .admin-metric-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .toolbar-controls {
+      width: 100%;
+      display: grid;
       grid-template-columns: 1fr;
     }
   }

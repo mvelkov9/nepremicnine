@@ -9,7 +9,15 @@ from fastapi import Request
 logger = logging.getLogger(__name__)
 
 CACHE_TTL = 300  # 5 minutes
-DEFAULT_CACHE_PREFIXES = ("cache:stats:", "cache:model:")
+DEFAULT_CACHE_PREFIXES = (
+    "cache:stats:",
+    "cache:model:",
+    "cache:regions:",
+    "cache:data:",
+    "cache:workbench:",
+    "cache:activity:",
+    "cache:admin:",
+)
 _ZERO_CURSORS = {0, "0", b"0"}
 
 

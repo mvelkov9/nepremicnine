@@ -15,55 +15,120 @@ interface UploadFilesOptions {
   onFileProgress?: (context: UploadProgressContext) => void
 }
 
+interface UploadedItem {
+  id: number
+  original_name: string
+  relative_path: string
+  row_count: number
+}
+
 interface UploadFileResult {
   file: File
-  uploaded: any[]
+  uploaded: UploadedItem[]
   skipped: string[]
   message: string
   errorMessage?: string
 }
 
 interface UploadBatchResult {
-  uploaded: any[]
+  uploaded: UploadedItem[]
   skipped: string[]
   message: string
   fileResults: UploadFileResult[]
 }
 
+interface FetchDatasetsOptions {
+  page?: number
+  perPage?: number
+}
+
 export const useDataStore = defineStore('data', () => {
   const datasets = ref([])
+  const datasetsPage = ref(1)
+  const datasetsPerPage = ref(10)
+  const datasetsTotal = ref(0)
+  const datasetsPages = ref(0)
   const trainingDataset = ref(null)
   const qualitySummary = ref(null)
   const uploadCapacity = ref(null)
   const loading = ref(false)
   const uploading = ref(false)
   const uploadProgress = ref(0)
+  let fetchDatasetsInFlight: Promise<void> | null = null
+  let fetchTrainingDatasetInFlight: Promise<unknown> | null = null
+  let fetchQualitySummaryInFlight: Promise<unknown> | null = null
+  let allDatasetsCached = false
 
-  async function fetchDatasets(withSync = false) {
-    loading.value = true
-    try {
-      const perPage = 200
-      let page = 1
-      let totalPages = 1
-      const allItems = []
+  async function fetchDatasets(
+    withSync = false,
+    fetchAllPages = false,
+    options: FetchDatasetsOptions = {},
+  ) {
+    // If we already have all pages loaded and no sync is needed, skip re-fetching
+    if (fetchAllPages && !withSync && allDatasetsCached && datasets.value.length > 0) return
 
-      do {
+    if (fetchDatasetsInFlight) return fetchDatasetsInFlight
+
+    fetchDatasetsInFlight = (async () => {
+      loading.value = true
+      try {
+        const requestedPage = Math.max(1, Number(options.page || 1))
+        const requestedPerPage = Math.max(
+          1,
+          Math.min(200, Number(options.perPage || (fetchAllPages ? 200 : 10))),
+        )
+
+        if (fetchAllPages) {
+          let page = 1
+          let totalPages = 1
+          let total = 0
+          const allItems = []
+
+          do {
+            const { data } = await api.get('/api/data/datasets', {
+              params: { page, per_page: requestedPerPage, sync: withSync && page === 1 },
+            })
+            const items = Array.isArray(data) ? data : data.items || []
+            allItems.push(...items)
+            totalPages = Array.isArray(data) ? 1 : Number(data.pages || 1)
+            total = Array.isArray(data) ? allItems.length : Number(data.total || allItems.length)
+            page += 1
+          } while (page <= totalPages)
+
+          datasets.value = allItems
+          datasetsPage.value = requestedPage
+          datasetsPerPage.value = requestedPerPage
+          datasetsTotal.value = total
+          datasetsPages.value = totalPages
+          allDatasetsCached = true
+          return
+        }
+
         const { data } = await api.get('/api/data/datasets', {
-          params: { page, per_page: perPage, sync: withSync && page === 1 },
+          params: { page: requestedPage, per_page: requestedPerPage, sync: withSync },
         })
         const items = Array.isArray(data) ? data : data.items || []
-        allItems.push(...items)
-        totalPages = Array.isArray(data) ? 1 : data.pages || 1
-        page += 1
-      } while (page <= totalPages)
+        const total = Array.isArray(data) ? items.length : Number(data.total || items.length)
+        const pages = Array.isArray(data) ? 1 : Number(data.pages || 1)
 
-      datasets.value = allItems
-    } finally {
-      loading.value = false
-    }
+        datasets.value = items
+        datasetsPage.value = requestedPage
+        datasetsPerPage.value = requestedPerPage
+        datasetsTotal.value = total
+        datasetsPages.value = pages
+      } finally {
+        loading.value = false
+        fetchDatasetsInFlight = null
+      }
+    })()
+
+    return fetchDatasetsInFlight
   }
 
-  async function uploadFiles(files, options: UploadFilesOptions = {}): Promise<UploadBatchResult> {
+  async function uploadFiles(
+    files: File[],
+    options: UploadFilesOptions = {},
+  ): Promise<UploadBatchResult> {
     uploading.value = true
     uploadProgress.value = 0
     try {
@@ -145,6 +210,7 @@ export const useDataStore = defineStore('data', () => {
           : 100
       }
 
+      allDatasetsCached = false
       await fetchDatasets()
       await fetchUploadCapacity()
       uploadProgress.value = 100
@@ -155,33 +221,58 @@ export const useDataStore = defineStore('data', () => {
     }
   }
 
-  async function deleteDataset(id) {
+  async function deleteDataset(id: number) {
+    allDatasetsCached = false
     await api.delete(`/api/data/datasets/${id}`)
     datasets.value = datasets.value.filter((d) => d.id !== id)
+    datasetsTotal.value = Math.max(0, Number(datasetsTotal.value || 0) - 1)
+    datasetsPages.value = datasetsPerPage.value
+      ? Math.ceil(datasetsTotal.value / datasetsPerPage.value)
+      : 0
   }
 
   async function deleteAllDatasets() {
+    allDatasetsCached = false
     const ids = datasets.value.map((d) => d.id)
     if (!ids.length) return
     await api.post('/api/data/datasets/delete-bulk', { dataset_ids: ids })
     datasets.value = []
+    datasetsPage.value = 1
+    datasetsTotal.value = 0
+    datasetsPages.value = 0
   }
 
-  async function fetchPreview(id, limit = 20) {
+  async function fetchPreview(id: number, limit = 20) {
     const { data } = await api.get(`/api/data/preview/${id}`, { params: { limit } })
     return data
   }
 
   async function fetchTrainingDataset() {
-    const { data } = await api.get('/api/data/training-dataset')
-    trainingDataset.value = data
-    return data
+    if (fetchTrainingDatasetInFlight) return fetchTrainingDatasetInFlight
+    fetchTrainingDatasetInFlight = (async () => {
+      const { data } = await api.get('/api/data/training-dataset')
+      trainingDataset.value = data
+      return data
+    })()
+    try {
+      return await fetchTrainingDatasetInFlight
+    } finally {
+      fetchTrainingDatasetInFlight = null
+    }
   }
 
   async function fetchQualitySummary() {
-    const { data } = await api.get('/api/data/quality-summary')
-    qualitySummary.value = data
-    return data
+    if (fetchQualitySummaryInFlight) return fetchQualitySummaryInFlight
+    fetchQualitySummaryInFlight = (async () => {
+      const { data } = await api.get('/api/data/quality-summary')
+      qualitySummary.value = data
+      return data
+    })()
+    try {
+      return await fetchQualitySummaryInFlight
+    } finally {
+      fetchQualitySummaryInFlight = null
+    }
   }
 
   async function fetchUploadCapacity() {
@@ -191,13 +282,18 @@ export const useDataStore = defineStore('data', () => {
   }
 
   async function rescanDatasets() {
+    allDatasetsCached = false
     const { data } = await api.post('/api/data/datasets/rescan', null, { timeout: 0 })
-    await fetchDatasets(false)
+    await fetchDatasets(false, false)
     return data
   }
 
   return {
     datasets,
+    datasetsPage,
+    datasetsPerPage,
+    datasetsTotal,
+    datasetsPages,
     trainingDataset,
     qualitySummary,
     uploadCapacity,

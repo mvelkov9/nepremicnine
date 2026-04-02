@@ -19,11 +19,11 @@ export interface GursEnrichmentRow {
   emvZoneMatch: number
 }
 
-function asRecord(value: unknown): Record<string, any> {
+function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return {}
   }
-  return value as Record<string, any>
+  return value as Record<string, unknown>
 }
 
 function toInt(value: unknown): number {
@@ -153,6 +153,12 @@ export function buildGursEnrichmentRows(
   enrichmentSummary: unknown,
 ): GursEnrichmentRow[] {
   const safeReports = Array.isArray(reports) ? reports : []
+  const summaryRecord = asRecord(enrichmentSummary)
+  const mergedSummary = asRecord(summaryRecord.merged)
+  if (Object.keys(mergedSummary).length) {
+    return [buildRow('single', [mergedSummary])]
+  }
+
   const okReports = safeReports.filter(
     (report) => asRecord(report).status === 'ok' && asRecord(report).enrichment_summary,
   )
@@ -167,7 +173,6 @@ export function buildGursEnrichmentRows(
     })
   }
 
-  const summaryRecord = asRecord(enrichmentSummary)
   const yearsRecord = asRecord(summaryRecord.years)
   if (Object.keys(yearsRecord).length) {
     return Object.entries(yearsRecord).map(([label, summary]) => buildRow(label, [summary]))

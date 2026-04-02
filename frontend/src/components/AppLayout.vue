@@ -1,5 +1,5 @@
 <script setup lang="ts">
-  import { computed, onMounted, ref, watch } from 'vue'
+  import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
   import { RouterLink, useRoute, useRouter } from 'vue-router'
   import { useI18n } from 'vue-i18n'
   import { useLocalStorage, useWindowScroll } from '@vueuse/core'
@@ -8,14 +8,21 @@
   import type { NavItem } from '../constants/navigation'
   import AppIcon from './AppIcon.vue'
   import AppSidebar from './layout/AppSidebar.vue'
+  import ActivityCenter from './layout/ActivityCenter.vue'
+  import CommandPalette from './layout/CommandPalette.vue'
   import ProfileDialog from './layout/ProfileDialog.vue'
+  import WorkspaceTray from './layout/WorkspaceTray.vue'
   import { useDarkMode } from '../composables/useDarkMode'
   import { useAuthStore } from '../stores/auth'
+  import { useUiStore } from '../stores/ui'
+  import { useWorkbenchStore } from '../stores/workbench'
 
   const { t, locale } = useI18n()
   const auth = useAuthStore()
   const route = useRoute()
   const router = useRouter()
+  const ui = useUiStore()
+  const workbench = useWorkbenchStore()
   const { isDark, toggleDark } = useDarkMode()
 
   const { y: scrollY } = useWindowScroll()
@@ -114,8 +121,31 @@
     () => route.fullPath,
     () => {
       mobileMenuOpen.value = false
+      workbench.rememberRoute({
+        label: currentTitle.value,
+        path: route.path,
+        query: route.query as Record<string, unknown>,
+        page: String(route.name || ''),
+      })
     },
   )
+
+  function handleGlobalShortcuts(event: KeyboardEvent) {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+      event.preventDefault()
+      ui.toggleCommandPalette()
+      return
+    }
+    if (event.altKey && event.key.toLowerCase() === 'a') {
+      event.preventDefault()
+      ui.toggleActivityCenter()
+      return
+    }
+    if (event.altKey && event.key.toLowerCase() === 't') {
+      event.preventDefault()
+      ui.toggleWorkspaceTray()
+    }
+  }
 
   onMounted(async () => {
     try {
@@ -127,6 +157,14 @@
     } catch {
       /* no-op */
     }
+    window.addEventListener('keydown', handleGlobalShortcuts)
+    if (auth.isAuthenticated) {
+      await Promise.allSettled([workbench.fetchUnreadCount(), workbench.fetchWorkspaces()])
+    }
+  })
+
+  onBeforeUnmount(() => {
+    window.removeEventListener('keydown', handleGlobalShortcuts)
   })
 
   function changeLocale(nextLocale: string) {
@@ -256,6 +294,39 @@
               <Button
                 class="shell-action-button"
                 rounded
+                @click="ui.toggleCommandPalette()"
+                :aria-label="t('workbench.commandPalette')"
+              >
+                <AppIcon name="search" :size="16" />
+                <span>{{ t('workbench.commandPaletteShort') }}</span>
+              </Button>
+
+              <Button
+                class="shell-action-button"
+                rounded
+                @click="ui.toggleWorkspaceTray()"
+                :aria-label="t('workbench.workspaceTray')"
+              >
+                <AppIcon name="market" :size="16" />
+                <span>{{ t('workbench.workspaceTrayShort') }}</span>
+              </Button>
+
+              <Button
+                class="shell-action-button shell-action-button--badge"
+                rounded
+                @click="ui.toggleActivityCenter()"
+                :aria-label="t('workbench.activityCenter')"
+              >
+                <AppIcon name="dashboard" :size="16" />
+                <span>{{ t('workbench.activityCenterShort') }}</span>
+                <small v-if="workbench.unreadCount" class="shell-badge">{{
+                  workbench.unreadCount
+                }}</small>
+              </Button>
+
+              <Button
+                class="shell-action-button"
+                rounded
                 @click="() => toggleDark()"
                 :aria-label="isDark ? t('ui.lightMode') : t('ui.darkMode')"
               >
@@ -321,6 +392,9 @@
 
   <!-- Profile Dialog -->
   <ProfileDialog v-model:visible="profileOpen" />
+  <CommandPalette />
+  <ActivityCenter />
+  <WorkspaceTray />
 </template>
 
 <style scoped>
@@ -670,6 +744,24 @@
   :deep(.logout-button),
   :deep(.profile-trigger) {
     min-height: 2.85rem;
+  }
+
+  .shell-action-button--badge {
+    position: relative;
+  }
+
+  .shell-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.4rem;
+    height: 1.4rem;
+    padding: 0 0.3rem;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--danger) 88%, transparent);
+    color: white;
+    font-size: 0.7rem;
+    font-weight: 800;
   }
 
   :deep(.language-toggle .p-togglebutton) {

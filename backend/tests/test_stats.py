@@ -318,6 +318,100 @@ async def test_market_home_uses_cache_when_available(client: AsyncClient, admin_
     mocked_load_df.assert_not_called()
 
 
+@pytest.mark.asyncio
+async def test_market_home_respects_region_filter(client: AsyncClient, admin_headers: dict):
+    fake_df = _build_market_df()
+    with (
+        patch("app.api.stats._load_df", return_value=fake_df),
+        patch.dict("app.api.stats._PREPARED_DF_CACHE", {"mtime": None, "df": None}),
+        patch.dict("app.api.stats._RAW_DF_CACHE", {"mtime": None, "df": None}),
+    ):
+        resp = await client.get("/api/stats/market-home?region=gorenjska", headers=admin_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["headline"]["total_records"] == 3
+    assert data["largest_markets"][0]["region"] == "Gorenjska"
+
+
+@pytest.mark.asyncio
+async def test_transactions_explorer_returns_paginated_filtered_items(client: AsyncClient, admin_headers: dict):
+    fake_df = _build_market_df()
+    with (
+        patch("app.api.stats._load_df", return_value=fake_df),
+        patch.dict("app.api.stats._PREPARED_DF_CACHE", {"mtime": None, "df": None}),
+        patch.dict("app.api.stats._RAW_DF_CACHE", {"mtime": None, "df": None}),
+    ):
+        resp = await client.get(
+            "/api/stats/transactions?region=gorenjska&page=1&page_size=1&sort=price_eur&order=asc",
+            headers=admin_headers,
+        )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] == 3
+    assert data["page_size"] == 1
+    assert len(data["items"]) == 1
+    assert data["items"][0]["municipality"] == "Škofja Loka"
+    assert data["items"][0]["price_eur"] == 172000.0
+
+
+@pytest.mark.asyncio
+async def test_municipalities_explorer_returns_grouped_rows(client: AsyncClient, admin_headers: dict):
+    fake_df = _build_market_df()
+    with (
+        patch("app.api.stats._load_df", return_value=fake_df),
+        patch.dict("app.api.stats._PREPARED_DF_CACHE", {"mtime": None, "df": None}),
+        patch.dict("app.api.stats._RAW_DF_CACHE", {"mtime": None, "df": None}),
+    ):
+        resp = await client.get(
+            "/api/stats/municipalities?page=1&page_size=2&sort=count&order=desc",
+            headers=admin_headers,
+        )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] == 4
+    assert data["page_size"] == 2
+    assert data["items"][0]["municipality"] == "Ljubljana"
+    assert data["items"][0]["count"] == 4
+
+
+@pytest.mark.asyncio
+async def test_regions_explorer_returns_rows(client: AsyncClient, admin_headers: dict):
+    fake_df = _build_market_df()
+    with (
+        patch("app.api.stats._load_df", return_value=fake_df),
+        patch.dict("app.api.stats._PREPARED_DF_CACHE", {"mtime": None, "df": None}),
+        patch.dict("app.api.stats._RAW_DF_CACHE", {"mtime": None, "df": None}),
+    ):
+        resp = await client.get(
+            "/api/stats/regions-explorer?property_type=stanovanje&sort=region&order=asc",
+            headers=admin_headers,
+        )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] == 3
+    assert [item["region"] for item in data["items"]] == ["Gorenjska", "Osrednjeslovenska", "Podravska"]
+
+
+@pytest.mark.asyncio
+async def test_municipality_transactions_returns_paginated_rows(client: AsyncClient, admin_headers: dict):
+    fake_df = _build_market_df()
+    with (
+        patch("app.api.stats._load_df", return_value=fake_df),
+        patch.dict("app.api.stats._PREPARED_DF_CACHE", {"mtime": None, "df": None}),
+        patch.dict("app.api.stats._RAW_DF_CACHE", {"mtime": None, "df": None}),
+    ):
+        resp = await client.get(
+            "/api/stats/municipality/ljubljana/transactions?page=1&page_size=2&sort=price_eur&order=desc",
+            headers=admin_headers,
+        )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] == 4
+    assert data["municipality"] == "Ljubljana"
+    assert len(data["items"]) == 2
+    assert data["items"][0]["price_eur"] == 590000.0
+
+
 # ── GET /api/stats/municipality/{slug} ──────────────────────────────────────
 
 

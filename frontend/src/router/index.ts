@@ -56,6 +56,42 @@ const routes: RouteRecordRaw[] = [
     },
   },
   {
+    path: '/trg',
+    name: 'market',
+    alias: '/market',
+    component: () => import('../views/MarketView.vue'),
+    meta: {
+      requiresAuth: true,
+      appArea: 'viewer',
+      titleKey: 'nav.market',
+      descriptionKey: 'layout.page.market',
+    },
+  },
+  {
+    path: '/regije',
+    name: 'regions',
+    alias: '/regions',
+    component: () => import('../views/RegionsView.vue'),
+    meta: {
+      requiresAuth: true,
+      appArea: 'viewer',
+      titleKey: 'nav.regions',
+      descriptionKey: 'layout.page.regions',
+    },
+  },
+  {
+    path: '/obcine',
+    name: 'municipalities',
+    alias: '/municipalities',
+    component: () => import('../views/MunicipalitiesView.vue'),
+    meta: {
+      requiresAuth: true,
+      appArea: 'viewer',
+      titleKey: 'nav.municipalities',
+      descriptionKey: 'layout.page.municipalities',
+    },
+  },
+  {
     path: '/obcine/:slug',
     name: 'municipality',
     component: () => import('../views/MunicipalityView.vue'),

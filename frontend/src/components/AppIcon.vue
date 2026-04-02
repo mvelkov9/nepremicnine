@@ -86,6 +86,11 @@
       <path d="M8.5 11H13" />
     </template>
 
+    <template v-else-if="name === 'search'">
+      <circle cx="11" cy="11" r="5.5" />
+      <path d="m19 19-4-4" />
+    </template>
+
     <template v-else-if="name === 'admin'">
       <path
         d="M12 3.5 14 6l3-.2.9 2.8 2.6 1.5-1.3 2.7 1.3 2.7-2.6 1.5-.9 2.8-3-.2-2 2.5-2-2.5-3 .2-.9-2.8-2.6-1.5L4.8 13 3.5 10.3 6.1 8.8 7 6l3 .2Z"
@@ -139,6 +144,23 @@
     <template v-else-if="name === 'trend'">
       <path d="M4 17.5 9 12.5l3 2 8-8" />
       <path d="M16 6.5h4v4" />
+    </template>
+
+    <template v-else-if="name === 'regions'">
+      <path d="M3.5 5.5h7v6h-7z" />
+      <path d="M13.5 5.5h7v6h-7z" />
+      <path d="M3.5 14.5h7v5h-7z" />
+      <path d="M13.5 14.5h7v5h-7z" />
+      <path d="M7 8.5v-3" />
+      <path d="M17 8.5v-3" />
+    </template>
+
+    <template v-else-if="name === 'municipalities'">
+      <path d="M12 3.5 4.5 9v11h15V9z" />
+      <path d="M9.5 20v-5h5v5" />
+      <path d="M8 12h2" />
+      <path d="M14 12h2" />
+      <path d="M12 6.5v2" />
     </template>
 
     <template v-else-if="name === 'brand'">

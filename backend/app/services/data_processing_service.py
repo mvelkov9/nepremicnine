@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import concurrent.futures
 import contextlib
 import hashlib
 import io
@@ -13,6 +14,7 @@ import shutil
 import sqlite3
 import struct as _struct
 import tempfile
+import threading
 import unicodedata
 import uuid
 import zipfile
@@ -124,7 +126,7 @@ _CC_SI_PREFIX_MAP = {
 EXCLUDED_PROPERTY_TYPES = {"ostalo", "klet_shramba"}
 
 _LATEST_UPLOAD_PATTERNS = {
-    "rn": "_RN_SLO_NASLOVI_register_naslovov_",
+    "rn": "NASLOVI_register_naslovov_",
     "ev_stavba": "_EV_SLO_EVIDENCA_VREDNOTENJA_stavba_",
     "ev_del_stavbe": "_EV_SLO_EVIDENCA_VREDNOTENJA_del_stavbe_",
     "ev_del_stavbe_enota": "_EV_SLO_EVIDENCA_VREDNOTENJA_del_stavbe_enota_",
@@ -132,26 +134,71 @@ _LATEST_UPLOAD_PATTERNS = {
     "ev_parc_enota": "_EV_SLO_EVIDENCA_VREDNOTENJA_parc_enota_",
     "kn_kat_obcine": "_KN_SLO_KAT_OBCINE_",
     "kn_ggo": "_KN_SLO_GGO_",
-    "gji_vodovod": "_KGI_SLO_GJI_VODOVOD_linije_",
-    "gji_kanalizacija": "_KGI_SLO_GJI_KANALIZACIJA_linije_",
-    "gji_elektrika": "_KGI_SLO_GJI_ELEKTRICNA_ENERGIJA_linije_",
-    "gji_plin": "_KGI_SLO_GJI_ZEM_PLIN_linije_",
-    "gji_ceste": "_KGI_SLO_GJI_CESTE_linije_",
-    "gji_toplota": "_KGI_SLO_GJI_TOPLOTNA_ENERGIJA_linije_",
+    "gji_vodovod": "_KGI_SLO_GJI_VODOVOD_",
+    "gji_kanalizacija": "_KGI_SLO_GJI_KANALIZACIJA_",
+    "gji_elektrika": "_KGI_SLO_GJI_ELEKTRICNA_ENERGIJA_",
+    "gji_plin": "_KGI_SLO_GJI_ZEM_PLIN_",
+    "gji_ceste": "_KGI_SLO_GJI_CESTE_",
+    "gji_toplota": "_KGI_SLO_GJI_TOPLOTNA_ENERGIJA_",
     "gji_zeleznice": "_KGI_SLO_GJI_ZELEZNICE_",
     "gji_letalisca": "_KGI_SLO_GJI_LETALISCA_",
     "gji_opt": "_KGI_SLO_OPT_",
     "dtm_hidrografija": "_DTM_SLO_HIDROGRAFIJA_",
+    "dtm_pokritost_tal": "_DTM_SLO_POKRITOST_TAL_",
+    "dtm_zgradbe": "_DTM_SLO_ZGRADBE_",
     "emv": "_emv_vredn_cone_",
+}
+
+_VECTOR_ENRICHMENT_SOURCES = {
+    "kn_kat_obcine",
+    "kn_ggo",
+    "gji_vodovod",
+    "gji_kanalizacija",
+    "gji_elektrika",
+    "gji_plin",
+    "gji_ceste",
+    "gji_toplota",
+    "gji_zeleznice",
+    "gji_letalisca",
+    "gji_opt",
+    "dtm_hidrografija",
+    "dtm_pokritost_tal",
+    "dtm_zgradbe",
+    "emv",
+}
+_VECTOR_SOURCE_SUFFIXES: tuple[str, ...] = (".gpkg", ".shp", ".zip")
+# Preferred file-name fragment for each vector source (used when multiple files match)
+_VECTOR_ENRICHMENT_PREFERRED_NAMES: dict[str, str] = {
+    "kn_kat_obcine": "poligon",
+    "kn_ggo": "poligon",
+    "gji_vodovod": "linije",
+    "gji_kanalizacija": "linije",
+    "gji_elektrika": "linije",
+    "gji_plin": "linije",
+    "gji_ceste": "linije",
+    "gji_toplota": "linije",
+    "gji_zeleznice": "linije",
+    "gji_letalisca": "linije",
+    "gji_opt": "linije",
+    "dtm_pokritost_tal": "pokritosttal",
+    "dtm_zgradbe": "bu_stavbe",
 }
 
 _EMV_TARGET_CRS = "EPSG:3794"
 _KN_KO_LAYER = "KN_SLO_KAT_OBCINE_KATASTRSKE_OBCINE_poligon"
 _KN_GGO_LAYER = "KN_SLO_GGO_GOZDNO_GOSP_OBM_poligon"
+_DTM_POKRITOST_LAYER = "DTM_SLO_POKRITOST_TAL_LC_POKRITOSTTAL_P_poligon"
+_DTM_ZGRADBE_LAYER = "DTM_SLO_ZGRADBE_BU_STAVBE_P_poligon"
 _GJI_NEARBY_DISTANCE_M = 100.0
 _SPATIAL_TILE_SIZE_M = 20_000.0
 _SPATIAL_BATCH_SIZE = 5_000
 _SPATIAL_BBOX_PADDING_M = 250.0
+
+# Thread-local layer cache: each GPKG layer is loaded once and reused across batch threads.
+# Key: (gpkg_path, layer_name or '') → GeoDataFrame (with sindex pre-built).
+# Dict writes are GIL-atomic in CPython; at most one redundant load per layer under race.
+_SPATIAL_LAYER_CACHE: dict[tuple, Any] = {}
+_SPATIAL_LAYER_CACHE_LOCK = threading.Lock()
 _EMV_LAYER_CANDIDATES_BY_PROPERTY_TYPE: dict[str, list[str]] = {
     "stanovanje": ["emv_vredn_cone_STA"],
     "hisa": ["emv_vredn_cone_HIS"],
@@ -182,8 +229,15 @@ DEFAULT_ENRICHMENT_OPTIONS: dict[str, Any] = {
     "enable_ev": True,
     "enable_kn": True,
     "enable_gji": True,
+    "enable_dtm": True,
     "enable_emv": True,
     "variant_label": "default",
+}
+
+_EID_CSV_DTYPES = {
+    "eid_stavba": "string",
+    "eid_del_stavbe": "string",
+    "eid_parcela": "string",
 }
 
 
@@ -238,7 +292,7 @@ def _emv_layers_for_row(property_type: Any, land_type: Any = None) -> list[str]:
 def resolve_enrichment_options(options: dict[str, Any] | None = None) -> dict[str, Any]:
     resolved = dict(DEFAULT_ENRICHMENT_OPTIONS)
     if options:
-        for key in ["enable_rn", "enable_ev", "enable_kn", "enable_gji", "enable_emv"]:
+        for key in ["enable_rn", "enable_ev", "enable_kn", "enable_gji", "enable_dtm", "enable_emv"]:
             if key in options:
                 resolved[key] = bool(options[key])
         variant_label = str(options.get("variant_label") or "").strip()
@@ -305,6 +359,39 @@ def _first_numeric_series(df: pd.DataFrame, candidates: list[str]) -> pd.Series:
         if candidate in df.columns:
             return _parse_fractional_numeric_series(df[candidate])
     return pd.Series(np.nan, index=df.index, dtype="float64")
+
+
+def _coalesce_numeric_series(df: pd.DataFrame, candidates: list[str]) -> tuple[pd.Series, str | None]:
+    """Row-wise coalesce numeric ETN columns, preferring the first valid positive value."""
+    parsed_columns: list[tuple[str, pd.Series]] = []
+    for candidate in candidates:
+        if candidate in df.columns:
+            parsed_columns.append((candidate, _parse_fractional_numeric_series(df[candidate])))
+
+    if not parsed_columns:
+        return pd.Series(np.nan, index=df.index, dtype="float64"), None
+
+    coalesced = pd.Series(np.nan, index=df.index, dtype="float64")
+    used_columns = pd.Series("", index=df.index, dtype="object")
+    for candidate, values in parsed_columns:
+        valid_mask = values.notna() & (values > 0) & coalesced.isna()
+        if valid_mask.any():
+            coalesced.loc[valid_mask] = values.loc[valid_mask]
+            used_columns.loc[valid_mask] = candidate
+
+    fallback = next((candidate for candidate, _values in parsed_columns), None)
+    if fallback is not None:
+        unresolved = coalesced.isna()
+        if unresolved.any():
+            fallback_values = parsed_columns[0][1]
+            coalesced.loc[unresolved] = fallback_values.loc[unresolved]
+            used_columns.loc[unresolved] = used_columns.loc[unresolved].replace("", fallback)
+
+    dominant_column = None
+    non_empty = used_columns[used_columns != ""]
+    if not non_empty.empty:
+        dominant_column = str(non_empty.mode().iloc[0])
+    return coalesced, dominant_column
 
 
 def _normalize_gradbena_faza(series: pd.Series) -> pd.Series:
@@ -404,6 +491,17 @@ def _normalize_numeric_key_series(series: pd.Series) -> pd.Series:
     return series.apply(_normalize_numeric_key)
 
 
+def _normalize_code_string(value: Any) -> str | None:
+    key = _normalize_numeric_key(value)
+    if key is not None:
+        return key
+    return _normalize_text_key(value)
+
+
+def _normalize_code_string_series(series: pd.Series) -> pd.Series:
+    return series.apply(_normalize_code_string)
+
+
 def _normalize_text_key(value: Any) -> str | None:
     if pd.isna(value):
         return None
@@ -465,41 +563,134 @@ def _compose_join_key(*parts: Any, allow_empty_trailing: bool = True) -> str | N
     return "|".join(normalized_parts)
 
 
-def _find_latest_uploaded_file(upload_dir: str, marker: str) -> str | None:
+def _marker_variants(marker: str) -> tuple[str, ...]:
+    """Return robust marker variants for filename matching."""
+    base = marker.strip()
+    if not base:
+        return tuple()
+    variants = {base}
+    stripped = base.lstrip("_")
+    if stripped:
+        variants.add(stripped)
+    return tuple(sorted(variants, key=len, reverse=True))
+
+
+def _filename_contains_marker(filename: str, marker: str) -> bool:
+    """Case-insensitive marker check with legacy underscore-tolerant matching."""
+    lowered = filename.lower()
+    return any(variant.lower() in lowered for variant in _marker_variants(marker))
+
+
+def _walk_upload_index(upload_dir: str) -> list[tuple[str, str]]:
+    """Walk upload_dir once and return (parent_dir_basename, full_path) for every non-preview file.
+
+    Centralising the walk here means discover_gurs_enrichment_sources pays the I/O cost
+    only once instead of once per marker (typically 20+ times).
+    """
+    results: list[tuple[str, str]] = []
+    with contextlib.suppress(FileNotFoundError, OSError):
+        for root, _dirs, files in os.walk(upload_dir):
+            dir_name = os.path.basename(root)
+            for name in files:
+                if not name.endswith(".preview.json"):
+                    results.append((dir_name, os.path.join(root, name)))
+    return results
+
+
+def _find_in_index(
+    index: list[tuple[str, str]],
+    marker: str,
+    *,
+    preferred_suffixes: tuple[str, ...] | None = None,
+    preferred_name: str = "",
+    exclude_marker: str = "",
+) -> str | None:
+    """Pick the best file from a pre-walked index matching *marker*.
+
+    Matches on filename OR parent directory name (covers pre-extracted subdirs).
+    *preferred_name* breaks ties among suffix-filtered candidates.
+    *exclude_marker* skips files whose name also matches that marker.
+    """
     candidates: list[str] = []
-    with contextlib.suppress(FileNotFoundError):
-        for name in os.listdir(upload_dir):
-            if marker not in name or name.endswith(".preview.json"):
-                continue
-            full_path = os.path.join(upload_dir, name)
-            if os.path.isfile(full_path):
-                candidates.append(full_path)
+    for dir_name, full_path in index:
+        name = os.path.basename(full_path)
+        if exclude_marker and _filename_contains_marker(name, exclude_marker):
+            continue
+        if not _filename_contains_marker(name, marker) and not _filename_contains_marker(dir_name, marker):
+            continue
+        candidates.append(full_path)
 
     if not candidates:
         return None
+
+    if preferred_suffixes:
+        lowered = tuple(s.lower() for s in preferred_suffixes)
+        preferred = [c for c in candidates if c.lower().endswith(lowered)]
+        if preferred:
+            candidates = preferred
+
+    if preferred_name:
+        by_name = [c for c in candidates if preferred_name.lower() in os.path.basename(c).lower()]
+        if by_name:
+            candidates = by_name
+
     return max(candidates, key=os.path.getmtime)
 
 
+def _find_all_in_index(
+    index: list[tuple[str, str]],
+    marker: str,
+    *,
+    suffixes: tuple[str, ...] | None = None,
+    exclude_marker: str = "",
+) -> list[str]:
+    candidates: list[str] = []
+    lowered_suffixes = tuple(s.lower() for s in suffixes) if suffixes else ()
+    for dir_name, full_path in index:
+        name = os.path.basename(full_path)
+        if exclude_marker and _filename_contains_marker(name, exclude_marker):
+            continue
+        if not _filename_contains_marker(name, marker) and not _filename_contains_marker(dir_name, marker):
+            continue
+        if suffixes and not full_path.lower().endswith(lowered_suffixes):
+            continue
+        candidates.append(full_path)
+    return sorted(set(candidates))
+
+
+def _find_latest_uploaded_file(
+    upload_dir: str,
+    marker: str,
+    *,
+    preferred_suffixes: tuple[str, ...] | None = None,
+    preferred_name: str = "",
+) -> str | None:
+    """Convenience wrapper: walk upload_dir once and find the best file matching *marker*."""
+    return _find_in_index(
+        _walk_upload_index(upload_dir),
+        marker,
+        preferred_suffixes=preferred_suffixes,
+        preferred_name=preferred_name,
+    )
+
+
 def discover_gurs_enrichment_sources(upload_dir: str) -> dict[str, str]:
+    # Walk once — all marker lookups reuse this index.
+    index = _walk_upload_index(upload_dir)
     discovered: dict[str, str] = {}
+    ev_del_enota_marker = "_EV_SLO_EVIDENCA_VREDNOTENJA_del_stavbe_enota_"
     for source_name, marker in _LATEST_UPLOAD_PATTERNS.items():
-        path = _find_latest_uploaded_file(upload_dir, marker)
+        preferred_suffixes = _VECTOR_SOURCE_SUFFIXES if source_name in _VECTOR_ENRICHMENT_SOURCES else None
+        preferred_name = _VECTOR_ENRICHMENT_PREFERRED_NAMES.get(source_name, "")
+        path = _find_in_index(index, marker, preferred_suffixes=preferred_suffixes, preferred_name=preferred_name)
         if (
             source_name == "ev_del_stavbe"
             and path is not None
-            and "_EV_SLO_EVIDENCA_VREDNOTENJA_del_stavbe_enota_" in os.path.basename(path)
+            and _filename_contains_marker(os.path.basename(path), ev_del_enota_marker)
         ):
-            candidates: list[str] = []
-            with contextlib.suppress(FileNotFoundError):
-                for name in os.listdir(upload_dir):
-                    if marker not in name or name.endswith(".preview.json"):
-                        continue
-                    if "_EV_SLO_EVIDENCA_VREDNOTENJA_del_stavbe_enota_" in name:
-                        continue
-                    full_path = os.path.join(upload_dir, name)
-                    if os.path.isfile(full_path):
-                        candidates.append(full_path)
-            path = max(candidates, key=os.path.getmtime) if candidates else None
+            path = _find_in_index(
+                index, marker, preferred_suffixes=preferred_suffixes, exclude_marker=ev_del_enota_marker
+            )
         if path:
             discovered[source_name] = path
     return discovered
@@ -557,6 +748,22 @@ def _load_rn_lookup_cached(rn_csv_path: str, mtime: float) -> pd.DataFrame:
 
 def _load_rn_lookup(rn_csv_path: str) -> pd.DataFrame:
     return _load_rn_lookup_cached(rn_csv_path, os.path.getmtime(rn_csv_path)).copy()
+
+
+@lru_cache(maxsize=8)
+def _load_rn_match_indices_cached(
+    rn_csv_path: str,
+    mtime: float,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Prepare RN lookup tables once per source file revision."""
+    rn_df = _load_rn_lookup_cached(rn_csv_path, mtime)
+    rn_lookup = rn_df.dropna(subset=["address_join_key"]).set_index("address_join_key")
+    rn_lookup_by_name = rn_df.dropna(subset=["address_join_key_by_name"]).set_index("address_join_key_by_name")
+    return rn_lookup, rn_lookup_by_name
+
+
+def _load_rn_match_indices(rn_csv_path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+    return _load_rn_match_indices_cached(rn_csv_path, os.path.getmtime(rn_csv_path))
 
 
 @lru_cache(maxsize=4)
@@ -657,7 +864,7 @@ def _load_ev_building_value_lookup(del_enota_csv_path: str) -> pd.DataFrame:
 
 @lru_cache(maxsize=4)
 def _load_ev_parcel_lookup_cached(parcela_csv_path: str, mtime: float) -> pd.DataFrame:
-    parcela_cols = ["KO_SIFKO", "PARCELA", "POVRSINA", "BONITETA", "ODPRTOST", "RK", "RPE_OBCINE_SIFRA"]
+    parcela_cols = ["EID_PARCELA", "KO_SIFKO", "PARCELA", "POVRSINA", "BONITETA", "ODPRTOST", "RK", "RPE_OBCINE_SIFRA"]
     parcela_df = read_csv_flexible(parcela_csv_path, usecols=lambda col: col in parcela_cols)
     parcela_df["ko_key"] = _normalize_numeric_key_series(parcela_df["KO_SIFKO"])
     parcela_df["parcela_key"] = _normalize_parcel_key_series(parcela_df["PARCELA"])
@@ -692,6 +899,146 @@ def _load_ev_parcel_value_lookup(parc_enota_csv_path: str) -> pd.DataFrame:
     ).copy()
 
 
+@lru_cache(maxsize=2)
+def _load_kn_deli_stavb_lookup_cached(upload_dir: str) -> pd.DataFrame:
+    index = _walk_upload_index(upload_dir)
+    paths = [
+        path
+        for path in _find_all_in_index(index, "_STAVBE_deli_stavb_", suffixes=(".csv",))
+        if "sifranti" not in path.lower() and "kgi_" not in os.path.basename(path).lower()
+    ]
+    if not paths:
+        return pd.DataFrame(columns=["EID_DEL_STAVBE_KEY", "ETAZNA_LASTNINA"])
+
+    frames: list[pd.DataFrame] = []
+    usecols = {"EID_DEL_STAVBE", "ETAZNA_LASTNINA", "DATUM_SYS"}
+    for path in paths:
+        try:
+            frame = read_csv_flexible(path, usecols=lambda col: col in usecols)
+        except Exception:
+            continue
+        if frame.empty or "EID_DEL_STAVBE" not in frame.columns:
+            continue
+        frame["EID_DEL_STAVBE_KEY"] = _normalize_numeric_key_series(frame["EID_DEL_STAVBE"])
+        frame["ETAZNA_LASTNINA"] = pd.to_numeric(frame.get("ETAZNA_LASTNINA"), errors="coerce")
+        if "DATUM_SYS" in frame.columns:
+            frame["DATUM_SYS"] = pd.to_datetime(frame["DATUM_SYS"], errors="coerce")
+        frames.append(frame[["EID_DEL_STAVBE_KEY", "ETAZNA_LASTNINA", "DATUM_SYS"]])
+
+    if not frames:
+        return pd.DataFrame(columns=["EID_DEL_STAVBE_KEY", "ETAZNA_LASTNINA"])
+
+    combined = pd.concat(frames, ignore_index=True)
+    combined = combined.dropna(subset=["EID_DEL_STAVBE_KEY"])
+    combined = combined.sort_values(by=["DATUM_SYS"], ascending=False, na_position="last")
+    combined = combined.drop_duplicates(subset=["EID_DEL_STAVBE_KEY"], keep="first")
+    return combined[["EID_DEL_STAVBE_KEY", "ETAZNA_LASTNINA"]]
+
+
+def _load_kn_deli_stavb_lookup(upload_dir: str) -> pd.DataFrame:
+    return _load_kn_deli_stavb_lookup_cached(os.path.realpath(upload_dir)).copy()
+
+
+@lru_cache(maxsize=2)
+def _load_kn_parcela_namenska_lookup_cached(upload_dir: str) -> pd.DataFrame:
+    index = _walk_upload_index(upload_dir)
+    paths = [
+        path
+        for path in _find_all_in_index(index, "_PARCELE_parcele_x_namenske_rabe_", suffixes=(".csv",))
+        if "sifranti" not in path.lower()
+    ]
+    if not paths:
+        return pd.DataFrame(columns=["EID_PARCELA_KEY", "parcela_namenska_raba"])
+
+    frames: list[pd.DataFrame] = []
+    usecols = {"EID_PARCELA", "VRSTA_NAMENSKE_RABE_ID", "DELEZ", "DATUM_SYS"}
+    for path in paths:
+        try:
+            frame = read_csv_flexible(path, usecols=lambda col: col in usecols)
+        except Exception:
+            continue
+        if frame.empty or "EID_PARCELA" not in frame.columns:
+            continue
+        frame["EID_PARCELA_KEY"] = _normalize_numeric_key_series(frame["EID_PARCELA"])
+        frame["VRSTA_NAMENSKE_RABE_ID"] = _normalize_code_string_series(frame.get("VRSTA_NAMENSKE_RABE_ID"))
+        frame["DELEZ"] = pd.to_numeric(frame.get("DELEZ"), errors="coerce").fillna(0)
+        if "DATUM_SYS" in frame.columns:
+            frame["DATUM_SYS"] = pd.to_datetime(frame["DATUM_SYS"], errors="coerce")
+        frames.append(frame[["EID_PARCELA_KEY", "VRSTA_NAMENSKE_RABE_ID", "DELEZ", "DATUM_SYS"]])
+
+    if not frames:
+        return pd.DataFrame(columns=["EID_PARCELA_KEY", "parcela_namenska_raba"])
+
+    combined = pd.concat(frames, ignore_index=True)
+    combined = combined.dropna(subset=["EID_PARCELA_KEY", "VRSTA_NAMENSKE_RABE_ID"])
+    combined = combined.sort_values(
+        by=["EID_PARCELA_KEY", "DELEZ", "DATUM_SYS"],
+        ascending=[True, False, False],
+        na_position="last",
+    )
+    combined = combined.drop_duplicates(subset=["EID_PARCELA_KEY"], keep="first")
+    combined = combined.rename(columns={"VRSTA_NAMENSKE_RABE_ID": "parcela_namenska_raba"})
+    return combined[["EID_PARCELA_KEY", "parcela_namenska_raba"]]
+
+
+def _load_kn_parcela_namenska_lookup(upload_dir: str) -> pd.DataFrame:
+    return _load_kn_parcela_namenska_lookup_cached(os.path.realpath(upload_dir)).copy()
+
+
+@lru_cache(maxsize=4)
+def _load_opt_capacity_lookup_cached(opt_source_path: str, mtime: float) -> pd.DataFrame:
+    gpkg_path = _resolve_vector_gpkg_path_cached(opt_source_path, mtime, "deli_stavb")
+    if gpkg_path is None:
+        return pd.DataFrame(columns=["EID_STAVBA_KEY", "opt_zmogljivost"])
+
+    opt_df = _read_vector_table(
+        gpkg_path,
+        None,
+        columns=["EID_STAVBA", "EID_DEL_STAVBE", "MINIMALNA_ZMOGLJIVOST"],
+    )
+    if opt_df is None or opt_df.empty:
+        return pd.DataFrame(columns=["EID_STAVBA_KEY", "opt_zmogljivost"])
+
+    opt_df["EID_STAVBA_KEY"] = _normalize_numeric_key_series(opt_df.get("EID_STAVBA", pd.Series(dtype="object")))
+    opt_df["opt_zmogljivost"] = pd.to_numeric(opt_df.get("MINIMALNA_ZMOGLJIVOST"), errors="coerce")
+    opt_df = opt_df.dropna(subset=["EID_STAVBA_KEY", "opt_zmogljivost"])
+    if opt_df.empty:
+        return pd.DataFrame(columns=["EID_STAVBA_KEY", "opt_zmogljivost"])
+    grouped = opt_df.groupby("EID_STAVBA_KEY", as_index=False)["opt_zmogljivost"].max()
+    return grouped
+
+
+def _load_opt_capacity_lookup(opt_source_path: str) -> pd.DataFrame:
+    return _load_opt_capacity_lookup_cached(opt_source_path, os.path.getmtime(opt_source_path)).copy()
+
+
+@lru_cache(maxsize=4)
+def _load_dtm_building_lookup_cached(dtm_source_path: str, mtime: float) -> pd.DataFrame:
+    gpkg_path = _resolve_vector_gpkg_path_cached(dtm_source_path, mtime, "bu_stavbe")
+    if gpkg_path is None:
+        return pd.DataFrame(columns=["EID_STAVBA_KEY", "dtm_nadm_visina_stavbe"])
+
+    dtm_df = _read_vector_table(
+        gpkg_path,
+        _DTM_ZGRADBE_LAYER if gpkg_path.lower().endswith(".gpkg") else None,
+        columns=["SID", "Z_TEM"],
+    )
+    if dtm_df is None or dtm_df.empty:
+        return pd.DataFrame(columns=["EID_STAVBA_KEY", "dtm_nadm_visina_stavbe"])
+
+    dtm_df["EID_STAVBA_KEY"] = _normalize_numeric_key_series(dtm_df.get("SID", pd.Series(dtype="object")))
+    dtm_df["dtm_nadm_visina_stavbe"] = pd.to_numeric(dtm_df.get("Z_TEM"), errors="coerce")
+    dtm_df = dtm_df.dropna(subset=["EID_STAVBA_KEY", "dtm_nadm_visina_stavbe"])
+    if dtm_df.empty:
+        return pd.DataFrame(columns=["EID_STAVBA_KEY", "dtm_nadm_visina_stavbe"])
+    grouped = dtm_df.groupby("EID_STAVBA_KEY", as_index=False)["dtm_nadm_visina_stavbe"].median()
+    return grouped
+
+
+def _load_dtm_building_lookup(dtm_source_path: str) -> pd.DataFrame:
+    return _load_dtm_building_lookup_cached(dtm_source_path, os.path.getmtime(dtm_source_path)).copy()
+
+
 _NP_VRSTA_TO_PROPERTY_TYPE: dict[str, str] = {
     "1": "stanovanje",
     "2": "stanovanje",
@@ -704,17 +1051,32 @@ _NP_VRSTA_TO_PROPERTY_TYPE: dict[str, str] = {
 }
 
 
-def _compute_np_rental_comparables(upload_dir: str) -> dict[tuple[str, str], float]:
-    """Scan NP rental ZIP files and return median rental €/m²/month by (municipality_normalized, property_type)."""
+def _np_rental_zip_signature(upload_dir: str) -> tuple[tuple[str, float, int], ...]:
+    """Build a deterministic signature for NP ZIP inputs used by rental comparables."""
+    import glob as _glob
+
+    signature: list[tuple[str, float, int]] = []
+    for zip_path in sorted(_glob.glob(os.path.join(upload_dir, "*ETN_SLO_*_NP_*.zip"))):
+        try:
+            stat_result = os.stat(zip_path)
+        except OSError:
+            continue
+        signature.append((zip_path, float(stat_result.st_mtime), int(stat_result.st_size)))
+    return tuple(signature)
+
+
+@lru_cache(maxsize=2)
+def _compute_np_rental_comparables_cached(
+    zip_signature: tuple[tuple[str, float, int], ...],
+) -> dict[tuple[str, str], float]:
+    """Compute rental €/m²/month map from NP ZIPs; cached by ZIP path/mtime/size signature."""
     from app.utils.municipality import normalize_municipality_name as _norm_muni
 
-    import glob as _glob
-    np_zips = sorted(_glob.glob(os.path.join(upload_dir, "*ETN_SLO_*_NP_*.zip")))
-    if not np_zips:
+    if not zip_signature:
         return {}
 
     frames: list[pd.DataFrame] = []
-    for zip_path in np_zips:
+    for zip_path, _mtime, _size in zip_signature:
         try:
             with zipfile.ZipFile(zip_path, "r") as zf:
                 posli_m = _find_etn_csv_in_zip(zf, "NP_POSLI")
@@ -738,7 +1100,10 @@ def _compute_np_rental_comparables(upload_dir: str) -> dict[tuple[str, str], flo
             # Filter extreme outliers
             merged = merged[merged["rental_ppm2"].between(0.5, 200)]
             muni_col = next((c for c in ["OBCINA", "OBCINA_posli"] if c in merged.columns), None)
-            vrsta_col = next((c for c in ["VRSTA_ODDANIH_PROSTOROV", "VRSTA_ODDANIH_PROSTOROV_deli"] if c in merged.columns), None)
+            vrsta_col = next(
+                (c for c in ["VRSTA_ODDANIH_PROSTOROV", "VRSTA_ODDANIH_PROSTOROV_deli"] if c in merged.columns),
+                None,
+            )
             if muni_col is None:
                 continue
             merged["_muni_norm"] = merged[muni_col].astype(str).apply(_norm_muni)
@@ -761,15 +1126,26 @@ def _compute_np_rental_comparables(upload_dir: str) -> dict[tuple[str, str], flo
     return result
 
 
+def _compute_np_rental_comparables(upload_dir: str) -> dict[tuple[str, str], float]:
+    """Return cached median rental €/m²/month by (municipality_normalized, property_type)."""
+    signature = _np_rental_zip_signature(upload_dir)
+    if not signature:
+        return {}
+    return _compute_np_rental_comparables_cached(signature).copy()
+
+
 def apply_gurs_deterministic_enrichment(
     training_df: pd.DataFrame,
     *,
     upload_dir: str,
     enrichment_options: dict[str, Any] | None = None,
+    skip_spatial: bool = False,
+    discovered_sources: dict[str, str] | None = None,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
     result = training_df.copy()
     resolved_options = resolve_enrichment_options(enrichment_options)
-    discovered_sources = discover_gurs_enrichment_sources(upload_dir)
+    if discovered_sources is None:
+        discovered_sources = discover_gurs_enrichment_sources(upload_dir)
     summary: dict[str, Any] = {
         "options": resolved_options,
         "sources": {name: os.path.basename(path) for name, path in discovered_sources.items()},
@@ -796,10 +1172,14 @@ def apply_gurs_deterministic_enrichment(
             "ggo_available": False,
             "polygon_enabled": False,
             "gpkg_ready": False,
+            "etazna_lookup_available": False,
+            "parcela_namenska_lookup_available": False,
             "rows_with_coordinates": 0,
             "rows_with_sifra_ko_match": 0,
             "rows_with_polygon_match": 0,
             "rows_with_ggo_match": 0,
+            "rows_with_etazna_lastnina_match": 0,
+            "rows_with_parcela_namenska_raba_match": 0,
         },
         "gji": {
             "enabled": resolved_options["enable_gji"],
@@ -808,10 +1188,22 @@ def apply_gurs_deterministic_enrichment(
             "rows_with_coordinates": 0,
             "vodovod_available": False,
             "kanalizacija_available": False,
+            "opt_capacity_available": False,
             "rows_with_vodovod_distance": 0,
             "rows_with_kanalizacija_distance": 0,
             "rows_with_vodovod_nearby_100m": 0,
             "rows_with_kanalizacija_nearby_100m": 0,
+            "rows_with_opt_capacity_match": 0,
+        },
+        "dtm": {
+            "enabled": resolved_options["enable_dtm"],
+            "available": False,
+            "spatial_enabled": False,
+            "rows_with_voda_distance": 0,
+            "rows_with_pokritost_match": 0,
+            "rows_with_building_height_match": 0,
+            "building_lookup_available": False,
+            "pokritost_available": False,
         },
         "emv": {
             "enabled": resolved_options["enable_emv"],
@@ -829,11 +1221,14 @@ def apply_gurs_deterministic_enrichment(
         errors="coerce",
     )
     result["ev_benchmark_source"] = result.get("ev_benchmark_source", "unknown")
+    result["eid_stavba"] = result.get("eid_stavba", pd.Series(pd.NA, index=result.index, dtype="object"))
+    result["eid_del_stavbe"] = result.get("eid_del_stavbe", pd.Series(pd.NA, index=result.index, dtype="object"))
+    result["eid_parcela"] = result.get("eid_parcela", pd.Series(pd.NA, index=result.index, dtype="object"))
 
     rn_path = discovered_sources.get("rn")
     if resolved_options["enable_rn"] and rn_path is not None:
         summary["rn"]["available"] = True
-        rn_df = _load_rn_lookup(rn_path)
+        rn_lookup, rn_lookup_by_name = _load_rn_match_indices(rn_path)
 
         result["rn_address_match"] = 0
         result["eid_statisticna_regija"] = result.get("eid_statisticna_regija", np.nan)
@@ -865,8 +1260,6 @@ def apply_gurs_deterministic_enrichment(
             )
         ]
 
-        rn_lookup = rn_df.dropna(subset=["address_join_key"]).set_index("address_join_key")
-        rn_lookup_by_name = rn_df.dropna(subset=["address_join_key_by_name"]).set_index("address_join_key_by_name")
         matched_rn = rn_lookup.reindex(result["address_join_key"]).set_axis(result.index)
         matched_rn_by_name = rn_lookup_by_name.reindex(result["address_join_key_by_name"]).set_axis(result.index)
         matched_rn = matched_rn.where(matched_rn.notna(), matched_rn_by_name)
@@ -881,6 +1274,7 @@ def apply_gurs_deterministic_enrichment(
             ("eid_naselje", "EID_NASELJE"),
             ("eid_ulica", "EID_ULICA"),
             ("eid_naslov", "EID_NASLOV"),
+            ("eid_stavba", "EID_STAVBA"),
         ]:
             if source_col in matched_rn.columns:
                 result[target_col] = matched_rn[source_col].values
@@ -944,6 +1338,10 @@ def apply_gurs_deterministic_enrichment(
         for target_col, source_col in ev_column_map.items():
             if source_col in matched_ev.columns:
                 result[target_col] = pd.to_numeric(matched_ev[source_col], errors="coerce").values
+        if "EID_STAVBA_KEY" in matched_ev.columns:
+            result["eid_stavba"] = matched_ev["EID_STAVBA_KEY"].values
+        if "EID_DEL_STAVBE_KEY" in matched_ev.columns:
+            result["eid_del_stavbe"] = matched_ev["EID_DEL_STAVBE_KEY"].values
 
         summary["ev"]["rows_with_building_match"] = int(matched_ev["EID_STAVBA_KEY"].notna().sum())
 
@@ -985,6 +1383,8 @@ def apply_gurs_deterministic_enrichment(
         for target_col, source_col in parcel_column_map.items():
             if source_col in matched_parcels.columns:
                 result[target_col] = pd.to_numeric(matched_parcels[source_col], errors="coerce").values
+        if "EID_PARCELA" in matched_parcels.columns:
+            result["eid_parcela"] = _normalize_numeric_key_series(matched_parcels["EID_PARCELA"]).values
 
         summary["ev"]["rows_with_parcel_match"] = int(matched_parcels["KO_SIFKO"].notna().sum())
 
@@ -1034,23 +1434,24 @@ def apply_gurs_deterministic_enrichment(
     ) / pd.to_numeric(result.get("size_m2"), errors="coerce").clip(lower=1)
     result.loc[result["ev_benchmark_price_eur"].isna(), "ev_benchmark_source"] = "unknown"
 
-    if resolved_options["enable_kn"]:
-        result, kn_summary = _apply_kn_polygon_enrichment(result, discovered_sources=discovered_sources)
-        kn_summary["enabled"] = True
-        summary["kn"] = kn_summary
+    if not skip_spatial:
+        if resolved_options["enable_kn"]:
+            result, kn_summary = _apply_kn_polygon_enrichment(result, discovered_sources=discovered_sources)
+            kn_summary["enabled"] = True
+            summary["kn"] = kn_summary
 
-    if resolved_options["enable_gji"]:
-        result, gji_summary = _apply_gji_infrastructure_enrichment(result, discovered_sources=discovered_sources)
-        gji_summary["enabled"] = True
-        summary["gji"] = gji_summary
-        result, dtm_summary = _apply_dtm_enrichment(result, discovered_sources=discovered_sources)
-        dtm_summary["enabled"] = True
-        summary["dtm"] = dtm_summary
+        if resolved_options["enable_gji"]:
+            result, gji_summary = _apply_gji_infrastructure_enrichment(result, discovered_sources=discovered_sources)
+            gji_summary["enabled"] = True
+            summary["gji"] = gji_summary
+            result, dtm_summary = _apply_dtm_enrichment(result, discovered_sources=discovered_sources)
+            dtm_summary["enabled"] = True
+            summary["dtm"] = dtm_summary
 
-    if resolved_options["enable_emv"]:
-        result, emv_summary = _apply_emv_spatial_enrichment(result, discovered_sources=discovered_sources)
-        emv_summary["enabled"] = True
-        summary["emv"] = emv_summary
+        if resolved_options["enable_emv"]:
+            result, emv_summary = _apply_emv_spatial_enrichment(result, discovered_sources=discovered_sources)
+            emv_summary["enabled"] = True
+            summary["emv"] = emv_summary
 
     # Rental market comparable (NP data)
     result["rental_median_ppm2_muni"] = np.nan
@@ -1061,9 +1462,7 @@ def apply_gurs_deterministic_enrichment(
             ptype_col = "property_type" if "property_type" in result.columns else None
             if muni_col in result.columns and ptype_col:
                 rental_vals = result.apply(
-                    lambda row: rental_map.get(
-                        (str(row.get(muni_col, "")), str(row.get(ptype_col, ""))), np.nan
-                    ),
+                    lambda row: rental_map.get((str(row.get(muni_col, "")), str(row.get(ptype_col, ""))), np.nan),
                     axis=1,
                 )
                 result["rental_median_ppm2_muni"] = pd.to_numeric(rental_vals, errors="coerce")
@@ -1721,26 +2120,68 @@ def _nearest_distances_to_layer(
     if gpd is None:
         return pd.Series(np.nan, index=row_index, dtype="float64")
 
-    distances = pd.Series(np.nan, index=row_index, dtype="float64")
-    for batch_index in _iter_spatial_batches(frame, row_index):
-        bbox = _spatial_bbox_for_rows(frame, batch_index, padding_m=_GJI_NEARBY_DISTANCE_M + _SPATIAL_BBOX_PADDING_M)
-        layer_gdf = _load_vector_layer(gpkg_path, layer_name, columns=[], bbox=bbox)
-        points_gdf = _build_points_gdf(frame, batch_index)
-        if layer_gdf is None or layer_gdf.empty or points_gdf is None or points_gdf.empty:
-            continue
+    # Fetch layer from module-level cache (keyed by path+layer); load+index on first use.
+    _cache_key = (gpkg_path, layer_name or "")
+    layer_geom = _SPATIAL_LAYER_CACHE.get(_cache_key)
+    if layer_geom is None:
+        with _SPATIAL_LAYER_CACHE_LOCK:
+            # Double-check after acquiring lock (another thread may have loaded it)
+            layer_geom = _SPATIAL_LAYER_CACHE.get(_cache_key)
+            if layer_geom is None:
+                global_bbox = _spatial_bbox_for_rows(
+                    frame, row_index, padding_m=_GJI_NEARBY_DISTANCE_M + _SPATIAL_BBOX_PADDING_M
+                )
+                _gdf = _load_vector_layer(gpkg_path, layer_name, columns=[], bbox=global_bbox)
+                if _gdf is not None and not _gdf.empty:
+                    _ = _gdf.sindex  # pre-build STRtree while holding lock — done exactly once
+                    layer_geom = _gdf[["geometry"]]
+                _SPATIAL_LAYER_CACHE[_cache_key] = layer_geom  # None stored on failure too
 
-        joined = gpd.sjoin_nearest(
-            points_gdf,
-            layer_gdf[["geometry"]],
-            how="left",
-            distance_col="_distance_m",
-        )
+    if layer_geom is None or layer_geom.empty:
+        return pd.Series(np.nan, index=row_index, dtype="float64")
+
+    # Build all points GDF once — avoids per-batch GIL-held pandas overhead inside threads.
+    all_points_gdf = _build_points_gdf(frame, row_index)
+    if all_points_gdf is None or all_points_gdf.empty:
+        return pd.Series(np.nan, index=row_index, dtype="float64")
+
+    batches = _iter_spatial_batches(frame, row_index)
+
+    def _sjoin_nearest_batch(batch_index: pd.Index) -> tuple:
+        # Slice pre-built GDF — O(len(batch)) index lookup, no GeoDataFrame construction.
+        # batch_index is a subset of row_index so all keys exist in all_points_gdf.
+        pts = all_points_gdf.loc[batch_index]
+        if pts.empty:
+            return batch_index, None
+        joined = gpd.sjoin_nearest(pts, layer_geom, how="left", distance_col="_distance_m")
         joined = joined.loc[~joined.index.duplicated(keep="first")]
-        distances.loc[batch_index] = (
-            pd.to_numeric(joined.get("_distance_m"), errors="coerce").reindex(batch_index).values
-        )
+        return batch_index, pd.to_numeric(joined.get("_distance_m"), errors="coerce").reindex(batch_index)
+
+    distances = pd.Series(np.nan, index=row_index, dtype="float64")
+    # This function is called inside a flat thread pool (see _apply_gji_infrastructure_enrichment).
+    # Use sequential batches here — parallelism across layers is handled by the caller.
+    for batch_index, batch_dist in map(_sjoin_nearest_batch, batches):
+        if batch_dist is not None:
+            distances.loc[batch_index] = batch_dist.values
 
     return distances
+
+
+def _run_sjoin_batch_with_layer(args: tuple) -> pd.DataFrame | None:
+    """Thread worker: run a single sjoin batch against an already-loaded in-memory layer.
+
+    Args are (frame, batch_index, layer_gdf, predicate).
+    The layer_gdf is a shared read-only GeoDataFrame — no disk I/O per batch.
+    """
+    frame, batch_index, layer_gdf, predicate = args
+    gpd = _get_optional_geopandas()
+    if gpd is None or layer_gdf is None or layer_gdf.empty:
+        return None
+    points_gdf = _build_points_gdf(frame, batch_index)
+    if points_gdf is None or points_gdf.empty:
+        return None
+    joined = gpd.sjoin(points_gdf, layer_gdf, how="left", predicate=predicate)
+    return joined.loc[~joined.index.duplicated(keep="first")]
 
 
 def _apply_kn_polygon_enrichment(
@@ -1754,17 +2195,24 @@ def _apply_kn_polygon_enrichment(
         "ggo_available": False,
         "polygon_enabled": False,
         "gpkg_ready": False,
+        "etazna_lookup_available": False,
+        "parcela_namenska_lookup_available": False,
         "rows_with_coordinates": 0,
         "rows_with_sifra_ko_match": 0,
         "rows_with_polygon_match": 0,
         "rows_with_ggo_match": 0,
+        "rows_with_etazna_lastnina_match": 0,
+        "rows_with_parcela_namenska_raba_match": 0,
     }
 
     for numeric_column in ["kn_ko_polygon_match", "kn_in_ggo", "kn_ggo_openness"]:
         result[numeric_column] = pd.to_numeric(result.get(numeric_column, np.nan), errors="coerce")
-    for categorical_column in ["kn_ko_name", "kn_ko_eid", "kn_ko_date", "kn_ggo_section"]:
-        if categorical_column not in result.columns:
-            result[categorical_column] = pd.Series(pd.NA, index=result.index, dtype="object")
+    result["kn_etazna_lastnina"] = pd.to_numeric(result.get("kn_etazna_lastnina", np.nan), errors="coerce")
+    for categorical_column in ["kn_ko_name", "kn_ko_eid", "kn_ko_date", "kn_ggo_section", "parcela_namenska_raba"]:
+        result[categorical_column] = result.get(
+            categorical_column,
+            pd.Series(pd.NA, index=result.index, dtype="object"),
+        ).astype("object")
 
     source_path = discovered_sources.get("kn_kat_obcine")
     if source_path is None:
@@ -1816,83 +2264,100 @@ def _apply_kn_polygon_enrichment(
 
     if not unresolved_index.empty:
         summary["polygon_enabled"] = True
-        for batch_index in _iter_spatial_batches(result, unresolved_index):
-            bbox = _spatial_bbox_for_rows(result, batch_index, padding_m=_SPATIAL_BBOX_PADDING_M)
-            ko_gdf = _load_vector_layer(
-                gpkg_path,
-                _KN_KO_LAYER,
-                columns=["SIFKO", "NAZIV", "EID_KATAST", "DATUM_SYS"],
-                bbox=bbox,
-            )
-            points_gdf = _build_points_gdf(result, batch_index)
-            if ko_gdf is None or ko_gdf.empty or points_gdf is None or points_gdf.empty:
-                continue
-
-            spatial_join = gpd.sjoin(
-                points_gdf,
-                ko_gdf,
-                how="left",
-                predicate="intersects",
-            )
-            spatial_join = spatial_join.loc[~spatial_join.index.duplicated(keep="first")]
-            polygon_mask = (
-                spatial_join["SIFKO"].notna()
-                if "SIFKO" in spatial_join.columns
-                else pd.Series(False, index=spatial_join.index)
-            )
-            if not polygon_mask.any():
-                continue
-            idx = spatial_join.index[polygon_mask]
-            result.loc[idx, "kn_ko_polygon_match"] = 1
-            if "NAZIV" in spatial_join.columns:
-                result.loc[idx, "kn_ko_name"] = spatial_join.loc[idx, "NAZIV"].values
-            if "EID_KATAST" in spatial_join.columns:
-                result.loc[idx, "kn_ko_eid"] = spatial_join.loc[idx, "EID_KATAST"].values
-            if "DATUM_SYS" in spatial_join.columns:
-                result.loc[idx, "kn_ko_date"] = spatial_join.loc[idx, "DATUM_SYS"].values
-            summary["rows_with_polygon_match"] += int(len(idx))
+        _ko_bbox = _spatial_bbox_for_rows(result, unresolved_index, padding_m=_SPATIAL_BBOX_PADDING_M)
+        ko_gdf_loaded = _load_vector_layer(
+            gpkg_path,
+            _KN_KO_LAYER,
+            columns=["SIFKO", "NAZIV", "EID_KATAST", "DATUM_SYS"],
+            bbox=_ko_bbox,
+        )
+        if ko_gdf_loaded is not None and not ko_gdf_loaded.empty:
+            _ = ko_gdf_loaded.sindex  # pre-build STRtree once; reused by sjoin without GIL
+            points_gdf = _build_points_gdf(result, unresolved_index)
+            if points_gdf is not None and not points_gdf.empty:
+                spatial_join = gpd.sjoin(points_gdf, ko_gdf_loaded, how="left", predicate="intersects")
+                spatial_join = spatial_join.loc[~spatial_join.index.duplicated(keep="first")]
+                polygon_mask = (
+                    spatial_join["SIFKO"].notna()
+                    if "SIFKO" in spatial_join.columns
+                    else pd.Series(False, index=spatial_join.index)
+                )
+                idx = spatial_join.index[polygon_mask]
+                if len(idx):
+                    result.loc[idx, "kn_ko_polygon_match"] = 1
+                    if "NAZIV" in spatial_join.columns:
+                        result.loc[idx, "kn_ko_name"] = spatial_join.loc[idx, "NAZIV"].values
+                    if "EID_KATAST" in spatial_join.columns:
+                        result.loc[idx, "kn_ko_eid"] = spatial_join.loc[idx, "EID_KATAST"].values
+                    if "DATUM_SYS" in spatial_join.columns:
+                        result.loc[idx, "kn_ko_date"] = spatial_join.loc[idx, "DATUM_SYS"].values
+                    summary["rows_with_polygon_match"] = int(len(idx))
 
     ggo_source_path = discovered_sources.get("kn_ggo")
     if ggo_source_path is not None and not point_index.empty:
         summary["ggo_available"] = True
         ggo_gpkg_path = _resolve_vector_gpkg_path(ggo_source_path, "ggo")
         if ggo_gpkg_path is not None:
-            for batch_index in _iter_spatial_batches(result, point_index):
-                bbox = _spatial_bbox_for_rows(result, batch_index, padding_m=_SPATIAL_BBOX_PADDING_M)
-                ggo_gdf = _load_vector_layer(
-                    ggo_gpkg_path,
-                    _KN_GGO_LAYER,
-                    columns=["ODSEK", "ODPRTOST"],
-                    bbox=bbox,
-                )
-                points_gdf = _build_points_gdf(result, batch_index)
-                if ggo_gdf is None or ggo_gdf.empty or points_gdf is None or points_gdf.empty:
-                    continue
+            _ggo_bbox = _spatial_bbox_for_rows(result, point_index, padding_m=_SPATIAL_BBOX_PADDING_M)
+            ggo_gdf_loaded = _load_vector_layer(
+                ggo_gpkg_path,
+                _KN_GGO_LAYER,
+                columns=["ODSEK", "ODPRTOST"],
+                bbox=_ggo_bbox,
+            )
+            if ggo_gdf_loaded is not None and not ggo_gdf_loaded.empty:
+                _ = ggo_gdf_loaded.sindex  # pre-build STRtree once
+                points_gdf_all = _build_points_gdf(result, point_index)
+                if points_gdf_all is not None and not points_gdf_all.empty:
+                    ggo_join = gpd.sjoin(points_gdf_all, ggo_gdf_loaded, how="left", predicate="intersects")
+                    ggo_join = ggo_join.loc[~ggo_join.index.duplicated(keep="first")]
+                    ggo_mask = (
+                        ggo_join["ODSEK"].notna()
+                        if "ODSEK" in ggo_join.columns
+                        else pd.Series(False, index=ggo_join.index)
+                    )
+                    idx = ggo_join.index[ggo_mask]
+                    if len(idx):
+                        result.loc[idx, "kn_in_ggo"] = 1
+                        if "ODPRTOST" in ggo_join.columns:
+                            result.loc[idx, "kn_ggo_openness"] = pd.to_numeric(
+                                ggo_join.loc[idx, "ODPRTOST"], errors="coerce"
+                            ).values
+                        if "ODSEK" in ggo_join.columns:
+                            result.loc[idx, "kn_ggo_section"] = ggo_join.loc[idx, "ODSEK"].values
+                        summary["rows_with_ggo_match"] = int(len(idx))
 
-                ggo_join = gpd.sjoin(
-                    points_gdf,
-                    ggo_gdf,
-                    how="left",
-                    predicate="intersects",
+    upload_dir = None
+    if source_path is not None:
+        upload_dir = _resolve_upload_dir_from_csv_path(source_path)
+    if upload_dir:
+        deli_lookup = _load_kn_deli_stavb_lookup(upload_dir)
+        if not deli_lookup.empty and "eid_del_stavbe" in result.columns:
+            summary["etazna_lookup_available"] = True
+            matched_deli = deli_lookup.set_index("EID_DEL_STAVBE_KEY").reindex(
+                _normalize_numeric_key_series(result["eid_del_stavbe"])
+            )
+            result["kn_etazna_lastnina"] = pd.to_numeric(
+                matched_deli.get("ETAZNA_LASTNINA"),
+                errors="coerce",
+            ).values
+            summary["rows_with_etazna_lastnina_match"] = int(pd.Series(result["kn_etazna_lastnina"]).notna().sum())
+
+        parcela_lookup = _load_kn_parcela_namenska_lookup(upload_dir)
+        if not parcela_lookup.empty and "eid_parcela" in result.columns:
+            summary["parcela_namenska_lookup_available"] = True
+            matched_parcela = parcela_lookup.set_index("EID_PARCELA_KEY").reindex(
+                _normalize_numeric_key_series(result["eid_parcela"])
+            )
+            if "parcela_namenska_raba" in matched_parcela.columns:
+                result["parcela_namenska_raba"] = matched_parcela["parcela_namenska_raba"].values
+                summary["rows_with_parcela_namenska_raba_match"] = int(
+                    pd.Series(result["parcela_namenska_raba"]).notna().sum()
                 )
-                ggo_join = ggo_join.loc[~ggo_join.index.duplicated(keep="first")]
-                ggo_mask = (
-                    ggo_join["ODSEK"].notna() if "ODSEK" in ggo_join.columns else pd.Series(False, index=ggo_join.index)
-                )
-                if not ggo_mask.any():
-                    continue
-                idx = ggo_join.index[ggo_mask]
-                result.loc[idx, "kn_in_ggo"] = 1
-                if "ODPRTOST" in ggo_join.columns:
-                    result.loc[idx, "kn_ggo_openness"] = pd.to_numeric(
-                        ggo_join.loc[idx, "ODPRTOST"], errors="coerce"
-                    ).values
-                if "ODSEK" in ggo_join.columns:
-                    result.loc[idx, "kn_ggo_section"] = ggo_join.loc[idx, "ODSEK"].values
-                summary["rows_with_ggo_match"] += int(len(idx))
 
     result["kn_ko_polygon_match"] = pd.to_numeric(result["kn_ko_polygon_match"], errors="coerce").fillna(0)
     result["kn_in_ggo"] = pd.to_numeric(result["kn_in_ggo"], errors="coerce").fillna(0)
+    result["kn_etazna_lastnina"] = pd.to_numeric(result["kn_etazna_lastnina"], errors="coerce")
     return result, summary
 
 
@@ -1906,9 +2371,20 @@ def _apply_gji_infrastructure_enrichment(
         "available": False,
         "spatial_enabled": False,
         "rows_with_coordinates": 0,
+        "opt_capacity_available": False,
+        "rows_with_opt_capacity_match": 0,
     }
-    _gji_all_labels = ["vodovod", "kanalizacija", "elektrika", "plin", "ceste", "toplota",
-                       "zeleznice", "letalisca", "opt"]
+    _gji_all_labels = [
+        "vodovod",
+        "kanalizacija",
+        "elektrika",
+        "plin",
+        "ceste",
+        "toplota",
+        "zeleznice",
+        "letalisca",
+        "opt",
+    ]
     for _lbl in _gji_all_labels:
         summary[f"{_lbl}_available"] = False
         summary[f"rows_with_{_lbl}_distance"] = 0
@@ -1918,7 +2394,10 @@ def _apply_gji_infrastructure_enrichment(
         for suffix in ["distance_m", "nearby_100m"]:
             col = f"gji_{label}_{suffix}"
             result[col] = pd.to_numeric(result.get(col, np.nan), errors="coerce")
-    result["gji_zeleznice_nearby_1000m"] = pd.to_numeric(result.get("gji_zeleznice_nearby_1000m", np.nan), errors="coerce")
+    result["gji_zeleznice_nearby_1000m"] = pd.to_numeric(
+        result.get("gji_zeleznice_nearby_1000m", np.nan), errors="coerce"
+    )
+    result["opt_zmogljivost"] = pd.to_numeric(result.get("opt_zmogljivost", np.nan), errors="coerce")
 
     longitude = _coordinate_numeric_series(result, "longitude")
     latitude = _coordinate_numeric_series(result, "latitude")
@@ -1933,7 +2412,7 @@ def _apply_gji_infrastructure_enrichment(
 
     summary["spatial_enabled"] = True
 
-    for source_name, layer_label, preferred_gpkg_name, nearby_threshold_m in [
+    _gji_layer_specs = [
         ("gji_vodovod", "vodovod", "linije", _GJI_NEARBY_DISTANCE_M),
         ("gji_kanalizacija", "kanalizacija", "linije", _GJI_NEARBY_DISTANCE_M),
         ("gji_elektrika", "elektrika", "linije", _GJI_NEARBY_DISTANCE_M),
@@ -1943,27 +2422,57 @@ def _apply_gji_infrastructure_enrichment(
         ("gji_zeleznice", "zeleznice", "linije", 1000.0),
         ("gji_letalisca", "letalisca", "linije", 5000.0),
         ("gji_opt", "opt", "deli_stavb", _GJI_NEARBY_DISTANCE_M),
-    ]:
+    ]
+
+    # Resolve available layers upfront (before spawning threads)
+    resolved_layers: list[tuple[str, str, float]] = []
+    for source_name, layer_label, preferred_gpkg_name, nearby_threshold_m in _gji_layer_specs:
         source_path = discovered_sources.get(source_name)
         if source_path is None:
             continue
-
-        summary["available"] = True
-        summary[f"{layer_label}_available"] = True
         gpkg_path = _resolve_vector_gpkg_path(source_path, preferred_gpkg_name)
         if gpkg_path is None:
             continue
+        summary["available"] = True
+        summary[f"{layer_label}_available"] = True
+        resolved_layers.append((layer_label, gpkg_path, nearby_threshold_m))
 
-        distance_series = _nearest_distances_to_layer(result, point_index, gpkg_path=gpkg_path)
+    def _compute_layer_distances(args: tuple[str, str, float]) -> tuple[str, pd.Series, float]:
+        layer_label, gpkg_path, nearby_threshold_m = args
+        distances = _nearest_distances_to_layer(result, point_index, gpkg_path=gpkg_path)
+        return layer_label, distances, nearby_threshold_m
+
+    # Run all layer distance computations in parallel — each reads a separate GPKG file
+    max_workers = min(len(resolved_layers), os.cpu_count() or 4)
+    if max_workers <= 0:
+        return result, summary
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
+        layer_results = list(pool.map(_compute_layer_distances, resolved_layers))
+
+    for layer_label, distance_series, nearby_threshold_m in layer_results:
         distance_col = f"gji_{layer_label}_distance_m"
         nearby_col = f"gji_{layer_label}_nearby_100m"
         nearby_series = (distance_series <= nearby_threshold_m).astype(float)
         result.loc[point_index, distance_col] = distance_series.values
         result.loc[point_index, nearby_col] = nearby_series.values
         summary[f"rows_with_{layer_label}_distance"] = int(distance_series.notna().sum())
-        # Also add a 1000m column for railways
+        summary[f"rows_with_{layer_label}_nearby_100m"] = int((nearby_series > 0).sum())
         if layer_label == "zeleznice":
             result.loc[point_index, "gji_zeleznice_nearby_1000m"] = nearby_series.values
+
+    opt_source_path = discovered_sources.get("gji_opt")
+    if opt_source_path is not None and "eid_stavba" in result.columns:
+        opt_lookup = _load_opt_capacity_lookup(opt_source_path)
+        if not opt_lookup.empty:
+            summary["opt_capacity_available"] = True
+            matched_opt = opt_lookup.set_index("EID_STAVBA_KEY").reindex(
+                _normalize_numeric_key_series(result["eid_stavba"])
+            )
+            result["opt_zmogljivost"] = pd.to_numeric(
+                matched_opt.get("opt_zmogljivost"),
+                errors="coerce",
+            ).values
+            summary["rows_with_opt_capacity_match"] = int(pd.Series(result["opt_zmogljivost"]).notna().sum())
 
     return result, summary
 
@@ -1973,10 +2482,23 @@ def _apply_dtm_enrichment(
     *,
     discovered_sources: dict[str, str],
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
-    """Enrich with DTM water distance feature."""
+    """Enrich with DTM water distance, land cover, and building elevation features."""
     result = training_df.copy()
-    summary: dict[str, Any] = {"available": False, "spatial_enabled": False}
+    summary: dict[str, Any] = {
+        "available": False,
+        "spatial_enabled": False,
+        "rows_with_voda_distance": 0,
+        "rows_with_pokritost_match": 0,
+        "rows_with_building_height_match": 0,
+        "building_lookup_available": False,
+        "pokritost_available": False,
+    }
     result["dtm_voda_distance_m"] = pd.to_numeric(result.get("dtm_voda_distance_m", np.nan), errors="coerce")
+    result["dtm_nadm_visina_stavbe"] = pd.to_numeric(result.get("dtm_nadm_visina_stavbe", np.nan), errors="coerce")
+    result["dtm_pokritost_tal"] = result.get(
+        "dtm_pokritost_tal",
+        pd.Series(pd.NA, index=result.index, dtype="object"),
+    ).astype("object")
 
     source_path = discovered_sources.get("dtm_hidrografija")
     if source_path is None:
@@ -2002,6 +2524,46 @@ def _apply_dtm_enrichment(
     distance_series = _nearest_distances_to_layer(result, point_index, gpkg_path=gpkg_path)
     result.loc[point_index, "dtm_voda_distance_m"] = distance_series.values
     summary["rows_with_voda_distance"] = int(distance_series.notna().sum())
+
+    pokritost_source_path = discovered_sources.get("dtm_pokritost_tal")
+    if pokritost_source_path is not None:
+        pokritost_gpkg_path = _resolve_vector_gpkg_path(pokritost_source_path, "pokritosttal")
+        if pokritost_gpkg_path is not None:
+            summary["pokritost_available"] = True
+            pokritost_join = _match_polygon_layer_to_rows(
+                result,
+                point_index,
+                gpkg_path=pokritost_gpkg_path,
+                layer_name=_DTM_POKRITOST_LAYER if pokritost_gpkg_path.lower().endswith(".gpkg") else None,
+                columns=["VRSTA_POK"],
+            )
+            if not pokritost_join.empty and "VRSTA_POK" in pokritost_join.columns:
+                result.loc[point_index, "dtm_pokritost_tal"] = _normalize_code_string_series(
+                    pokritost_join["VRSTA_POK"]
+                ).values
+                summary["rows_with_pokritost_match"] = int(pd.Series(result["dtm_pokritost_tal"]).notna().sum())
+
+    zgradbe_source_path = discovered_sources.get("dtm_zgradbe")
+    if zgradbe_source_path is not None:
+        zgradbe_gpkg_path = _resolve_vector_gpkg_path(zgradbe_source_path, "bu_stavbe")
+        if zgradbe_gpkg_path is not None:
+            summary["building_lookup_available"] = True
+            zgradbe_join = _match_polygon_layer_to_rows(
+                result,
+                point_index,
+                gpkg_path=zgradbe_gpkg_path,
+                layer_name=_DTM_ZGRADBE_LAYER if zgradbe_gpkg_path.lower().endswith(".gpkg") else None,
+                columns=["Z_TEM"],
+            )
+            if not zgradbe_join.empty and "Z_TEM" in zgradbe_join.columns:
+                result.loc[point_index, "dtm_nadm_visina_stavbe"] = pd.to_numeric(
+                    zgradbe_join["Z_TEM"],
+                    errors="coerce",
+                ).values
+                summary["rows_with_building_height_match"] = int(
+                    pd.Series(result["dtm_nadm_visina_stavbe"]).notna().sum()
+                )
+
     return result, summary
 
 
@@ -2032,6 +2594,49 @@ def _load_emv_layer(
     return layer_gdf
 
 
+def _match_polygon_layer_to_rows(
+    frame: pd.DataFrame,
+    row_index: pd.Index,
+    *,
+    gpkg_path: str,
+    layer_name: str | None,
+    columns: list[str],
+) -> pd.DataFrame:
+    if row_index.empty:
+        return pd.DataFrame(index=row_index)
+
+    gpd = _get_optional_geopandas()
+    if gpd is None:
+        return pd.DataFrame(index=row_index)
+
+    global_bbox = _spatial_bbox_for_rows(frame, row_index, padding_m=_SPATIAL_BBOX_PADDING_M)
+    layer_gdf = _load_vector_layer(gpkg_path, layer_name, columns=columns, bbox=global_bbox)
+    if layer_gdf is None or layer_gdf.empty:
+        return pd.DataFrame(index=row_index)
+
+    # Pre-build STRtree once — avoids rebuilding per batch and enables full GIL release in sjoin.
+    _ = layer_gdf.sindex
+
+    points = frame.loc[row_index, ["longitude", "latitude"]].copy()
+    points["longitude"] = pd.to_numeric(points["longitude"], errors="coerce")
+    points["latitude"] = pd.to_numeric(points["latitude"], errors="coerce")
+    valid_pts = points.dropna(subset=["longitude", "latitude"])
+    if valid_pts.empty:
+        return pd.DataFrame(index=row_index)
+
+    points_gdf = gpd.GeoDataFrame(
+        valid_pts,
+        geometry=gpd.points_from_xy(valid_pts["longitude"], valid_pts["latitude"]),
+        crs=_EMV_TARGET_CRS,
+    )
+    joined = gpd.sjoin(points_gdf, layer_gdf, how="left", predicate="intersects")
+    joined = joined.loc[~joined.index.duplicated(keep="first")]
+    cols = [c for c in columns if c in joined.columns]
+    if not cols:
+        return pd.DataFrame(index=row_index)
+    return joined[cols].reindex(row_index)
+
+
 def _match_emv_layer_to_rows(
     frame: pd.DataFrame,
     row_index: pd.Index,
@@ -2042,35 +2647,34 @@ def _match_emv_layer_to_rows(
     if row_index.empty:
         return pd.DataFrame(index=row_index)
 
+    global_bbox = _spatial_bbox_for_rows(frame, row_index, padding_m=_SPATIAL_BBOX_PADDING_M)
+    layer_gdf = _load_emv_layer(gpkg_path, layer_name, bbox=global_bbox)
+    if layer_gdf is None or layer_gdf.empty:
+        return pd.DataFrame(index=row_index)
+
     gpd = _get_optional_geopandas()
     if gpd is None:
         return pd.DataFrame(index=row_index)
 
-    matched_batches: list[pd.DataFrame] = []
-    for batch_index in _iter_spatial_batches(frame, row_index):
-        bbox = _spatial_bbox_for_rows(frame, batch_index, padding_m=_SPATIAL_BBOX_PADDING_M)
-        layer_gdf = _load_emv_layer(gpkg_path, layer_name, bbox=bbox)
-        if layer_gdf is None or layer_gdf.empty:
-            continue
-
-        points = frame.loc[batch_index, ["longitude", "latitude"]].copy()
-        points_gdf = gpd.GeoDataFrame(
-            points,
-            geometry=gpd.points_from_xy(points["longitude"], points["latitude"]),
-            crs=_EMV_TARGET_CRS,
-        )
-
-        joined = gpd.sjoin(points_gdf, layer_gdf, how="left", predicate="intersects")
-        joined = joined.loc[~joined.index.duplicated(keep="first")]
-
-        columns = [column for column in ["IME", "MODEL", "ID", "ST_RAVNI", "DAT_VELJ"] if column in joined.columns]
-        if columns:
-            matched_batches.append(joined[columns].reindex(batch_index))
-
-    if not matched_batches:
+    _ = layer_gdf.sindex
+    points = frame.loc[row_index, ["longitude", "latitude"]].copy()
+    points["longitude"] = pd.to_numeric(points["longitude"], errors="coerce")
+    points["latitude"] = pd.to_numeric(points["latitude"], errors="coerce")
+    valid_pts = points.dropna(subset=["longitude", "latitude"])
+    if valid_pts.empty:
         return pd.DataFrame(index=row_index)
 
-    return pd.concat(matched_batches).reindex(row_index)
+    points_gdf = gpd.GeoDataFrame(
+        valid_pts,
+        geometry=gpd.points_from_xy(valid_pts["longitude"], valid_pts["latitude"]),
+        crs=_EMV_TARGET_CRS,
+    )
+    joined = gpd.sjoin(points_gdf, layer_gdf, how="left", predicate="intersects")
+    joined = joined.loc[~joined.index.duplicated(keep="first")]
+    cols = [c for c in ["IME", "MODEL", "ID", "ST_RAVNI", "DAT_VELJ"] if c in joined.columns]
+    if not cols:
+        return pd.DataFrame(index=row_index)
+    return joined[cols].reindex(row_index)
 
 
 def _apply_emv_spatial_enrichment(
@@ -2127,17 +2731,17 @@ def _apply_emv_spatial_enrichment(
     if not coordinate_mask.any() or "property_type" not in result.columns:
         return result, summary
 
-    candidate_layer_rows: dict[tuple[str, ...], pd.Index] = {}
+    # Build layer→rows mapping using lists (not pd.Index.append which is O(n²))
+    candidate_layer_rows_lists: dict[tuple[str, ...], list] = {}
     land_types = result.get("vrsta_zemljisca", pd.Series(pd.NA, index=result.index))
     for row_idx in result.index[coordinate_mask & result["emv_zone_match"].isna()]:
         candidate_layers = tuple(_emv_layers_for_row(result.at[row_idx, "property_type"], land_types.at[row_idx]))
         if not candidate_layers:
             continue
-        existing_index = candidate_layer_rows.get(candidate_layers)
-        if existing_index is None:
-            candidate_layer_rows[candidate_layers] = pd.Index([row_idx])
-        else:
-            candidate_layer_rows[candidate_layers] = existing_index.append(pd.Index([row_idx]))
+        candidate_layer_rows_lists.setdefault(candidate_layers, []).append(row_idx)
+    candidate_layer_rows: dict[tuple[str, ...], pd.Index] = {
+        k: pd.Index(v) for k, v in candidate_layer_rows_lists.items()
+    }
 
     for candidate_layers, initial_index in candidate_layer_rows.items():
         row_index = initial_index
@@ -2433,31 +3037,39 @@ def import_rpe_from_zip(zip_path: str, upload_dir: str) -> dict[str, Any]:
             if "NAZIV" in sr_df.columns:
                 regije_info = sorted(sr_df["NAZIV"].dropna().unique().tolist())
 
-        mappings: list[dict[str, Any]] = []
-        for _, row in obcine_df.iterrows():
-            sifra = row.get("SIFRA", "")
-            naziv = row.get("NAZIV", "")
-            if not sifra or not naziv:
-                continue
-            try:
-                sifra_int = int(sifra)
-            except (ValueError, TypeError):
-                continue
-            normalized_name = normalize(naziv)
-            regija = FALLBACK_REGIONS.get(normalized_name, "neznana")
+        # Filter valid rows vectorially, then resolve region per unique municipality name
+        obcine_df["_sifra_num"] = pd.to_numeric(obcine_df.get("SIFRA", pd.Series(dtype="object")), errors="coerce")
+        valid = obcine_df[
+            obcine_df["_sifra_num"].notna()
+            & obcine_df.get("NAZIV", pd.Series(dtype="object")).notna()
+            & (obcine_df.get("NAZIV", pd.Series(dtype="object")) != "")
+            & (obcine_df.get("SIFRA", pd.Series(dtype="object")) != "")
+        ].copy()
+        valid["_sifra_int"] = valid["_sifra_num"].astype(int)
+        valid["_norm"] = valid["NAZIV"].apply(normalize)
+
+        # Resolve region once per unique normalized name (avoids n×m scan)
+        _fallback_items = list(FALLBACK_REGIONS.items())
+        _name_to_regija: dict[str, str] = {}
+        for norm_name in valid["_norm"].unique():
+            regija = FALLBACK_REGIONS.get(norm_name, "neznana")
             if regija == "neznana":
-                for key, val in FALLBACK_REGIONS.items():
-                    if key in normalized_name or normalized_name in key:
+                for key, val in _fallback_items:
+                    if key in norm_name or norm_name in key:
                         regija = val
                         break
-            mappings.append(
-                {
-                    "obcina_sifra": sifra_int,
-                    "obcina_naziv": naziv.strip(),
-                    "regija_naziv": regija,
-                    "vir": "RPE",
-                }
-            )
+            _name_to_regija[norm_name] = regija
+        valid["_regija"] = valid["_norm"].map(_name_to_regija)
+
+        mappings: list[dict[str, Any]] = [
+            {
+                "obcina_sifra": int(row._sifra_int),
+                "obcina_naziv": str(row.NAZIV).strip(),
+                "regija_naziv": row._regija,
+                "vir": "RPE",
+            }
+            for row in valid.itertuples(index=False)
+        ]
 
         return {
             "mappings": mappings,
@@ -2489,8 +3101,14 @@ def import_rpe_rn(
         eid_col = next((c for c in sr_df.columns if "EID_STATISTICNA_REGIJA" in c.upper()), None)
         naziv_col = next((c for c in sr_df.columns if c.upper() == "NAZIV"), None)
         if eid_col and naziv_col:
-            for _, row in sr_df.dropna(subset=[eid_col, naziv_col]).iterrows():
-                eid_to_name[str(row[eid_col]).strip()] = str(row[naziv_col]).strip()
+            _sr = sr_df.dropna(subset=[eid_col, naziv_col])
+            eid_to_name = dict(
+                zip(
+                    _sr[eid_col].astype(str).str.strip(),
+                    _sr[naziv_col].astype(str).str.strip(),
+                    strict=False,
+                )
+            )
 
     rn_clean = rn_df[required_rn].dropna(subset=required_rn).copy()
     rn_clean["OBCINA_SIFRA"] = pd.to_numeric(rn_clean["OBCINA_SIFRA"], errors="coerce")
@@ -2523,6 +3141,110 @@ def import_rpe_rn(
 
 
 # ── ETN KPP pairing ────────────────────────────────────────────────
+
+
+def _pick_etn_role_file(candidates: list[str], role: str) -> str | None:
+    role_upper = role.upper()
+    filtered: list[str] = []
+    for path in candidates:
+        name = os.path.basename(path).upper()
+        if "SIFRANTI" in name:
+            continue
+        if (
+            role_upper == "POSLI"
+            and ("POSLI" in name and "DELISTAVB" not in name and "ZEMLJISC" not in name)
+            or role_upper == "DELISTAVB"
+            and ("DELISTAVB" in name and "POSLI" not in name and "ZEMLJISC" not in name)
+            or role_upper == "ZEMLJISCA"
+            and ("ZEMLJISC" in name and "POSLI" not in name and "DELISTAVB" not in name)
+        ):
+            filtered.append(path)
+
+    if not filtered:
+        return None
+
+    def _score(path: str) -> tuple[int, float, str]:
+        name = os.path.basename(path).upper()
+        score = 0
+        if "ETN_SLO_" in name:
+            score += 20
+        if "_KPP_" in name:
+            score += 10
+        if "_NP_" in name:
+            score -= 30
+        return score, os.path.getmtime(path), path
+
+    return sorted(filtered, key=_score, reverse=True)[0]
+
+
+def discover_etn_kpp_year_pairs(
+    upload_dir: str,
+    *,
+    start_year: int | None = None,
+    end_year: int | None = None,
+) -> list[dict[str, str]]:
+    """Recursively discover the best ETN posli/delistavb/zemljisca pair for each requested year."""
+    root = os.path.abspath(upload_dir)
+    if not os.path.isdir(root):
+        raise FileNotFoundError(f"Upload directory not found: {upload_dir}")
+
+    discovered: list[dict[str, str]] = []
+    years = range(start_year or 2007, (end_year or 2026) + 1)
+    for year in years:
+        directory_candidates: list[str] = []
+        flat_csv_candidates: list[str] = []
+        year_token = f"ETN_SLO_{year}_KPP_"
+
+        for current_root, _dirs, files in os.walk(root):
+            current_name = os.path.basename(current_root).upper()
+            if year_token in current_name:
+                directory_candidates.append(current_root)
+
+            for filename in files:
+                if not filename.lower().endswith(".csv"):
+                    continue
+                if year_token not in filename.upper():
+                    continue
+                flat_csv_candidates.append(os.path.join(current_root, filename))
+
+        directory_candidates = sorted(
+            set(directory_candidates),
+            key=lambda path: os.path.getmtime(path) if os.path.exists(path) else 0,
+            reverse=True,
+        )
+
+        chosen: tuple[str, str, str | None] | None = None
+        for directory in directory_candidates:
+            csvs = [os.path.join(directory, name) for name in os.listdir(directory) if name.lower().endswith(".csv")]
+            posli = _pick_etn_role_file(csvs, "POSLI")
+            deli = _pick_etn_role_file(csvs, "DELISTAVB")
+            zem = _pick_etn_role_file(csvs, "ZEMLJISCA")
+            if posli and deli:
+                chosen = (posli, deli, zem)
+                break
+
+        if chosen is None and flat_csv_candidates:
+            posli = _pick_etn_role_file(flat_csv_candidates, "POSLI")
+            deli = _pick_etn_role_file(flat_csv_candidates, "DELISTAVB")
+            zem = _pick_etn_role_file(flat_csv_candidates, "ZEMLJISCA")
+            if posli and deli:
+                chosen = (posli, deli, zem)
+
+        if chosen is None:
+            continue
+
+        posli, deli, zem = chosen
+        discovered.append(
+            {
+                "posli_csv_path": posli,
+                "delistavb_csv_path": deli,
+                "zemljisca_csv_path": zem or "",
+                "year": str(year),
+                "label": str(year),
+            }
+        )
+
+    return discovered
 
 
 def _enrich_with_sifra(df: pd.DataFrame, merged: pd.DataFrame) -> pd.DataFrame:
@@ -2595,9 +3317,15 @@ def build_training_df_from_etn_kpp(
         if col not in posli_df.columns:
             raise ValueError(f"Missing required column in posli.csv: {col}")
 
-    candidate_size = ["PRODANA_POVRSINA", "PRODANA_POVRSINA_DELA_STAVBE", "UPORABNA_POVRSINA", "POVRSINA_DELA_STAVBE"]
-    size_col = next((c for c in candidate_size if c in deli_df.columns), None)
-    if not size_col:
+    candidate_size = [
+        "PRODANA_POVRSINA",
+        "PRODANA_POVRSINA_DELA_STAVBE",
+        "PRODANA_UPORABNA_POVRSINA_DELA_STAVBE",
+        "UPORABNA_POVRSINA",
+        "POVRSINA_DELA_STAVBE",
+    ]
+    size_values, size_col = _coalesce_numeric_series(deli_df, candidate_size)
+    if size_col is None:
         raise ValueError(f"No area column in delistavb.csv. Expected: {', '.join(candidate_size)}")
 
     posli_selected = ["ID_POSLA", "POGODBENA_CENA_ODSKODNINA"]
@@ -2653,7 +3381,7 @@ def build_training_df_from_etn_kpp(
     )
     training_df["rpe_obcine_sifra"] = pd.to_numeric(merged.get("RPE_OBCINE_SIFRA", np.nan), errors="coerce")
 
-    training_df["size_m2"] = pd.to_numeric(merged[size_col], errors="coerce")
+    training_df["size_m2"] = size_values.reindex(merged.index)
 
     # Rooms
     training_df["rooms"] = (
@@ -2852,7 +3580,7 @@ def build_training_df_from_etn_kpp(
         if per_unit_price is not None:
             break
 
-    merged["_area_numeric"] = pd.to_numeric(merged[size_col], errors="coerce").fillna(0)
+    merged["_area_numeric"] = size_values.reindex(merged.index).fillna(0)
     total_area_per_deal = merged.groupby("ID_POSLA")["_area_numeric"].transform("sum")
     area_ratio = merged["_area_numeric"] / total_area_per_deal.replace(0, np.nan)
     prorated_price = total_price * area_ratio
@@ -2868,11 +3596,13 @@ def build_training_df_from_etn_kpp(
     training_df = training_df[(training_df["size_m2"] > 0) & (training_df["price_eur"] > 0)]
     _append_stage(stage_stats, "building_after_price_size_presence", len(training_df))
 
-    # TRZNOST_POSLA: keep only market transactions (1=market, 2=market/poor quality, 5=under review)
+    # TRZNOST_POSLA: include legacy market-like code 4 used heavily in historical ETN exports.
+    # Keeping 1/2/4/5 avoids dropping entire early-year cohorts (2007-2014) while preserving
+    # the sale-type and outlier filters that follow.
     if "TRZNOST_POSLA" in merged.columns:
         trznost = pd.to_numeric(merged["TRZNOST_POSLA"], errors="coerce")
         trznost_aligned = trznost.reindex(training_df.index)
-        training_df = training_df.loc[trznost_aligned.isin([1, 2, 5])].copy()
+        training_df = training_df.loc[trznost_aligned.isin([1, 2, 4, 5])].copy()
     _append_stage(stage_stats, "building_after_market_filter", len(training_df))
 
     # VRSTA_KUPOPRODAJNEGA_POSLA: keep only open market (1) and voluntary auction (2)
@@ -3166,7 +3896,7 @@ def build_training_df_from_etn_kpp_land(
     if "TRZNOST_POSLA" in merged.columns:
         trznost = pd.to_numeric(merged["TRZNOST_POSLA"], errors="coerce")
         trznost_aligned = trznost.reindex(training_df.index)
-        training_df = training_df.loc[trznost_aligned.isin([1, 2, 5])].copy()
+        training_df = training_df.loc[trznost_aligned.isin([1, 2, 4, 5])].copy()
     _append_stage(stage_stats, "land_after_market_filter", len(training_df))
 
     if vrsta_posla_col is not None:
@@ -3209,7 +3939,7 @@ def build_training_df_from_etn_kpp_land(
     }
 
 
-def _find_etn_csv_in_zip(zf: "zipfile.ZipFile", keyword: str) -> str | None:
+def _find_etn_csv_in_zip(zf: zipfile.ZipFile, keyword: str) -> str | None:
     """Return the ZipFile member name whose filename contains *keyword* (case-insensitive)."""
     for member in zf.namelist():
         if keyword.lower() in os.path.basename(member).lower() and member.lower().endswith(".csv"):
@@ -3226,14 +3956,13 @@ def _extract_etn_zip_csvs(
     Returns (posli_path, delistavb_path, zemljisca_path_or_None).
     """
     import zipfile as _zipfile  # local import to avoid circular issues at module level
+
     with _zipfile.ZipFile(zip_path, "r") as zf:
         posli_member = _find_etn_csv_in_zip(zf, "KPP_POSLI") or _find_etn_csv_in_zip(zf, "POSLI")
         deli_member = _find_etn_csv_in_zip(zf, "KPP_DELISTAVB") or _find_etn_csv_in_zip(zf, "DELISTAVB")
         zem_member = _find_etn_csv_in_zip(zf, "KPP_ZEMLJISCA") or _find_etn_csv_in_zip(zf, "ZEMLJISCA")
         if not posli_member or not deli_member:
-            raise ValueError(
-                f"ZIP {os.path.basename(zip_path)} does not contain expected KPP_POSLI/KPP_DELISTAVB CSVs"
-            )
+            raise ValueError(f"ZIP {os.path.basename(zip_path)} does not contain expected KPP_POSLI/KPP_DELISTAVB CSVs")
         zf.extract(posli_member, tmp_dir)
         zf.extract(deli_member, tmp_dir)
         if zem_member:
@@ -3245,6 +3974,106 @@ def _extract_etn_zip_csvs(
     return posli_path, deli_path, zem_path
 
 
+def _extract_year_token_from_path(path: str | None) -> str | None:
+    if not path:
+        return None
+    upper = str(path).upper()
+    match = re.search(r"(20\d{2})", upper)
+    if match:
+        return match.group(1)
+    return None
+
+
+def _looks_like_etn_role_csv(path: str | None, role: str) -> bool:
+    if not path:
+        return False
+
+    name = os.path.basename(path).upper()
+    if not name.endswith(".CSV"):
+        return False
+    if "SIFRANTI" in name:
+        return False
+
+    if role == "posli":
+        return "POSLI" in name and "DELISTAVB" not in name and "ZEMLJISC" not in name
+    if role == "delistavb":
+        return "DELISTAVB" in name and "POSLI" not in name and "ZEMLJISC" not in name
+    if role == "zemljisca":
+        return "ZEMLJISC" in name and "POSLI" not in name and "DELISTAVB" not in name
+    return False
+
+
+def _find_best_etn_role_csv(
+    directory: str,
+    role: str,
+    preferred_year: str | None,
+) -> str | None:
+    best: tuple[int, float, str] | None = None
+
+    with contextlib.suppress(FileNotFoundError, NotADirectoryError):
+        for entry in os.scandir(directory):
+            if not entry.is_file():
+                continue
+            candidate = entry.path
+            if not _looks_like_etn_role_csv(candidate, role):
+                continue
+
+            name = entry.name.upper()
+            score = 0
+
+            if "ETN_SLO_" in name:
+                score += 20
+            if "_KPP_" in name:
+                score += 10
+            if "_NP_" in name:
+                score -= 30
+            if preferred_year and preferred_year in name:
+                score += 40
+
+            rank = (score, entry.stat().st_mtime, candidate)
+            if best is None or rank > best:
+                best = rank
+
+    return best[2] if best else None
+
+
+def _resolve_etn_role_csv_paths(
+    posli_csv_path: str,
+    delistavb_csv_path: str,
+    zemljisca_csv_path: str | None,
+) -> tuple[str, str, str | None]:
+    preferred_year = (
+        _extract_year_token_from_path(posli_csv_path)
+        or _extract_year_token_from_path(delistavb_csv_path)
+        or _extract_year_token_from_path(zemljisca_csv_path)
+    )
+
+    base_dir = os.path.dirname(os.path.realpath(posli_csv_path or delistavb_csv_path))
+    if not os.path.isdir(base_dir):
+        return posli_csv_path, delistavb_csv_path, zemljisca_csv_path
+
+    resolved_posli = posli_csv_path
+    resolved_deli = delistavb_csv_path
+    resolved_zem = zemljisca_csv_path
+
+    if not _looks_like_etn_role_csv(resolved_posli, "posli"):
+        candidate = _find_best_etn_role_csv(base_dir, "posli", preferred_year)
+        if candidate:
+            resolved_posli = candidate
+
+    if not _looks_like_etn_role_csv(resolved_deli, "delistavb"):
+        candidate = _find_best_etn_role_csv(base_dir, "delistavb", preferred_year)
+        if candidate:
+            resolved_deli = candidate
+
+    if resolved_zem is not None and not _looks_like_etn_role_csv(resolved_zem, "zemljisca"):
+        candidate = _find_best_etn_role_csv(base_dir, "zemljisca", preferred_year)
+        if candidate:
+            resolved_zem = candidate
+
+    return resolved_posli, resolved_deli, resolved_zem
+
+
 def _resolve_etn_paths_from_zip_if_needed(
     posli_csv_path: str,
     delistavb_csv_path: str,
@@ -3253,9 +4082,35 @@ def _resolve_etn_paths_from_zip_if_needed(
 ) -> tuple[str, str, str | None]:
     """If posli_csv_path is a ZIP, extract its CSVs and return resolved paths."""
     if not posli_csv_path.lower().endswith(".zip"):
-        return posli_csv_path, delistavb_csv_path, zemljisca_csv_path
+        return _resolve_etn_role_csv_paths(posli_csv_path, delistavb_csv_path, zemljisca_csv_path)
     # Both posli and delistavb may point to the same ZIP (common when manually placed)
     return _extract_etn_zip_csvs(posli_csv_path, tmp_dir)
+
+
+def _resolve_upload_dir_from_csv_path(csv_path: str) -> str:
+    """Return the uploads root directory from a CSV (or ZIP) path.
+
+    If the CSV lives inside an extraction subdir (e.g. ``ETN_SLO_2024_KPP_20260322/``),
+    the enrichment sources are one level up.  Detect this by checking whether the
+    immediate parent directory name starts with ``ETN_SLO_`` or ``ETN_``.
+    """
+    raw_dir = os.path.dirname(os.path.realpath(csv_path))
+
+    # Prefer the true uploads root when the path is nested under .../uploads/...,
+    # so deterministic enrichment can discover RN/EV/KN/GJI/EMV sources across sibling trees.
+    current = raw_dir
+    while True:
+        if os.path.basename(current).lower() == "uploads":
+            return current
+        parent = os.path.dirname(current)
+        if parent == current:
+            break
+        current = parent
+
+    parent_name = os.path.basename(raw_dir).upper()
+    if parent_name.startswith("ETN_SLO_") or parent_name.startswith("ETN_"):
+        return os.path.dirname(raw_dir)
+    return raw_dir
 
 
 def prepare_training_csv_from_etn_kpp(
@@ -3265,7 +4120,7 @@ def prepare_training_csv_from_etn_kpp(
     enrichment_options: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Prepare training CSV from ETN KPP posli + delistavb pair."""
-    upload_dir = os.path.dirname(os.path.realpath(posli_csv_path))
+    upload_dir = _resolve_upload_dir_from_csv_path(posli_csv_path)
     with tempfile.TemporaryDirectory(prefix="etn_zip_resolve_") as tmp_dir:
         posli_csv_path, delistavb_csv_path, _ = _resolve_etn_paths_from_zip_if_needed(
             posli_csv_path, delistavb_csv_path, None, tmp_dir
@@ -3358,7 +4213,7 @@ def _merge_staged_prepared_frames(
 
     write_header = True
     for staged_csv_path in staged_csv_paths:
-        frame = pd.read_csv(staged_csv_path)
+        frame = pd.read_csv(staged_csv_path, dtype=_EID_CSV_DTYPES)
         rows_before_dedup += len(frame)
 
         if dedupe_columns:
@@ -3398,6 +4253,140 @@ def _merge_staged_prepared_frames(
     return discovered_columns, rows_before_dedup, rows_written, dict(sorted(per_year.items()))
 
 
+def _build_bulk_merged_enrichment_summary(
+    reports: list[dict[str, Any]],
+    resolved_options: dict[str, Any],
+    discovered_sources: dict[str, str],
+    *,
+    kn_summary: dict[str, Any] | None,
+    gji_summary: dict[str, Any] | None,
+    dtm_summary: dict[str, Any] | None,
+    emv_summary: dict[str, Any] | None,
+) -> dict[str, Any]:
+    summary: dict[str, Any] = {
+        "options": resolved_options,
+        "sources": {name: os.path.basename(path) for name, path in discovered_sources.items()},
+        "rn": {
+            "enabled": resolved_options["enable_rn"],
+            "available": bool(discovered_sources.get("rn")),
+            "rows_with_exact_address": 0,
+            "rows_with_region_id": 0,
+        },
+        "ev": {
+            "enabled": resolved_options["enable_ev"],
+            "building_available": bool(discovered_sources.get("ev_stavba") and discovered_sources.get("ev_del_stavbe")),
+            "building_value_available": bool(discovered_sources.get("ev_del_stavbe_enota")),
+            "parcel_available": bool(discovered_sources.get("ev_parcela")),
+            "parcel_value_available": bool(discovered_sources.get("ev_parc_enota")),
+            "rows_with_building_match": 0,
+            "rows_with_building_value_match": 0,
+            "rows_with_parcel_match": 0,
+            "rows_with_parcel_value_match": 0,
+        },
+        "kn": {
+            "enabled": resolved_options["enable_kn"],
+            "available": bool(discovered_sources.get("kn_kat_obcine")),
+            "ggo_available": bool(discovered_sources.get("kn_ggo")),
+            "polygon_enabled": False,
+            "gpkg_ready": False,
+            "etazna_lookup_available": False,
+            "parcela_namenska_lookup_available": False,
+            "rows_with_coordinates": 0,
+            "rows_with_sifra_ko_match": 0,
+            "rows_with_polygon_match": 0,
+            "rows_with_ggo_match": 0,
+            "rows_with_etazna_lastnina_match": 0,
+            "rows_with_parcela_namenska_raba_match": 0,
+        },
+        "gji": {
+            "enabled": resolved_options["enable_gji"],
+            "available": any(
+                discovered_sources.get(name)
+                for name in [
+                    "gji_vodovod",
+                    "gji_kanalizacija",
+                    "gji_elektrika",
+                    "gji_plin",
+                    "gji_ceste",
+                    "gji_toplota",
+                    "gji_zeleznice",
+                    "gji_letalisca",
+                    "gji_opt",
+                ]
+            ),
+            "spatial_enabled": False,
+            "rows_with_coordinates": 0,
+            "vodovod_available": bool(discovered_sources.get("gji_vodovod")),
+            "kanalizacija_available": bool(discovered_sources.get("gji_kanalizacija")),
+            "opt_capacity_available": bool(discovered_sources.get("gji_opt")),
+            "rows_with_vodovod_distance": 0,
+            "rows_with_kanalizacija_distance": 0,
+            "rows_with_vodovod_nearby_100m": 0,
+            "rows_with_kanalizacija_nearby_100m": 0,
+            "rows_with_opt_capacity_match": 0,
+        },
+        "dtm": {
+            "enabled": resolved_options["enable_dtm"],
+            "available": bool(discovered_sources.get("dtm_hidrografija")),
+            "spatial_enabled": False,
+            "rows_with_voda_distance": 0,
+            "rows_with_pokritost_match": 0,
+            "rows_with_building_height_match": 0,
+            "building_lookup_available": bool(discovered_sources.get("dtm_zgradbe")),
+            "pokritost_available": bool(discovered_sources.get("dtm_pokritost_tal")),
+        },
+        "emv": {
+            "enabled": resolved_options["enable_emv"],
+            "available": bool(discovered_sources.get("emv")),
+            "spatial_enabled": False,
+            "gpkg_ready": False,
+            "rows_with_coordinates": 0,
+            "rows_with_zone_match": 0,
+            "matched_by_layer": {},
+        },
+    }
+
+    for report in reports:
+        if report.get("status") != "ok":
+            continue
+        for key in ["enrichment_summary", "land_enrichment_summary"]:
+            block = report.get(key)
+            if not isinstance(block, dict):
+                continue
+
+            rn = block.get("rn") if isinstance(block.get("rn"), dict) else {}
+            summary["rn"]["available"] = summary["rn"]["available"] or bool(rn.get("available"))
+            summary["rn"]["rows_with_exact_address"] += int(rn.get("rows_with_exact_address") or 0)
+            summary["rn"]["rows_with_region_id"] += int(rn.get("rows_with_region_id") or 0)
+
+            ev = block.get("ev") if isinstance(block.get("ev"), dict) else {}
+            summary["ev"]["building_available"] = summary["ev"]["building_available"] or bool(
+                ev.get("building_available")
+            )
+            summary["ev"]["building_value_available"] = summary["ev"]["building_value_available"] or bool(
+                ev.get("building_value_available")
+            )
+            summary["ev"]["parcel_available"] = summary["ev"]["parcel_available"] or bool(ev.get("parcel_available"))
+            summary["ev"]["parcel_value_available"] = summary["ev"]["parcel_value_available"] or bool(
+                ev.get("parcel_value_available")
+            )
+            summary["ev"]["rows_with_building_match"] += int(ev.get("rows_with_building_match") or 0)
+            summary["ev"]["rows_with_building_value_match"] += int(ev.get("rows_with_building_value_match") or 0)
+            summary["ev"]["rows_with_parcel_match"] += int(ev.get("rows_with_parcel_match") or 0)
+            summary["ev"]["rows_with_parcel_value_match"] += int(ev.get("rows_with_parcel_value_match") or 0)
+
+    if isinstance(kn_summary, dict):
+        summary["kn"] = {"enabled": resolved_options["enable_kn"], **kn_summary}
+    if isinstance(gji_summary, dict):
+        summary["gji"] = {"enabled": resolved_options["enable_gji"], **gji_summary}
+    if isinstance(dtm_summary, dict):
+        summary["dtm"] = {"enabled": resolved_options["enable_dtm"], **dtm_summary}
+    if isinstance(emv_summary, dict):
+        summary["emv"] = {"enabled": resolved_options["enable_emv"], **emv_summary}
+
+    return summary
+
+
 def prepare_training_csv_from_etn_kpp_bulk(
     pairs: list[dict[str, Any]],
     output_csv_path: str,
@@ -3426,35 +4415,90 @@ def prepare_training_csv_from_etn_kpp_bulk(
             **extra,
         )
 
+    @contextlib.contextmanager
+    def stage_heartbeat(unit: int, stage: str, interval_sec: float = 10.0, **extra: Any):
+        """Emit periodic status for long-running stages so the UI does not appear frozen."""
+        if status_callback is None:
+            yield
+            return
+
+        stop_event = threading.Event()
+
+        def _heartbeat_loop() -> None:
+            while not stop_event.wait(interval_sec):
+                with contextlib.suppress(Exception):
+                    emit_status(unit, stage, **extra)
+
+        heartbeat_thread = threading.Thread(target=_heartbeat_loop, daemon=True)
+        heartbeat_thread.start()
+        try:
+            yield
+        finally:
+            stop_event.set()
+            heartbeat_thread.join(timeout=interval_sec)
+
     os.makedirs(os.path.dirname(output_csv_path), exist_ok=True)
     emit_status(0, "initializing")
+
+    # Pre-compute enrichment sources once from the shared uploads root.
+    # All pairs live under the same root, so discovering per-pair would be redundant.
+    _first_posli = next((p.get("posli_csv_path") for p in pairs if p.get("posli_csv_path")), None)
+    shared_upload_dir = _resolve_upload_dir_from_csv_path(_first_posli) if _first_posli else None
+    shared_discovered_sources: dict[str, str] = (
+        discover_gurs_enrichment_sources(shared_upload_dir) if shared_upload_dir else {}
+    )
 
     with tempfile.TemporaryDirectory(prefix="prepared_etn_bulk_") as staging_dir:
         staged_csv_paths: list[str] = []
         zip_extract_dir = os.path.join(staging_dir, "_zip_extract")
         os.makedirs(zip_extract_dir, exist_ok=True)
 
-        for pair_index, pair in enumerate(pairs):
+        # Pre-warm EV and RN file caches in parallel so per-pair enrichment calls are instant hits.
+        # These are I/O-bound CSV reads that release the GIL; running them concurrently halves load time.
+        emit_status(0, "loading_sources")
+        _prewarm_loaders: list = []
+        if resolved_options.get("enable_rn"):
+            _rn_p = shared_discovered_sources.get("rn")
+            if _rn_p:
+                _prewarm_loaders.append(lambda p=_rn_p: _load_rn_match_indices(p))
+        if resolved_options.get("enable_ev"):
+            _ev_s = shared_discovered_sources.get("ev_stavba")
+            _ev_d = shared_discovered_sources.get("ev_del_stavbe")
+            if _ev_s and _ev_d:
+                _prewarm_loaders.append(lambda s=_ev_s, d=_ev_d: _load_ev_building_lookup(s, d))
+            _ev_de = shared_discovered_sources.get("ev_del_stavbe_enota")
+            if _ev_de:
+                _prewarm_loaders.append(lambda p=_ev_de: _load_ev_building_value_lookup(p))
+            _ev_pa = shared_discovered_sources.get("ev_parcela")
+            if _ev_pa:
+                _prewarm_loaders.append(lambda p=_ev_pa: _load_ev_parcel_lookup(p))
+            _ev_pe = shared_discovered_sources.get("ev_parc_enota")
+            if _ev_pe:
+                _prewarm_loaders.append(lambda p=_ev_pe: _load_ev_parcel_value_lookup(p))
+        # Only pre-warm when there are few pairs. With many pairs the lru_cache populates
+        # naturally from the first pair, and pre-loading all EV/RN DataFrames at once on top of
+        # pair processing memory is too expensive (each file can be 500 MB+ in RAM).
+        if len(_prewarm_loaders) > 1 and len(pairs) <= 3:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(_prewarm_loaders), 3)) as _pw_ex:
+                for _fut in concurrent.futures.as_completed([_pw_ex.submit(fn) for fn in _prewarm_loaders]):
+                    with contextlib.suppress(Exception):
+                        _fut.result()
+
+        def _process_pair(pair_index: int, pair: dict) -> tuple[list[str], dict]:
+            """Process one ETN year pair — returns (staged_paths, report). Thread-safe."""
             posli_csv_path = pair.get("posli_csv_path")
             delistavb_csv_path = pair.get("delistavb_csv_path")
             zemljisca_csv_path = pair.get("zemljisca_csv_path")
             label = str(pair.get("label") or pair.get("year") or "unknown")
 
             if not posli_csv_path or not delistavb_csv_path:
-                reports.append({"label": label, "status": "skipped", "reason": "missing paths"})
-                continue
+                return [], {"label": label, "status": "skipped", "reason": "missing paths"}
 
             pair_unit = pair_index * 4
-            emit_status(
-                pair_unit + 1,
-                "loading_pair",
-                current_label=label,
-                current_pair_index=pair_index + 1,
-            )
+            emit_status(pair_unit + 1, "loading_pair", current_label=label, current_pair_index=pair_index + 1)
 
-            # Capture upload_dir from the original path before ZIP extraction resolves it
-            pair_upload_dir = os.path.dirname(os.path.realpath(posli_csv_path))
-            # Auto-extract ETN ZIP if paths point to a ZIP file
+            # Capture upload_dir from the original path before ZIP extraction resolves it.
+            pair_upload_dir = _resolve_upload_dir_from_csv_path(posli_csv_path)
             pair_extract_dir = os.path.join(zip_extract_dir, f"pair_{pair_index}")
             os.makedirs(pair_extract_dir, exist_ok=True)
             posli_csv_path, delistavb_csv_path, zemljisca_csv_path = _resolve_etn_paths_from_zip_if_needed(
@@ -3470,12 +4514,7 @@ def prepare_training_csv_from_etn_kpp_bulk(
 
             try:
                 pair_staged_paths: list[str] = []
-                emit_status(
-                    pair_unit + 2,
-                    "building_rows",
-                    current_label=label,
-                    current_pair_index=pair_index + 1,
-                )
+                emit_status(pair_unit + 2, "building_rows", current_label=label, current_pair_index=pair_index + 1)
                 frame, meta = build_training_df_from_etn_kpp(posli_df, deli_df, zemljisca_df)
                 emit_status(
                     pair_unit + 3,
@@ -3484,18 +4523,29 @@ def prepare_training_csv_from_etn_kpp_bulk(
                     current_pair_index=pair_index + 1,
                     building_rows=len(frame),
                 )
-                frame, enrichment_summary = apply_gurs_deterministic_enrichment(
-                    frame,
-                    upload_dir=pair_upload_dir,
-                    enrichment_options=resolved_options,
-                )
+                with stage_heartbeat(
+                    pair_unit + 3,
+                    "enriching_buildings",
+                    current_label=label,
+                    current_pair_index=pair_index + 1,
+                    building_rows=len(frame),
+                ):
+                    # Spatial enrichment (KN/GJI/EMV/DTM) is deferred to post-merge
+                    # so it runs once on the full dataset rather than per pair.
+                    frame, enrichment_summary = apply_gurs_deterministic_enrichment(
+                        frame,
+                        upload_dir=pair_upload_dir,
+                        enrichment_options=resolved_options,
+                        skip_spatial=True,
+                        discovered_sources=shared_discovered_sources,
+                    )
                 frame["source_label"] = label
                 frame["transaction_year"] = pd.to_numeric(label, errors="coerce")
                 building_stage_path = os.path.join(staging_dir, f"{pair_index}_building.csv")
                 frame.to_csv(building_stage_path, index=False)
                 pair_staged_paths.append(building_stage_path)
 
-                report = {
+                report: dict = {
                     "label": label,
                     "status": "ok",
                     "rows": len(frame),
@@ -3506,12 +4556,7 @@ def prepare_training_csv_from_etn_kpp_bulk(
                 }
 
                 if zemljisca_df is not None:
-                    emit_status(
-                        pair_unit + 4,
-                        "enriching_land",
-                        current_label=label,
-                        current_pair_index=pair_index + 1,
-                    )
+                    emit_status(pair_unit + 4, "enriching_land", current_label=label, current_pair_index=pair_index + 1)
                     land_only_ids = set(deli_df["ID_POSLA"].astype(str)) if "ID_POSLA" in deli_df.columns else set()
                     with contextlib.suppress(Exception):
                         land_frame, land_meta = build_training_df_from_etn_kpp_land(
@@ -3519,11 +4564,20 @@ def prepare_training_csv_from_etn_kpp_bulk(
                             zemljisca_df,
                             exclude_posli_ids=land_only_ids,
                         )
-                        land_frame, land_enrichment_summary = apply_gurs_deterministic_enrichment(
-                            land_frame,
-                            upload_dir=os.path.dirname(posli_csv_path),
-                            enrichment_options=resolved_options,
-                        )
+                        with stage_heartbeat(
+                            pair_unit + 4,
+                            "enriching_land",
+                            current_label=label,
+                            current_pair_index=pair_index + 1,
+                            land_rows=len(land_frame),
+                        ):
+                            land_frame, land_enrichment_summary = apply_gurs_deterministic_enrichment(
+                                land_frame,
+                                upload_dir=pair_upload_dir,
+                                enrichment_options=resolved_options,
+                                skip_spatial=True,
+                                discovered_sources=shared_discovered_sources,
+                            )
                         land_frame["source_label"] = label
                         land_frame["transaction_year"] = pd.to_numeric(label, errors="coerce")
                         land_stage_path = os.path.join(staging_dir, f"{pair_index}_land.csv")
@@ -3535,17 +4589,33 @@ def prepare_training_csv_from_etn_kpp_bulk(
                         report["land_enrichment_summary"] = land_enrichment_summary
                 else:
                     emit_status(
-                        pair_unit + 4,
-                        "finalizing_pair",
-                        current_label=label,
-                        current_pair_index=pair_index + 1,
+                        pair_unit + 4, "finalizing_pair", current_label=label, current_pair_index=pair_index + 1
                     )
 
-                staged_csv_paths.extend(pair_staged_paths)
-                pairs_used += 1
-                reports.append(report)
+                return pair_staged_paths, report
             except Exception as exc:
-                reports.append({"label": label, "status": "error", "reason": str(exc)})
+                return [], {"label": label, "status": "error", "reason": str(exc)}
+
+        # Run pairs in parallel — each is independent (separate CSVs, separate staging files,
+        # EV/RN data is read-only lru_cache hits after pre-warming above).
+        # Cap at 2: each active pair holds ~300–500 MB of DataFrames + the shared EV/RN caches
+        # (which can be 3–4 GB). Beyond 2 concurrent pairs risks OOM on 8 GB hosts.
+        _pair_workers = min(len(pairs), 2)
+        _pair_results: dict[int, tuple[list[str], dict]] = {}
+        with concurrent.futures.ThreadPoolExecutor(max_workers=_pair_workers) as _pair_ex:
+            _pair_futs = {_pair_ex.submit(_process_pair, i, p): i for i, p in enumerate(pairs)}
+            for _fut in concurrent.futures.as_completed(_pair_futs):
+                _pi = _pair_futs[_fut]
+                with contextlib.suppress(Exception):
+                    _pair_results[_pi] = _fut.result()
+
+        # Collect results in original pair order so reports and staged files stay deterministic.
+        for _pi in sorted(_pair_results):
+            _pp, _pr = _pair_results[_pi]
+            staged_csv_paths.extend(_pp)
+            if _pr.get("status") == "ok":
+                pairs_used += 1
+            reports.append(_pr)
 
         if not staged_csv_paths:
             raise ValueError("No valid ETN pairs produced training data.")
@@ -3557,6 +4627,75 @@ def prepare_training_csv_from_etn_kpp_bulk(
         )
         deduplicated_rows = rows_before_dedup - rows_after_dedup
 
+        # Apply spatial enrichment (KN/GJI/EMV/DTM) once on the merged dataset.
+        # This is far more efficient than running it per pair (40× for 20 years × building+land).
+        _needs_spatial = (
+            shared_upload_dir
+            and any(
+                shared_discovered_sources.get(s)
+                for s in ("kn_kat_obcine", "kn_ggo", "gji_vodovod", "gji_ceste", "emv", "dtm_hidrografija")
+            )
+            and any(
+                [
+                    resolved_options["enable_kn"],
+                    resolved_options["enable_gji"],
+                    resolved_options["enable_dtm"],
+                    resolved_options["enable_emv"],
+                ]
+            )
+        )
+        merged_kn_summary: dict[str, Any] | None = None
+        merged_gji_summary: dict[str, Any] | None = None
+        merged_dtm_summary: dict[str, Any] | None = None
+        merged_emv_summary: dict[str, Any] | None = None
+        if _needs_spatial:
+            # Clear per-job layer cache so stale GeoDataFrames don't carry across jobs.
+            _SPATIAL_LAYER_CACHE.clear()
+            _sp_unit = total_units - 1
+            _sp_rows = rows_after_dedup
+
+            def _sp_emit(phase: str) -> None:
+                emit_status(_sp_unit, "spatial_enrichment_merged", rows=_sp_rows, spatial_phase=phase)
+
+            emit_status(_sp_unit, "spatial_enrichment_merged", rows=_sp_rows)
+            try:
+                merged_df = pd.read_csv(output_csv_path, dtype=_EID_CSV_DTYPES)
+                if resolved_options["enable_kn"]:
+                    _sp_emit("kn")
+                    with stage_heartbeat(_sp_unit, "spatial_enrichment_merged", rows=_sp_rows, spatial_phase="kn"):
+                        merged_df, merged_kn_summary = _apply_kn_polygon_enrichment(
+                            merged_df, discovered_sources=shared_discovered_sources
+                        )
+                    # Release KN vector layers before loading GJI (9 layers ~300 MB each).
+                    _SPATIAL_LAYER_CACHE.clear()
+                if resolved_options["enable_gji"]:
+                    _sp_emit("gji")
+                    with stage_heartbeat(_sp_unit, "spatial_enrichment_merged", rows=_sp_rows, spatial_phase="gji"):
+                        merged_df, merged_gji_summary = _apply_gji_infrastructure_enrichment(
+                            merged_df, discovered_sources=shared_discovered_sources
+                        )
+                    # Release all 9 GJI layers before loading DTM / EMV layers.
+                    _SPATIAL_LAYER_CACHE.clear()
+                if resolved_options["enable_dtm"]:
+                    _sp_emit("dtm")
+                    with stage_heartbeat(_sp_unit, "spatial_enrichment_merged", rows=_sp_rows, spatial_phase="dtm"):
+                        merged_df, merged_dtm_summary = _apply_dtm_enrichment(
+                            merged_df, discovered_sources=shared_discovered_sources
+                        )
+                    _SPATIAL_LAYER_CACHE.clear()
+                if resolved_options["enable_emv"]:
+                    _sp_emit("emv")
+                    with stage_heartbeat(_sp_unit, "spatial_enrichment_merged", rows=_sp_rows, spatial_phase="emv"):
+                        merged_df, merged_emv_summary = _apply_emv_spatial_enrichment(
+                            merged_df, discovered_sources=shared_discovered_sources
+                        )
+                    _SPATIAL_LAYER_CACHE.clear()
+                merged_df.to_csv(output_csv_path, index=False)
+                rows_after_dedup = len(merged_df)
+                columns = list(merged_df.columns)
+            except Exception:
+                logger.exception("Post-merge spatial enrichment failed; continuing without it")
+
         filter_summary = {
             "building": _aggregate_stage_sequences(
                 [report.get("building_filter_stats", []) for report in reports if report.get("building_filter_stats")]
@@ -3565,6 +4704,15 @@ def prepare_training_csv_from_etn_kpp_bulk(
                 [report.get("land_filter_stats", []) for report in reports if report.get("land_filter_stats")]
             ),
         }
+        merged_enrichment_summary = _build_bulk_merged_enrichment_summary(
+            reports,
+            resolved_options,
+            shared_discovered_sources,
+            kn_summary=merged_kn_summary,
+            gji_summary=merged_gji_summary,
+            dtm_summary=merged_dtm_summary,
+            emv_summary=merged_emv_summary,
+        )
         _write_training_metadata(
             output_csv_path,
             {
@@ -3583,7 +4731,8 @@ def prepare_training_csv_from_etn_kpp_bulk(
                         str(report.get("label")): report.get("enrichment_summary", {})
                         for report in reports
                         if report.get("status") == "ok"
-                    }
+                    },
+                    "merged": merged_enrichment_summary,
                 },
             },
         )
@@ -3614,7 +4763,8 @@ def prepare_training_csv_from_etn_kpp_bulk(
                 str(report.get("label")): report.get("enrichment_summary", {})
                 for report in reports
                 if report.get("status") == "ok"
-            }
+            },
+            "merged": merged_enrichment_summary,
         },
         "reports": reports,
     }

@@ -22,6 +22,7 @@ frontend/dist/
 .idea/
 *.swp
 *.swo
+.claude/
 
 # Docker
 docker-compose.override.yml
@@ -37,6 +38,16 @@ backend/data/processed/*
 # Models
 backend/models/*.joblib
 backend/data/models/*.joblib
+backend/data/models/**/*.joblib
+backend/data/models/*.json
+backend/data/models/**/*.json
+backend/data/models/**/*.csv
+backend/data/models/**/*.log
+backend/data/models/research_queue/
+backend/data/models/research_queue_smoke/
+backend/catboost_info/
+backend/catboost_info/tmp/
+catboost_info/
 
 # Database
 *.db
@@ -53,3 +64,9 @@ htmlcov/
 frontend/coverage/
 frontend/.pnpm-store/
 frontend/node_modules/
+frontend/.vite/
+frontend/.eslintcache
+frontend/playwright-report/
+frontend/test-results/
+.ruff_cache/
+.tools/

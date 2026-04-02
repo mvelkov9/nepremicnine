@@ -1,11 +1,15 @@
 <script setup lang="ts">
-  import { ref, onMounted, onUnmounted, computed, reactive } from 'vue'
+  import { ref, onMounted, onUnmounted, computed, reactive, watch } from 'vue'
   import { useRouter } from 'vue-router'
   import { useI18n } from 'vue-i18n'
+  import AdminRunDetailPanel from '../components/admin/AdminRunDetailPanel.vue'
   import PageHeader from '../components/PageHeader.vue'
   import MetricCard from '../components/MetricCard.vue'
+  import AdminWorkspaceHero from '../components/admin/AdminWorkspaceHero.vue'
+  import { adminWorkspaceLinks } from '../constants/adminWorkspace'
   import { useDataStore } from '../stores/data'
   import { useModelStore } from '../stores/model'
+  import { useWorkbenchStore } from '../stores/workbench'
   import api from '../composables/useApi'
   import { getApiErrorMessage } from '../utils/apiError'
   import { buildGursEnrichmentRows, summarizeGursEnrichment } from '../utils/enrichmentSummary'
@@ -14,6 +18,7 @@
   const { t } = useI18n()
   const dataStore = useDataStore()
   const modelStore = useModelStore()
+  const workbench = useWorkbenchStore()
   const router = useRouter()
 
   const loading = ref(false)
@@ -21,11 +26,13 @@
   const result = ref(null)
   const prepareStatus = ref(null)
   const preparePollTimer = ref<ReturnType<typeof setInterval> | null>(null)
+  const selectedPrepareRunId = ref('')
   const enrichmentOptions = reactive({
     enable_rn: true,
     enable_ev: true,
     enable_kn: true,
     enable_gji: true,
+    enable_dtm: true,
     enable_emv: true,
     variant_label: '',
   })
@@ -40,9 +47,68 @@
     current_label?: string | null
     pairs_completed?: number | null
     rows?: number | null
+    spatial_phase?: string | null
     result?: Record<string, unknown> | null
     error?: string | null
   }
+
+  interface EtnDatasetRef {
+    id?: number
+    original_name: string
+    relative_path: string
+  }
+
+  interface EtnDetectedPair {
+    year: number
+    posli: EtnDatasetRef | null
+    delistavb: EtnDatasetRef | null
+    zemljisca: EtnDatasetRef | null
+  }
+
+  const ENRICHMENT_OPTIONS = [
+    {
+      key: 'enable_rn' as const,
+      titleKey: 'prepare.enableRn',
+      descKey: 'prepare.enableRnDesc',
+      filesKey: 'prepare.enableRnFiles',
+      icon: 'pi-map-marker',
+    },
+    {
+      key: 'enable_ev' as const,
+      titleKey: 'prepare.enableEv',
+      descKey: 'prepare.enableEvDesc',
+      filesKey: 'prepare.enableEvFiles',
+      icon: 'pi-building',
+    },
+    {
+      key: 'enable_kn' as const,
+      titleKey: 'prepare.enableKn',
+      descKey: 'prepare.enableKnDesc',
+      filesKey: 'prepare.enableKnFiles',
+      icon: 'pi-map',
+    },
+    {
+      key: 'enable_gji' as const,
+      titleKey: 'prepare.enableGji',
+      descKey: 'prepare.enableGjiDesc',
+      filesKey: 'prepare.enableGjiFiles',
+      icon: 'pi-bolt',
+    },
+    {
+      key: 'enable_dtm' as const,
+      titleKey: 'prepare.enableDtm',
+      descKey: 'prepare.enableDtmDesc',
+      filesKey: 'prepare.enableDtmFiles',
+      icon: 'pi-wave-pulse',
+    },
+    {
+      key: 'enable_emv' as const,
+      titleKey: 'prepare.enableEmv',
+      descKey: 'prepare.enableEmvDesc',
+      filesKey: 'prepare.enableEmvFiles',
+      icon: 'pi-chart-bar',
+    },
+  ]
 
   // ETN pair mode
   const etnMode = ref('bulk') // 'bulk' | 'single' | 'manual'
@@ -63,19 +129,40 @@
 
   const datasets = computed(() => dataStore.datasets || [])
   const trainingLocked = computed(() => modelStore.training)
+  const selectedPrepareRun = computed(() => workbench.selectedPrepareRun)
   const PREPARE_REQUEST_TIMEOUT_MS = 10 * 60 * 1000
+  const detectedPairsFromApi = ref<EtnDetectedPair[]>([])
+  const datasetsLoadingForSelection = ref(false)
+  const datasetsLoadedForSelection = ref(false)
 
   onMounted(async () => {
     await Promise.all([
-      dataStore.fetchDatasets(),
+      fetchDetectedPairs(),
       dataStore.fetchTrainingDataset(),
       modelStore.fetchActiveTraining(),
+      workbench.fetchPrepareRuns(),
     ])
     await syncExistingPrepareJob()
   })
 
+  watch(
+    () => workbench.prepareRuns,
+    (runs) => {
+      if (!runs.length || selectedPrepareRunId.value) return
+      selectedPrepareRunId.value = runs[0].id
+      void loadPrepareRunDetail(runs[0].id)
+    },
+    { immediate: true },
+  )
+
   onUnmounted(() => {
     stopPreparePolling()
+  })
+
+  watch(etnMode, (mode) => {
+    if (mode !== 'bulk') {
+      void ensureSelectionDatasetsLoaded()
+    }
   })
 
   // --- Dataset role & year helpers (mirrors v1 logic) ---
@@ -85,20 +172,27 @@
 
     for (const candidate of candidates) {
       const text = String(candidate).toUpperCase()
-      const yearMatch = text.match(/ETN_SLO_(20\d{2})_KPP_/)
+      const yearMatch = text.match(/ETN(?:_SLO)?_(20\d{2})_KPP(?:_|\.|$)/)
       if (!yearMatch) continue
 
-      if (text.includes('_KPP_POSLI_')) {
+      if (/_KPP_POSLI(?:_|\.|$)/.test(text)) {
         return { role: 'posli', year: Number(yearMatch[1]) }
       }
 
-      if (text.includes('_KPP_DELISTAVB_')) {
+      if (/_KPP_DELISTAVB(?:_|\.|$)/.test(text)) {
         return { role: 'delistavb', year: Number(yearMatch[1]) }
       }
 
-      if (text.includes('_KPP_ZEMLJISCA_') || text.includes('_KPP_ZEMLJISC_')) {
+      if (/_KPP_ZEMLJISCA(?:_|\.|$)/.test(text) || /_KPP_ZEMLJISC(?:_|\.|$)/.test(text)) {
         return { role: 'zemljisca', year: Number(yearMatch[1]) }
       }
+
+      // Only a real ETN KPP archive can stand in for all roles.
+      if (/ETN(?:_SLO)?_(20\d{2})_KPP\.ZIP$/.test(text)) {
+        return { role: 'bundle', year: Number(yearMatch[1]) }
+      }
+
+      return { role: 'other', year: null }
     }
 
     return { role: 'other', year: null }
@@ -125,25 +219,69 @@
 
   // Reactive computed: auto-detects ETN pairs grouped by year
   const detectedPairs = computed(() => {
+    if (detectedPairsFromApi.value.length) {
+      return detectedPairsFromApi.value
+    }
+
     const byYear = new Map()
     const items = datasets.value || []
     for (const item of items) {
       const { role, year } = parseEtnKppDataset(item)
-      if (!year || (role !== 'posli' && role !== 'delistavb' && role !== 'zemljisca')) continue
+      if (!year) continue
       if (!byYear.has(year))
         byYear.set(year, { year, posli: null, delistavb: null, zemljisca: null })
       const row = byYear.get(year)
-      // Keep latest upload per role (highest id)
-      if (role === 'posli' && (!row.posli || item.id > row.posli.id)) row.posli = item
-      if (role === 'delistavb' && (!row.delistavb || item.id > row.delistavb.id))
+      if (role === 'bundle') {
+        // ETN bundle ZIP: fills all roles (backend extracts CSVs from ZIP on demand)
+        if (!row.posli || Number(item.id || 0) > Number(row.posli.id || 0)) row.posli = item
+        if (!row.delistavb || Number(item.id || 0) > Number(row.delistavb.id || 0))
+          row.delistavb = item
+        if (!row.zemljisca || Number(item.id || 0) > Number(row.zemljisca.id || 0))
+          row.zemljisca = item
+      } else if (
+        role === 'posli' &&
+        (!row.posli || Number(item.id || 0) > Number(row.posli.id || 0))
+      ) {
+        row.posli = item
+      } else if (
+        role === 'delistavb' &&
+        (!row.delistavb || Number(item.id || 0) > Number(row.delistavb.id || 0))
+      ) {
         row.delistavb = item
-      if (role === 'zemljisca' && (!row.zemljisca || item.id > row.zemljisca.id))
+      } else if (
+        role === 'zemljisca' &&
+        (!row.zemljisca || Number(item.id || 0) > Number(row.zemljisca.id || 0))
+      ) {
         row.zemljisca = item
+      }
     }
     return Array.from(byYear.values())
       .filter((r) => r.posli && r.delistavb)
       .sort((a, b) => a.year - b.year)
   })
+
+  async function fetchDetectedPairs() {
+    try {
+      const { data } = await api.get('/api/data/prepare-etn-kpp-pairs')
+      const pairs = Array.isArray(data?.pairs) ? data.pairs : []
+      detectedPairsFromApi.value = pairs
+    } catch {
+      // Fallback for older backends that do not expose the optimized pairs endpoint.
+      await dataStore.fetchDatasets(false, true, { perPage: 200 })
+    }
+  }
+
+  async function ensureSelectionDatasetsLoaded() {
+    if (datasetsLoadedForSelection.value || datasetsLoadingForSelection.value) return
+
+    datasetsLoadingForSelection.value = true
+    try {
+      await dataStore.fetchDatasets(false, true, { perPage: 200 })
+      datasetsLoadedForSelection.value = true
+    } finally {
+      datasetsLoadingForSelection.value = false
+    }
+  }
 
   function pairStatus(pair) {
     if (pair.posli && pair.delistavb) return 'complete'
@@ -195,6 +333,7 @@
       enable_ev: enrichmentOptions.enable_ev,
       enable_kn: enrichmentOptions.enable_kn,
       enable_gji: enrichmentOptions.enable_gji,
+      enable_dtm: enrichmentOptions.enable_dtm,
       enable_emv: enrichmentOptions.enable_emv,
       variant_label: enrichmentOptions.variant_label.trim() || undefined,
     }
@@ -202,6 +341,11 @@
 
   function isTerminalPrepareStatus(status) {
     return status === 'completed' || status === 'failed'
+  }
+
+  async function loadPrepareRunDetail(jobId: string) {
+    selectedPrepareRunId.value = jobId
+    await workbench.fetchPrepareRunDetail(jobId)
   }
 
   function stopPreparePolling() {
@@ -442,6 +586,80 @@
     return t('common.noData')
   }
 
+  // ── Progress pipeline helpers ─────────────────────────────────────────────
+
+  const PAIR_STAGES = new Set([
+    'loading_pair',
+    'building_rows',
+    'enriching_buildings',
+    'enriching_land',
+    'finalizing_pair',
+  ])
+  const STAGE_RANK: Record<string, number> = {
+    queued: 0,
+    initializing: 1,
+    loading_sources: 1,
+    loading_pair: 2,
+    building_rows: 2,
+    enriching_buildings: 2,
+    enriching_land: 2,
+    finalizing_pair: 2,
+    merging_outputs: 3,
+    spatial_enrichment_merged: 4,
+    completed: 5,
+    error: 6,
+  }
+  const SPATIAL_PHASE_RANK: Record<string, number> = { kn: 1, gji: 2, dtm: 3, emv: 4 }
+
+  type StepState = 'pending' | 'active' | 'done' | 'error'
+
+  function pipelineStepState(rank: number): StepState {
+    const s = prepareStatus.value
+    if (!s) return 'pending'
+    if (s.status === 'failed') return rank <= (STAGE_RANK[s.stage ?? ''] ?? 0) ? 'error' : 'pending'
+    const cur = STAGE_RANK[s.stage ?? ''] ?? 0
+    if (rank < cur) return 'done'
+    if (rank === cur) return s.status === 'completed' ? 'done' : 'active'
+    return 'pending'
+  }
+
+  function spatialSubStepState(phase: string): StepState {
+    const s = prepareStatus.value
+    if (!s) return 'pending'
+    if (s.stage !== 'spatial_enrichment_merged' && s.status !== 'completed') {
+      return (STAGE_RANK[s.stage ?? ''] ?? 0 > 4) ? 'done' : 'pending'
+    }
+    if (s.status === 'completed') return 'done'
+    const curRank = SPATIAL_PHASE_RANK[s.spatial_phase ?? ''] ?? 0
+    const phaseRank = SPATIAL_PHASE_RANK[phase] ?? 0
+    // spatial_phase not yet set — treat kn (rank 1) as active
+    if (curRank === 0) return phaseRank === 1 ? 'active' : 'pending'
+    if (phaseRank < curRank) return 'done'
+    if (phaseRank === curRank) return 'active'
+    return 'pending'
+  }
+
+  // Track max progress seen so parallel pairs never cause the bar to jump backwards.
+  const maxProgressSeen = ref(0)
+
+  watch(
+    [loading, () => prepareStatus.value?.progress ?? 0],
+    ([isLoading, raw]) => {
+      if (!isLoading) {
+        maxProgressSeen.value = 0
+        return
+      }
+      if (raw > maxProgressSeen.value) {
+        maxProgressSeen.value = raw
+      }
+    },
+    { immediate: true },
+  )
+
+  const prepareProgress = computed(() =>
+    loading.value ? maxProgressSeen.value : (prepareStatus.value?.progress ?? 0),
+  )
+
   const prepareProgressVisible = computed(
     () => !!prepareStatus.value && (loading.value || prepareStatus.value?.status === 'failed'),
   )
@@ -472,6 +690,8 @@
         return t('prepare.stageQueued')
       case 'initializing':
         return t('prepare.stageInitializing')
+      case 'loading_sources':
+        return t('prepare.stageLoadingSources')
       case 'loading_pair':
         return t('prepare.stageLoadingPair', { label })
       case 'building_rows':
@@ -484,6 +704,8 @@
         return t('prepare.stageFinalizingPair', { label })
       case 'merging_outputs':
         return t('prepare.stageMergingOutputs')
+      case 'spatial_enrichment_merged':
+        return t('prepare.stageSpatialEnrichmentMerged', { rows: status?.rows ?? '…' })
       case 'completed':
         return t('prepare.stageCompleted')
       case 'error':
@@ -493,47 +715,56 @@
     }
   })
 
-  const prepareProgressCards = computed(() => {
-    const status = prepareStatus.value
-    if (!status) return []
-
-    return [
-      {
-        label: t('prepare.currentYear'),
-        value: status.current_label || t('prepare.unknownYear'),
-        meta:
-          status.current_pair_index && status.total_pairs
-            ? t('prepare.currentPairMeta', {
-                current: status.current_pair_index,
-                total: status.total_pairs,
-              })
-            : t('common.noData'),
-      },
-      {
-        label: t('prepare.pairsCompleted'),
-        value: fmt(status.pairs_completed || 0),
-        meta: status.total_pairs
-          ? t('prepare.totalPairsMeta', { total: status.total_pairs })
-          : t('common.noData'),
-      },
-      {
-        label: t('prepare.prepareProgress'),
-        value: `${status.progress || 0}%`,
-        meta: prepareStageLabel.value,
-      },
-    ]
-  })
+  const prepareSummaryCards = computed(() => [
+    {
+      label: t('prepare.autoEtn'),
+      value: formatNumber(selectedPairs().length),
+      meta: `${formatNumber(detectedPairs.value.length)} ${t('prepare.year')}`,
+    },
+    {
+      label: t('prepare.enrichmentOptions'),
+      value: formatNumber(
+        Object.values(enrichmentOptions).filter((value) => typeof value === 'boolean' && value)
+          .length,
+      ),
+      meta: t('prepare.enrichmentOptionsDesc'),
+    },
+    {
+      label: t('model.training'),
+      value: trainingLocked.value ? t('model.training') : t('model.trainButton'),
+      meta: trainingLocked.value ? t('prepare.trainingLockedHint') : t('prepare.readyForModel'),
+      tone: (trainingLocked.value ? 'warning' : 'success') as 'success' | 'warning',
+    },
+    {
+      label: t('data.rows'),
+      value: formatNumber(
+        prepareStatus.value?.rows || result.value?.rows || result.value?.total_rows || 0,
+      ),
+      meta: prepareStageLabel.value || t('common.noData'),
+    },
+  ])
 </script>
 
 <template>
   <div class="prepare-page">
-    <section class="card admin-hero prepare-hero">
-      <PageHeader
-        :eyebrow="t('nav.prepare')"
-        :title="t('prepare.title')"
-        :description="trainingLocked ? t('prepare.trainingLockedHint') : t('layout.page.prepare')"
-      />
-    </section>
+    <AdminWorkspaceHero
+      :eyebrow="t('nav.prepare')"
+      :title="t('prepare.title')"
+      :description="trainingLocked ? t('prepare.trainingLockedHint') : t('layout.page.prepare')"
+      :metrics="prepareSummaryCards"
+      :links="adminWorkspaceLinks"
+      :status="prepareStatus ? prepareStatusLabel : ''"
+      :status-severity="prepareStatusSeverity"
+    />
+
+    <AdminRunDetailPanel
+      :eyebrow="t('nav.prepare')"
+      :title="t('workbench.recentPrepareRuns')"
+      :description="t('workbench.prepareRunDetailHint')"
+      :runs="workbench.prepareRuns.slice(0, 8)"
+      :selected-run="selectedPrepareRun"
+      @select="loadPrepareRunDetail"
+    />
 
     <!-- Mode tabs -->
     <div class="card prepare-workbench">
@@ -566,26 +797,25 @@
                     <p class="muted">{{ t('prepare.enrichmentOptionsDesc') }}</p>
                   </div>
 
-                  <div class="toggle-grid">
-                    <label class="toggle-chip">
-                      <ToggleSwitch v-model="enrichmentOptions.enable_rn" />
-                      <span>{{ t('prepare.enableRn') }}</span>
-                    </label>
-                    <label class="toggle-chip">
-                      <ToggleSwitch v-model="enrichmentOptions.enable_ev" />
-                      <span>{{ t('prepare.enableEv') }}</span>
-                    </label>
-                    <label class="toggle-chip">
-                      <ToggleSwitch v-model="enrichmentOptions.enable_kn" />
-                      <span>{{ t('prepare.enableKn') }}</span>
-                    </label>
-                    <label class="toggle-chip">
-                      <ToggleSwitch v-model="enrichmentOptions.enable_gji" />
-                      <span>{{ t('prepare.enableGji') }}</span>
-                    </label>
-                    <label class="toggle-chip">
-                      <ToggleSwitch v-model="enrichmentOptions.enable_emv" />
-                      <span>{{ t('prepare.enableEmv') }}</span>
+                  <div class="enrichment-cards">
+                    <label
+                      v-for="opt in ENRICHMENT_OPTIONS"
+                      :key="opt.key"
+                      class="enrichment-card"
+                      :class="{ 'enrichment-card--active': enrichmentOptions[opt.key] }"
+                    >
+                      <div class="enrichment-card-header">
+                        <div class="enrichment-card-title">
+                          <i :class="`pi ${opt.icon}`" />
+                          <span>{{ t(opt.titleKey) }}</span>
+                        </div>
+                        <ToggleSwitch v-model="enrichmentOptions[opt.key]" />
+                      </div>
+                      <p class="enrichment-card-desc">{{ t(opt.descKey) }}</p>
+                      <div class="enrichment-card-files">
+                        <span class="files-label">{{ t('prepare.enrichmentFilesLabel') }}:</span>
+                        <code>{{ t(opt.filesKey) }}</code>
+                      </div>
                     </label>
                   </div>
 
@@ -678,6 +908,7 @@
                     :options="[{ label: t('prepare.selectFile'), value: '' }, ...getDatasetPaths()]"
                     option-label="label"
                     option-value="value"
+                    :loading="datasetsLoadingForSelection"
                   />
                 </div>
                 <div>
@@ -687,6 +918,7 @@
                     :options="[{ label: t('prepare.selectFile'), value: '' }, ...getDatasetPaths()]"
                     option-label="label"
                     option-value="value"
+                    :loading="datasetsLoadingForSelection"
                   />
                 </div>
               </div>
@@ -697,26 +929,25 @@
                   <p class="muted">{{ t('prepare.enrichmentOptionsDesc') }}</p>
                 </div>
 
-                <div class="toggle-grid">
-                  <label class="toggle-chip">
-                    <ToggleSwitch v-model="enrichmentOptions.enable_rn" />
-                    <span>{{ t('prepare.enableRn') }}</span>
-                  </label>
-                  <label class="toggle-chip">
-                    <ToggleSwitch v-model="enrichmentOptions.enable_ev" />
-                    <span>{{ t('prepare.enableEv') }}</span>
-                  </label>
-                  <label class="toggle-chip">
-                    <ToggleSwitch v-model="enrichmentOptions.enable_kn" />
-                    <span>{{ t('prepare.enableKn') }}</span>
-                  </label>
-                  <label class="toggle-chip">
-                    <ToggleSwitch v-model="enrichmentOptions.enable_gji" />
-                    <span>{{ t('prepare.enableGji') }}</span>
-                  </label>
-                  <label class="toggle-chip">
-                    <ToggleSwitch v-model="enrichmentOptions.enable_emv" />
-                    <span>{{ t('prepare.enableEmv') }}</span>
+                <div class="enrichment-cards">
+                  <label
+                    v-for="opt in ENRICHMENT_OPTIONS"
+                    :key="opt.key"
+                    class="enrichment-card"
+                    :class="{ 'enrichment-card--active': enrichmentOptions[opt.key] }"
+                  >
+                    <div class="enrichment-card-header">
+                      <div class="enrichment-card-title">
+                        <i :class="`pi ${opt.icon}`" />
+                        <span>{{ t(opt.titleKey) }}</span>
+                      </div>
+                      <ToggleSwitch v-model="enrichmentOptions[opt.key]" />
+                    </div>
+                    <p class="enrichment-card-desc">{{ t(opt.descKey) }}</p>
+                    <div class="enrichment-card-files">
+                      <span class="files-label">{{ t('prepare.enrichmentFilesLabel') }}:</span>
+                      <code>{{ t(opt.filesKey) }}</code>
+                    </div>
                   </label>
                 </div>
 
@@ -757,6 +988,7 @@
                   :options="[{ label: t('prepare.selectFile'), value: '' }, ...getDatasetPaths()]"
                   option-label="label"
                   option-value="value"
+                  :loading="datasetsLoadingForSelection"
                 />
               </div>
 
@@ -800,19 +1032,107 @@
         </template>
       </PageHeader>
 
-      <ProgressBar :value="prepareStatus?.progress || 0" :show-value="false" />
+      <div class="progress-header-row">
+        <span class="progress-pct">{{ prepareProgress }}%</span>
+        <span class="progress-stage-label">{{ prepareStageLabel }}</span>
+      </div>
+      <ProgressBar :value="prepareProgress" :show-value="false" class="mb-4" />
 
-      <div class="result-metrics compact-metrics">
-        <MetricCard
-          v-for="card in prepareProgressCards"
-          :key="card.label"
-          :label="card.label"
-          :value="card.value"
-          :meta="card.meta"
-        />
+      <!-- Step pipeline -->
+      <div class="prepare-pipeline">
+        <!-- Init -->
+        <div class="pipeline-step" :class="`pipeline-step--${pipelineStepState(1)}`">
+          <span class="step-dot" />
+          <div class="step-body">
+            <span class="step-name">{{ t('prepare.stepInit') }}</span>
+          </div>
+        </div>
+
+        <!-- Pairs -->
+        <div class="pipeline-step" :class="`pipeline-step--${pipelineStepState(2)}`">
+          <span class="step-dot" />
+          <div class="step-body">
+            <span class="step-name">{{ t('prepare.stepPairs') }}</span>
+            <span v-if="prepareStatus?.total_pairs" class="step-meta">
+              {{
+                t('prepare.stepPairsProgress', {
+                  done: prepareStatus.pairs_completed ?? 0,
+                  total: prepareStatus.total_pairs,
+                })
+              }}
+            </span>
+            <span
+              v-if="PAIR_STAGES.has(prepareStatus?.stage ?? '') && prepareStatus?.current_label"
+              class="step-detail"
+            >
+              {{ t('prepare.stepPairsCurrent', { label: prepareStatus.current_label }) }}
+              — {{ prepareStageLabel }}
+            </span>
+          </div>
+        </div>
+
+        <!-- Merge -->
+        <div class="pipeline-step" :class="`pipeline-step--${pipelineStepState(3)}`">
+          <span class="step-dot" />
+          <div class="step-body">
+            <span class="step-name">{{ t('prepare.stepMerge') }}</span>
+          </div>
+        </div>
+
+        <!-- Spatial enrichment -->
+        <div class="pipeline-step" :class="`pipeline-step--${pipelineStepState(4)}`">
+          <span class="step-dot" />
+          <div class="step-body">
+            <span class="step-name">{{ t('prepare.stepSpatial') }}</span>
+            <span v-if="prepareStatus?.rows && pipelineStepState(4) === 'active'" class="step-meta">
+              {{ fmt(prepareStatus.rows) }} vrstic
+            </span>
+            <!-- Spatial sub-steps — only show phases that were enabled for this job -->
+            <div v-if="pipelineStepState(4) !== 'pending'" class="spatial-substeps">
+              <div
+                v-for="phase in [
+                  {
+                    key: 'kn',
+                    label: t('prepare.stepSpatialKn'),
+                    show: enrichmentOptions.enable_kn,
+                  },
+                  {
+                    key: 'gji',
+                    label: t('prepare.stepSpatialGji'),
+                    show: enrichmentOptions.enable_gji,
+                  },
+                  {
+                    key: 'dtm',
+                    label: t('prepare.stepSpatialDtm'),
+                    show: enrichmentOptions.enable_dtm,
+                  },
+                  {
+                    key: 'emv',
+                    label: t('prepare.stepSpatialEmv'),
+                    show: enrichmentOptions.enable_emv,
+                  },
+                ].filter((p) => p.show)"
+                :key="phase.key"
+                class="spatial-sub"
+                :class="`spatial-sub--${spatialSubStepState(phase.key)}`"
+              >
+                <span class="sub-dot" />
+                <span class="sub-name">{{ phase.label }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Done -->
+        <div class="pipeline-step" :class="`pipeline-step--${pipelineStepState(5)}`">
+          <span class="step-dot" />
+          <div class="step-body">
+            <span class="step-name">{{ t('prepare.stepDone') }}</span>
+          </div>
+        </div>
       </div>
 
-      <p v-if="prepareStatus?.error" class="error-text">{{ prepareStatus.error }}</p>
+      <p v-if="prepareStatus?.error" class="error-text mt-3">{{ prepareStatus.error }}</p>
     </div>
 
     <!-- Result -->
@@ -1093,21 +1413,7 @@
     flex-wrap: wrap;
   }
 
-  .toggle-grid {
-    display: flex;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-  }
-
-  .toggle-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.65rem;
-    padding: 0.65rem 0.9rem;
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    background: var(--surface-muted);
-  }
+  /* ── Enrichment option cards ──────────────────────────────────────────── */
 
   .enrichment-config-card {
     display: grid;
@@ -1128,6 +1434,83 @@
     font-size: 1rem;
   }
 
+  .enrichment-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 0.75rem;
+  }
+
+  .enrichment-card {
+    display: grid;
+    gap: 0.5rem;
+    padding: 0.85rem 1rem;
+    border: 1px solid var(--border);
+    border-radius: 0.75rem;
+    background: var(--surface);
+    cursor: pointer;
+    transition:
+      border-color 0.15s,
+      background 0.15s;
+  }
+
+  .enrichment-card--active {
+    border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
+    background: color-mix(in srgb, var(--primary) 5%, var(--surface));
+  }
+
+  .enrichment-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  .enrichment-card-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 600;
+    font-size: 0.875rem;
+  }
+
+  .enrichment-card-title .pi {
+    font-size: 1rem;
+    color: var(--primary);
+    opacity: 0.8;
+  }
+
+  .enrichment-card--active .enrichment-card-title .pi {
+    opacity: 1;
+  }
+
+  .enrichment-card-desc {
+    margin: 0;
+    font-size: 0.78rem;
+    line-height: 1.45;
+    color: var(--text-muted);
+  }
+
+  .enrichment-card-files {
+    display: flex;
+    align-items: baseline;
+    gap: 0.35rem;
+    font-size: 0.75rem;
+  }
+
+  .enrichment-card-files .files-label {
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+
+  .enrichment-card-files code {
+    font-size: 0.73rem;
+    color: var(--text-muted);
+    background: var(--surface-muted);
+    padding: 0.1rem 0.35rem;
+    border-radius: 4px;
+    word-break: break-all;
+  }
+
   .variant-field {
     max-width: 24rem;
   }
@@ -1140,8 +1523,152 @@
     flex: 1 1 220px;
   }
 
-  .compact-metrics :deep(.metric-card) {
-    min-width: 12rem;
+  /* ── Prepare pipeline ─────────────────────────────────────────────────── */
+
+  .prepare-pipeline {
+    display: grid;
+    gap: 0;
+    padding: 0.25rem 0;
+  }
+
+  .pipeline-step {
+    display: flex;
+    gap: 0.85rem;
+    padding: 0.6rem 0;
+    position: relative;
+  }
+
+  .pipeline-step:not(:last-child)::before {
+    content: '';
+    position: absolute;
+    left: 0.6rem;
+    top: 1.55rem;
+    bottom: -0.4rem;
+    width: 2px;
+    background: var(--border);
+  }
+
+  .pipeline-step--done:not(:last-child)::before {
+    background: var(--success);
+  }
+
+  .pipeline-step--active:not(:last-child)::before {
+    background: color-mix(in srgb, var(--primary) 40%, var(--border));
+  }
+
+  .step-dot {
+    width: 1.2rem;
+    height: 1.2rem;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+    margin-top: 0.1rem;
+    position: relative;
+    z-index: 1;
+  }
+
+  .pipeline-step--done .step-dot {
+    background: var(--success);
+    border-color: var(--success);
+  }
+
+  .pipeline-step--done .step-dot::after {
+    content: '';
+    position: absolute;
+    inset: 3px;
+    background: white;
+    clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+  }
+
+  .pipeline-step--active .step-dot {
+    border-color: var(--primary);
+    background: var(--primary);
+    animation: pulse-dot 1.4s ease-in-out infinite;
+  }
+
+  .pipeline-step--error .step-dot {
+    background: var(--danger);
+    border-color: var(--danger);
+  }
+
+  @keyframes pulse-dot {
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 color-mix(in srgb, var(--primary) 40%, transparent);
+    }
+    50% {
+      box-shadow: 0 0 0 5px transparent;
+    }
+  }
+
+  .step-body {
+    display: grid;
+    gap: 0.15rem;
+    padding-top: 0.05rem;
+  }
+
+  .step-name {
+    font-weight: 600;
+    font-size: 0.875rem;
+  }
+
+  .pipeline-step--pending .step-name {
+    color: var(--text-muted);
+  }
+
+  .step-meta {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+  }
+
+  .step-detail {
+    font-size: 0.8rem;
+    color: var(--primary);
+  }
+
+  /* Spatial sub-steps */
+  .spatial-substeps {
+    display: grid;
+    gap: 0.35rem;
+    margin-top: 0.4rem;
+    padding-left: 0.1rem;
+  }
+
+  .spatial-sub {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-size: 0.8rem;
+  }
+
+  .sub-dot {
+    width: 0.65rem;
+    height: 0.65rem;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+
+  .spatial-sub--done .sub-dot {
+    background: var(--success);
+    border-color: var(--success);
+  }
+
+  .spatial-sub--active .sub-dot {
+    background: var(--primary);
+    border-color: var(--primary);
+    animation: pulse-dot 1.4s ease-in-out infinite;
+  }
+
+  .spatial-sub--pending .sub-name {
+    color: var(--text-muted);
+  }
+
+  .spatial-sub--active .sub-name {
+    color: var(--primary);
+    font-weight: 600;
   }
 
   .code-textarea {
@@ -1172,6 +1699,26 @@
 
   .progress-card {
     border-left: 4px solid var(--info);
+  }
+
+  .progress-header-row {
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+    margin-bottom: 0.4rem;
+  }
+
+  .progress-pct {
+    font-size: 2rem;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--primary);
+    min-width: 4.5rem;
+  }
+
+  .progress-stage-label {
+    font-size: 0.875rem;
+    color: var(--text-muted);
   }
 
   @media (max-width: 720px) {

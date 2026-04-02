@@ -7,17 +7,30 @@
   import LoadingSpinner from '../components/LoadingSpinner.vue'
   import MetricCard from '../components/MetricCard.vue'
   import PageHeader from '../components/PageHeader.vue'
+  import SavedWorkspaceMenu from '../components/workbench/SavedWorkspaceMenu.vue'
+  import TableWorkbenchToolbar from '../components/workbench/TableWorkbenchToolbar.vue'
+  import AdminRunDetailPanel from '../components/admin/AdminRunDetailPanel.vue'
+  import AdminWorkspaceHero from '../components/admin/AdminWorkspaceHero.vue'
+  import { adminWorkspaceLinks } from '../constants/adminWorkspace'
+  import { useExport } from '../composables/useExport'
+  import { useViewerQueryState } from '../composables/useViewerQueryState'
   import { useAuthStore } from '../stores/auth'
   import type { UploadProgressContext } from '../stores/data'
   import { useDataStore } from '../stores/data'
+  import { useWorkbenchStore } from '../stores/workbench'
   import { getApiErrorMessage } from '../utils/apiError'
   import { formatDate as formatDateValue, formatNumber, formatPercent } from '../utils/format'
 
   const { t } = useI18n()
   const auth = useAuthStore()
   const dataStore = useDataStore()
+  const workbench = useWorkbenchStore()
   const confirmDialog = useConfirm()
   const { showToast } = useToast()
+  const { exportToCSV } = useExport()
+  const viewerQuery = useViewerQueryState({
+    dataset_filter: '',
+  })
 
   const fileInput = ref(null)
   const previewData = ref(null)
@@ -28,8 +41,8 @@
   const uploadItems = ref<UploadItem[]>([])
   const isDragActive = ref(false)
   const error = ref('')
-  const datasetFilter = ref('')
   const rescanning = ref(false)
+  const selectedPrepareRunId = ref('')
 
   type UploadItemStatus =
     | 'queued'
@@ -53,6 +66,14 @@
 
   const qualitySummary = computed(() => dataStore.qualitySummary)
   const uploadCapacity = computed(() => dataStore.uploadCapacity)
+  const selectedPrepareRun = computed(() => workbench.selectedPrepareRun)
+  const datasetFilter = computed({
+    get: () => viewerQuery.state.dataset_filter,
+    set: (value: string) => viewerQuery.patchState({ dataset_filter: value }),
+  })
+  const datasetFilterLabels = computed(() =>
+    viewerQuery.state.dataset_filter ? [viewerQuery.state.dataset_filter] : [],
+  )
   const filteredDatasets = computed(() => {
     const query = datasetFilter.value.trim().toLowerCase()
     if (!query) return dataStore.datasets
@@ -63,6 +84,14 @@
           .includes(query),
       ),
     )
+  })
+  const datasetRows = computed(() => Number(dataStore.datasetsPerPage || 10))
+  const datasetFirst = computed(() =>
+    Math.max(0, (Number(dataStore.datasetsPage || 1) - 1) * datasetRows.value),
+  )
+  const datasetTotalRecords = computed(() => {
+    if (datasetFilter.value.trim()) return filteredDatasets.value.length
+    return Number(dataStore.datasetsTotal || 0)
   })
 
   const summaryCards = computed(() => [
@@ -215,27 +244,51 @@
     return t('data.selectedFilesCount', { count: 0 })
   })
 
+  async function fetchDatasetPage(page = 1, perPage = 10, withSync = false) {
+    await dataStore.fetchDatasets(withSync, false, { page, perPage })
+  }
+
+  function refreshAdminDiagnosticsBackground() {
+    if (!auth.isAdmin) return
+
+    void dataStore.fetchQualitySummary().catch((e) => {
+      if (!error.value) error.value = getApiErrorMessage(e, t)
+    })
+
+    void dataStore.fetchUploadCapacity().catch((e) => {
+      if (!error.value) error.value = getApiErrorMessage(e, t)
+    })
+  }
+
   async function loadDataView() {
     const results = await Promise.allSettled([
-      dataStore.fetchDatasets(),
+      fetchDatasetPage(1, 10),
       dataStore.fetchTrainingDataset(),
-      auth.isAdmin ? dataStore.fetchQualitySummary() : Promise.resolve(),
-      auth.isAdmin ? dataStore.fetchUploadCapacity() : Promise.resolve(),
     ])
 
     const firstFailure = results.find((result) => result.status === 'rejected')
     if (firstFailure && firstFailure.status === 'rejected') {
       throw firstFailure.reason
     }
+
+    refreshAdminDiagnosticsBackground()
   }
 
   onMounted(async () => {
     try {
-      await loadDataView()
+      await Promise.all([loadDataView(), workbench.fetchPrepareRuns()])
+      if (workbench.prepareRuns.length && !selectedPrepareRunId.value) {
+        await loadPrepareRunDetail(workbench.prepareRuns[0].id)
+      }
     } catch (e) {
       error.value = getApiErrorMessage(e, t)
     }
   })
+
+  async function loadPrepareRunDetail(jobId: string) {
+    selectedPrepareRunId.value = jobId
+    await workbench.fetchPrepareRunDetail(jobId)
+  }
 
   function formatFileSize(bytes: number) {
     if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
@@ -431,11 +484,8 @@
       const skippedCount = result?.skipped?.length || 0
       selectedFiles.value = []
       fileInput.value?.clear()
-      await Promise.all([
-        dataStore.fetchTrainingDataset(),
-        dataStore.fetchQualitySummary(),
-        dataStore.fetchUploadCapacity(),
-      ])
+      await dataStore.fetchTrainingDataset()
+      refreshAdminDiagnosticsBackground()
       showToast(
         uploadedCount
           ? t('data.uploadSuccessToast', { count: uploadedCount })
@@ -475,11 +525,8 @@
       accept: async () => {
         try {
           await dataStore.deleteDataset(id)
-          await Promise.all([
-            dataStore.fetchTrainingDataset(),
-            dataStore.fetchQualitySummary(),
-            dataStore.fetchUploadCapacity(),
-          ])
+          await dataStore.fetchTrainingDataset()
+          refreshAdminDiagnosticsBackground()
         } catch (e) {
           error.value = getApiErrorMessage(e, t)
         }
@@ -498,11 +545,8 @@
       accept: async () => {
         try {
           await dataStore.deleteAllDatasets()
-          await Promise.all([
-            dataStore.fetchTrainingDataset(),
-            dataStore.fetchQualitySummary(),
-            dataStore.fetchUploadCapacity(),
-          ])
+          await dataStore.fetchTrainingDataset()
+          refreshAdminDiagnosticsBackground()
         } catch (e) {
           error.value = getApiErrorMessage(e, t)
         }
@@ -530,6 +574,23 @@
     }
   }
 
+  function clearDatasetFilters() {
+    viewerQuery.resetState()
+  }
+
+  function exportDatasets() {
+    exportToCSV(
+      filteredDatasets.value.map((item) => ({
+        original_name: item.original_name,
+        relative_path: item.relative_path,
+        source_type: item.source_type,
+        row_count: item.row_count,
+        uploaded_at: item.uploaded_at,
+      })),
+      'dataset-library.csv',
+    )
+  }
+
   function formatDate(iso) {
     return formatDateValue(iso, { dateStyle: 'medium' })
   }
@@ -537,17 +598,37 @@
   function formatSize(rows) {
     return formatNumber(rows)
   }
+
+  async function handleDatasetPage(event: any) {
+    error.value = ''
+    const nextPage = Number(event?.page ?? 0) + 1
+    const nextRows = Number(event?.rows ?? datasetRows.value)
+    try {
+      await fetchDatasetPage(nextPage, nextRows)
+    } catch (e) {
+      error.value = getApiErrorMessage(e, t)
+    }
+  }
 </script>
 
 <template>
   <div class="data-page">
-    <section class="card admin-hero data-hero">
-      <PageHeader
-        :eyebrow="t('nav.data')"
-        :title="t('data.workspaceTitle')"
-        :description="t('data.workspaceBody')"
-      />
-    </section>
+    <AdminWorkspaceHero
+      :eyebrow="t('nav.data')"
+      :title="t('data.workspaceTitle')"
+      :description="t('data.workspaceBody')"
+      :metrics="summaryCards"
+      :links="adminWorkspaceLinks"
+      :status="dataStore.uploading ? t('common.loading') : uploadStatusBadge"
+      :status-severity="dataStore.uploading ? 'warn' : uploadStatusTone"
+    >
+      <template #actions>
+        <SavedWorkspaceMenu
+          page="data"
+          :state="{ page: 'data', filters: { dataset_filter: viewerQuery.state.dataset_filter } }"
+        />
+      </template>
+    </AdminWorkspaceHero>
 
     <section v-if="auth.isAdmin" class="card admin-upload upload-card">
       <PageHeader
@@ -790,6 +871,16 @@
       />
     </section>
 
+    <AdminRunDetailPanel
+      v-if="auth.isAdmin"
+      :eyebrow="t('nav.prepare')"
+      :title="t('workbench.recentPrepareRuns')"
+      :description="t('workbench.prepareRunDetailHint')"
+      :runs="workbench.prepareRuns.slice(0, 8)"
+      :selected-run="selectedPrepareRun"
+      @select="loadPrepareRunDetail"
+    />
+
     <section v-if="auth.isAdmin" class="quality-grid">
       <article class="card quality-card">
         <PageHeader
@@ -802,7 +893,7 @@
         <DataTable
           :value="qualitySummary?.unresolved_labels || []"
           paginator
-          :rows="6"
+          :rows="10"
           size="small"
           striped-rows
           responsive-layout="scroll"
@@ -823,7 +914,7 @@
         <DataTable
           :value="qualitySummary?.alias_collisions || []"
           paginator
-          :rows="6"
+          :rows="10"
           size="small"
           striped-rows
           responsive-layout="scroll"
@@ -845,33 +936,37 @@
         :eyebrow="t('data.datasets')"
         :title="t('data.datasetLibrary')"
         :description="t('data.datasetLibraryHint')"
+      />
+
+      <TableWorkbenchToolbar
+        page="data"
+        :state="{ page: 'data', filters: { dataset_filter: viewerQuery.state.dataset_filter } }"
+        :search-value="datasetFilter"
+        :active-filters="datasetFilterLabels"
+        @update:search-value="datasetFilter = $event"
+        @export="exportDatasets"
+        @clear="clearDatasetFilters"
       >
         <template #actions>
-          <div class="table-actions">
-            <IconField class="search-field">
-              <InputIcon class="pi pi-search" />
-              <InputText v-model="datasetFilter" :placeholder="t('common.search')" />
-            </IconField>
-            <Button
-              v-if="auth.isAdmin"
-              severity="secondary"
-              outlined
-              icon="pi pi-refresh"
-              :label="t('data.rescanUploads')"
-              :loading="rescanning"
-              @click="handleRescan"
-            />
-            <Button
-              v-if="auth.isAdmin && dataStore.datasets.length"
-              severity="danger"
-              outlined
-              icon="pi pi-trash"
-              :label="t('data.deleteAll')"
-              @click="handleDeleteAll"
-            />
-          </div>
+          <Button
+            v-if="auth.isAdmin"
+            severity="secondary"
+            outlined
+            icon="pi pi-refresh"
+            :label="t('data.rescanUploads')"
+            :loading="rescanning"
+            @click="handleRescan"
+          />
+          <Button
+            v-if="auth.isAdmin && dataStore.datasets.length"
+            severity="danger"
+            outlined
+            icon="pi pi-trash"
+            :label="t('data.deleteAll')"
+            @click="handleDeleteAll"
+          />
         </template>
-      </PageHeader>
+      </TableWorkbenchToolbar>
 
       <LoadingSpinner v-if="dataStore.loading" :label="t('common.loading')" />
       <EmptyState
@@ -882,11 +977,15 @@
       <DataTable
         v-else
         :value="filteredDatasets"
+        lazy
         paginator
-        :rows="10"
+        :first="datasetFirst"
+        :rows="datasetRows"
+        :total-records="datasetTotalRecords"
         size="small"
         striped-rows
         responsive-layout="scroll"
+        @page="handleDatasetPage"
       >
         <Column field="original_name" :header="t('data.fileName')" sortable />
         <Column field="relative_path" :header="t('data.relativePath')" sortable />

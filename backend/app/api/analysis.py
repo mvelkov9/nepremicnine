@@ -16,6 +16,7 @@ from app.models.listings_run import ListingsRun
 from app.models.user import User
 from app.rate_limit import limiter
 from app.services.model_service import load_model, predict_one
+from app.utils.cache import invalidate_request_caches
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,8 @@ class ListingItem(BaseModel):
     latitude: float | None = None
     longitude: float | None = None
     municipality: str | None = None
+    naselje: str | None = None
+    ime_ko: str | None = None
     property_type: str = "stanovanje"
     uporabna_povrsina: float | None = None
     lega_v_stavbi: str | None = None
@@ -59,6 +62,8 @@ class ScoredListing(BaseModel):
     year_built: int | None = None
     floor: int | None = None
     municipality: str | None = None
+    naselje: str | None = None
+    ime_ko: str | None = None
     property_type: str | None = None
     uporabna_povrsina: float | None = None
     lega_v_stavbi: str | None = None
@@ -69,6 +74,7 @@ class ScoredListing(BaseModel):
     has_terasa: int | None = None
     stavba_je_dokoncana: int | None = None
     ddv_vkljucen: int | None = None
+    deviation_percent: float | None = None
 
 
 class ScoreResponse(BaseModel):
@@ -127,6 +133,8 @@ async def score_listings(
                 year_built=listing.year_built,
                 floor=listing.floor,
                 municipality=listing.municipality,
+                naselje=listing.naselje,
+                ime_ko=listing.ime_ko,
                 property_type=listing.property_type,
                 uporabna_povrsina=listing.uporabna_povrsina,
                 lega_v_stavbi=listing.lega_v_stavbi,
@@ -137,6 +145,7 @@ async def score_listings(
                 has_terasa=listing.has_terasa,
                 stavba_je_dokoncana=listing.stavba_je_dokoncana,
                 ddv_vkljucen=listing.ddv_vkljucen,
+                deviation_percent=round(deviation, 2),
             )
         )
 
@@ -150,6 +159,7 @@ async def score_listings(
     )
     db.add(run)
     await db.commit()
+    await invalidate_request_caches(request, prefixes=("cache:activity:", "cache:admin:"))
 
     return ScoreResponse(
         total=len(scored),
@@ -168,25 +178,28 @@ async def list_runs(
     _user: User = Depends(get_current_user),
 ):
     """List past analysis runs with pagination."""
-    count_result = await db.execute(select(func.count(ListingsRun.id)))
-    total = count_result.scalar() or 0
+    offset = (page - 1) * per_page
+    rows = (
+        await db.execute(
+            select(ListingsRun, func.count(ListingsRun.id).over().label("total_count"))
+            .order_by(ListingsRun.created_at.desc())
+            .offset(offset)
+            .limit(per_page)
+        )
+    ).all()
+    total = rows[0].total_count if rows else 0
     pages = math.ceil(total / per_page) if total > 0 else 0
 
-    offset = (page - 1) * per_page
-    result = await db.execute(
-        select(ListingsRun).order_by(ListingsRun.created_at.desc()).offset(offset).limit(per_page)
-    )
-    runs = result.scalars().all()
     items = [
         {
-            "id": r.id,
-            "threshold": r.threshold,
-            "total_count": r.total_count,
-            "overpriced_count": r.overpriced_count,
-            "underpriced_count": r.underpriced_count,
-            "market_aligned_count": r.market_aligned_count,
-            "created_at": r.created_at.isoformat(),
+            "id": row.ListingsRun.id,
+            "threshold": row.ListingsRun.threshold,
+            "total_count": row.ListingsRun.total_count,
+            "overpriced_count": row.ListingsRun.overpriced_count,
+            "underpriced_count": row.ListingsRun.underpriced_count,
+            "market_aligned_count": row.ListingsRun.market_aligned_count,
+            "created_at": row.ListingsRun.created_at.isoformat(),
         }
-        for r in runs
+        for row in rows
     ]
     return {"items": items, "total": total, "page": page, "per_page": per_page, "pages": pages}

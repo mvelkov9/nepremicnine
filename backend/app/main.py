@@ -1,5 +1,6 @@
 """FastAPI application factory."""
 
+import asyncio
 import logging
 import sys
 import time
@@ -15,6 +16,7 @@ from slowapi.errors import RateLimitExceeded
 from sqlalchemy import func, select
 from starlette.middleware.gzip import GZipMiddleware
 
+from app.api.activity import router as activity_router
 from app.api.admin import router as admin_router
 from app.api.analysis import router as analysis_router
 from app.api.auth import router as auth_router
@@ -25,6 +27,7 @@ from app.api.predict import router as predict_router
 from app.api.regions import router as regions_router
 from app.api.stats import router as stats_router
 from app.api.train import router as train_router
+from app.api.workbench import router as workbench_router
 from app.config import get_settings
 from app.database import Base, async_session, engine
 from app.models.region import RegionLookup
@@ -52,6 +55,9 @@ def configure_logging():
     )
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
+    logging.getLogger("sqlalchemy.engine.Engine").setLevel(logging.WARNING)
+    logging.getLogger("sqlalchemy.pool").setLevel(logging.WARNING)
 
 
 configure_logging()
@@ -85,10 +91,23 @@ async def lifespan(app: FastAPI):
     await _seed_region_lookup_if_empty()
     # Redis pool for token blacklist
     app.state.redis = await create_pool(_parse_redis_url(settings.redis_url))
+    app.state.stats_warmup_task = asyncio.create_task(asyncio.to_thread(_warm_stats_data))
     yield
     # Shutdown
+    warmup_task = getattr(app.state, "stats_warmup_task", None)
+    if warmup_task is not None and not warmup_task.done():
+        warmup_task.cancel()
     await app.state.redis.close()
     await engine.dispose()
+
+
+def _warm_stats_data() -> None:
+    try:
+        from app.api.stats import warm_market_data_cache
+
+        warm_market_data_cache()
+    except Exception:
+        logger.exception("Unable to warm stats dataset")
 
 
 def create_app() -> FastAPI:
@@ -195,6 +214,8 @@ def create_app() -> FastAPI:
     app.include_router(model_router, prefix="/api")
     app.include_router(admin_router, prefix="/api")
     app.include_router(analysis_router, prefix="/api")
+    app.include_router(workbench_router, prefix="/api")
+    app.include_router(activity_router, prefix="/api")
 
     return app
 

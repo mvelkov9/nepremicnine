@@ -64,6 +64,15 @@ async def _read_redis_job_state(redis, job_id: str) -> dict | None:
         return None
 
 
+async def _get_request_redis(request: Request) -> tuple[object, bool]:
+    settings = get_settings()
+    shared_redis = getattr(request.app.state, "redis", None)
+    if settings.app_env != "test" and shared_redis is not None:
+        return shared_redis, False
+    pooled_redis = await create_pool(_parse_redis_url(settings.redis_url))
+    return pooled_redis, True
+
+
 def _serialize_job(job: TrainingJob, state: dict | None = None) -> TrainStatusResponse:
     payload = state or {}
     status_value = payload.get("status")
@@ -186,8 +195,7 @@ async def start_training(
     if not os.path.exists(csv_path):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "CSV not found")
 
-    settings = get_settings()
-    redis = await create_pool(_parse_redis_url(settings.redis_url))
+    redis, should_close = await _get_request_redis(request)
     try:
         active_job, active_state = await _reconcile_active_job(db, redis)
         if active_job is not None:
@@ -208,29 +216,31 @@ async def start_training(
 
         # Enqueue ARQ task
         await redis.enqueue_job("run_training", job_id, csv_path)
-    finally:
-        await redis.close()
 
-    return TrainStatusResponse(job_id=job_id, status="queued", progress=0)
+        return TrainStatusResponse(job_id=job_id, status="queued", progress=0)
+    finally:
+        if should_close:
+            await redis.close()
 
 
 @router.get("/active", response_model=TrainStatusResponse)
 async def get_active_training(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
     """Return the currently active queued/running training job, if any."""
-    settings = get_settings()
-    redis = await create_pool(_parse_redis_url(settings.redis_url))
+    redis, should_close = await _get_request_redis(request)
     try:
         active_job, active_state = await _reconcile_active_job(db, redis)
+
+        if active_job is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "No active training job")
+
+        return _serialize_job(active_job, active_state)
     finally:
-        await redis.close()
-
-    if active_job is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "No active training job")
-
-    return _serialize_job(active_job, active_state)
+        if should_close:
+            await redis.close()
 
 
 @router.get("/status/{job_id}", response_model=TrainStatusResponse)
@@ -241,41 +251,41 @@ async def get_training_status(
     _user: User = Depends(get_current_user),
 ):
     """Get training job status from Redis."""
-    settings = get_settings()
-    redis = await create_pool(_parse_redis_url(settings.redis_url))
+    redis, should_close = await _get_request_redis(request)
     try:
         data = await _read_redis_job_state(redis, job_id)
+
+        job_status = data.get("status", "unknown") if data else None
+
+        # Invalidate caches when training completes
+        if job_status == "completed":
+            await invalidate_request_caches(request)
+            result = await db.execute(select(TrainingJob).where(TrainingJob.job_id == job_id))
+            job = result.scalar_one_or_none()
+            if job is not None:
+                return _serialize_job(job, data)
+
+        if data is None:
+            result = await db.execute(select(TrainingJob).where(TrainingJob.job_id == job_id))
+            job = result.scalar_one_or_none()
+            if job is None:
+                raise HTTPException(status.HTTP_404_NOT_FOUND, "Job not found")
+            if job.status in ACTIVE_JOB_STATUSES and _job_is_stale(job, datetime.now(UTC)):
+                job.status = JobStatus.failed
+                job.stage = "stale"
+                job.error = "Training job state expired before completion."
+                await db.commit()
+            return _serialize_job(job)
+
+        payload = {key: value for key, value in data.items() if key != "progress"}
+        return TrainStatusResponse(
+            **payload,
+            job_id=job_id,
+            progress=_coerce_progress(data.get("progress")),
+        )
     finally:
-        await redis.close()
-
-    job_status = data.get("status", "unknown") if data else None
-
-    # Invalidate caches when training completes
-    if job_status == "completed":
-        await invalidate_request_caches(request)
-        result = await db.execute(select(TrainingJob).where(TrainingJob.job_id == job_id))
-        job = result.scalar_one_or_none()
-        if job is not None:
-            return _serialize_job(job, data)
-
-    if data is None:
-        result = await db.execute(select(TrainingJob).where(TrainingJob.job_id == job_id))
-        job = result.scalar_one_or_none()
-        if job is None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "Job not found")
-        if job.status in ACTIVE_JOB_STATUSES and _job_is_stale(job, datetime.now(UTC)):
-            job.status = JobStatus.failed
-            job.stage = "stale"
-            job.error = "Training job state expired before completion."
-            await db.commit()
-        return _serialize_job(job)
-
-    payload = {key: value for key, value in data.items() if key != "progress"}
-    return TrainStatusResponse(
-        **payload,
-        job_id=job_id,
-        progress=_coerce_progress(data.get("progress")),
-    )
+        if should_close:
+            await redis.close()
 
 
 @router.get("/jobs")

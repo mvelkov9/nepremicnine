@@ -1,5 +1,5 @@
 <script setup lang="ts">
-  import { computed, onMounted, ref } from 'vue'
+  import { computed, onMounted } from 'vue'
   import { useI18n } from 'vue-i18n'
   import { Bar } from 'vue-chartjs'
   import {
@@ -15,11 +15,17 @@
   import Select from 'primevue/select'
   import SelectButton from 'primevue/selectbutton'
   import Tag from 'primevue/tag'
+  import AdminRunDetailPanel from '../components/admin/AdminRunDetailPanel.vue'
+  import AdminWorkspaceHero from '../components/admin/AdminWorkspaceHero.vue'
+  import SavedWorkspaceMenu from '../components/workbench/SavedWorkspaceMenu.vue'
+  import { useViewerQueryState } from '../composables/useViewerQueryState'
+  import { adminWorkspaceLinks } from '../constants/adminWorkspace'
   import EmptyState from '../components/EmptyState.vue'
   import MetricCard from '../components/MetricCard.vue'
   import PageHeader from '../components/PageHeader.vue'
   import { useDataStore } from '../stores/data'
   import { useModelStore } from '../stores/model'
+  import { useWorkbenchStore } from '../stores/workbench'
   import { buildGursEnrichmentRows, summarizeGursEnrichment } from '../utils/enrichmentSummary'
   import { formatCurrency, formatDateTime, formatNumber, formatPercent } from '../utils/format'
   import { getPropertyTypeLabel } from '../utils/propertyType'
@@ -29,10 +35,38 @@
   const { t } = useI18n()
   const model = useModelStore()
   const dataStore = useDataStore()
+  const workbench = useWorkbenchStore()
 
-  const selectedMetric = ref('r2')
-  const selectedType = ref('all')
-  const selectedSegmentGroup = ref('property_type')
+  const viewerQuery = useViewerQueryState({
+    metric: 'r2',
+    property_type: 'all',
+    segment_group: 'property_type',
+    training_run: '',
+  })
+  const selectedMetric = computed({
+    get: () => viewerQuery.state.metric,
+    set: (value: string) => {
+      void viewerQuery.patchState({ metric: value })
+    },
+  })
+  const selectedType = computed({
+    get: () => viewerQuery.state.property_type,
+    set: (value: string) => {
+      void viewerQuery.patchState({ property_type: value })
+    },
+  })
+  const selectedSegmentGroup = computed({
+    get: () => viewerQuery.state.segment_group,
+    set: (value: string) => {
+      void viewerQuery.patchState({ segment_group: value })
+    },
+  })
+  const selectedTrainingRunId = computed({
+    get: () => viewerQuery.state.training_run,
+    set: (value: string) => {
+      void viewerQuery.patchState({ training_run: value })
+    },
+  })
   const metrics = ['mae', 'rmse', 'r2', 'mape', 'median_ae']
 
   function formatType(value) {
@@ -89,6 +123,7 @@
     if (selectedType.value === 'all') return model.info?.global_metrics || null
     return model.info?.per_type_metrics?.[selectedType.value] || null
   })
+  const selectedTrainingRun = computed(() => workbench.selectedTrainingRun)
 
   const focusMetrics = computed(() => {
     const metricsData = selectedTypeMetrics.value
@@ -327,6 +362,39 @@
     }))
   })
 
+  const diagnosticsSummaryCards = computed(() => [
+    {
+      label: 'R²',
+      value:
+        model.info?.global_metrics?.r2 != null
+          ? formatMetric(model.info.global_metrics.r2, 3)
+          : '—',
+      meta: t('diag.r2Desc'),
+      tone: 'success' as const,
+    },
+    {
+      label: 'MAE',
+      value:
+        model.info?.global_metrics?.mae != null
+          ? formatCurrency(model.info.global_metrics.mae)
+          : '—',
+      meta: t('diag.maeDesc'),
+    },
+    {
+      label: t('diag.focusType'),
+      value: selectedType.value === 'all' ? t('diag.allTypes') : formatType(selectedType.value),
+      meta:
+        selectedType.value === 'all'
+          ? t('diag.focusAllDesc')
+          : t('diag.focusTypeDesc', { type: formatType(selectedType.value) }),
+    },
+    {
+      label: t('diag.variantBenchmarks'),
+      value: formatNumber(variantBenchmarkRows.value.length),
+      meta: t('diag.variantBenchmarksDesc'),
+    },
+  ])
+
   const modelDetailsRows = computed(() => {
     if (!model.info) return []
     const rows = [
@@ -419,6 +487,20 @@
 
   const enrichmentTotals = computed(() => summarizeGursEnrichment(enrichmentRows.value))
 
+  const enrichmentSourcesMissing = computed(() => {
+    if (!enrichmentRows.value.length) return false
+    return enrichmentRows.value.every(
+      (row) =>
+        !row.sources.length &&
+        !row.rnAvailable &&
+        !row.evBuildingAvailable &&
+        !row.evParcelAvailable &&
+        !row.knAvailable &&
+        !row.gjiAvailable &&
+        !row.emvAvailable,
+    )
+  })
+
   const segmentRows = computed(
     () => model.diagnostics?.segment_diagnostics?.[selectedSegmentGroup.value] || [],
   )
@@ -507,7 +589,10 @@
       model.fetchDiagnostics(),
       model.fetchImportance(),
       dataStore.fetchTrainingDataset(),
+      workbench.fetchTrainingRuns(),
     ])
+    const initialTrainingRunId = selectedTrainingRunId.value || workbench.trainingRuns[0]?.id
+    if (initialTrainingRunId) await loadTrainingRunDetail(initialTrainingRunId)
     if (
       segmentGroupOptions.value.length &&
       !segmentGroupOptions.value.some((item) => item.value === selectedSegmentGroup.value)
@@ -515,23 +600,54 @@
       selectedSegmentGroup.value = segmentGroupOptions.value[0].value
     }
   })
+
+  async function loadTrainingRunDetail(jobId: string) {
+    selectedTrainingRunId.value = jobId
+    await workbench.fetchTrainingRunDetail(jobId)
+  }
 </script>
 
 <template>
   <div class="diagnostics-page">
-    <section class="card diagnostics-hero">
-      <PageHeader
-        :eyebrow="t('nav.diagnostics')"
-        :title="t('nav.diagnostics')"
-        :description="t('layout.page.diagnostics')"
-      />
-    </section>
+    <AdminWorkspaceHero
+      :eyebrow="t('nav.diagnostics')"
+      :title="t('nav.diagnostics')"
+      :description="t('layout.page.diagnostics')"
+      :metrics="diagnosticsSummaryCards"
+      :links="adminWorkspaceLinks"
+      :status="selectedType === 'all' ? t('diag.allTypes') : formatType(selectedType)"
+      status-severity="secondary"
+    >
+      <template #actions>
+        <SavedWorkspaceMenu
+          page="diagnostics"
+          :state="{
+            page: 'diagnostics',
+            filters: {
+              metric: selectedMetric,
+              property_type: selectedType,
+              segment_group: selectedSegmentGroup,
+              training_run: selectedTrainingRunId,
+            },
+          }"
+        />
+      </template>
+    </AdminWorkspaceHero>
 
     <div v-if="!model.info" class="card diagnostics-card">
       <p class="muted">{{ t('diag.noModel') }}</p>
     </div>
 
     <template v-else>
+      <AdminRunDetailPanel
+        :eyebrow="t('nav.model')"
+        :title="t('workbench.recentTrainingRuns')"
+        :description="t('workbench.trainingRunDetailHint')"
+        :runs="workbench.trainingRuns.slice(0, 8)"
+        :selected-run="selectedTrainingRun"
+        @select="loadTrainingRunDetail"
+      />
+
       <!-- Focus type selector + KPI cards -->
       <div class="card diagnostics-card focus-card">
         <div class="focus-head">
@@ -664,16 +780,16 @@
               <span class="muted source-cell">{{ variantSourceSummary(data.sources) }}</span>
             </template>
           </Column>
-          <Column field="globalR2" header="Global R²" sortable>
+          <Column field="globalR2" :header="t('diag.globalR2')" sortable>
             <template #body="{ data }">{{ formatMetric(data.globalR2, 3) }}</template>
           </Column>
-          <Column field="combinedR2" header="Routed R²" sortable>
+          <Column field="combinedR2" :header="t('diag.routedR2')" sortable>
             <template #body="{ data }">{{ formatMetric(data.combinedR2, 3) }}</template>
           </Column>
-          <Column field="globalMae" header="Global MAE" sortable>
+          <Column field="globalMae" :header="t('diag.globalMae')" sortable>
             <template #body="{ data }">{{ formatCurrency(data.globalMae) }}</template>
           </Column>
-          <Column field="combinedMae" header="Routed MAE" sortable>
+          <Column field="combinedMae" :header="t('diag.routedMae')" sortable>
             <template #body="{ data }">{{ formatCurrency(data.combinedMae) }}</template>
           </Column>
           <Column field="perTypeCount" :header="t('diag.perTypeModels')" sortable>
@@ -718,7 +834,7 @@
           table-style="min-width: 100%"
         >
           <Column field="typeLabel" :header="t('diag.type')" sortable />
-          <Column field="n" header="N" sortable>
+          <Column field="n" :header="t('diag.sampleCount')" sortable>
             <template #body="{ data }">{{ formatNumber(data.n) }}</template>
           </Column>
           <Column field="model_mae" :header="t('diag.modelMaeOnCoverage')" sortable>
@@ -840,6 +956,10 @@
           :title="t('diag.datasetEnrichment')"
           :description="t('diag.datasetEnrichmentDesc')"
         />
+
+        <p v-if="enrichmentSourcesMissing" class="muted">
+          {{ t('diag.datasetEnrichmentMissingSourcesHint') }}
+        </p>
 
         <div class="kpi-grid">
           <MetricCard

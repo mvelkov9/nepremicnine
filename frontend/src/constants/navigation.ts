@@ -7,9 +7,12 @@ export interface NavItem {
 
 export const viewerNavigation: NavItem[] = [
   { to: '/', icon: 'dashboard', label: 'nav.dashboard', group: 'nav.groupOverview' },
+  { to: '/trg', icon: 'market', label: 'nav.market', group: 'nav.groupOverview' },
+  { to: '/regije', icon: 'regions', label: 'nav.regions', group: 'nav.groupOverview' },
+  { to: '/zemljevid', icon: 'map', label: 'nav.map', group: 'nav.groupExplore' },
+  { to: '/obcine', icon: 'municipalities', label: 'nav.municipalities', group: 'nav.groupExplore' },
   { to: '/napoved', icon: 'prediction', label: 'nav.prediction', group: 'nav.groupTools' },
-  { to: '/zemljevid', icon: 'map', label: 'nav.map', group: 'nav.groupTools' },
-  { to: '/analiza', icon: 'analysis', label: 'nav.analysis', group: 'nav.groupInsights' },
+  { to: '/analiza', icon: 'analysis', label: 'nav.analysis', group: 'nav.groupTools' },
 ]
 
 export const adminNavigation: NavItem[] = [

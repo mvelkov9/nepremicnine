@@ -53,8 +53,15 @@ async def model_info(request: Request, response: Response, _user: User = Depends
 
 
 @router.get("/importance")
-async def feature_importance(_user: User = Depends(get_current_user)):
+async def feature_importance(request: Request, response: Response, _user: User = Depends(get_current_user)):
     """Get feature importance from the global model."""
+    response.headers["Cache-Control"] = "private, max-age=60"
+
+    cache_key = "cache:model:importance"
+    cached = await cache_get(request, cache_key)
+    if cached is not None:
+        return cached
+
     info = get_model_info()
     if info is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No trained model found")
@@ -63,7 +70,7 @@ async def feature_importance(_user: User = Depends(get_current_user)):
     labels = info.get("feature_labels", {})
 
     items = sorted(importance.items(), key=lambda x: x[1], reverse=True)
-    return [
+    result = [
         {
             "feature": feat,
             "label": labels.get(feat.split("__")[-1], feat),
@@ -71,16 +78,25 @@ async def feature_importance(_user: User = Depends(get_current_user)):
         }
         for feat, val in items
     ]
+    await cache_set(request, cache_key, result)
+    return result
 
 
 @router.get("/diagnostics")
-async def model_diagnostics(_user: User = Depends(get_current_user)):
+async def model_diagnostics(request: Request, response: Response, _user: User = Depends(get_current_user)):
     """Get per-type and per-region model diagnostics."""
+    response.headers["Cache-Control"] = "private, max-age=60"
+
+    cache_key = "cache:model:diagnostics"
+    cached = await cache_get(request, cache_key)
+    if cached is not None:
+        return cached
+
     info = get_model_info()
     if info is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No trained model found")
 
-    return {
+    result = {
         "version": info.get("version"),
         "trained_at": info.get("trained_at"),
         "rows": info.get("rows"),
@@ -101,6 +117,8 @@ async def model_diagnostics(_user: User = Depends(get_current_user)):
         "data_preparation": info.get("data_preparation"),
         "segment_diagnostics": info.get("segment_diagnostics"),
     }
+    await cache_set(request, cache_key, result)
+    return result
 
 
 @router.get("/runs")

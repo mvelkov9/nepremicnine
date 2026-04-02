@@ -55,8 +55,8 @@ class PredictRequest(BaseModel):
     rooms: float | None = Field(default=None, ge=0, le=100)
     year_built: int | None = Field(default=None, ge=1800, le=2030)
     floor: int | None = Field(default=None, ge=-5, le=100)
-    latitude: float | None = Field(default=None, ge=45.0, le=47.0)
-    longitude: float | None = Field(default=None, ge=13.0, le=17.0)
+    latitude: float | None = None
+    longitude: float | None = None
     municipality: str | None = None
     property_type: str = "stanovanje"
     novogradnja: int | None = None
@@ -87,6 +87,10 @@ class PredictRequest(BaseModel):
 class PredictResponse(BaseModel):
     predicted_price_eur: float
     model_used: str
+    routing_mode: str | None = None
+    type_blend_weight: float | None = None
+    calibration_factor: float | None = None
+    calibration_source: str | None = None
     features_used: dict
 
 
@@ -106,6 +110,9 @@ class ModelInfoResponse(BaseModel):
     per_type_count: int = 0
     coords_by_municipality: dict[str, dict] | None = None
     combined_metrics: dict | None = None
+    deploy_window: dict | None = None
+    holdout: dict | None = None
+    calibration: dict | None = None
     variant_matrix: dict | None = None
     variant_benchmarks: dict | None = None
     type_models_trained: list[str] | None = None

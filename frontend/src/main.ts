@@ -10,6 +10,7 @@ import { i18n } from './i18n'
 import MarketPreset from './theme/preset'
 import 'primeicons/primeicons.css'
 import './styles/main.css'
+import './utils/chartSetup'
 
 const app = createApp(App)
 app.use(createPinia())

@@ -1,4 +1,4 @@
-# Nepremičnine v0.13.0
+# Nepremičnine v0.14.0
 
 > Slovenian real estate valuation platform for buyers, sellers, investors, and companies — powered by machine learning on official ETN transaction data.
 
@@ -70,7 +70,7 @@ pnpm dev
 # API docs:  http://localhost:8000/docs
 ```
 
-### Option B — Full Docker
+### Option B — Full Docker (production-like local runtime)
 
 ```bash
 cp .env.example .env

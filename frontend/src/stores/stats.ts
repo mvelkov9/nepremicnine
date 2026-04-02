@@ -2,6 +2,12 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import api from '../composables/useApi'
 import { i18n } from '../i18n'
+import type {
+  ExplorerResponse,
+  MunicipalityExplorerItem,
+  RegionExplorerItem,
+  TransactionRecord,
+} from '../types/api'
 import { getApiErrorMessage } from '../utils/apiError'
 
 export const useStatsStore = defineStore('stats', () => {
@@ -12,6 +18,12 @@ export const useStatsStore = defineStore('stats', () => {
   const marketHome = ref(null)
   const municipalityDetail = ref(null)
   const comparables = ref(null)
+  const featureImportance = ref([])
+  const municipalitiesByRegion = ref([])
+  const transactionsExplorer = ref<ExplorerResponse<TransactionRecord> | null>(null)
+  const municipalitiesExplorer = ref<ExplorerResponse<MunicipalityExplorerItem> | null>(null)
+  const regionsExplorer = ref<ExplorerResponse<RegionExplorerItem> | null>(null)
+  const municipalityTransactions = ref<ExplorerResponse<TransactionRecord> | null>(null)
   const loading = ref(false)
   const error = ref(null)
 
@@ -64,6 +76,51 @@ export const useStatsStore = defineStore('stats', () => {
     comparables.value = null
   }
 
+  async function fetchFeatureImportance() {
+    const { data } = await api.get('/api/model/importance')
+    featureImportance.value = data
+    return data
+  }
+
+  async function fetchMunicipalitiesByRegion(region?: string) {
+    const params: Record<string, string> = {}
+    if (region) params.region = region
+    const { data } = await api.get('/api/stats/municipalities-by-region', { params })
+    municipalitiesByRegion.value = data
+    return data
+  }
+
+  async function fetchTransactionsExplorer(params = {}) {
+    const { data } = await api.get('/api/stats/transactions', { params })
+    transactionsExplorer.value = data
+    return data
+  }
+
+  async function fetchMunicipalitiesExplorer(params = {}) {
+    const { data } = await api.get('/api/stats/municipalities', { params })
+    municipalitiesExplorer.value = data
+    return data
+  }
+
+  async function fetchRegionsExplorer(params = {}) {
+    const { data } = await api.get('/api/stats/regions-explorer', { params })
+    regionsExplorer.value = data
+    return data
+  }
+
+  async function fetchMunicipalityTransactions(slug: string, params = {}) {
+    const { data } = await api.get(`/api/stats/municipality/${slug}/transactions`, { params })
+    municipalityTransactions.value = data
+    return data
+  }
+
+  function resetExplorerData() {
+    transactionsExplorer.value = null
+    municipalitiesExplorer.value = null
+    regionsExplorer.value = null
+    municipalityTransactions.value = null
+  }
+
   async function fetchAll() {
     loading.value = true
     error.value = null
@@ -90,6 +147,12 @@ export const useStatsStore = defineStore('stats', () => {
     marketHome,
     municipalityDetail,
     comparables,
+    featureImportance,
+    municipalitiesByRegion,
+    transactionsExplorer,
+    municipalitiesExplorer,
+    regionsExplorer,
+    municipalityTransactions,
     loading,
     error,
     fetchAll,
@@ -100,7 +163,14 @@ export const useStatsStore = defineStore('stats', () => {
     fetchMarketHome,
     fetchMunicipalityDetail,
     fetchComparables,
+    fetchFeatureImportance,
+    fetchMunicipalitiesByRegion,
+    fetchTransactionsExplorer,
+    fetchMunicipalitiesExplorer,
+    fetchRegionsExplorer,
+    fetchMunicipalityTransactions,
     resetMunicipalityDetail,
     resetComparables,
+    resetExplorerData,
   }
 })

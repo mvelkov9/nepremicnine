@@ -15,7 +15,7 @@ COPY . .
 RUN pnpm build
 
 # ── Production stage ───────────────────────
-FROM nginx:alpine
+FROM nginx:alpine AS final
 
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder /app/dist /usr/share/nginx/html

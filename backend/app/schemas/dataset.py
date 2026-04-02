@@ -54,6 +54,23 @@ class TrainingDatasetResponse(BaseModel):
     preparation_metadata: dict | None = None
 
 
+class EtnKppDatasetRefResponse(BaseModel):
+    original_name: str
+    relative_path: str
+    uploaded_at: datetime | None = None
+
+
+class EtnKppPairResponse(BaseModel):
+    year: int
+    posli: EtnKppDatasetRefResponse | None = None
+    delistavb: EtnKppDatasetRefResponse | None = None
+    zemljisca: EtnKppDatasetRefResponse | None = None
+
+
+class EtnKppPairsResponse(BaseModel):
+    pairs: list[EtnKppPairResponse]
+
+
 class PrepareJobStatusResponse(BaseModel):
     job_id: str
     status: str
@@ -64,5 +81,6 @@ class PrepareJobStatusResponse(BaseModel):
     current_label: str | None = None
     pairs_completed: int | None = None
     rows: int | None = None
+    spatial_phase: str | None = None
     result: dict | None = None
     error: str | None = None

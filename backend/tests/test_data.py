@@ -15,49 +15,9 @@ from app.services.data_processing_service import prepare_training_csv_from_etn_k
 from app.tasks.training_worker import PREPARE_ACTIVE_KEY, PREPARE_JOB_PREFIX
 
 
-async def _get_admin_token(client: AsyncClient) -> str:
-    await client.post(
-        "/api/auth/register",
-        json={
-            "email": "admin@test.com",
-            "password": "testpass123",
-            "full_name": "Admin",
-        },
-    )
-    resp = await client.post(
-        "/api/auth/login",
-        json={
-            "email": "admin@test.com",
-            "password": "testpass123",
-        },
-    )
-    return resp.json()["access_token"]
-
-
-async def _get_viewer_token(client: AsyncClient) -> str:
-    # Ensure admin exists first
-    await _get_admin_token(client)
-    await client.post(
-        "/api/auth/register",
-        json={
-            "email": "viewer@test.com",
-            "password": "testpass123",
-            "full_name": "Viewer",
-        },
-    )
-    resp = await client.post(
-        "/api/auth/login",
-        json={
-            "email": "viewer@test.com",
-            "password": "testpass123",
-        },
-    )
-    return resp.json()["access_token"]
-
-
 @pytest.mark.asyncio
-async def test_upload_requires_admin(client: AsyncClient):
-    token = await _get_viewer_token(client)
+async def test_upload_requires_admin(client: AsyncClient, viewer_token: str):
+    token = viewer_token
     csv_content = b"col1,col2\n1,2\n3,4\n"
     resp = await client.post(
         "/api/data/upload",
@@ -68,8 +28,8 @@ async def test_upload_requires_admin(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_upload_and_list(client: AsyncClient):
-    token = await _get_admin_token(client)
+async def test_upload_and_list(client: AsyncClient, admin_token: str):
+    token = admin_token
     csv_content = b"col1,col2\n1,2\n3,4\n"
 
     # Upload
@@ -96,13 +56,16 @@ async def test_upload_and_list(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_list_datasets_indexes_manual_upload_files(client: AsyncClient):
-    token = await _get_admin_token(client)
-    uploads_dir = Path(DATA_DIR) / "uploads"
+async def test_list_datasets_indexes_manual_upload_files(
+    client: AsyncClient, admin_token: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    token = admin_token
+    uploads_dir = tmp_path / "uploads"
     uploads_dir.mkdir(parents=True, exist_ok=True)
     filename = f"manual_{uuid.uuid4().hex[:8]}.csv"
     manual_csv = uploads_dir / filename
     manual_csv.write_text("col1,col2\n1,2\n", encoding="utf-8")
+    monkeypatch.setattr("app.api.data.UPLOAD_DIR", str(uploads_dir))
 
     try:
         resp = await client.get(
@@ -112,7 +75,7 @@ async def test_list_datasets_indexes_manual_upload_files(client: AsyncClient):
         assert resp.status_code == 200
         items = resp.json()["items"]
         relative_paths = {item["relative_path"] for item in items}
-        assert f"uploads/{filename}" in relative_paths
+        assert any(path.endswith(f"/{filename}") or path.endswith(f"\\{filename}") for path in relative_paths)
     finally:
         if manual_csv.exists():
             manual_csv.unlink()
@@ -121,10 +84,11 @@ async def test_list_datasets_indexes_manual_upload_files(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_rescan_endpoint_indexes_manual_upload_file(
     client: AsyncClient,
+    admin_token: str,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ):
-    token = await _get_admin_token(client)
+    token = admin_token
     upload_dir = tmp_path / "uploads"
     upload_dir.mkdir(parents=True, exist_ok=True)
     manual_csv = upload_dir / "manual.csv"
@@ -143,8 +107,32 @@ async def test_rescan_endpoint_indexes_manual_upload_file(
 
 
 @pytest.mark.asyncio
-async def test_training_dataset_endpoint_reports_prepared_csv(client: AsyncClient):
-    token = await _get_admin_token(client)
+async def test_prepare_etn_kpp_pairs_syncs_upload_registry_before_listing(
+    client: AsyncClient,
+    admin_token: str,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    token = admin_token
+    called = {"count": 0}
+
+    async def fake_sync(_db):
+        called["count"] += 1
+        return 0, 0
+
+    monkeypatch.setattr("app.api.data._sync_upload_directory_records", fake_sync)
+
+    resp = await client.get(
+        "/api/data/prepare-etn-kpp-pairs",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 200
+    assert called["count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_training_dataset_endpoint_reports_prepared_csv(client: AsyncClient, admin_token: str):
+    token = admin_token
     resp = await client.get(
         "/api/data/training-dataset",
         headers={"Authorization": f"Bearer {token}"},
@@ -156,8 +144,8 @@ async def test_training_dataset_endpoint_reports_prepared_csv(client: AsyncClien
 
 
 @pytest.mark.asyncio
-async def test_upload_dedup(client: AsyncClient):
-    token = await _get_admin_token(client)
+async def test_upload_dedup(client: AsyncClient, admin_token: str):
+    token = admin_token
     csv_content = b"col1,col2\nA,B\n"
 
     # Upload twice
@@ -176,8 +164,7 @@ async def test_upload_dedup(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_delete_requires_admin(client: AsyncClient):
-    viewer_token = await _get_viewer_token(client)
+async def test_delete_requires_admin(client: AsyncClient, viewer_token: str):
     resp = await client.delete(
         "/api/data/datasets/999",
         headers={"Authorization": f"Bearer {viewer_token}"},
@@ -192,9 +179,9 @@ async def test_datasets_unauthenticated(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_upload_rejects_invalid_extension(client: AsyncClient):
+async def test_upload_rejects_invalid_extension(client: AsyncClient, admin_token: str):
     """Uploading a .exe file must be rejected with 400."""
-    token = await _get_admin_token(client)
+    token = admin_token
     resp = await client.post(
         "/api/data/upload",
         headers={"Authorization": f"Bearer {token}"},
@@ -204,9 +191,9 @@ async def test_upload_rejects_invalid_extension(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_bulk_delete_limit(client: AsyncClient):
+async def test_bulk_delete_limit(client: AsyncClient, admin_token: str):
     """BulkDeleteRequest with >500 IDs should fail validation (422)."""
-    token = await _get_admin_token(client)
+    token = admin_token
     resp = await client.post(
         "/api/data/datasets/delete-bulk",
         headers={"Authorization": f"Bearer {token}"},
@@ -216,9 +203,9 @@ async def test_bulk_delete_limit(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_etn_bulk_limit(client: AsyncClient):
+async def test_etn_bulk_limit(client: AsyncClient, admin_token: str):
     """EtnBulkRequest with >50 pairs should fail validation (422)."""
-    token = await _get_admin_token(client)
+    token = admin_token
     pairs = [{"posli_csv_path": "/data/p.csv", "delistavb_csv_path": "/data/d.csv"} for _ in range(51)]
     resp = await client.post(
         "/api/data/prepare-etn-kpp-bulk",
@@ -229,8 +216,10 @@ async def test_etn_bulk_limit(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_prepare_etn_bulk_resolves_relative_paths(client: AsyncClient, monkeypatch: pytest.MonkeyPatch):
-    token = await _get_admin_token(client)
+async def test_prepare_etn_bulk_resolves_relative_paths(
+    client: AsyncClient, admin_token: str, monkeypatch: pytest.MonkeyPatch
+):
+    token = admin_token
 
     recorded = {}
 
@@ -334,6 +323,10 @@ def test_prepare_etn_bulk_uses_stable_source_keys_for_dedup_and_reports_per_year
         return frames.pop(0), {"used_size_column": "PRODANA_POVRSINA"}
 
     monkeypatch.setattr("app.services.data_processing_service.build_training_df_from_etn_kpp", fake_build)
+    monkeypatch.setattr(
+        "app.services.data_processing_service.apply_gurs_deterministic_enrichment",
+        lambda prepared, **_kwargs: (prepared, {}),
+    )
 
     output_csv = tmp_path / "train.csv"
     result = prepare_training_csv_from_etn_kpp_bulk(
@@ -373,7 +366,7 @@ def test_prepare_etn_bulk_emits_progress_updates(monkeypatch: pytest.MonkeyPatch
     )
     monkeypatch.setattr(
         "app.services.data_processing_service.apply_gurs_deterministic_enrichment",
-        lambda prepared, upload_dir, enrichment_options=None: (prepared, {"rn": {"available": True}}),
+        lambda prepared, **_kwargs: (prepared, {"rn": {"available": True}}),
     )
 
     updates: list[dict] = []
@@ -398,9 +391,9 @@ def test_prepare_etn_bulk_emits_progress_updates(monkeypatch: pytest.MonkeyPatch
 
 @pytest.mark.asyncio
 async def test_prepare_etn_bulk_start_and_status_use_async_job_flow(
-    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+    client: AsyncClient, admin_token: str, monkeypatch: pytest.MonkeyPatch
 ):
-    token = await _get_admin_token(client)
+    token = admin_token
     uploads_dir = Path(DATA_DIR) / "uploads"
     posli = uploads_dir / "posli.csv"
     deli = uploads_dir / "deli.csv"
@@ -481,9 +474,9 @@ async def test_prepare_etn_bulk_start_and_status_use_async_job_flow(
 
 @pytest.mark.asyncio
 async def test_training_dataset_endpoint_includes_preparation_metadata(
-    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+    client: AsyncClient, admin_token: str, monkeypatch: pytest.MonkeyPatch
 ):
-    token = await _get_admin_token(client)
+    token = admin_token
 
     monkeypatch.setattr(
         "app.api.data._get_training_dataset_metadata",

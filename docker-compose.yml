@@ -37,12 +37,13 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     env_file: .env
-    # Dev overrides: mount source, run as root, enable reload
-    user: root
-    entrypoint: ["/bin/sh", "/app/entrypoint.sh"]
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    command:
+      [
+        "/bin/sh",
+        "-lc",
+        "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2",
+      ]
     volumes:
-      - ./backend:/app
       - ./backend/data:/app/data
       - backend-models:/app/models
     ports:
@@ -58,13 +59,11 @@ services:
     image: nepremicnine-v2-backend-dev
     pull_policy: never
     restart: unless-stopped
-    user: root
     command: ["arq", "app.tasks.training_worker.WorkerSettings"]
     env_file: .env
     healthcheck:
       disable: true
     volumes:
-      - ./backend:/app
       - ./backend/data:/app/data
       - backend-models:/app/models
     depends_on:
@@ -79,17 +78,9 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-      target: builder
-    command:
-      sh -c "corepack enable && corepack prepare pnpm@9.15.4 --activate &&
-      pnpm install --frozen-lockfile --force && pnpm dev --host 0.0.0.0"
-    environment:
-      - VITE_API_URL=http://backend:8000
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
+      target: final
     ports:
-      - "5173:5173"
+      - "5173:80"
     depends_on:
       - backend
 

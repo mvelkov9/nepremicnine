@@ -1,6 +1,7 @@
 <script setup lang="ts">
   import { computed, onMounted, ref, watch } from 'vue'
-  import { useRoute, useRouter } from 'vue-router'
+  import { RouterLink, useRoute, useRouter } from 'vue-router'
+  import { useLocalStorage } from '@vueuse/core'
   import { useI18n } from 'vue-i18n'
   import AutoComplete from 'primevue/autocomplete'
   import Button from 'primevue/button'
@@ -11,8 +12,11 @@
   import EmptyState from '../components/EmptyState.vue'
   import LoadingSpinner from '../components/LoadingSpinner.vue'
   import PageHeader from '../components/PageHeader.vue'
+  import FeatureImportanceChart from '../components/charts/FeatureImportanceChart.vue'
+  import SavedWorkspaceMenu from '../components/workbench/SavedWorkspaceMenu.vue'
   import { useExport } from '../composables/useExport'
   import { useStatsStore } from '../stores/stats'
+  import { useWorkbenchStore } from '../stores/workbench'
   import { buildNepremicnineSearchUrl } from '../utils/externalSearch'
   import { getApiErrorMessage } from '../utils/apiError'
   import { formatCurrency, formatDateTime, formatNumber } from '../utils/format'
@@ -26,7 +30,9 @@
     floor: number | null
     latitude: number | null
     longitude: number | null
+    naselje: string
     municipality: string
+    ime_ko: string
     property_type: string
     uporabna_povrsina: number | null
     lega_v_stavbi: string
@@ -41,7 +47,18 @@
 
   interface PredictionFormErrors {
     size_m2?: string | null
+    naselje?: string | null
     municipality?: string | null
+  }
+
+  interface NaseljeOption {
+    label: string
+    naselje: string
+    municipality: string
+    region?: string | null
+    latitude?: number | null
+    longitude?: number | null
+    sample_count?: number
   }
 
   type BinaryPredictionField =
@@ -57,6 +74,7 @@
   const route = useRoute()
   const router = useRouter()
   const stats = useStatsStore()
+  const workbench = useWorkbenchStore()
   const { exportToCSV } = useExport()
 
   const form = ref<PredictionForm>({
@@ -66,7 +84,9 @@
     floor: null,
     latitude: null,
     longitude: null,
+    naselje: '',
     municipality: '',
+    ime_ko: '',
     property_type: 'stanovanje',
     uporabna_povrsina: null,
     lega_v_stavbi: '',
@@ -78,6 +98,7 @@
     stavba_je_dokoncana: 1,
     ddv_vkljucen: 0,
   })
+  const storedDraft = useLocalStorage<Partial<PredictionForm>>('prediction_form_draft', {})
 
   const propertyTypes = [
     'stanovanje',
@@ -92,8 +113,48 @@
   ]
 
   const legaOptions = ['pritlicje', 'nadstropje', 'klet', 'unknown']
+  const scenarioPresets = [
+    {
+      key: 'apartment',
+      label: 'workbench.apartmentPreset',
+      values: {
+        property_type: 'stanovanje',
+        size_m2: 68,
+        rooms: 2.5,
+        floor: 3,
+        stavba_je_dokoncana: 1,
+      },
+    },
+    {
+      key: 'house',
+      label: 'workbench.housePreset',
+      values: {
+        property_type: 'hisa',
+        size_m2: 150,
+        rooms: 5,
+        floor: 1,
+        has_garaza: 1,
+        stavba_je_dokoncana: 1,
+      },
+    },
+    {
+      key: 'newbuild',
+      label: 'workbench.newBuildPreset',
+      values: {
+        property_type: 'stanovanje',
+        size_m2: 82,
+        rooms: 3,
+        year_built: new Date().getFullYear(),
+        novogradnja: 1,
+        ddv_vkljucen: 1,
+        stavba_je_dokoncana: 0,
+      },
+    },
+  ]
   const allMunicipalities = ref([])
   const municipalitySuggestions = ref([])
+  const naseljeSuggestions = ref<string[]>([])
+  const naseljeOptions = ref<NaseljeOption[]>([])
   const showAdvancedLocation = ref(false)
   const result = ref(null)
   const history = ref([])
@@ -115,16 +176,29 @@
     () => `${comparables.value?.summary?.count || 0} ${t('dashboard.transactions')}`,
   )
   const effectiveSize = computed(() => form.value.uporabna_povrsina || form.value.size_m2)
-  const selectedMunicipalityMeta = computed(() =>
-    municipalityIndex.value.get(normalizeMunicipalityName(form.value.municipality)),
+  const currentMunicipality = computed(
+    () => form.value.municipality || selectedNaseljeMeta.value?.municipality || '',
   )
+  const selectedMunicipalityMeta = computed(() => {
+    return municipalityIndex.value.get(normalizeMunicipalityName(currentMunicipality.value))
+  })
   const comparisonUrl = computed(() =>
     buildNepremicnineSearchUrl({
-      municipality: form.value.municipality,
+      municipality: form.value.municipality || selectedNaseljeMeta.value?.municipality,
       statisticalRegion: selectedMunicipalityMeta.value?.region,
       propertyType: form.value.property_type,
     }),
   )
+  const selectedNaseljeMeta = computed(() => {
+    const target = form.value.naselje.trim().toLowerCase()
+    return (
+      naseljeOptions.value.find(
+        (item) =>
+          item.naselje.trim().toLowerCase() === target ||
+          item.label.trim().toLowerCase() === target,
+      ) || null
+    )
+  })
 
   function toggleValue(field: BinaryPredictionField) {
     return form.value[field] === 1
@@ -132,6 +206,13 @@
 
   function updateToggle(field: BinaryPredictionField, checked: boolean) {
     form.value[field] = checked ? 1 : 0
+  }
+
+  function applyScenario(values: Partial<PredictionForm>) {
+    form.value = {
+      ...form.value,
+      ...values,
+    }
   }
 
   function fmt(value, decimals = 0) {
@@ -170,20 +251,42 @@
       : allMunicipalities.value.map((item) => item.municipality).slice(0, 12)
   }
 
+  async function searchNaselja(event) {
+    const query = String(event.query || '').trim()
+    try {
+      const { data } = await api.get('/api/stats/naselja', {
+        params: {
+          q: query || undefined,
+          municipality: form.value.municipality || undefined,
+          limit: 12,
+        },
+      })
+      naseljeOptions.value = (data || []).map((item) => ({
+        ...item,
+        label: `${item.naselje} (${item.municipality})`,
+      }))
+      naseljeSuggestions.value = naseljeOptions.value.map((item) => item.label)
+    } catch {
+      naseljeOptions.value = []
+      naseljeSuggestions.value = []
+    }
+  }
+
   function validateForm() {
     const errors: PredictionFormErrors = {}
     if (!form.value.size_m2 || form.value.size_m2 <= 0) {
       errors.size_m2 = t('validation.minSize')
     }
-    if (!form.value.municipality?.trim()) {
-      errors.municipality = t('validation.required')
+    if (!form.value.naselje?.trim()) {
+      errors.naselje = t('validation.required')
     }
     formErrors.value = errors
     return Object.keys(errors).length === 0
   }
 
   async function loadContext(estimatedPrice = null) {
-    if (!form.value.municipality || !form.value.property_type || !effectiveSize.value) {
+    const municipality = form.value.municipality || selectedNaseljeMeta.value?.municipality
+    if (!municipality || !form.value.property_type || !effectiveSize.value) {
       stats.resetComparables()
       stats.resetMunicipalityDetail()
       return
@@ -192,9 +295,10 @@
     contextLoading.value = true
     try {
       await Promise.all([
-        stats.fetchMunicipalityDetail(municipalitySlug(form.value.municipality)),
+        stats.fetchMunicipalityDetail(municipalitySlug(municipality)),
         stats.fetchComparables({
-          municipality: form.value.municipality,
+          municipality,
+          naselje: form.value.naselje || undefined,
           property_type: form.value.property_type,
           size_m2: effectiveSize.value,
           year_built: form.value.year_built || undefined,
@@ -218,6 +322,9 @@
     result.value = null
 
     try {
+      if (!form.value.municipality && selectedNaseljeMeta.value?.municipality) {
+        form.value.municipality = selectedNaseljeMeta.value.municipality
+      }
       const payload = {}
       for (const [key, value] of Object.entries(form.value)) {
         if (value !== null && value !== '' && value !== undefined) {
@@ -227,6 +334,15 @@
 
       const { data } = await api.post('/api/predict', payload)
       result.value = data
+      if (currentMunicipality.value) {
+        workbench.rememberMunicipality({
+          id: `municipality:${municipalitySlug(currentMunicipality.value)}`,
+          entity_type: 'municipality',
+          label: currentMunicipality.value,
+          slug: municipalitySlug(currentMunicipality.value),
+          region: selectedMunicipalityMeta.value?.region || null,
+        })
+      }
       await Promise.all([fetchHistory(), loadContext(data.predicted_price_eur)])
     } catch (err) {
       error.value = getApiErrorMessage(err, t)
@@ -238,7 +354,7 @@
   function applyRouteQuery(query) {
     const numericFields = ['size_m2', 'year_built', 'price_eur']
 
-    for (const field of ['municipality', 'property_type']) {
+    for (const field of ['naselje', 'municipality', 'property_type']) {
       if (query[field]) {
         form.value[field] = String(query[field])
       }
@@ -266,9 +382,39 @@
     exportToCSV(history.value, 'prediction-history.csv')
   }
 
+  async function addCurrentToWatchlist() {
+    if (!currentMunicipality.value) return
+    await workbench.addWatchlistItem({
+      entity_type: 'municipality',
+      entity_key: municipalitySlug(currentMunicipality.value),
+      display_label: currentMunicipality.value,
+      metadata: {
+        link: `/obcine/${municipalitySlug(currentMunicipality.value)}`,
+        region: selectedMunicipalityMeta.value?.region || null,
+      },
+    })
+  }
+
+  function addCurrentToCompare() {
+    if (!currentMunicipality.value) return
+    workbench.addCompareItem({
+      id: `municipality:${municipalitySlug(currentMunicipality.value)}`,
+      entity_type: 'municipality',
+      label: currentMunicipality.value,
+      slug: municipalitySlug(currentMunicipality.value),
+      region: selectedMunicipalityMeta.value?.region || null,
+      metadata: { source: 'prediction' },
+    })
+  }
+
   function openMunicipality() {
     if (!municipalityContext.value?.slug) return
-    router.push(`/obcine/${municipalityContext.value.slug}`)
+    router.push({
+      path: `/obcine/${municipalityContext.value.slug}`,
+      query: {
+        property_type: form.value.property_type || undefined,
+      },
+    })
   }
 
   function reuseComparable(item) {
@@ -276,10 +422,52 @@
       name: 'prediction',
       query: {
         municipality: item.municipality,
+        naselje: item.naselje || '',
         property_type: item.property_type || form.value.property_type,
         size_m2: item.size_m2 || '',
         year_built: item.year_built || '',
         price_eur: item.price_eur || '',
+      },
+    })
+  }
+
+  function openMarketExplorer() {
+    router.push({
+      name: 'market',
+      query: {
+        tab: 'transactions',
+        municipality: currentMunicipality.value || undefined,
+        property_type: form.value.property_type || undefined,
+      },
+    })
+  }
+
+  function openMapExplorer() {
+    router.push({
+      name: 'map',
+      query: {
+        municipality: currentMunicipality.value || undefined,
+        region: selectedMunicipalityMeta.value?.region || undefined,
+        property_type: form.value.property_type || undefined,
+        view: 'transactions',
+      },
+    })
+  }
+
+  function openAnalysis() {
+    router.push({
+      name: 'analysis',
+      query: {
+        municipality: currentMunicipality.value || undefined,
+        naselje: form.value.naselje || undefined,
+        property_type: form.value.property_type || undefined,
+        size_m2: effectiveSize.value ? String(effectiveSize.value) : undefined,
+        year_built: form.value.year_built != null ? String(form.value.year_built) : undefined,
+        floor: form.value.floor != null ? String(form.value.floor) : undefined,
+        asking_price:
+          typeof route.query.price_eur === 'string' && route.query.price_eur
+            ? route.query.price_eur
+            : undefined,
       },
     })
   }
@@ -292,8 +480,48 @@
     { immediate: true },
   )
 
+  watch(
+    () => form.value.naselje,
+    (value) => {
+      formErrors.value.naselje = null
+      const target = String(value || '')
+        .trim()
+        .toLowerCase()
+      const match = naseljeOptions.value.find(
+        (item) =>
+          item.naselje.trim().toLowerCase() === target ||
+          item.label.trim().toLowerCase() === target,
+      )
+      if (!match) {
+        return
+      }
+      if (form.value.naselje !== match.naselje) {
+        form.value.naselje = match.naselje
+      }
+      form.value.municipality = match.municipality
+      if (form.value.latitude == null && match.latitude != null) {
+        form.value.latitude = match.latitude
+      }
+      if (form.value.longitude == null && match.longitude != null) {
+        form.value.longitude = match.longitude
+      }
+    },
+  )
+
+  watch(
+    form,
+    (value) => {
+      storedDraft.value = { ...value }
+    },
+    { deep: true },
+  )
+
   onMounted(async () => {
-    await Promise.all([fetchHistory(), fetchMunicipalities()])
+    form.value = {
+      ...form.value,
+      ...storedDraft.value,
+    }
+    await Promise.all([fetchHistory(), fetchMunicipalities(), stats.fetchFeatureImportance()])
     if (form.value.municipality && effectiveSize.value) {
       await loadContext(result.value?.predicted_price_eur || null)
     }
@@ -308,7 +536,42 @@
           :eyebrow="t('predict.title')"
           :title="t('predict.avmTitle')"
           :description="t('predict.avmBody')"
-        />
+        >
+          <template #actions>
+            <SavedWorkspaceMenu
+              page="prediction"
+              :state="{
+                page: 'prediction',
+                filters: { ...form, predicted_price_eur: result?.predicted_price_eur || undefined },
+              }"
+            />
+            <Button
+              severity="secondary"
+              text
+              icon="pi pi-bookmark"
+              :label="t('workbench.watch')"
+              @click="addCurrentToWatchlist"
+            />
+            <Button
+              severity="secondary"
+              text
+              icon="pi pi-plus-circle"
+              :label="t('workbench.compare')"
+              @click="addCurrentToCompare"
+            />
+          </template>
+        </PageHeader>
+
+        <div class="scenario-row">
+          <Button
+            v-for="preset in scenarioPresets"
+            :key="preset.key"
+            severity="secondary"
+            outlined
+            :label="t(preset.label)"
+            @click="applyScenario(preset.values)"
+          />
+        </div>
 
         <form class="predict-form" @submit.prevent="predict">
           <div class="form-section">
@@ -393,7 +656,26 @@
             <h2>{{ t('predict.locationContext') }}</h2>
             <div class="form-grid">
               <label class="field">
-                <span>{{ t('predict.municipality') }} *</span>
+                <span>{{ t('predict.naselje') }} *</span>
+                <AutoComplete
+                  v-model="form.naselje"
+                  :suggestions="naseljeSuggestions"
+                  :placeholder="t('predict.naseljePlaceholder')"
+                  input-class="form-input"
+                  dropdown
+                  :force-selection="false"
+                  fluid
+                  :invalid="!!formErrors.naselje"
+                  @complete="searchNaselja"
+                  @update:model-value="formErrors.naselje = null"
+                />
+                <small v-if="formErrors.naselje" class="field-error">{{
+                  formErrors.naselje
+                }}</small>
+              </label>
+
+              <label class="field">
+                <span>{{ t('predict.municipality') }}</span>
                 <AutoComplete
                   v-model="form.municipality"
                   :suggestions="municipalitySuggestions"
@@ -402,13 +684,8 @@
                   dropdown
                   :force-selection="false"
                   fluid
-                  :invalid="!!formErrors.municipality"
                   @complete="searchMunicipalities"
-                  @update:model-value="formErrors.municipality = null"
                 />
-                <small v-if="formErrors.municipality" class="field-error">{{
-                  formErrors.municipality
-                }}</small>
               </label>
 
               <label class="field">
@@ -597,6 +874,27 @@
                 :label="t('predict.compareOnPortal')"
               />
             </a>
+            <Button
+              severity="secondary"
+              text
+              icon="pi pi-table"
+              :label="t('nav.market')"
+              @click="openMarketExplorer"
+            />
+            <Button
+              severity="secondary"
+              text
+              icon="pi pi-map"
+              :label="t('nav.map')"
+              @click="openMapExplorer"
+            />
+            <Button
+              severity="secondary"
+              text
+              icon="pi pi-search"
+              :label="t('nav.analysis')"
+              @click="openAnalysis"
+            />
           </div>
 
           <section class="story-block">
@@ -681,6 +979,27 @@
 
         <EmptyState v-else icon="🏠" :message="t('predict.emptyState')" />
 
+        <section v-if="stats.featureImportance?.length" class="story-block">
+          <div class="story-head">
+            <h3>{{ t('market.featureImportance') }}</h3>
+            <RouterLink
+              :to="{
+                path: '/trg',
+                query: {
+                  tab: 'rankings',
+                  municipality: currentMunicipality || undefined,
+                  property_type: form.property_type || undefined,
+                },
+              }"
+              class="story-link"
+            >
+              <Button severity="secondary" text :label="t('market.viewAll')" />
+            </RouterLink>
+          </div>
+          <p class="muted feature-desc">{{ t('market.featureImportanceDesc') }}</p>
+          <FeatureImportanceChart :features="stats.featureImportance" :limit="7" />
+        </section>
+
         <section class="story-block history-block">
           <div class="story-head">
             <h3>{{ t('predict.history') }}</h3>
@@ -716,6 +1035,13 @@
     display: grid;
   }
 
+  .scenario-row {
+    display: flex;
+    gap: 0.65rem;
+    flex-wrap: wrap;
+    margin: 0 0 1rem;
+  }
+
   .prediction-shell {
     display: grid;
     grid-template-columns: minmax(0, 1.05fr) minmax(340px, 0.95fr);
@@ -747,6 +1073,9 @@
 
   .story-actions {
     margin: 0.9rem 0 0.25rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
   }
 
   .action-link {
@@ -912,6 +1241,15 @@
     align-items: baseline;
     justify-content: space-between;
     gap: 1rem;
+  }
+
+  .story-link {
+    text-decoration: none;
+  }
+
+  .feature-desc {
+    margin: -0.4rem 0 0.6rem;
+    font-size: 0.86rem;
   }
 
   .estimate-card {

@@ -17,6 +17,7 @@ from app.models.user import User
 from app.rate_limit import limiter
 from app.schemas.model import PredictRequest, PredictResponse
 from app.services.model_service import predict_one
+from app.utils.cache import invalidate_request_caches
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,7 @@ async def predict(
     )
     db.add(log)
     await db.commit()
+    await invalidate_request_caches(request, prefixes=("cache:activity:", "cache:admin:"))
 
     return PredictResponse(**result)
 

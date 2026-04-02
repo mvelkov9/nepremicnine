@@ -1,5 +1,6 @@
 <script setup lang="ts">
-  import { computed, onMounted, ref } from 'vue'
+  import { computed, onMounted, ref, watch } from 'vue'
+  import { useRoute, useRouter } from 'vue-router'
   import { useI18n } from 'vue-i18n'
   import AutoComplete from 'primevue/autocomplete'
   import Button from 'primevue/button'
@@ -13,15 +14,19 @@
   import ToggleSwitch from 'primevue/toggleswitch'
   import api from '../composables/useApi'
   import { useAuthStore } from '../stores/auth'
+  import SavedWorkspaceMenu from '../components/workbench/SavedWorkspaceMenu.vue'
   import { useExport } from '../composables/useExport'
+  import { useWorkbenchStore } from '../stores/workbench'
   import { buildNepremicnineSearchUrl } from '../utils/externalSearch'
   import { getApiErrorMessage } from '../utils/apiError'
   import { formatCurrency, formatNumber } from '../utils/format'
-  import { normalizeMunicipalityName } from '../utils/municipality'
+  import { municipalitySlug, normalizeMunicipalityName } from '../utils/municipality'
   import { getPropertyTypeLabel } from '../utils/propertyType'
 
   interface GuidedAnalysisForm {
+    naselje: string
     municipality: string
+    ime_ko: string
     property_type: string
     size_m2: number
     uporabna_povrsina: number | null
@@ -51,10 +56,15 @@
 
   const { t } = useI18n()
   const auth = useAuthStore()
+  const workbench = useWorkbenchStore()
   const { exportToCSV } = useExport()
+  const route = useRoute()
+  const router = useRouter()
 
   const guidedForm = ref<GuidedAnalysisForm>({
+    naselje: '',
     municipality: '',
+    ime_ko: '',
     property_type: 'stanovanje',
     size_m2: 65,
     uporabna_povrsina: null,
@@ -79,6 +89,8 @@
   const advancedJson = ref('')
   const municipalities = ref([])
   const municipalitySuggestions = ref([])
+  const naseljeSuggestions = ref([])
+  const naseljeOptions = ref([])
 
   const propertyTypes = [
     'stanovanje',
@@ -98,6 +110,24 @@
       value,
     })),
   )
+  const guidedPresets = [
+    {
+      key: 'apartment',
+      label: 'workbench.apartmentPreset',
+      values: { property_type: 'stanovanje', size_m2: 70, rooms: 3, asking_price: 280000 },
+    },
+    {
+      key: 'house',
+      label: 'workbench.housePreset',
+      values: {
+        property_type: 'hisa',
+        size_m2: 160,
+        rooms: 5,
+        asking_price: 360000,
+        has_garaza: 1,
+      },
+    },
+  ]
 
   const primaryListing = computed(() => result.value?.listings?.[0] || null)
   const municipalityIndex = computed(
@@ -106,9 +136,33 @@
         municipalities.value.map((item) => [normalizeMunicipalityName(item.municipality), item]),
       ),
   )
-  const selectedMunicipalityMeta = computed(() =>
-    municipalityIndex.value.get(normalizeMunicipalityName(guidedForm.value.municipality)),
+  const selectedMunicipalityMeta = computed(() => {
+    const municipality =
+      guidedForm.value.municipality || selectedNaseljeMeta.value?.municipality || ''
+    return municipalityIndex.value.get(normalizeMunicipalityName(municipality))
+  })
+  const selectedNaseljeMeta = computed(() => {
+    const target = guidedForm.value.naselje.trim().toLowerCase()
+    return (
+      naseljeOptions.value.find(
+        (item) =>
+          item.naselje.trim().toLowerCase() === target ||
+          String(item.label || '')
+            .trim()
+            .toLowerCase() === target,
+      ) || null
+    )
+  })
+
+  const effectiveMunicipality = computed(
+    () => guidedForm.value.municipality || selectedNaseljeMeta.value?.municipality || '',
   )
+
+  function queryNumber(value: unknown) {
+    if (typeof value !== 'string' || !value) return null
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : null
+  }
 
   function fmt(value, decimals = 0) {
     return formatNumber(value, { maximumFractionDigits: decimals })
@@ -134,11 +188,49 @@
   }
 
   function buildGuidedPayload() {
+    if (!guidedForm.value.municipality && selectedNaseljeMeta.value?.municipality) {
+      guidedForm.value.municipality = selectedNaseljeMeta.value.municipality
+    }
+    if (selectedNaseljeMeta.value?.naselje) {
+      guidedForm.value.naselje = selectedNaseljeMeta.value.naselje
+    }
     return Object.fromEntries(
       Object.entries(guidedForm.value).filter(
         ([key, value]) => key !== 'notes' && value !== null && value !== '',
       ),
     )
+  }
+
+  function applyGuidedPreset(values: Partial<GuidedAnalysisForm>) {
+    guidedForm.value = {
+      ...guidedForm.value,
+      ...values,
+    }
+  }
+
+  function applyRouteQuery(query = route.query) {
+    if (typeof query.naselje === 'string') guidedForm.value.naselje = query.naselje
+    if (typeof query.municipality === 'string') guidedForm.value.municipality = query.municipality
+    if (typeof query.property_type === 'string')
+      guidedForm.value.property_type = query.property_type
+
+    const size = queryNumber(query.size_m2)
+    if (size != null) guidedForm.value.size_m2 = size
+
+    const usable = queryNumber(query.uporabna_povrsina)
+    if (usable != null) guidedForm.value.uporabna_povrsina = usable
+
+    const rooms = queryNumber(query.rooms)
+    if (rooms != null) guidedForm.value.rooms = rooms
+
+    const yearBuilt = queryNumber(query.year_built)
+    if (yearBuilt != null) guidedForm.value.year_built = yearBuilt
+
+    const floor = queryNumber(query.floor)
+    if (floor != null) guidedForm.value.floor = floor
+
+    const askingPrice = queryNumber(query.asking_price)
+    if (askingPrice != null) guidedForm.value.asking_price = askingPrice
   }
 
   async function fetchMunicipalities() {
@@ -158,6 +250,27 @@
           .map((item) => item.municipality)
           .slice(0, 12)
       : municipalities.value.map((item) => item.municipality).slice(0, 12)
+  }
+
+  async function searchNaselja(event) {
+    const query = String(event.query || '').trim()
+    try {
+      const { data } = await api.get('/api/stats/naselja', {
+        params: {
+          q: query || undefined,
+          municipality: guidedForm.value.municipality || undefined,
+          limit: 12,
+        },
+      })
+      naseljeOptions.value = (data || []).map((item) => ({
+        ...item,
+        label: `${item.naselje} (${item.municipality})`,
+      }))
+      naseljeSuggestions.value = naseljeOptions.value.map((item) => item.label)
+    } catch {
+      naseljeOptions.value = []
+      naseljeSuggestions.value = []
+    }
   }
 
   async function analyzeGuided() {
@@ -202,6 +315,7 @@
     advancedJson.value = JSON.stringify(
       [
         {
+          naselje: 'Ljubljana',
           size_m2: 65,
           uporabna_povrsina: 60,
           rooms: 2.5,
@@ -213,6 +327,7 @@
           asking_price: 250000,
         },
         {
+          naselje: 'Maribor',
           size_m2: 120,
           uporabna_povrsina: 114,
           rooms: 4,
@@ -231,7 +346,7 @@
 
   const comparisonUrl = computed(() =>
     buildNepremicnineSearchUrl({
-      municipality: guidedForm.value.municipality,
+      municipality: guidedForm.value.municipality || selectedNaseljeMeta.value?.municipality,
       statisticalRegion: selectedMunicipalityMeta.value?.region,
       propertyType: guidedForm.value.property_type,
     }),
@@ -245,9 +360,105 @@
     guidedForm.value[field] = checked ? 1 : 0
   }
 
+  function openPrediction() {
+    router.push({
+      name: 'prediction',
+      query: {
+        municipality: effectiveMunicipality.value || undefined,
+        naselje: guidedForm.value.naselje || undefined,
+        property_type: guidedForm.value.property_type || undefined,
+        size_m2: guidedForm.value.uporabna_povrsina || guidedForm.value.size_m2 || undefined,
+        year_built:
+          guidedForm.value.year_built != null ? String(guidedForm.value.year_built) : undefined,
+      },
+    })
+  }
+
+  function openPredictionForListing(listing: any) {
+    router.push({
+      name: 'prediction',
+      query: {
+        municipality: listing.municipality || effectiveMunicipality.value || undefined,
+        naselje: listing.naselje || undefined,
+        property_type: listing.property_type || guidedForm.value.property_type || undefined,
+        size_m2:
+          listing.uporabna_povrsina || listing.size_m2
+            ? String(listing.uporabna_povrsina || listing.size_m2)
+            : undefined,
+        year_built: listing.year_built != null ? String(listing.year_built) : undefined,
+        floor: listing.floor != null ? String(listing.floor) : undefined,
+        price_eur: listing.asking_price != null ? String(listing.asking_price) : undefined,
+      },
+    })
+  }
+
+  function openMarketExplorer() {
+    router.push({
+      name: 'market',
+      query: {
+        tab: 'transactions',
+        municipality: effectiveMunicipality.value || undefined,
+        property_type: guidedForm.value.property_type || undefined,
+      },
+    })
+  }
+
+  function openMapExplorer() {
+    router.push({
+      name: 'map',
+      query: {
+        municipality: effectiveMunicipality.value || undefined,
+        region: selectedMunicipalityMeta.value?.region || undefined,
+        property_type: guidedForm.value.property_type || undefined,
+        view: 'transactions',
+      },
+    })
+  }
+
+  function openMunicipality() {
+    if (!effectiveMunicipality.value) return
+    router.push({
+      path: `/obcine/${municipalitySlug(effectiveMunicipality.value)}`,
+      query: {
+        property_type: guidedForm.value.property_type || undefined,
+      },
+    })
+  }
+
+  async function addCurrentToWatchlist() {
+    if (!effectiveMunicipality.value) return
+    await workbench.addWatchlistItem({
+      entity_type: 'municipality',
+      entity_key: municipalitySlug(effectiveMunicipality.value),
+      display_label: effectiveMunicipality.value,
+      metadata: {
+        link: `/obcine/${municipalitySlug(effectiveMunicipality.value)}`,
+        region: selectedMunicipalityMeta.value?.region || null,
+      },
+    })
+  }
+
+  function openMunicipalityForListing(listing: any) {
+    if (!listing?.municipality) return
+    router.push({
+      path: `/obcine/${municipalitySlug(listing.municipality)}`,
+      query: {
+        property_type: listing.property_type || undefined,
+      },
+    })
+  }
+
   onMounted(() => {
+    applyRouteQuery()
     void fetchMunicipalities()
   })
+
+  watch(
+    () => route.query,
+    (query) => {
+      applyRouteQuery(query)
+    },
+  )
 </script>
 
 <template>
@@ -283,6 +494,47 @@
             :label="t('analysis.compareOnPortal')"
           />
         </a>
+        <div class="hero-actions">
+          <SavedWorkspaceMenu
+            page="analysis"
+            :state="{ page: 'analysis', filters: buildGuidedPayload() }"
+          />
+          <Button
+            severity="secondary"
+            text
+            icon="pi pi-bookmark"
+            :label="t('workbench.watch')"
+            @click="addCurrentToWatchlist"
+          />
+          <Button
+            severity="secondary"
+            text
+            icon="pi pi-calculator"
+            :label="t('predict.title')"
+            @click="openPrediction"
+          />
+          <Button
+            severity="secondary"
+            text
+            icon="pi pi-table"
+            :label="t('nav.market')"
+            @click="openMarketExplorer"
+          />
+          <Button
+            severity="secondary"
+            text
+            icon="pi pi-map"
+            :label="t('nav.map')"
+            @click="openMapExplorer"
+          />
+          <Button
+            severity="secondary"
+            text
+            icon="pi pi-building"
+            :label="t('map.openMunicipality')"
+            @click="openMunicipality"
+          />
+        </div>
       </div>
     </section>
 
@@ -301,8 +553,8 @@
 
       <div class="guided-summary">
         <article class="summary-chip">
-          <span>{{ t('predict.municipality') }}</span>
-          <strong>{{ guidedForm.municipality || t('predict.municipalityPlaceholder') }}</strong>
+          <span>{{ t('predict.naselje') }}</span>
+          <strong>{{ guidedForm.naselje || t('predict.naseljePlaceholder') }}</strong>
         </article>
         <article class="summary-chip">
           <span>{{ t('predict.size') }}</span>
@@ -314,7 +566,30 @@
         </article>
       </div>
 
+      <div class="actions-row">
+        <Button
+          v-for="preset in guidedPresets"
+          :key="preset.key"
+          severity="secondary"
+          outlined
+          :label="t(preset.label)"
+          @click="applyGuidedPreset(preset.values)"
+        />
+      </div>
+
       <div class="form-grid">
+        <label class="field">
+          <span>{{ t('predict.naselje') }}</span>
+          <AutoComplete
+            v-model="guidedForm.naselje"
+            :suggestions="naseljeSuggestions"
+            :placeholder="t('predict.naseljePlaceholder')"
+            dropdown
+            fluid
+            @complete="searchNaselja"
+          />
+        </label>
+
         <label class="field">
           <span>{{ t('predict.municipality') }}</span>
           <AutoComplete
@@ -511,7 +786,9 @@
         </article>
         <article class="result-card tone-warning">
           <span>{{ t('analysis.deviation') }}</span>
-          <strong>{{ fmt(primaryListing.deviation_percent, 1) }}%</strong>
+          <strong
+            >{{ fmt(primaryListing.deviation_pct ?? primaryListing.deviation_percent, 1) }}%</strong
+          >
         </article>
         <article class="result-card tone-label">
           <span>{{ t('analysis.label') }}</span>
@@ -569,11 +846,36 @@
             <template #body="{ data }">{{ fmtCurrency(data.predicted_price) }}</template>
           </Column>
           <Column :header="t('analysis.deviation')">
-            <template #body="{ data }">{{ fmt(data.deviation_percent, 1) }}%</template>
+            <template #body="{ data }">
+              {{ fmt(data.deviation_pct ?? data.deviation_percent, 1) }}%
+            </template>
           </Column>
           <Column :header="t('analysis.label')">
             <template #body="{ data }">
               <Tag :severity="labelSeverity(data.label)" :value="labelText(data.label)" />
+            </template>
+          </Column>
+          <Column :header="t('common.actions')">
+            <template #body="{ data }">
+              <div class="row-actions">
+                <Button
+                  size="small"
+                  severity="secondary"
+                  text
+                  icon="pi pi-calculator"
+                  :label="t('predict.title')"
+                  @click="openPredictionForListing(data)"
+                />
+                <Button
+                  v-if="data.municipality"
+                  size="small"
+                  severity="secondary"
+                  text
+                  icon="pi pi-building"
+                  :label="t('map.openMunicipality')"
+                  @click="openMunicipalityForListing(data)"
+                />
+              </div>
             </template>
           </Column>
         </DataTable>
@@ -647,6 +949,12 @@
     align-content: space-between;
   }
 
+  .hero-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+  }
+
   .hero-pill-grid,
   .guided-summary {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -718,6 +1026,12 @@
     flex-wrap: wrap;
     gap: 0.65rem;
     margin-top: 1rem;
+  }
+
+  .row-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
   }
 
   .flag-row {

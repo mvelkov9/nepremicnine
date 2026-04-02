@@ -9,7 +9,7 @@ from app.config import get_settings
 
 settings = get_settings()
 
-_engine_kwargs: dict = {"echo": settings.app_env == "development"}
+_engine_kwargs: dict = {"echo": settings.sql_echo}
 if "sqlite" not in settings.database_url:
     _engine_kwargs.update(
         {

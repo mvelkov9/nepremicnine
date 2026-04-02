@@ -1,13 +1,37 @@
 import pluginVue from "eslint-plugin-vue";
 import tsParser from "@typescript-eslint/parser";
+import vueParser from "vue-eslint-parser";
 
 export default [
+  {
+    ignores: [
+      "dist/",
+      "coverage/",
+      ".pnpm-store/",
+      ".vite/",
+      "node_modules/",
+      "playwright-report/",
+      "test-results/",
+    ],
+  },
+  {
+    files: ["**/*.{js,mjs,cjs,ts,mts,cts}"],
+    languageOptions: {
+      parser: tsParser,
+      ecmaVersion: "latest",
+      sourceType: "module",
+    },
+  },
   ...pluginVue.configs["flat/recommended"],
   {
     files: ["**/*.vue"],
     languageOptions: {
+      parser: vueParser,
       parserOptions: {
         parser: tsParser,
+        ecmaVersion: "latest",
+        sourceType: "module",
+        extraFileExtensions: [".vue"],
       },
     },
   },
@@ -24,8 +48,5 @@ export default [
       "vue/first-attribute-linebreak": "off",
       "vue/attributes-order": "off",
     },
-  },
-  {
-    ignores: ["dist/", "node_modules/"],
   },
 ];

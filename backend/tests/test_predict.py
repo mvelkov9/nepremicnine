@@ -24,25 +24,20 @@ async def test_predict_missing_required_field(client: AsyncClient, admin_headers
 
 
 @pytest.mark.asyncio
-async def test_predict_invalid_latitude_too_high(client: AsyncClient, admin_headers: dict):
-    """latitude > 47 exceeds PredictRequest constraint → 422."""
-    resp = await client.post(
-        "/api/predict",
-        json={"size_m2": 70, "latitude": 48.0},
-        headers=admin_headers,
-    )
-    assert resp.status_code == 422
-
-
-@pytest.mark.asyncio
-async def test_predict_invalid_longitude_too_high(client: AsyncClient, admin_headers: dict):
-    """longitude > 17 exceeds PredictRequest constraint → 422."""
-    resp = await client.post(
-        "/api/predict",
-        json={"size_m2": 70, "longitude": 18.0},
-        headers=admin_headers,
-    )
-    assert resp.status_code == 422
+async def test_predict_accepts_d96_tm_coordinates(client: AsyncClient, admin_headers: dict):
+    """The API must accept Slovenia D96/TM metric coordinates used by prepared data."""
+    fake_result = {
+        "predicted_price_eur": 185_000.0,
+        "model_used": "global",
+        "features_used": {"size_m2": "70.0"},
+    }
+    with patch("app.api.predict.predict_one", return_value=fake_result):
+        resp = await client.post(
+            "/api/predict",
+            json={"size_m2": 70, "latitude": 100_800.0, "longitude": 460_900.0},
+            headers=admin_headers,
+        )
+    assert resp.status_code == 200
 
 
 @pytest.mark.asyncio
