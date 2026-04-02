@@ -20,8 +20,8 @@ services:
     volumes: !override
       - backend-data:/app/data
       - backend-models:/app/models
-    ports:
-      - "127.0.0.1:8000:8000"
+    ports: !override
+      - "${BACKEND_BIND_IP:-127.0.0.1}:${BACKEND_PORT:-8000}:8000"
     environment:
       APP_ENV: production
 
@@ -42,8 +42,8 @@ services:
       # No target override — uses full multi-stage (builder → nginx)
     command: !reset []
     volumes: !reset []
-    ports:
-      - "80:80"
+    ports: !override
+      - "${FRONTEND_PORT:-80}:80"
 
 volumes:
   backend-data:
