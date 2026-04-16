@@ -696,9 +696,9 @@
                   <template #body="{ data }">{{ formatCurrency(data.median_price) }}</template>
                 </Column>
                 <Column field="median_price_per_m2" :header="t('dashboard.pricePerM2')">
-                  <template #body="{ data }"
-                    >{{ formatCurrency(data.median_price_per_m2) }}/m²</template
-                  >
+                  <template #body="{ data }">
+                    {{ formatCurrency(data.median_price_per_m2) }}/m²
+                  </template>
                 </Column>
                 <Column :header="t('common.actions')">
                   <template #body="{ data }">
@@ -805,9 +805,9 @@
                   <template #body="{ data }">{{ formatCurrency(data.median_price) }}</template>
                 </Column>
                 <Column field="median_price_per_m2" :header="t('dashboard.pricePerM2')">
-                  <template #body="{ data }"
-                    >{{ formatCurrency(data.median_price_per_m2) }}/m²</template
-                  >
+                  <template #body="{ data }">
+                    {{ formatCurrency(data.median_price_per_m2) }}/m²
+                  </template>
                 </Column>
               </DataTable>
               <EmptyState

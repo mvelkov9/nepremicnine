@@ -174,9 +174,9 @@
           <template #body="{ data }">{{ formatType(data.property_type) }}</template>
         </Column>
         <Column :header="t('predict.size')">
-          <template #body="{ data }"
-            >{{ fmt(data.uporabna_povrsina || data.size_m2, 1) }} m²</template
-          >
+          <template #body="{ data }">
+            {{ fmt(data.uporabna_povrsina || data.size_m2, 1) }} m²
+          </template>
         </Column>
         <Column :header="t('predict.floor')">
           <template #body="{ data }">{{ data.floor ?? '—' }}</template>

@@ -108,9 +108,9 @@
         <template #body="{ data }">{{ data.row_count.toLocaleString() }}</template>
       </Column>
       <Column field="uploaded_at" :header="t('data.uploaded')" sortable>
-        <template #body="{ data }">{{
-          formatDate ? formatDate(data.uploaded_at) : data.uploaded_at
-        }}</template>
+        <template #body="{ data }">
+          {{ formatDate ? formatDate(data.uploaded_at) : data.uploaded_at }}
+        </template>
       </Column>
       <Column :header="t('data.actions')">
         <template #body="{ data }">

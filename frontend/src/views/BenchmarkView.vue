@@ -715,9 +715,9 @@
               <Column field="transaction_year" :header="t('map.year')" sortable />
 
               <Column field="vrsta_kupoprodajnega_posla" :header="t('benchmark.saleType')">
-                <template #body="{ data }">{{
-                  saleTypeLabel(data.vrsta_kupoprodajnega_posla)
-                }}</template>
+                <template #body="{ data }">
+                  {{ saleTypeLabel(data.vrsta_kupoprodajnega_posla) }}
+                </template>
               </Column>
 
               <Column field="price_eur" :header="t('benchmark.actualPrice')" sortable>

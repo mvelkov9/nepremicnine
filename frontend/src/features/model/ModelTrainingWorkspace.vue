@@ -22,7 +22,7 @@
       title: string
       description: string
       modelValue: string
-      options: ModelSourceOption[]
+      options?: ModelSourceOption[]
       selectedSourceMeta?: ModelSourceMeta | null
       selectedSourcePath?: string
       trainingLocked?: boolean
