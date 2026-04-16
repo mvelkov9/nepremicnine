@@ -76,27 +76,42 @@
 
   .table-workbench-toolbar {
     justify-content: space-between;
-    margin-bottom: 0.9rem;
+    margin-bottom: 1rem;
+    padding: 1rem 1.05rem;
+    border-radius: var(--radius-md);
+    border: 1px solid color-mix(in srgb, var(--border) 66%, var(--primary) 34%);
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--glass-highlight) 100%, transparent),
+        transparent 42%
+      ),
+      var(--surface-panel-muted, var(--surface-soft));
+    box-shadow:
+      inset 0 1px 0 var(--glass-highlight),
+      var(--shadow-sm);
   }
 
   .toolbar-search {
-    width: min(100%, 20rem);
+    width: min(100%, 22rem);
   }
 
   .filter-chip {
     display: inline-flex;
     align-items: center;
-    min-height: 2rem;
-    padding: 0.3rem 0.75rem;
+    min-height: 2.1rem;
+    padding: 0.35rem 0.8rem;
     border-radius: 999px;
-    border: 1px solid color-mix(in srgb, var(--border) 72%, var(--primary) 28%);
+    border: 1px solid color-mix(in srgb, var(--border) 60%, var(--primary) 40%);
     background: color-mix(
       in srgb,
-      var(--surface-card-strong, var(--surface-soft)) 86%,
-      transparent
+      var(--surface-card-strong, var(--surface-soft)) 72%,
+      var(--primary) 28%
     );
+    color: var(--text);
     font-size: 0.8rem;
     font-weight: 700;
+    box-shadow: inset 0 1px 0 var(--glass-highlight);
   }
 
   @media (max-width: 860px) {

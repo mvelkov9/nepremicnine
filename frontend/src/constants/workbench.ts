@@ -9,11 +9,13 @@ export const workspacePagePathMap: Record<string, string> = {
   map: '/zemljevid',
   prediction: '/napoved',
   analysis: '/analiza',
+  benchmark: '/dokaz',
   'admin-home': '/admin',
   data: '/admin/podatki',
   prepare: '/admin/priprava',
   model: '/admin/model',
   diagnostics: '/admin/diagnostika',
+  'admin-benchmark': '/admin/dokaz',
   users: '/admin/uporabniki',
 }
 
@@ -26,11 +28,13 @@ export const workspacePageTitleKeys: Record<string, string> = {
   map: 'nav.map',
   prediction: 'nav.prediction',
   analysis: 'nav.analysis',
+  benchmark: 'nav.benchmark',
   'admin-home': 'nav.admin',
   data: 'nav.data',
   prepare: 'nav.prepare',
   model: 'nav.model',
   diagnostics: 'nav.diagnostics',
+  'admin-benchmark': 'nav.benchmark',
   users: 'admin.userManagement',
 }
 

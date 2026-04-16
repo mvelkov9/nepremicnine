@@ -40,6 +40,9 @@ interface UploadBatchResult {
 interface FetchDatasetsOptions {
   page?: number
   perPage?: number
+  search?: string
+  sort?: string
+  order?: 'asc' | 'desc'
 }
 
 export const useDataStore = defineStore('data', () => {
@@ -54,7 +57,9 @@ export const useDataStore = defineStore('data', () => {
   const loading = ref(false)
   const uploading = ref(false)
   const uploadProgress = ref(0)
+  let fetchDatasetsVersion = 0
   let fetchDatasetsInFlight: Promise<void> | null = null
+  let fetchDatasetsRequestKey = ''
   let fetchTrainingDatasetInFlight: Promise<unknown> | null = null
   let fetchQualitySummaryInFlight: Promise<unknown> | null = null
   let allDatasetsCached = false
@@ -67,9 +72,23 @@ export const useDataStore = defineStore('data', () => {
     // If we already have all pages loaded and no sync is needed, skip re-fetching
     if (fetchAllPages && !withSync && allDatasetsCached && datasets.value.length > 0) return
 
-    if (fetchDatasetsInFlight) return fetchDatasetsInFlight
+    const requestKey = JSON.stringify({
+      withSync,
+      fetchAllPages,
+      page: Number(options.page || 1),
+      perPage: Number(options.perPage || (fetchAllPages ? 200 : 10)),
+      search: String(options.search || '').trim(),
+      sort: String(options.sort || 'uploaded_at'),
+      order: options.order === 'asc' ? 'asc' : 'desc',
+    })
+
+    if (fetchDatasetsInFlight && fetchDatasetsRequestKey === requestKey)
+      return fetchDatasetsInFlight
+
+    fetchDatasetsRequestKey = requestKey
 
     fetchDatasetsInFlight = (async () => {
+      const requestVersion = ++fetchDatasetsVersion
       loading.value = true
       try {
         const requestedPage = Math.max(1, Number(options.page || 1))
@@ -77,6 +96,9 @@ export const useDataStore = defineStore('data', () => {
           1,
           Math.min(200, Number(options.perPage || (fetchAllPages ? 200 : 10))),
         )
+        const requestedSearch = String(options.search || '').trim()
+        const requestedSort = String(options.sort || 'uploaded_at')
+        const requestedOrder = options.order === 'asc' ? 'asc' : 'desc'
 
         if (fetchAllPages) {
           let page = 1
@@ -86,7 +108,14 @@ export const useDataStore = defineStore('data', () => {
 
           do {
             const { data } = await api.get('/api/data/datasets', {
-              params: { page, per_page: requestedPerPage, sync: withSync && page === 1 },
+              params: {
+                page,
+                per_page: requestedPerPage,
+                sync: withSync && page === 1,
+                search: requestedSearch || undefined,
+                sort: requestedSort,
+                order: requestedOrder,
+              },
             })
             const items = Array.isArray(data) ? data : data.items || []
             allItems.push(...items)
@@ -95,30 +124,46 @@ export const useDataStore = defineStore('data', () => {
             page += 1
           } while (page <= totalPages)
 
-          datasets.value = allItems
-          datasetsPage.value = requestedPage
-          datasetsPerPage.value = requestedPerPage
-          datasetsTotal.value = total
-          datasetsPages.value = totalPages
-          allDatasetsCached = true
+          if (requestVersion === fetchDatasetsVersion) {
+            datasets.value = allItems
+            datasetsPage.value = requestedPage
+            datasetsPerPage.value = requestedPerPage
+            datasetsTotal.value = total
+            datasetsPages.value = totalPages
+            allDatasetsCached = true
+          }
           return
         }
 
         const { data } = await api.get('/api/data/datasets', {
-          params: { page: requestedPage, per_page: requestedPerPage, sync: withSync },
+          params: {
+            page: requestedPage,
+            per_page: requestedPerPage,
+            sync: withSync,
+            search: requestedSearch || undefined,
+            sort: requestedSort,
+            order: requestedOrder,
+          },
         })
         const items = Array.isArray(data) ? data : data.items || []
         const total = Array.isArray(data) ? items.length : Number(data.total || items.length)
         const pages = Array.isArray(data) ? 1 : Number(data.pages || 1)
 
-        datasets.value = items
-        datasetsPage.value = requestedPage
-        datasetsPerPage.value = requestedPerPage
-        datasetsTotal.value = total
-        datasetsPages.value = pages
+        if (requestVersion === fetchDatasetsVersion) {
+          datasets.value = items
+          datasetsPage.value = requestedPage
+          datasetsPerPage.value = requestedPerPage
+          datasetsTotal.value = total
+          datasetsPages.value = pages
+        }
       } finally {
-        loading.value = false
-        fetchDatasetsInFlight = null
+        if (requestVersion === fetchDatasetsVersion) {
+          loading.value = false
+        }
+        if (fetchDatasetsInFlight) {
+          fetchDatasetsInFlight = null
+          fetchDatasetsRequestKey = ''
+        }
       }
     })()
 
@@ -211,8 +256,12 @@ export const useDataStore = defineStore('data', () => {
       }
 
       allDatasetsCached = false
-      await fetchDatasets()
-      await fetchUploadCapacity()
+      await Promise.all([
+        fetchDatasets(),
+        fetchTrainingDataset(),
+        fetchQualitySummary(),
+        fetchUploadCapacity(),
+      ])
       uploadProgress.value = 100
       return aggregated
     } finally {
@@ -284,7 +333,12 @@ export const useDataStore = defineStore('data', () => {
   async function rescanDatasets() {
     allDatasetsCached = false
     const { data } = await api.post('/api/data/datasets/rescan', null, { timeout: 0 })
-    await fetchDatasets(false, false)
+    await Promise.all([
+      fetchDatasets(false, false),
+      fetchTrainingDataset(),
+      fetchQualitySummary(),
+      fetchUploadCapacity(),
+    ])
     return data
   }
 

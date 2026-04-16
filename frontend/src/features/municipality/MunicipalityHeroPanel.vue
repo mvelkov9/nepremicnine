@@ -69,9 +69,21 @@
     border-radius: calc(var(--radius-lg) + 0.15rem);
     border: 1px solid color-mix(in srgb, var(--border) 72%, var(--primary) 28%);
     background:
-      radial-gradient(circle at top left, color-mix(in srgb, var(--primary) 16%, transparent), transparent 34%),
-      radial-gradient(circle at top right, color-mix(in srgb, var(--secondary) 12%, transparent), transparent 30%),
-      linear-gradient(180deg, color-mix(in srgb, var(--surface-card-strong) 96%, transparent), transparent 140%),
+      radial-gradient(
+        circle at top left,
+        color-mix(in srgb, var(--primary) 16%, transparent),
+        transparent 34%
+      ),
+      radial-gradient(
+        circle at top right,
+        color-mix(in srgb, var(--secondary) 12%, transparent),
+        transparent 30%
+      ),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface-card-strong) 96%, transparent),
+        transparent 140%
+      ),
       var(--surface-panel);
     box-shadow:
       inset 0 1px 0 var(--content-glow),
@@ -150,8 +162,16 @@
     border-radius: var(--radius-md);
     border: 1px solid color-mix(in srgb, var(--border) 70%, var(--primary) 30%);
     background:
-      radial-gradient(circle at top right, color-mix(in srgb, var(--secondary) 16%, transparent), transparent 40%),
-      linear-gradient(180deg, color-mix(in srgb, var(--surface-card-strong) 96%, transparent), transparent 120%),
+      radial-gradient(
+        circle at top right,
+        color-mix(in srgb, var(--secondary) 16%, transparent),
+        transparent 40%
+      ),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface-card-strong) 96%, transparent),
+        transparent 120%
+      ),
       var(--surface-soft);
   }
 

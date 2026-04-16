@@ -59,6 +59,12 @@ services:
     image: nepremicnine-v2-backend-dev
     pull_policy: never
     restart: unless-stopped
+    gpus: all
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      CATBOOST_GPU_DEVICES: "0"
+      CATBOOST_GPU_RAM_PART: "0.50"
     command: ["arq", "app.tasks.training_worker.WorkerSettings"]
     env_file: .env
     healthcheck:

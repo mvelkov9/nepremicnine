@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
 import api from '../composables/useApi'
 import { accessToken, refreshToken } from './tokens'
@@ -15,8 +15,20 @@ export const useAuthStore = defineStore('auth', () => {
     },
   })
 
-  const isAuthenticated = computed(() => !!accessToken.value)
+  const bootstrapStatus = ref<'idle' | 'loading' | 'ready'>('idle')
+  let initPromise: Promise<void> | null = null
+
+  const hasToken = computed(() => !!accessToken.value)
+  const isAuthenticated = computed(() => !!accessToken.value && !!user.value)
   const isAdmin = computed(() => user.value?.role === 'admin')
+  const isBootstrapping = computed(() => bootstrapStatus.value === 'loading')
+  const isReady = computed(() => bootstrapStatus.value === 'ready')
+
+  function clearAuthState() {
+    user.value = null
+    accessToken.value = null
+    refreshToken.value = null
+  }
 
   async function login(email: string, password: string): Promise<void> {
     const { data } = await api.post('/api/auth/login', { email, password })
@@ -24,6 +36,7 @@ export const useAuthStore = defineStore('auth', () => {
     if (data.refresh_token) {
       refreshToken.value = data.refresh_token
     }
+    bootstrapStatus.value = 'loading'
     await fetchUser()
   }
 
@@ -32,7 +45,9 @@ export const useAuthStore = defineStore('auth', () => {
       const { data } = await api.get<User>('/api/auth/me')
       user.value = data
     } catch {
-      logout()
+      clearAuthState()
+    } finally {
+      bootstrapStatus.value = 'ready'
     }
   }
 
@@ -40,16 +55,28 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       await api.post('/api/auth/logout', { refresh_token: refreshToken.value })
     } catch {
-      // Ignore errors — clear local state regardless
+      // Ignore errors and clear local state regardless.
     }
-    user.value = null
-    accessToken.value = null
-    refreshToken.value = null
+    clearAuthState()
+    bootstrapStatus.value = 'ready'
   }
 
   async function init(): Promise<void> {
-    if (accessToken.value) {
-      await fetchUser()
+    if (initPromise) return initPromise
+
+    bootstrapStatus.value = 'loading'
+    initPromise = (async () => {
+      if (accessToken.value) {
+        await fetchUser()
+      } else {
+        bootstrapStatus.value = 'ready'
+      }
+    })()
+
+    try {
+      await initPromise
+    } finally {
+      initPromise = null
     }
   }
 
@@ -64,6 +91,10 @@ export const useAuthStore = defineStore('auth', () => {
   return {
     user,
     accessToken,
+    hasToken,
+    bootstrapStatus,
+    isBootstrapping,
+    isReady,
     isAuthenticated,
     isAdmin,
     login,

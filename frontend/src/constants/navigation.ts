@@ -11,6 +11,7 @@ export const viewerNavigation: NavItem[] = [
   { to: '/regije', icon: 'regions', label: 'nav.regions', group: 'nav.groupOverview' },
   { to: '/zemljevid', icon: 'map', label: 'nav.map', group: 'nav.groupExplore' },
   { to: '/obcine', icon: 'municipalities', label: 'nav.municipalities', group: 'nav.groupExplore' },
+  { to: '/dokaz', icon: 'benchmark', label: 'nav.benchmark', group: 'nav.groupInsights' },
   { to: '/napoved', icon: 'prediction', label: 'nav.prediction', group: 'nav.groupTools' },
   { to: '/analiza', icon: 'analysis', label: 'nav.analysis', group: 'nav.groupTools' },
 ]
@@ -24,6 +25,12 @@ export const adminNavigation: NavItem[] = [
     to: '/admin/diagnostika',
     icon: 'diagnostics',
     label: 'nav.diagnostics',
+    group: 'nav.groupMonitor',
+  },
+  {
+    to: '/admin/dokaz',
+    icon: 'benchmark',
+    label: 'nav.benchmark',
     group: 'nav.groupMonitor',
   },
   {

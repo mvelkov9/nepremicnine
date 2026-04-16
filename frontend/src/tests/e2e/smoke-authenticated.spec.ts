@@ -20,7 +20,10 @@ function screenshotName(routePath: string) {
 }
 
 test.describe('Authenticated smoke', () => {
-  test.skip(!hasTestCredentials(), 'PLAYWRIGHT_TEST_EMAIL and PLAYWRIGHT_TEST_PASSWORD are required')
+  test.skip(
+    !hasTestCredentials(),
+    'PLAYWRIGHT_TEST_EMAIL and PLAYWRIGHT_TEST_PASSWORD are required',
+  )
 
   test('viewer and admin routes render without console errors', async ({ page }) => {
     test.setTimeout(3 * 60 * 1000)

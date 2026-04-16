@@ -8,9 +8,7 @@
   import PageHeader from '../../components/PageHeader.vue'
   import SectionPanel from '../../components/SectionPanel.vue'
   import { useFormat } from '../../composables/useFormat'
-  import type {
-    GursEnrichmentRow,
-  } from '../../utils/enrichmentSummary'
+  import type { GursEnrichmentRow } from '../../utils/enrichmentSummary'
   import type {
     PreparePerYearRow,
     PrepareReportSummary,
@@ -135,14 +133,38 @@
       :description="t('prepare.gursEnrichmentDesc')"
     >
       <div class="prepare-result-metrics prepare-result-metrics--secondary">
-        <MetricCard :label="t('prepare.exactAddressMatches')" :value="fmt(enrichmentTotals.rnExactAddress)" />
-        <MetricCard :label="t('prepare.regionIdsRecovered')" :value="fmt(enrichmentTotals.rnRegionId)" />
-        <MetricCard :label="t('prepare.evBuildingMatches')" :value="fmt(enrichmentTotals.evBuildingMatch)" />
-        <MetricCard :label="t('prepare.evParcelMatches')" :value="fmt(enrichmentTotals.evParcelMatch)" />
-        <MetricCard :label="t('prepare.knPolygonMatches')" :value="fmt(enrichmentTotals.knPolygonMatch)" />
-        <MetricCard :label="t('prepare.gjiVodovodMatches')" :value="fmt(enrichmentTotals.gjiVodovodNearby)" />
-        <MetricCard :label="t('prepare.gjiKanalizacijaMatches')" :value="fmt(enrichmentTotals.gjiKanalizacijaNearby)" />
-        <MetricCard :label="t('prepare.emvZoneMatches')" :value="fmt(enrichmentTotals.emvZoneMatch)" />
+        <MetricCard
+          :label="t('prepare.exactAddressMatches')"
+          :value="fmt(enrichmentTotals.rnExactAddress)"
+        />
+        <MetricCard
+          :label="t('prepare.regionIdsRecovered')"
+          :value="fmt(enrichmentTotals.rnRegionId)"
+        />
+        <MetricCard
+          :label="t('prepare.evBuildingMatches')"
+          :value="fmt(enrichmentTotals.evBuildingMatch)"
+        />
+        <MetricCard
+          :label="t('prepare.evParcelMatches')"
+          :value="fmt(enrichmentTotals.evParcelMatch)"
+        />
+        <MetricCard
+          :label="t('prepare.knPolygonMatches')"
+          :value="fmt(enrichmentTotals.knPolygonMatch)"
+        />
+        <MetricCard
+          :label="t('prepare.gjiVodovodMatches')"
+          :value="fmt(enrichmentTotals.gjiVodovodNearby)"
+        />
+        <MetricCard
+          :label="t('prepare.gjiKanalizacijaMatches')"
+          :value="fmt(enrichmentTotals.gjiKanalizacijaNearby)"
+        />
+        <MetricCard
+          :label="t('prepare.emvZoneMatches')"
+          :value="fmt(enrichmentTotals.emvZoneMatch)"
+        />
       </div>
 
       <div class="prepare-table-shell">
@@ -157,18 +179,42 @@
               <div class="prepare-coverage-tags">
                 <Tag
                   :value="t('prepare.rnRegister')"
-                  :severity="enrichmentSeverity(row.rnAvailable, row.rnExactAddress > 0 || row.rnRegionId > 0)"
+                  :severity="
+                    enrichmentSeverity(
+                      row.rnAvailable,
+                      row.rnExactAddress > 0 || row.rnRegionId > 0,
+                    )
+                  "
                 />
-                <Tag :value="t('prepare.evBuildings')" :severity="enrichmentSeverity(row.evBuildingAvailable, row.evBuildingMatch > 0)" />
-                <Tag :value="t('prepare.evParcels')" :severity="enrichmentSeverity(row.evParcelAvailable, row.evParcelMatch > 0)" />
-                <Tag :value="t('prepare.knPolygons')" :severity="enrichmentSeverity(row.knAvailable, row.knPolygonMatch > 0)" />
+                <Tag
+                  :value="t('prepare.evBuildings')"
+                  :severity="enrichmentSeverity(row.evBuildingAvailable, row.evBuildingMatch > 0)"
+                />
+                <Tag
+                  :value="t('prepare.evParcels')"
+                  :severity="enrichmentSeverity(row.evParcelAvailable, row.evParcelMatch > 0)"
+                />
+                <Tag
+                  :value="t('prepare.knPolygons')"
+                  :severity="enrichmentSeverity(row.knAvailable, row.knPolygonMatch > 0)"
+                />
                 <Tag
                   :value="t('prepare.gjiInfrastructure')"
-                  :severity="enrichmentSeverity(row.gjiAvailable, row.gjiVodovodNearby > 0 || row.gjiKanalizacijaNearby > 0)"
+                  :severity="
+                    enrichmentSeverity(
+                      row.gjiAvailable,
+                      row.gjiVodovodNearby > 0 || row.gjiKanalizacijaNearby > 0,
+                    )
+                  "
                 />
                 <Tag
                   :value="t('prepare.emvZones')"
-                  :severity="enrichmentSeverity(row.emvAvailable || row.emvSpatialEnabled, row.emvZoneMatch > 0)"
+                  :severity="
+                    enrichmentSeverity(
+                      row.emvAvailable || row.emvSpatialEnabled,
+                      row.emvZoneMatch > 0,
+                    )
+                  "
                 />
               </div>
             </template>
@@ -203,7 +249,11 @@
               {{ fmt(row.gjiVodovodNearby) }}
             </template>
           </Column>
-          <Column field="gjiKanalizacijaNearby" :header="t('prepare.gjiKanalizacijaMatches')" sortable>
+          <Column
+            field="gjiKanalizacijaNearby"
+            :header="t('prepare.gjiKanalizacijaMatches')"
+            sortable
+          >
             <template #body="{ data: row }">
               {{ fmt(row.gjiKanalizacijaNearby) }}
             </template>
@@ -251,7 +301,11 @@
       </div>
 
       <div class="prepare-results-actions">
-        <Button icon="pi pi-arrow-right" :label="t('prepare.openModel')" @click="emit('openModel')" />
+        <Button
+          icon="pi pi-arrow-right"
+          :label="t('prepare.openModel')"
+          @click="emit('openModel')"
+        />
       </div>
     </SectionPanel>
   </SectionPanel>

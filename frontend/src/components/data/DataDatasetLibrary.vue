@@ -8,7 +8,11 @@
   import LoadingSpinner from '../LoadingSpinner.vue'
   import SectionPanel from '../SectionPanel.vue'
   import TableWorkbenchToolbar from '../workbench/TableWorkbenchToolbar.vue'
-  import type { DatasetRow, DatasetTablePageEvent, DatasetTableSortEvent } from '../../features/data/types'
+  import type {
+    DatasetRow,
+    DatasetTablePageEvent,
+    DatasetTableSortEvent,
+  } from '../../features/data/types'
   import type { TableViewState } from '../../types/api'
 
   const props = defineProps<{
@@ -55,7 +59,11 @@
 </script>
 
 <template>
-  <SectionPanel class="data-dataset-library" :eyebrow="t('data.datasets')" :title="t('data.datasetLibrary')">
+  <SectionPanel
+    class="data-dataset-library"
+    :eyebrow="t('data.datasets')"
+    :title="t('data.datasetLibrary')"
+  >
     <p class="data-dataset-library__description">{{ t('data.datasetLibraryHint') }}</p>
 
     <TableWorkbenchToolbar
@@ -100,7 +108,9 @@
         <template #body="{ data }">{{ data.row_count.toLocaleString() }}</template>
       </Column>
       <Column field="uploaded_at" :header="t('data.uploaded')" sortable>
-        <template #body="{ data }">{{ formatDate ? formatDate(data.uploaded_at) : data.uploaded_at }}</template>
+        <template #body="{ data }">{{
+          formatDate ? formatDate(data.uploaded_at) : data.uploaded_at
+        }}</template>
       </Column>
       <Column :header="t('data.actions')">
         <template #body="{ data }">

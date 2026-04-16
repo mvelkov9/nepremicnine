@@ -6,7 +6,11 @@
   import EmptyState from '../../components/EmptyState.vue'
   import LoadingSpinner from '../../components/LoadingSpinner.vue'
   import type { ActivityFeedItem } from '../../types/api'
-  import { activityCategoryLabel, activityCategorySeverity, activitySummary } from '../../utils/activity'
+  import {
+    activityCategoryLabel,
+    activityCategorySeverity,
+    activitySummary,
+  } from '../../utils/activity'
   import { formatDate } from '../../utils/format'
 
   defineProps<{
@@ -103,7 +107,11 @@
     border-radius: var(--radius-lg);
     border: 1px solid color-mix(in srgb, var(--border) 72%, var(--content-border-strong) 28%);
     background:
-      linear-gradient(180deg, color-mix(in srgb, var(--glass-highlight) 88%, transparent), transparent 38%),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--glass-highlight) 88%, transparent),
+        transparent 38%
+      ),
       var(--surface-panel);
     box-shadow: var(--accent-shadow, var(--shadow-sm));
     padding: 1.3rem;
@@ -150,7 +158,11 @@
     padding: 0.95rem 1rem;
     border-radius: var(--radius-sm);
     border: 1px solid color-mix(in srgb, var(--border) 62%, var(--primary) 38%);
-    background: color-mix(in srgb, var(--surface-card-strong, var(--surface-strong)) 84%, var(--primary) 16%);
+    background: color-mix(
+      in srgb,
+      var(--surface-card-strong, var(--surface-strong)) 84%,
+      var(--primary) 16%
+    );
     box-shadow: inset 0 1px 0 var(--glass-highlight);
   }
 

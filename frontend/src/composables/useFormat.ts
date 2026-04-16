@@ -15,10 +15,7 @@ export function useFormat() {
     return formatNumber(value, { maximumFractionDigits: decimals })
   }
 
-  function fmtCurrency(
-    value: number | null | undefined,
-    decimals = 0,
-  ) {
+  function fmtCurrency(value: number | null | undefined, decimals = 0) {
     return formatCurrency(value, {
       minimumFractionDigits: decimals,
       maximumFractionDigits: decimals,

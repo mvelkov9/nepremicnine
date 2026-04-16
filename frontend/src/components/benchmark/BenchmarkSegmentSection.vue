@@ -51,7 +51,8 @@
 
           <p class="benchmark-segment-summary">
             {{ t('benchmark.avgGainTitle') }}: {{ formatCurrency(item.avg_gain_eur) }} ·
-            {{ t('benchmark.winRateTitle') }}: {{ formatPercent(item.model_win_rate, { minimumFractionDigits: 0 }) }}
+            {{ t('benchmark.winRateTitle') }}:
+            {{ formatPercent(item.model_win_rate, { minimumFractionDigits: 0 }) }}
           </p>
 
           <small class="benchmark-segment-sample">{{ sampleLabel(item.count) }}</small>
@@ -91,9 +92,15 @@
     border-radius: var(--radius-md);
     border: 1px solid color-mix(in srgb, var(--border) 78%, var(--content-border-strong) 22%);
     background:
-      linear-gradient(180deg, color-mix(in srgb, var(--surface-card-strong) 96%, transparent), transparent 130%),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface-card-strong) 96%, transparent),
+        transparent 130%
+      ),
       var(--surface-panel-muted);
-    box-shadow: inset 0 1px 0 var(--content-glow), var(--shadow-sm);
+    box-shadow:
+      inset 0 1px 0 var(--content-glow),
+      var(--shadow-sm);
   }
 
   .benchmark-segment-index {
@@ -105,7 +112,11 @@
     border-radius: 999px;
     border: 1px solid color-mix(in srgb, var(--primary) 26%, var(--border) 74%);
     background:
-      linear-gradient(180deg, color-mix(in srgb, var(--surface-card-strong) 94%, transparent), transparent 120%),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface-card-strong) 94%, transparent),
+        transparent 120%
+      ),
       color-mix(in srgb, var(--surface-card-strong) 88%, var(--primary) 12%);
     color: color-mix(in srgb, var(--primary) 72%, var(--text) 28%);
     font-family: var(--font-display);

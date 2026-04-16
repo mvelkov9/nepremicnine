@@ -7,7 +7,11 @@
   import EmptyState from '../EmptyState.vue'
   import LoadingSpinner from '../LoadingSpinner.vue'
   import type { ActivityFeedItem } from '../../types/api'
-  import { activityCategoryLabel, activityCategorySeverity, activitySummary } from '../../utils/activity'
+  import {
+    activityCategoryLabel,
+    activityCategorySeverity,
+    activitySummary,
+  } from '../../utils/activity'
   import { formatDateTime } from '../../utils/format'
 
   const props = defineProps<{
@@ -78,7 +82,10 @@
       >
         <div class="featured-activity-copy">
           <div class="featured-activity-topline">
-            <Tag :severity="activityCategorySeverity(featuredItem.category)" :value="activityCategoryLabel(featuredItem.category, t)" />
+            <Tag
+              :severity="activityCategorySeverity(featuredItem.category)"
+              :value="activityCategoryLabel(featuredItem.category, t)"
+            />
             <Tag
               :severity="featuredItem.is_read ? 'secondary' : 'contrast'"
               :value="featuredItem.is_read ? t('workbench.read') : t('workbench.unread')"
@@ -107,7 +114,10 @@
           :class="{ 'secondary-activity--link': Boolean(itemLink(item)) }"
         >
           <div class="secondary-activity-head">
-            <Tag :severity="activityCategorySeverity(item.category)" :value="activityCategoryLabel(item.category, t)" />
+            <Tag
+              :severity="activityCategorySeverity(item.category)"
+              :value="activityCategoryLabel(item.category, t)"
+            />
             <small>{{ formatDateTime(item.created_at) }}</small>
           </div>
           <strong>{{ item.title }}</strong>
@@ -132,8 +142,16 @@
     border-radius: var(--radius-lg);
     border: 1px solid color-mix(in srgb, var(--border) 72%, var(--content-border-strong) 28%);
     background:
-      radial-gradient(circle at top right, color-mix(in srgb, var(--primary) 16%, transparent), transparent 34%),
-      linear-gradient(180deg, color-mix(in srgb, var(--surface-card-strong) 98%, transparent), transparent 120%),
+      radial-gradient(
+        circle at top right,
+        color-mix(in srgb, var(--primary) 16%, transparent),
+        transparent 34%
+      ),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface-card-strong) 98%, transparent),
+        transparent 120%
+      ),
       var(--surface-panel);
     box-shadow:
       inset 0 1px 0 var(--content-glow),
@@ -195,7 +213,11 @@
     color: inherit;
     border: 1px solid color-mix(in srgb, var(--border) 74%, var(--primary) 26%);
     background:
-      linear-gradient(180deg, color-mix(in srgb, var(--surface-card-strong) 96%, transparent), transparent 120%),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface-card-strong) 96%, transparent),
+        transparent 120%
+      ),
       var(--surface-subtle);
     box-shadow:
       inset 0 1px 0 var(--content-glow),

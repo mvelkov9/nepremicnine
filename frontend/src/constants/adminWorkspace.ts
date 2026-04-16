@@ -37,6 +37,12 @@ export const adminWorkspaceLinks: AdminWorkspaceLink[] = [
     icon: 'diagnostics',
   },
   {
+    to: '/admin/dokaz',
+    label: 'nav.benchmark',
+    description: 'layout.page.benchmark',
+    icon: 'benchmark',
+  },
+  {
     to: '/admin/uporabniki',
     label: 'admin.userManagement',
     description: 'layout.page.adminUsers',

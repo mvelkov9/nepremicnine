@@ -1,23 +1,38 @@
 <script setup lang="ts">
-  import { computed, onMounted, ref } from 'vue'
+  import { computed, onMounted, ref, watch } from 'vue'
+  import { useDebounceFn } from '@vueuse/core'
   import { useI18n } from 'vue-i18n'
   import { useConfirm } from 'primevue/useconfirm'
-  import { useToast } from '../composables/useToast'
+  import Button from 'primevue/button'
+  import Column from 'primevue/column'
+  import DataTable from 'primevue/datatable'
+  import Dialog from 'primevue/dialog'
   import EmptyState from '../components/EmptyState.vue'
-  import LoadingSpinner from '../components/LoadingSpinner.vue'
-  import MetricCard from '../components/MetricCard.vue'
   import PageHeader from '../components/PageHeader.vue'
   import SavedWorkspaceMenu from '../components/workbench/SavedWorkspaceMenu.vue'
-  import TableWorkbenchToolbar from '../components/workbench/TableWorkbenchToolbar.vue'
   import AdminRunDetailPanel from '../components/admin/AdminRunDetailPanel.vue'
   import AdminWorkspaceHero from '../components/admin/AdminWorkspaceHero.vue'
+  import DataDatasetLibrary from '../components/data/DataDatasetLibrary.vue'
+  import DataUploadWorkspace from '../components/data/DataUploadWorkspace.vue'
   import { adminWorkspaceLinks } from '../constants/adminWorkspace'
   import { useExport } from '../composables/useExport'
-  import { useViewerQueryState } from '../composables/useViewerQueryState'
+  import { useServerTableState } from '../composables/useServerTableState'
+  import { useToast } from '../composables/useToast'
   import { useAuthStore } from '../stores/auth'
-  import type { UploadProgressContext } from '../stores/data'
   import { useDataStore } from '../stores/data'
+  import type { UploadProgressContext } from '../stores/data'
   import { useWorkbenchStore } from '../stores/workbench'
+  import type {
+    DatasetPreviewData,
+    DatasetRow,
+    DatasetTablePageEvent,
+    DatasetTableSortEvent,
+    QualitySummary,
+    TrainingDatasetSummary,
+    UploadBatchResult,
+    UploadCapacitySummary,
+    UploadItem,
+  } from '../features/data/types'
   import { getApiErrorMessage } from '../utils/apiError'
   import { formatDate as formatDateValue, formatNumber, formatPercent } from '../utils/format'
 
@@ -28,80 +43,54 @@
   const confirmDialog = useConfirm()
   const { showToast } = useToast()
   const { exportToCSV } = useExport()
-  const viewerQuery = useViewerQueryState({
-    dataset_filter: '',
+
+  const datasetSearchInput = ref('')
+  const datasetTable = useServerTableState({
+    page: '1',
+    page_size: '10',
+    sort: 'uploaded_at',
+    order: 'desc',
+    search: '',
   })
 
-  const fileInput = ref(null)
-  const previewData = ref(null)
-  const previewName = ref('')
-  const previewVisible = ref(false)
-  const uploadResult = ref(null)
   const selectedFiles = ref<File[]>([])
   const uploadItems = ref<UploadItem[]>([])
-  const isDragActive = ref(false)
+  const uploadResult = ref<UploadBatchResult | null>(null)
+  const uploadResetToken = ref(0)
+  const previewData = ref<DatasetPreviewData | null>(null)
+  const previewName = ref('')
+  const previewVisible = ref(false)
   const error = ref('')
   const rescanning = ref(false)
   const selectedPrepareRunId = ref('')
 
-  type UploadItemStatus =
-    | 'queued'
-    | 'uploading'
-    | 'processing'
-    | 'uploaded'
-    | 'skipped'
-    | 'partial'
-    | 'error'
-
-  interface UploadItem {
-    key: string
-    file: File
-    status: UploadItemStatus
-    progress: number
-    uploadedNames: string[]
-    skippedNames: string[]
-    summary: string
-    errorMessage: string
-  }
-
-  const qualitySummary = computed(() => dataStore.qualitySummary)
-  const uploadCapacity = computed(() => dataStore.uploadCapacity)
+  const qualitySummary = computed(() => dataStore.qualitySummary as QualitySummary | null)
+  const uploadCapacity = computed(() => dataStore.uploadCapacity as UploadCapacitySummary | null)
+  const trainingDataset = computed(() => dataStore.trainingDataset as TrainingDatasetSummary | null)
+  const datasets = computed(() => dataStore.datasets as DatasetRow[])
   const selectedPrepareRun = computed(() => workbench.selectedPrepareRun)
-  const datasetFilter = computed({
-    get: () => viewerQuery.state.dataset_filter,
-    set: (value: string) => viewerQuery.patchState({ dataset_filter: value }),
-  })
+
   const datasetFilterLabels = computed(() =>
-    viewerQuery.state.dataset_filter ? [viewerQuery.state.dataset_filter] : [],
+    datasetTable.search.value ? [datasetTable.search.value] : [],
   )
-  const filteredDatasets = computed(() => {
-    const query = datasetFilter.value.trim().toLowerCase()
-    if (!query) return dataStore.datasets
-    return dataStore.datasets.filter((item) =>
-      [item.original_name, item.relative_path, item.source_type].some((value) =>
-        String(value || '')
-          .toLowerCase()
-          .includes(query),
-      ),
-    )
-  })
   const datasetRows = computed(() => Number(dataStore.datasetsPerPage || 10))
   const datasetFirst = computed(() =>
     Math.max(0, (Number(dataStore.datasetsPage || 1) - 1) * datasetRows.value),
   )
-  const datasetTotalRecords = computed(() => {
-    if (datasetFilter.value.trim()) return filteredDatasets.value.length
-    return Number(dataStore.datasetsTotal || 0)
-  })
+  const datasetTotalRecords = computed(() => Number(dataStore.datasetsTotal || 0))
+
+  const debouncedDatasetSearchSync = useDebounceFn((value: string) => {
+    datasetTable.search.value = value
+  }, 260)
 
   const summaryCards = computed(() => [
     {
       label: t('data.preparedDataset'),
-      value: dataStore.trainingDataset?.exists
-        ? formatNumber(dataStore.trainingDataset.rows || 0)
+      value: trainingDataset.value?.exists
+        ? formatNumber(trainingDataset.value.rows || 0)
         : t('common.noData'),
-      meta: dataStore.trainingDataset?.exists
-        ? dataStore.trainingDataset.relative_path
+      meta: trainingDataset.value?.exists
+        ? trainingDataset.value.relative_path || t('common.noData')
         : t('data.noPreparedDataset'),
     },
     {
@@ -117,7 +106,7 @@
       value:
         qualitySummary.value?.coverage_ratio != null
           ? formatPercent(qualitySummary.value.coverage_ratio)
-          : '—',
+          : '-',
       meta: t('data.referenceCoverageHint'),
     },
     {
@@ -131,22 +120,6 @@
     selectedFiles.value.reduce((total, file) => total + (file.size || 0), 0),
   )
 
-  const uploadedFileCount = computed(
-    () => uploadItems.value.filter((item) => item.status === 'uploaded').length,
-  )
-
-  const skippedFileCount = computed(
-    () => uploadItems.value.filter((item) => item.status === 'skipped').length,
-  )
-
-  const partialFileCount = computed(
-    () => uploadItems.value.filter((item) => item.status === 'partial').length,
-  )
-
-  const errorFileCount = computed(
-    () => uploadItems.value.filter((item) => item.status === 'error').length,
-  )
-
   const maxUploadLabel = computed(() => {
     const limitBytes = uploadCapacity.value?.max_upload_size_bytes
     return limitBytes
@@ -155,11 +128,9 @@
   })
 
   const serverFreeLabel = computed(() => formatFileSize(uploadCapacity.value?.free_disk_bytes || 0))
-
   const recommendedUploadLabel = computed(() =>
     formatFileSize(uploadCapacity.value?.recommended_max_upload_bytes || 0),
   )
-
   const reserveLabel = computed(() => formatFileSize(uploadCapacity.value?.reserve_disk_bytes || 0))
 
   const capacityTone = computed(() => {
@@ -181,71 +152,77 @@
   })
 
   const uploadProgressLabel = computed(() =>
-    t('data.uploadProgressValue', { progress: dataStore.uploadProgress || 0 }),
+    t('data.uploadProgressValue', {
+      progress: formatNumber(dataStore.uploadProgress || 0, { maximumFractionDigits: 0 }),
+    }),
   )
-
-  const uploadedNames = computed(() =>
-    (uploadResult.value?.uploaded || []).map((item) => item.original_name).filter(Boolean),
-  )
-
-  const skippedNames = computed(() => (uploadResult.value?.skipped || []).filter(Boolean))
-
-  const uploadStatusTone = computed(() => {
-    if (errorFileCount.value) return 'danger'
-    if (partialFileCount.value || skippedFileCount.value) return 'warn'
-    if (uploadedFileCount.value) return 'success'
-    if (!uploadResult.value) return 'contrast'
-    return 'warn'
-  })
-
-  const uploadStatusMessage = computed(() => {
-    if (dataStore.uploading) return t('data.uploadInProgress')
-
-    if (!uploadResult.value) {
-      if (selectedFiles.value.length) {
-        return t('data.readyToUpload', { count: selectedFiles.value.length })
-      }
-      return t('data.uploadEmptyState')
-    }
-
-    const parts = []
-    if (uploadedFileCount.value) {
-      parts.push(t('data.uploadedArchiveCount', { count: uploadedFileCount.value }))
-    }
-    if (skippedFileCount.value) {
-      parts.push(t('data.skippedArchiveCount', { count: skippedFileCount.value }))
-    }
-    if (partialFileCount.value) {
-      parts.push(t('data.partialArchiveCount', { count: partialFileCount.value }))
-    }
-    if (errorFileCount.value) {
-      parts.push(t('data.errorArchiveCount', { count: errorFileCount.value }))
-    }
-    return parts.join(' • ')
-  })
-
-  const uploadStatusBadge = computed(() => {
+  const heroStatusMessage = computed(() => {
     if (dataStore.uploading) return t('common.loading')
     if (selectedFiles.value.length) {
-      return t('data.selectedFilesCount', { count: selectedFiles.value.length })
+      return t('data.readyToUpload', { count: selectedFiles.value.length })
     }
-    if (errorFileCount.value) {
-      return t('data.errorArchiveCount', { count: errorFileCount.value })
+    if (uploadResult.value?.uploaded?.length) {
+      return t('data.uploadedCount', { count: uploadResult.value.uploaded.length })
     }
-    if (partialFileCount.value) {
-      return t('data.partialArchiveCount', { count: partialFileCount.value })
+    if (uploadResult.value?.skipped?.length) {
+      return t('data.skippedCount', { count: uploadResult.value.skipped.length })
     }
-    if (uploadedFileCount.value) {
-      return t('data.uploadedArchiveCount', { count: uploadedFileCount.value })
-    }
-    if (skippedFileCount.value) {
-      return t('data.skippedArchiveCount', { count: skippedFileCount.value })
-    }
-    return t('data.selectedFilesCount', { count: 0 })
+    return t('data.uploadEmptyState')
+  })
+  const heroStatusSeverity = computed(() => {
+    if (dataStore.uploading) return 'warn'
+    if (selectedFiles.value.length) return 'secondary'
+    if (uploadResult.value?.uploaded?.length) return 'success'
+    if (uploadResult.value?.skipped?.length) return 'warn'
+    return 'secondary'
   })
 
-  async function fetchDatasetPage(page = 1, perPage = 10, withSync = false) {
-    await dataStore.fetchDatasets(withSync, false, { page, perPage })
+  watch(
+    () => datasetTable.search.value,
+    (value) => {
+      if (value !== datasetSearchInput.value) datasetSearchInput.value = value
+    },
+    { immediate: true },
+  )
+
+  watch(datasetSearchInput, (value) => {
+    debouncedDatasetSearchSync(value)
+  })
+
+  watch(
+    () => [
+      datasetTable.state.page,
+      datasetTable.state.page_size,
+      datasetTable.state.sort,
+      datasetTable.state.order,
+      datasetTable.state.search,
+    ],
+    async () => {
+      error.value = ''
+      try {
+        await fetchDatasetPage(
+          datasetTable.page.value,
+          datasetTable.pageSize.value,
+          false,
+          datasetTable.search.value,
+          datasetTable.sort.value,
+          datasetTable.order.value,
+        )
+      } catch (e) {
+        error.value = getApiErrorMessage(e, t)
+      }
+    },
+  )
+
+  async function fetchDatasetPage(
+    page = 1,
+    perPage = 10,
+    withSync = false,
+    search = datasetTable.search.value,
+    sort = datasetTable.sort.value,
+    order: 'asc' | 'desc' = datasetTable.order.value,
+  ) {
+    await dataStore.fetchDatasets(withSync, false, { page, perPage, search, sort, order })
   }
 
   function refreshAdminDiagnosticsBackground() {
@@ -262,7 +239,14 @@
 
   async function loadDataView() {
     const results = await Promise.allSettled([
-      fetchDatasetPage(1, 10),
+      fetchDatasetPage(
+        datasetTable.page.value,
+        datasetTable.pageSize.value,
+        false,
+        datasetTable.search.value,
+        datasetTable.sort.value,
+        datasetTable.order.value,
+      ),
       dataStore.fetchTrainingDataset(),
     ])
 
@@ -274,12 +258,17 @@
     refreshAdminDiagnosticsBackground()
   }
 
+  async function initializePage() {
+    error.value = ''
+    await Promise.all([loadDataView(), workbench.fetchPrepareRuns()])
+    if (workbench.prepareRuns.length && !selectedPrepareRunId.value) {
+      await loadPrepareRunDetail(workbench.prepareRuns[0].id)
+    }
+  }
+
   onMounted(async () => {
     try {
-      await Promise.all([loadDataView(), workbench.fetchPrepareRuns()])
-      if (workbench.prepareRuns.length && !selectedPrepareRunId.value) {
-        await loadPrepareRunDetail(workbench.prepareRuns[0].id)
-      }
+      await initializePage()
     } catch (e) {
       error.value = getApiErrorMessage(e, t)
     }
@@ -318,26 +307,24 @@
   function syncUploadItems(nextFiles: File[]) {
     const keys = new Set(nextFiles.map((file) => getFileKey(file)))
     const existingCompleted = uploadItems.value.filter(
-      (item: UploadItem) => !keys.has(item.key) && item.status !== 'queued',
+      (item) => !keys.has(item.key) && item.status !== 'queued',
     )
-    const nextItems = nextFiles.map((file) => {
-      const key = getFileKey(file)
-      return (
-        uploadItems.value.find((item: UploadItem) => item.key === key) || createUploadItem(file)
-      )
-    })
+    const nextItems = nextFiles.map(
+      (file) =>
+        uploadItems.value.find((item) => item.key === getFileKey(file)) || createUploadItem(file),
+    )
 
     uploadItems.value = [...existingCompleted, ...nextItems]
   }
 
   function updateUploadItem(file: File, patch: Partial<UploadItem>) {
     const key = getFileKey(file)
-    uploadItems.value = uploadItems.value.map((item: UploadItem) =>
+    uploadItems.value = uploadItems.value.map((item) =>
       item.key === key ? { ...item, ...patch } : item,
     )
   }
 
-  function resolveItemStatus(result: any): UploadItemStatus {
+  function resolveItemStatus(result: UploadBatchResult['fileResults'][number] | undefined) {
     if (result?.errorMessage) return 'error'
     const uploadedCount = result?.uploaded?.length || 0
     const skippedCount = result?.skipped?.length || 0
@@ -347,7 +334,7 @@
     return 'uploaded'
   }
 
-  function buildItemSummary(result: any) {
+  function buildItemSummary(result: UploadBatchResult['fileResults'][number] | undefined) {
     if (result?.errorMessage) {
       return t('data.fileStatusErrorSummary')
     }
@@ -365,18 +352,6 @@
     return ''
   }
 
-  function getUploadItemTone(status: UploadItemStatus) {
-    if (status === 'uploaded') return 'success'
-    if (status === 'partial' || status === 'processing') return 'warn'
-    if (status === 'skipped') return 'secondary'
-    if (status === 'error') return 'danger'
-    return 'contrast'
-  }
-
-  function getUploadItemLabel(status: UploadItemStatus) {
-    return t(`data.fileStatus.${status}`)
-  }
-
   function handleFileProgress({ file, fileProgress, status }: UploadProgressContext) {
     updateUploadItem(file, {
       status,
@@ -388,12 +363,10 @@
 
   function mergeSelectedFiles(filesLike: File[] | FileList) {
     const incomingFiles = Array.from(filesLike || [])
-    const deduped = new Map(
-      selectedFiles.value.map((file) => [`${file.name}-${file.size}-${file.lastModified}`, file]),
-    )
+    const deduped = new Map(selectedFiles.value.map((file) => [getFileKey(file), file]))
 
     for (const file of incomingFiles) {
-      deduped.set(`${file.name}-${file.size}-${file.lastModified}`, file)
+      deduped.set(getFileKey(file), file)
     }
 
     selectedFiles.value = Array.from(deduped.values())
@@ -402,29 +375,14 @@
     error.value = ''
   }
 
-  function handleFileSelect(event: any) {
-    mergeSelectedFiles(event.files || [])
-  }
-
-  function handleDrop(event: DragEvent) {
-    isDragActive.value = false
-    const files = event.dataTransfer?.files
-    if (!files?.length) return
+  function handleFileSelect(files: File[]) {
     mergeSelectedFiles(files)
-  }
-
-  function openFilePicker() {
-    if (fileInput.value?.choose) {
-      fileInput.value.choose()
-      return
-    }
-    fileInput.value?.$el?.querySelector?.('input[type="file"]')?.click?.()
   }
 
   function clearSelectedFiles() {
     selectedFiles.value = []
-    uploadItems.value = uploadItems.value.filter((item: UploadItem) => item.status !== 'queued')
-    fileInput.value?.clear()
+    uploadItems.value = uploadItems.value.filter((item) => item.status !== 'queued')
+    uploadResetToken.value += 1
   }
 
   function removeSelectedFile(file: File) {
@@ -433,10 +391,10 @@
       (selectedFile) => getFileKey(selectedFile) !== removedKey,
     )
     uploadItems.value = uploadItems.value.filter(
-      (item: UploadItem) => item.key !== removedKey || item.status !== 'queued',
+      (item) => item.key !== removedKey || item.status !== 'queued',
     )
     if (!selectedFiles.value.length) {
-      fileInput.value?.clear()
+      uploadResetToken.value += 1
     }
   }
 
@@ -482,15 +440,19 @@
       uploadResult.value = result
       const uploadedCount = result?.uploaded?.length || 0
       const skippedCount = result?.skipped?.length || 0
+      const failedCount =
+        result?.fileResults?.filter((entry) => Boolean(entry.errorMessage)).length || 0
       selectedFiles.value = []
-      fileInput.value?.clear()
+      uploadResetToken.value += 1
       await dataStore.fetchTrainingDataset()
       refreshAdminDiagnosticsBackground()
       showToast(
-        uploadedCount
-          ? t('data.uploadSuccessToast', { count: uploadedCount })
-          : t('data.uploadNoNewFilesToast', { count: skippedCount }),
-        uploadedCount ? 'success' : 'warning',
+        failedCount
+          ? t('data.uploadPartialFailureToast', { failed: failedCount, uploaded: uploadedCount })
+          : uploadedCount
+            ? t('data.uploadSuccessToast', { count: uploadedCount })
+            : t('data.uploadNoNewFilesToast', { count: skippedCount }),
+        failedCount ? 'warning' : uploadedCount ? 'success' : 'warning',
       )
     } catch (e) {
       error.value = getApiErrorMessage(e, t)
@@ -504,18 +466,18 @@
     }
   }
 
-  async function showPreview(dataset) {
+  async function showPreview(dataset: DatasetRow) {
     previewName.value = dataset.original_name
     error.value = ''
     try {
-      previewData.value = await dataStore.fetchPreview(dataset.id)
+      previewData.value = (await dataStore.fetchPreview(dataset.id)) as DatasetPreviewData
       previewVisible.value = true
     } catch (e) {
       error.value = getApiErrorMessage(e, t)
     }
   }
 
-  function handleDelete(id: number) {
+  function handleDelete(row: DatasetRow) {
     confirmDialog.require({
       message: t('data.confirmDelete'),
       header: t('common.delete'),
@@ -524,7 +486,7 @@
       acceptProps: { label: t('common.delete'), severity: 'danger' },
       accept: async () => {
         try {
-          await dataStore.deleteDataset(id)
+          await dataStore.deleteDataset(row.id)
           await dataStore.fetchTrainingDataset()
           refreshAdminDiagnosticsBackground()
         } catch (e) {
@@ -537,14 +499,32 @@
   function handleDeleteAll() {
     if (!dataStore.datasets.length) return
     confirmDialog.require({
-      message: t('data.confirmDeleteAll'),
-      header: t('data.deleteAll'),
+      message: t('data.confirmDeleteCurrentPage'),
+      header: t('data.deleteCurrentPage'),
       icon: 'pi pi-exclamation-triangle',
       rejectProps: { label: t('common.cancel'), severity: 'secondary', outlined: true },
-      acceptProps: { label: t('data.deleteAll'), severity: 'danger' },
+      acceptProps: { label: t('data.deleteCurrentPage'), severity: 'danger' },
       accept: async () => {
         try {
+          const remainingRecords = Math.max(
+            0,
+            datasetTotalRecords.value - dataStore.datasets.length,
+          )
+          const maxPageAfterDelete = Math.max(1, Math.ceil(remainingRecords / datasetRows.value))
+          const nextPage = Math.min(datasetTable.page.value, maxPageAfterDelete)
+
           await dataStore.deleteAllDatasets()
+          await fetchDatasetPage(
+            nextPage,
+            datasetTable.pageSize.value,
+            false,
+            datasetTable.search.value,
+            datasetTable.sort.value,
+            datasetTable.order.value,
+          )
+          if (String(nextPage) !== datasetTable.state.page) {
+            await datasetTable.patchState({ page: String(nextPage) })
+          }
           await dataStore.fetchTrainingDataset()
           refreshAdminDiagnosticsBackground()
         } catch (e) {
@@ -575,12 +555,13 @@
   }
 
   function clearDatasetFilters() {
-    viewerQuery.resetState()
+    datasetSearchInput.value = ''
+    datasetTable.resetState()
   }
 
   function exportDatasets() {
     exportToCSV(
-      filteredDatasets.value.map((item) => ({
+      datasets.value.map((item) => ({
         original_name: item.original_name,
         relative_path: item.relative_path,
         source_type: item.source_type,
@@ -591,23 +572,27 @@
     )
   }
 
-  function formatDate(iso) {
+  function formatDate(iso: string) {
     return formatDateValue(iso, { dateStyle: 'medium' })
   }
 
-  function formatSize(rows) {
-    return formatNumber(rows)
+  async function handleDatasetPage(event: DatasetTablePageEvent) {
+    error.value = ''
+    await datasetTable.patchState({
+      page: String(Number(event?.page ?? 0) + 1),
+      page_size: String(Number(event?.rows ?? datasetRows.value)),
+    })
   }
 
-  async function handleDatasetPage(event: any) {
-    error.value = ''
-    const nextPage = Number(event?.page ?? 0) + 1
-    const nextRows = Number(event?.rows ?? datasetRows.value)
-    try {
-      await fetchDatasetPage(nextPage, nextRows)
-    } catch (e) {
-      error.value = getApiErrorMessage(e, t)
-    }
+  async function handleDatasetSort(event: DatasetTableSortEvent) {
+    const sortField =
+      typeof event?.sortField === 'string' ? event.sortField : datasetTable.sort.value
+    const sortOrder = event?.sortOrder === 1 ? 'asc' : 'desc'
+    await datasetTable.patchState({
+      page: '1',
+      sort: sortField,
+      order: sortOrder,
+    })
   }
 </script>
 
@@ -619,409 +604,178 @@
       :description="t('data.workspaceBody')"
       :metrics="summaryCards"
       :links="adminWorkspaceLinks"
-      :status="dataStore.uploading ? t('common.loading') : uploadStatusBadge"
-      :status-severity="dataStore.uploading ? 'warn' : uploadStatusTone"
+      :status="heroStatusMessage"
+      :status-severity="heroStatusSeverity"
     >
       <template #actions>
         <SavedWorkspaceMenu
           page="data"
-          :state="{ page: 'data', filters: { dataset_filter: viewerQuery.state.dataset_filter } }"
+          :state="{
+            page: 'data',
+            filters: {
+              search: datasetTable.state.search,
+              page: datasetTable.state.page,
+              page_size: datasetTable.state.page_size,
+              sort: datasetTable.state.sort,
+              order: datasetTable.state.order,
+            },
+          }"
         />
       </template>
     </AdminWorkspaceHero>
 
-    <section v-if="auth.isAdmin" class="card admin-upload upload-card">
-      <PageHeader
-        compact
+    <section v-if="auth.isAdmin" class="data-admin-grid">
+      <DataUploadWorkspace
         :eyebrow="t('data.upload')"
         :title="t('data.uploadTitle')"
         :description="t('data.uploadHint')"
-      >
-        <template #actions>
-          <Tag severity="secondary" :value="maxUploadLabel" />
-        </template>
-      </PageHeader>
-
-      <div class="upload-shell">
-        <div class="upload-copy">
-          <strong>{{ t('data.uploadTitle') }}</strong>
-          <p class="muted">{{ t('data.uploadHint') }}</p>
-          <div class="upload-meta">
-            <Tag severity="contrast" :value="t('data.acceptedFormats')" />
-            <Tag severity="secondary" :value="maxUploadLabel" />
-            <Tag
-              :severity="capacityTone"
-              :value="t('data.serverFreeValue', { size: serverFreeLabel })"
-            />
-          </div>
-        </div>
-        <div class="upload-actions">
-          <FileUpload
-            ref="fileInput"
-            mode="basic"
-            multiple
-            accept=".csv,.zip,.gpkg"
-            :auto="false"
-            choose-icon="pi pi-folder-open"
-            :choose-label="t('data.chooseFiles')"
-            :aria-label="t('data.chooseFiles')"
-            @select="handleFileSelect"
-          />
-          <Button
-            icon="pi pi-cloud-upload"
-            :label="t('data.uploadButton')"
-            :disabled="!selectedFiles.length"
-            :loading="dataStore.uploading"
-            @click="startUpload"
-          />
-          <Button
-            v-if="selectedFiles.length"
-            severity="secondary"
-            outlined
-            icon="pi pi-times"
-            :label="t('data.clearSelection')"
-            :disabled="dataStore.uploading"
-            @click="clearSelectedFiles"
-          />
-        </div>
-      </div>
-
-      <div class="upload-status-card">
-        <div
-          class="upload-dropzone"
-          :class="{ active: isDragActive }"
-          @click="openFilePicker"
-          @dragenter.prevent="isDragActive = true"
-          @dragover.prevent="isDragActive = true"
-          @dragleave.prevent="isDragActive = false"
-          @drop.prevent="handleDrop"
-        >
-          <i class="pi pi-cloud-upload" aria-hidden="true" />
-          <div>
-            <strong>{{ t('data.dropzoneTitle') }}</strong>
-            <p>{{ t('data.dropzoneBody') }}</p>
-          </div>
-        </div>
-
-        <div class="upload-status-head">
-          <div>
-            <span class="upload-status-label">{{ t('data.uploadQueue') }}</span>
-            <strong>{{ uploadStatusMessage }}</strong>
-          </div>
-          <Tag :severity="uploadStatusTone" :value="uploadStatusBadge" />
-        </div>
-
-        <div class="upload-summary-grid">
-          <article class="upload-stat">
-            <span>{{ t('data.selectedFiles') }}</span>
-            <strong>{{ formatNumber(selectedFiles.length) }}</strong>
-          </article>
-          <article class="upload-stat">
-            <span>{{ t('data.totalSize') }}</span>
-            <strong>{{ formatFileSize(totalSelectedBytes) }}</strong>
-          </article>
-          <article class="upload-stat">
-            <span>{{ t('data.dedupMode') }}</span>
-            <strong>{{ t('data.dedupModeValue') }}</strong>
-          </article>
-          <article class="upload-stat">
-            <span>{{ t('data.recommendedUpload') }}</span>
-            <strong>{{ recommendedUploadLabel }}</strong>
-          </article>
-          <article class="upload-stat">
-            <span>{{ t('data.serverFree') }}</span>
-            <strong>{{ serverFreeLabel }}</strong>
-          </article>
-          <article class="upload-stat">
-            <span>{{ t('data.serverReserve') }}</span>
-            <strong>{{ reserveLabel }}</strong>
-          </article>
-        </div>
-
-        <div class="capacity-banner" :class="capacityTone">
-          <strong>{{ capacityMessage }}</strong>
-          <span>{{
-            t('data.capacityBody', { free: serverFreeLabel, reserve: reserveLabel })
-          }}</span>
-        </div>
-
-        <div v-if="dataStore.uploading" class="upload-progress-panel">
-          <div class="upload-progress-head">
-            <span>{{ t('data.uploadProgress') }}</span>
-            <strong>{{ uploadProgressLabel }}</strong>
-          </div>
-          <ProgressBar :value="dataStore.uploadProgress || 0" :show-value="false" />
-        </div>
-
-        <div v-if="uploadItems.length" class="upload-file-list">
-          <article
-            v-for="item in uploadItems"
-            :key="item.key"
-            class="upload-file-item"
-            :class="`status-${item.status}`"
-          >
-            <div class="upload-file-main">
-              <div class="upload-file-meta">
-                <strong>{{ item.file.name }}</strong>
-                <span>{{ formatFileSize(item.file.size || 0) }}</span>
-              </div>
-              <div class="upload-file-status">
-                <Tag
-                  :severity="getUploadItemTone(item.status)"
-                  :value="getUploadItemLabel(item.status)"
-                />
-                <span v-if="item.status === 'uploading' || item.status === 'processing'">
-                  {{ item.progress }}%
-                </span>
-              </div>
-              <p v-if="item.summary" class="upload-file-summary">{{ item.summary }}</p>
-              <p v-if="item.errorMessage" class="upload-file-error">{{ item.errorMessage }}</p>
-              <ProgressBar
-                v-if="item.status === 'uploading' || item.status === 'processing'"
-                :value="item.progress"
-                :show-value="false"
-              />
-              <div
-                v-if="item.uploadedNames.length || item.skippedNames.length"
-                class="upload-file-detail-grid"
-              >
-                <div v-if="item.uploadedNames.length" class="upload-file-detail success">
-                  <span class="upload-status-label">{{ t('data.uploadedFilesLabel') }}</span>
-                  <ul>
-                    <li v-for="name in item.uploadedNames" :key="`${item.key}-uploaded-${name}`">
-                      {{ name }}
-                    </li>
-                  </ul>
-                </div>
-                <div v-if="item.skippedNames.length" class="upload-file-detail warn">
-                  <span class="upload-status-label">{{ t('data.skippedFilesLabel') }}</span>
-                  <ul>
-                    <li v-for="name in item.skippedNames" :key="`${item.key}-skipped-${name}`">
-                      {{ name }}
-                    </li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-            <Button
-              v-if="item.status === 'queued'"
-              text
-              rounded
-              severity="secondary"
-              icon="pi pi-times"
-              :aria-label="t('data.removeFile')"
-              :disabled="dataStore.uploading"
-              @click="removeSelectedFile(item.file)"
-            />
-          </article>
-        </div>
-
-        <div v-else class="upload-placeholder">
-          <i class="pi pi-inbox" aria-hidden="true" />
-          <span>{{ t('data.uploadEmptyState') }}</span>
-        </div>
-
-        <div v-if="uploadResult" class="upload-result">
-          <Tag
-            v-if="errorFileCount"
-            severity="danger"
-            :value="t('data.errorArchiveCount', { count: errorFileCount })"
-          />
-          <Tag
-            v-if="partialFileCount"
-            severity="warn"
-            :value="t('data.partialArchiveCount', { count: partialFileCount })"
-          />
-          <Tag
-            v-if="uploadResult.uploaded?.length"
-            severity="success"
-            :value="t('data.uploadedCount', { count: uploadResult.uploaded.length })"
-          />
-          <Tag
-            v-if="uploadResult.skipped?.length"
-            severity="warn"
-            :value="t('data.skippedCount', { count: uploadResult.skipped.length })"
-          />
-        </div>
-
-        <div v-if="uploadedNames.length || skippedNames.length" class="upload-detail-grid">
-          <article v-if="uploadedNames.length" class="upload-detail-card success">
-            <span class="upload-status-label">{{ t('data.uploadedFilesLabel') }}</span>
-            <ul>
-              <li v-for="name in uploadedNames" :key="name">{{ name }}</li>
-            </ul>
-          </article>
-          <article v-if="skippedNames.length" class="upload-detail-card warn">
-            <span class="upload-status-label">{{ t('data.skippedFilesLabel') }}</span>
-            <ul>
-              <li v-for="name in skippedNames" :key="name">{{ name }}</li>
-            </ul>
-          </article>
-        </div>
-      </div>
-    </section>
-
-    <section v-if="auth.isAdmin" class="metrics-grid">
-      <MetricCard
-        v-for="card in summaryCards"
-        :key="card.label"
-        :label="card.label"
-        :value="card.value"
-        :meta="card.meta"
+        :selected-files="selectedFiles"
+        :upload-items="uploadItems"
+        :upload-result="uploadResult"
+        :uploading="dataStore.uploading"
+        :reset-token="uploadResetToken"
+        :max-upload-label="maxUploadLabel"
+        :server-free-label="serverFreeLabel"
+        :recommended-upload-label="recommendedUploadLabel"
+        :reserve-label="reserveLabel"
+        :capacity-tone="capacityTone"
+        :capacity-message="capacityMessage"
+        :upload-progress="dataStore.uploadProgress || 0"
+        :upload-progress-label="uploadProgressLabel"
+        @select="handleFileSelect"
+        @clear="clearSelectedFiles"
+        @start="startUpload"
+        @remove="removeSelectedFile"
       />
-    </section>
 
-    <AdminRunDetailPanel
-      v-if="auth.isAdmin"
-      :eyebrow="t('nav.prepare')"
-      :title="t('workbench.recentPrepareRuns')"
-      :description="t('workbench.prepareRunDetailHint')"
-      :runs="workbench.prepareRuns.slice(0, 8)"
-      :selected-run="selectedPrepareRun"
-      @select="loadPrepareRunDetail"
-    />
-
-    <section v-if="auth.isAdmin" class="quality-grid">
-      <article class="card quality-card">
-        <PageHeader
-          compact
-          :eyebrow="t('data.qualitySummary')"
-          :title="t('data.unresolvedMunicipalities')"
-          :description="t('data.unresolvedHint')"
+      <aside class="data-side-stack">
+        <AdminRunDetailPanel
+          :eyebrow="t('nav.prepare')"
+          :title="t('workbench.recentPrepareRuns')"
+          :description="t('workbench.prepareRunDetailHint')"
+          run-type="prepare"
+          :runs="workbench.prepareRuns.slice(0, 8)"
+          :selected-run="selectedPrepareRun"
+          @select="loadPrepareRunDetail"
         />
 
-        <DataTable
-          :value="qualitySummary?.unresolved_labels || []"
-          paginator
-          :rows="10"
-          size="small"
-          striped-rows
-          responsive-layout="scroll"
-        >
-          <Column field="label" :header="t('dashboard.municipality')" sortable />
-          <Column field="count" :header="t('dashboard.transactions')" sortable />
-        </DataTable>
-      </article>
+        <section class="quality-grid">
+          <article class="card quality-card">
+            <PageHeader
+              compact
+              :eyebrow="t('data.qualitySummary')"
+              :title="t('data.unresolvedMunicipalities')"
+              :description="t('data.unresolvedHint')"
+            />
 
-      <article class="card quality-card">
-        <PageHeader
-          compact
-          :eyebrow="t('data.qualitySummary')"
-          :title="t('data.aliasCollisions')"
-          :description="t('data.aliasHint')"
+            <DataTable
+              :value="qualitySummary?.unresolved_labels || []"
+              paginator
+              :rows="10"
+              size="small"
+              striped-rows
+              responsive-layout="scroll"
+            >
+              <Column field="label" :header="t('dashboard.municipality')" sortable />
+              <Column field="count" :header="t('dashboard.transactions')" sortable />
+            </DataTable>
+          </article>
+
+          <article class="card quality-card">
+            <PageHeader
+              compact
+              :eyebrow="t('data.qualitySummary')"
+              :title="t('data.aliasCollisions')"
+              :description="t('data.aliasHint')"
+            />
+
+            <DataTable
+              :value="qualitySummary?.alias_collisions || []"
+              paginator
+              :rows="10"
+              size="small"
+              striped-rows
+              responsive-layout="scroll"
+            >
+              <Column field="canonical" :header="t('data.canonicalLabel')" sortable />
+              <Column field="variant_count" :header="t('data.variantCount')" sortable />
+              <Column :header="t('data.variants')">
+                <template #body="{ data }">
+                  {{ data.variants?.join(', ') || '-' }}
+                </template>
+              </Column>
+            </DataTable>
+          </article>
+        </section>
+      </aside>
+    </section>
+
+    <DataDatasetLibrary
+      class="dataset-library-card"
+      :page="'data'"
+      :state="{
+        page: 'data',
+        filters: {
+          search: datasetTable.state.search,
+          page: datasetTable.state.page,
+          page_size: datasetTable.state.page_size,
+          sort: datasetTable.state.sort,
+          order: datasetTable.state.order,
+        },
+      }"
+      :search-value="datasetSearchInput"
+      :datasets="datasets"
+      :loading="dataStore.loading"
+      :first="datasetFirst"
+      :rows="datasetRows"
+      :total-records="datasetTotalRecords"
+      :sort-field="datasetTable.sort.value"
+      :sort-order="datasetTable.order.value"
+      :active-filters="datasetFilterLabels"
+      :format-date="formatDate"
+      :can-delete="auth.isAdmin"
+      @update:search-value="datasetSearchInput = $event"
+      @export="exportDatasets"
+      @clear="clearDatasetFilters"
+      @page="handleDatasetPage"
+      @sort="handleDatasetSort"
+      @preview="showPreview"
+      @delete="handleDelete"
+    >
+      <template #toolbar-actions>
+        <Button
+          v-if="auth.isAdmin"
+          severity="secondary"
+          outlined
+          icon="pi pi-refresh"
+          :label="t('data.rescanUploads')"
+          :loading="rescanning"
+          @click="handleRescan"
         />
+        <Button
+          v-if="auth.isAdmin && datasets.length"
+          severity="danger"
+          outlined
+          icon="pi pi-trash"
+          :label="t('data.deleteCurrentPage')"
+          @click="handleDeleteAll"
+        />
+      </template>
+    </DataDatasetLibrary>
 
-        <DataTable
-          :value="qualitySummary?.alias_collisions || []"
-          paginator
-          :rows="10"
+    <div v-if="error" class="state-card state-card-stack" role="alert">
+      <EmptyState icon="pi pi-exclamation-triangle" :message="error" />
+      <div class="state-card-actions">
+        <Button
           size="small"
-          striped-rows
-          responsive-layout="scroll"
-        >
-          <Column field="canonical" :header="t('data.canonicalLabel')" sortable />
-          <Column field="variant_count" :header="t('data.variantCount')" sortable />
-          <Column :header="t('data.variants')">
-            <template #body="{ data }">
-              {{ data.variants?.join(', ') || '—' }}
-            </template>
-          </Column>
-        </DataTable>
-      </article>
-    </section>
-
-    <section class="card dataset-library-card">
-      <PageHeader
-        compact
-        :eyebrow="t('data.datasets')"
-        :title="t('data.datasetLibrary')"
-        :description="t('data.datasetLibraryHint')"
-      />
-
-      <TableWorkbenchToolbar
-        page="data"
-        :state="{ page: 'data', filters: { dataset_filter: viewerQuery.state.dataset_filter } }"
-        :search-value="datasetFilter"
-        :active-filters="datasetFilterLabels"
-        @update:search-value="datasetFilter = $event"
-        @export="exportDatasets"
-        @clear="clearDatasetFilters"
-      >
-        <template #actions>
-          <Button
-            v-if="auth.isAdmin"
-            severity="secondary"
-            outlined
-            icon="pi pi-refresh"
-            :label="t('data.rescanUploads')"
-            :loading="rescanning"
-            @click="handleRescan"
-          />
-          <Button
-            v-if="auth.isAdmin && dataStore.datasets.length"
-            severity="danger"
-            outlined
-            icon="pi pi-trash"
-            :label="t('data.deleteAll')"
-            @click="handleDeleteAll"
-          />
-        </template>
-      </TableWorkbenchToolbar>
-
-      <LoadingSpinner v-if="dataStore.loading" :label="t('common.loading')" />
-      <EmptyState
-        v-else-if="!dataStore.datasets.length"
-        icon="📁"
-        :message="t('empty.noDatasets')"
-      />
-      <DataTable
-        v-else
-        :value="filteredDatasets"
-        lazy
-        paginator
-        :first="datasetFirst"
-        :rows="datasetRows"
-        :total-records="datasetTotalRecords"
-        size="small"
-        striped-rows
-        responsive-layout="scroll"
-        @page="handleDatasetPage"
-      >
-        <Column field="original_name" :header="t('data.fileName')" sortable />
-        <Column field="relative_path" :header="t('data.relativePath')" sortable />
-        <Column field="row_count" :header="t('data.rows')" sortable>
-          <template #body="{ data }">{{ formatSize(data.row_count) }}</template>
-        </Column>
-        <Column field="uploaded_at" :header="t('data.uploaded')" sortable>
-          <template #body="{ data }">{{ formatDate(data.uploaded_at) }}</template>
-        </Column>
-        <Column :header="t('data.actions')">
-          <template #body="{ data }">
-            <div class="row-actions">
-              <Button
-                size="small"
-                severity="secondary"
-                outlined
-                icon="pi pi-eye"
-                :label="t('data.preview')"
-                @click="showPreview(data)"
-              />
-              <Button
-                v-if="auth.isAdmin"
-                size="small"
-                severity="danger"
-                outlined
-                icon="pi pi-trash"
-                :label="t('common.delete')"
-                @click="handleDelete(data.id)"
-              />
-            </div>
-          </template>
-        </Column>
-      </DataTable>
-    </section>
-
-    <p v-if="error" class="error-text">{{ error }}</p>
+          severity="secondary"
+          outlined
+          icon="pi pi-refresh"
+          :label="t('common.retry')"
+          @click="initializePage"
+        />
+      </div>
+    </div>
 
     <Dialog
       v-model:visible="previewVisible"
@@ -1045,7 +799,7 @@
           responsive-layout="scroll"
         >
           <Column v-for="col in previewData.columns" :key="col" :field="col" :header="col">
-            <template #body="{ data }">{{ data[col] ?? '—' }}</template>
+            <template #body="{ data }">{{ data[col] ?? '-' }}</template>
           </Column>
         </DataTable>
       </div>
@@ -1055,332 +809,43 @@
 
 <style scoped>
   .data-page,
-  .metrics-grid,
+  .data-admin-grid,
+  .data-side-stack,
   .quality-grid {
     display: grid;
+    gap: var(--space-section);
+  }
+
+  .data-admin-grid {
+    grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.88fr);
+    align-items: start;
+  }
+
+  .data-side-stack,
+  .quality-grid,
+  .state-card-stack {
     gap: 1rem;
   }
 
-  .data-hero,
-  .upload-card,
-  .dataset-library-card,
   .quality-card {
     display: grid;
     gap: 1rem;
-  }
-
-  .metrics-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-
-  .quality-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .admin-upload {
-    display: grid;
-    gap: 1rem;
-  }
-
-  .upload-shell {
-    display: grid;
-    grid-template-columns: minmax(0, 1.4fr) minmax(18rem, 1fr);
-    gap: 1rem;
-    align-items: start;
-    padding: 0.3rem 0;
-  }
-
-  .upload-copy {
-    display: grid;
-    gap: 0.75rem;
-    max-width: 42rem;
-  }
-
-  .upload-copy strong {
-    font-size: 1rem;
-  }
-
-  .upload-meta,
-  .upload-actions,
-  .upload-result,
-  .upload-status-head,
-  .upload-file-item,
-  .upload-progress-head,
-  .table-actions,
-  .row-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-  }
-
-  .upload-actions {
-    justify-content: flex-end;
-    align-self: center;
-  }
-
-  .upload-status-card {
-    display: grid;
-    gap: 1rem;
-    padding: 1rem;
-    border-radius: 1.25rem;
-    border: 1px solid color-mix(in srgb, var(--border) 72%, var(--primary) 28%);
+    padding: 1.1rem;
+    border-radius: var(--radius-lg);
+    border: 1px solid color-mix(in srgb, var(--border) 72%, var(--content-border-strong) 28%);
     background:
-      linear-gradient(135deg, color-mix(in srgb, var(--surface-soft) 86%, white 14%), transparent),
-      color-mix(in srgb, var(--surface-panel-muted, var(--surface-soft)) 90%, transparent);
-  }
-
-  .upload-dropzone {
-    display: grid;
-    grid-template-columns: auto 1fr;
-    gap: 1rem;
-    align-items: center;
-    padding: 1.1rem 1.2rem;
-    border-radius: 1.1rem;
-    border: 1px dashed color-mix(in srgb, var(--border) 68%, var(--primary) 32%);
-    background: color-mix(in srgb, var(--surface) 82%, transparent);
-    cursor: pointer;
-    transition:
-      border-color 160ms ease,
-      transform 160ms ease,
-      background 160ms ease;
-  }
-
-  .upload-dropzone.active {
-    border-color: color-mix(in srgb, var(--primary) 74%, white 26%);
-    background: color-mix(in srgb, var(--primary) 8%, var(--surface) 92%);
-    transform: translateY(-1px);
-  }
-
-  .upload-dropzone i {
-    font-size: 1.4rem;
-    color: var(--primary);
-  }
-
-  .upload-dropzone p {
-    margin: 0.25rem 0 0;
-    color: var(--text-muted);
-  }
-
-  .upload-status-head {
-    justify-content: space-between;
-    align-items: flex-start;
-  }
-
-  .upload-status-head strong {
-    display: block;
-    font-size: 1rem;
-    margin-top: 0.25rem;
-  }
-
-  .upload-status-label {
-    display: inline-block;
-    font-size: 0.78rem;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--text-muted);
-  }
-
-  .upload-summary-grid {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 0.75rem;
-  }
-
-  .upload-stat {
-    display: grid;
-    gap: 0.3rem;
-    padding: 0.85rem 1rem;
-    border-radius: 1rem;
-    background: color-mix(in srgb, var(--surface) 82%, transparent);
-    border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
-  }
-
-  .upload-stat span,
-  .upload-file-item span {
-    color: var(--text-muted);
-    font-size: 0.9rem;
-  }
-
-  .upload-file-list {
-    display: grid;
-    gap: 0.75rem;
-  }
-
-  .capacity-banner {
-    display: grid;
-    gap: 0.25rem;
-    padding: 0.9rem 1rem;
-    border-radius: 1rem;
-    border: 1px solid color-mix(in srgb, var(--border) 76%, transparent);
-    background: color-mix(in srgb, var(--surface) 88%, transparent);
-  }
-
-  .capacity-banner.success {
-    border-color: color-mix(in srgb, var(--green-500, #22c55e) 48%, var(--border) 52%);
-  }
-
-  .capacity-banner.warn {
-    border-color: color-mix(in srgb, var(--orange-500, #f97316) 52%, var(--border) 48%);
-  }
-
-  .capacity-banner.danger {
-    border-color: color-mix(in srgb, var(--red-500, #ef4444) 56%, var(--border) 44%);
-  }
-
-  .capacity-banner span {
-    color: var(--text-muted);
-  }
-
-  .upload-progress-panel {
-    display: grid;
-    gap: 0.75rem;
-    padding: 0.9rem 1rem;
-    border-radius: 1rem;
-    background: color-mix(in srgb, var(--surface) 88%, transparent);
-    border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
-  }
-
-  .upload-progress-head {
-    justify-content: space-between;
-  }
-
-  .upload-detail-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.75rem;
-  }
-
-  .upload-detail-card {
-    display: grid;
-    gap: 0.75rem;
-    padding: 1rem;
-    border-radius: 1rem;
-    border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
-    background: color-mix(in srgb, var(--surface) 90%, transparent);
-  }
-
-  .upload-detail-card.success {
-    border-color: color-mix(in srgb, var(--green-500, #22c55e) 46%, var(--border) 54%);
-  }
-
-  .upload-detail-card.warn {
-    border-color: color-mix(in srgb, var(--orange-500, #f97316) 48%, var(--border) 52%);
-  }
-
-  .upload-detail-card ul {
-    margin: 0;
-    padding-left: 1rem;
-    display: grid;
-    gap: 0.4rem;
-    max-height: 12rem;
-    overflow: auto;
-  }
-
-  .upload-file-item {
-    justify-content: space-between;
-    padding: 0.9rem 1rem;
-    border-radius: 1rem;
-    background: color-mix(in srgb, var(--surface) 90%, transparent);
-    border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
-  }
-
-  .upload-file-item.status-uploaded {
-    border-color: color-mix(in srgb, var(--green-500, #22c55e) 46%, var(--border) 54%);
-  }
-
-  .upload-file-item.status-partial,
-  .upload-file-item.status-processing {
-    border-color: color-mix(in srgb, var(--orange-500, #f97316) 48%, var(--border) 52%);
-  }
-
-  .upload-file-item.status-error {
-    border-color: color-mix(in srgb, var(--red-500, #ef4444) 54%, var(--border) 46%);
-  }
-
-  .upload-file-main {
-    display: grid;
-    gap: 0.6rem;
-    width: 100%;
-  }
-
-  .upload-file-meta,
-  .upload-file-status {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-  }
-
-  .upload-file-summary,
-  .upload-file-error {
-    margin: 0;
-    font-size: 0.92rem;
-  }
-
-  .upload-file-error {
-    color: var(--red-500, #ef4444);
-  }
-
-  .upload-file-detail-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.75rem;
-  }
-
-  .upload-file-detail {
-    display: grid;
-    gap: 0.4rem;
-    padding: 0.85rem 0.95rem;
-    border-radius: 0.9rem;
-    border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
-    background: color-mix(in srgb, var(--surface) 92%, transparent);
-  }
-
-  .upload-file-detail.success {
-    border-color: color-mix(in srgb, var(--green-500, #22c55e) 46%, var(--border) 54%);
-  }
-
-  .upload-file-detail.warn {
-    border-color: color-mix(in srgb, var(--orange-500, #f97316) 48%, var(--border) 52%);
-  }
-
-  .upload-file-detail ul {
-    margin: 0;
-    padding-left: 1rem;
-    display: grid;
-    gap: 0.25rem;
-  }
-
-  .upload-file-item > div {
-    display: grid;
-    gap: 0.2rem;
-    min-width: 0;
-  }
-
-  .upload-file-item strong {
-    word-break: break-word;
-  }
-
-  .upload-placeholder {
-    display: grid;
-    place-items: center;
-    gap: 0.5rem;
-    min-height: 7rem;
-    padding: 1rem;
-    border-radius: 1rem;
-    border: 1px dashed color-mix(in srgb, var(--border) 72%, var(--primary) 28%);
-    color: var(--text-muted);
-    background: color-mix(in srgb, var(--surface) 72%, transparent);
-  }
-
-  .upload-placeholder i {
-    font-size: 1.4rem;
-  }
-
-  .upload-shell input[type='file'] {
-    min-width: min(100%, 28rem);
+      radial-gradient(
+        circle at top right,
+        color-mix(in srgb, var(--primary) 10%, transparent),
+        transparent 28%
+      ),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--glass-highlight) 90%, transparent),
+        transparent 34%
+      ),
+      var(--surface-panel);
+    box-shadow: var(--accent-shadow, var(--shadow-sm));
   }
 
   .preview-dialog {
@@ -1388,21 +853,10 @@
     gap: 0.75rem;
   }
 
-  .search-field {
-    width: min(100%, 22rem);
-  }
-
-  .row-actions {
-    align-items: stretch;
-  }
-
-  .row-actions :deep(.p-button) {
-    justify-content: center;
-  }
-
   .preview-dialog .muted {
+    margin: 0;
     padding: 0.75rem 0.9rem;
-    border-radius: 1rem;
+    border-radius: var(--radius-sm);
     background: color-mix(
       in srgb,
       var(--surface-panel-muted, var(--surface-soft)) 92%,
@@ -1411,40 +865,22 @@
     border: 1px solid color-mix(in srgb, var(--border) 72%, var(--primary) 28%);
   }
 
-  @media (max-width: 960px) {
-    .metrics-grid,
-    .quality-grid,
-    .upload-detail-grid,
-    .upload-file-detail-grid,
-    .upload-summary-grid,
-    .upload-shell {
+  .state-card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    align-items: center;
+  }
+
+  @media (max-width: 1100px) {
+    .data-admin-grid {
       grid-template-columns: 1fr;
     }
+  }
 
-    .upload-shell {
-      align-items: stretch;
-    }
-
-    .upload-actions,
-    .upload-status-head {
-      display: grid;
-      grid-template-columns: 1fr;
-      width: 100%;
-    }
-
-    .table-actions,
-    .row-actions {
-      display: grid;
-      grid-template-columns: 1fr;
-      width: 100%;
-    }
-
-    .search-field,
-    .upload-actions :deep(.p-button),
-    .upload-actions :deep(.p-fileupload-basic),
-    .row-actions :deep(.p-button),
-    .table-actions :deep(.p-button) {
-      width: 100%;
+  @media (max-width: 720px) {
+    .quality-card {
+      padding: 1rem;
     }
   }
 </style>

@@ -11,8 +11,10 @@
     toLocationQuery,
     workspacePageTitleKeys,
   } from '../../constants/workbench'
+  import type { WatchlistFeedItem } from '../../types/api'
   import { useUiStore } from '../../stores/ui'
   import { useWorkbenchStore } from '../../stores/workbench'
+  import { formatCurrency, formatNumber } from '../../utils/format'
 
   const { t } = useI18n()
   const router = useRouter()
@@ -35,6 +37,16 @@
     ui.toggleWorkspaceTray(false)
   }
 
+  function openCommandPalette() {
+    closeTray()
+    ui.toggleCommandPalette(true)
+  }
+
+  function openActivityCenter() {
+    closeTray()
+    ui.toggleActivityCenter(true)
+  }
+
   function openPinnedWorkspace(item: any) {
     void router.push(
       buildWorkspaceRoute(item.page, {
@@ -49,6 +61,26 @@
     if (!item.link) return
     void router.push(item.link)
     closeTray()
+  }
+
+  function entityTypeLabel(entityType?: string | null) {
+    if (entityType === 'region') return t('nav.regions')
+    if (entityType === 'municipality') return t('nav.municipalities')
+    return entityType || t('common.noData')
+  }
+
+  function watchlistFeedSummary(item: WatchlistFeedItem) {
+    if (item.headline_label && item.headline_value != null) {
+      return `${item.headline_label}: ${formatCurrency(item.headline_value)}`
+    }
+    if (item.headline_label) return item.headline_label
+    return t('common.noData')
+  }
+
+  function watchlistFeedTrend(item: WatchlistFeedItem) {
+    if (item.trend_value == null) return ''
+    const value = `${formatNumber(item.trend_value, { maximumFractionDigits: 1 })}%`
+    return item.trend_label ? `${item.trend_label}: ${value}` : value
   }
 
   function openRecentRoute(item: any) {
@@ -87,6 +119,28 @@
     :style="{ width: 'min(96vw, 1080px)' }"
   >
     <div class="workspace-tray">
+      <section class="tray-column tray-column--wide">
+        <div class="tray-head">
+          <h3>{{ t('layout.workspace') }}</h3>
+          <Tag :value="t('workbench.resumeWork')" severity="contrast" />
+        </div>
+
+        <div class="quick-actions">
+          <button type="button" class="quick-action" @click="openCommandPalette">
+            <strong>{{ t('workbench.commandPalette') }}</strong>
+            <small>Ctrl/Cmd + K</small>
+          </button>
+          <button type="button" class="quick-action" @click="openActivityCenter">
+            <strong>{{ t('workbench.activityCenter') }}</strong>
+            <small>Alt + A</small>
+          </button>
+          <div class="quick-action quick-action--static">
+            <strong>{{ t('workbench.compareTray') }}</strong>
+            <small>{{ workbench.compareTray.length }} {{ t('common.items') }}</small>
+          </div>
+        </div>
+      </section>
+
       <section class="tray-column">
         <div class="tray-head">
           <h3>{{ t('workbench.compareTray') }}</h3>
@@ -96,7 +150,7 @@
         <article v-for="item in workbench.compareTray" :key="item.id" class="tray-card">
           <div>
             <strong>{{ item.label }}</strong>
-            <small>{{ item.region || item.entity_type }}</small>
+            <small>{{ item.region || entityTypeLabel(item.entity_type) }}</small>
           </div>
           <Button
             size="small"
@@ -131,16 +185,20 @@
         <article
           v-for="item in workbench.watchlistFeed"
           :key="item.id"
-          class="tray-card clickable"
-          @click="openFeedItem(item)"
+          class="tray-card"
+          :class="{ clickable: Boolean(item.link) }"
+          @click="item.link && openFeedItem(item)"
         >
           <div>
             <strong>{{ item.display_label }}</strong>
-            <small>{{ item.headline_label }}: {{ item.headline_value ?? '-' }}</small>
+            <small>
+              {{ watchlistFeedSummary(item) }}
+              <template v-if="watchlistFeedTrend(item)"> | {{ watchlistFeedTrend(item) }}</template>
+            </small>
           </div>
           <Tag
             v-if="item.trend_value != null"
-            :value="`${item.trend_value}%`"
+            :value="`${formatNumber(item.trend_value, { maximumFractionDigits: 1 })}%`"
             :severity="item.trend_value >= 0 ? 'success' : 'danger'"
           />
         </article>
@@ -220,7 +278,7 @@
 <style scoped>
   .workspace-tray {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1.1fr) repeat(3, minmax(0, 1fr));
     gap: 1rem;
   }
 
@@ -228,6 +286,21 @@
   .tray-head {
     display: grid;
     gap: 0.85rem;
+  }
+
+  .tray-column {
+    align-content: start;
+    padding: 1rem;
+    border: 1px solid color-mix(in srgb, var(--border) 76%, var(--content-border-strong) 24%);
+    border-radius: var(--radius-md);
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface-card-strong) 95%, transparent),
+        transparent 120%
+      ),
+      var(--surface-panel);
+    box-shadow: var(--shadow-sm);
   }
 
   .tray-head {
@@ -244,6 +317,59 @@
     font-size: 1rem;
   }
 
+  .tray-column--wide {
+    align-content: start;
+  }
+
+  .quick-actions {
+    display: grid;
+    gap: 0.85rem;
+  }
+
+  .quick-action {
+    display: grid;
+    gap: 0.25rem;
+    text-align: left;
+    padding: 1rem 1.05rem;
+    border-radius: 1rem;
+    border: 1px solid color-mix(in srgb, var(--border) 80%, var(--content-border-strong) 20%);
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface-card-strong) 94%, transparent),
+        transparent 120%
+      ),
+      var(--surface-subtle);
+    color: inherit;
+    box-shadow: var(--shadow-sm);
+    transition:
+      transform 140ms ease,
+      border-color 140ms ease,
+      box-shadow 140ms ease;
+  }
+
+  .quick-action:not(.quick-action--static) {
+    cursor: pointer;
+  }
+
+  .quick-action:not(.quick-action--static):hover {
+    transform: translateY(-1px);
+    border-color: color-mix(in srgb, var(--primary) 18%, var(--border) 82%);
+    box-shadow: var(--accent-shadow);
+  }
+
+  .quick-action strong {
+    font-size: 0.92rem;
+  }
+
+  .quick-action small {
+    color: var(--text-muted);
+  }
+
+  .quick-action--static {
+    cursor: default;
+  }
+
   .tray-card {
     display: flex;
     align-items: center;
@@ -251,12 +377,15 @@
     gap: 1rem;
     padding: 0.85rem 0.95rem;
     border-radius: 1rem;
-    border: 1px solid var(--border);
-    background: color-mix(
-      in srgb,
-      var(--surface-card-strong, var(--surface-soft)) 86%,
-      transparent
-    );
+    border: 1px solid color-mix(in srgb, var(--border) 80%, var(--content-border-strong) 20%);
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface-card-strong) 94%, transparent),
+        transparent 120%
+      ),
+      var(--surface-subtle);
+    box-shadow: var(--shadow-sm);
   }
 
   .tray-card.clickable {
@@ -269,12 +398,9 @@
 
   .tray-card.clickable:hover {
     transform: translateY(-1px);
-    border-color: color-mix(in srgb, var(--primary) 40%, var(--border) 60%);
-    background: color-mix(
-      in srgb,
-      var(--primary) 6%,
-      var(--surface-card-strong, var(--surface-soft)) 94%
-    );
+    border-color: color-mix(in srgb, var(--primary) 20%, var(--border) 80%);
+    background: color-mix(in srgb, var(--surface-subtle) 92%, var(--primary) 8%);
+    box-shadow: var(--accent-shadow);
   }
 
   .tray-card strong {

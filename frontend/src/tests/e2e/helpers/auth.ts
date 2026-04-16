@@ -15,14 +15,11 @@ export async function applyUserPreferences(
   },
 ) {
   await page.goto('/login')
-  await page.evaluate(
-    ({ theme, locale }) => {
-      window.localStorage.setItem('theme', theme)
-      window.localStorage.setItem('locale', locale)
-      document.documentElement.setAttribute('data-theme', theme)
-    },
-    preferences,
-  )
+  await page.evaluate(({ theme, locale }) => {
+    window.localStorage.setItem('theme', theme)
+    window.localStorage.setItem('locale', locale)
+    document.documentElement.setAttribute('data-theme', theme)
+  }, preferences)
 }
 
 export async function loginAsTestUser(page: Page) {

@@ -1,11 +1,11 @@
 <script setup lang="ts">
   import { computed } from 'vue'
-  import { useI18n } from 'vue-i18n'
   import Button from 'primevue/button'
   import Tag from 'primevue/tag'
+  import { useI18n } from 'vue-i18n'
   import EmptyState from '../EmptyState.vue'
   import type { AdminRunDetail, AdminRunSummary } from '../../types/api'
-  import { formatDateTime } from '../../utils/format'
+  import { formatDateTime, formatNumber } from '../../utils/format'
 
   const props = defineProps<{
     title: string
@@ -14,6 +14,7 @@
     runs?: AdminRunSummary[]
     selectedRun?: AdminRunDetail | null
     loading?: boolean
+    runType?: 'prepare' | 'training'
   }>()
 
   const emit = defineEmits<{
@@ -51,6 +52,74 @@
     if (state === 'error') return 'danger'
     return 'secondary'
   }
+
+  function timelineStateLabel(state: unknown) {
+    if (state === 'done') return t('model.stages.done')
+    if (state === 'active') return t('admin.active')
+    if (state === 'error') return t('common.error')
+    return t('workbench.pending')
+  }
+
+  function translatedLabel(key: string, fallback: string, params?: Record<string, unknown>) {
+    const label = t(key, params || {})
+    return label === key ? fallback : label
+  }
+
+  function prepareStageLabel(stage?: string | null) {
+    if (!stage) return ''
+    const unknownYear = t('prepare.unknownYear')
+    switch (stage) {
+      case 'queued':
+        return t('prepare.stageQueued')
+      case 'initializing':
+        return t('prepare.stageInitializing')
+      case 'loading_sources':
+        return t('prepare.stageLoadingSources')
+      case 'loading_pair':
+        return t('prepare.stageLoadingPair', { label: unknownYear })
+      case 'building_rows':
+        return t('prepare.stageBuildingRows', { label: unknownYear })
+      case 'enriching_buildings':
+        return t('prepare.stageEnrichingBuildings', { label: unknownYear })
+      case 'enriching_land':
+        return t('prepare.stageEnrichingLand', { label: unknownYear })
+      case 'finalizing_pair':
+        return t('prepare.stageFinalizingPair', { label: unknownYear })
+      case 'merging_outputs':
+        return t('prepare.stageMergingOutputs')
+      case 'spatial_enrichment_merged':
+        return t('prepare.stageSpatialEnrichmentMerged', { rows: '...' })
+      case 'completed':
+        return t('prepare.stageCompleted')
+      case 'error':
+        return t('prepare.stageError')
+      default:
+        return stage
+    }
+  }
+
+  function runStageLabel(stage?: string | null) {
+    if (!stage) return ''
+    if (props.runType === 'prepare') return prepareStageLabel(stage)
+    return translatedLabel(`model.stages.${stage}`, stage)
+  }
+
+  function runStatusLabel(status?: string | null) {
+    return status ? t(`model.status.${status}`) : t('common.noData')
+  }
+
+  function runSummaryLabel(item: {
+    summary?: string | null
+    stage?: string | null
+    status?: string | null
+  }) {
+    return item.summary || runStageLabel(item.stage) || runStatusLabel(item.status)
+  }
+
+  function progressLabel(value: unknown) {
+    if (value == null || Number.isNaN(Number(value))) return '0%'
+    return `${formatNumber(value, { maximumFractionDigits: 0 })}%`
+  }
 </script>
 
 <template>
@@ -69,19 +138,24 @@
           v-for="item in runs || []"
           :key="item.id"
           class="run-list-item"
-          severity="secondary"
-          outlined
+          :severity="selectedRun?.id === item.id ? 'contrast' : 'secondary'"
+          :outlined="selectedRun?.id !== item.id"
+          :aria-pressed="selectedRun?.id === item.id"
           @click="emit('select', item.id)"
         >
           <div class="run-list-copy">
             <strong>{{ item.title }}</strong>
-            <small>{{ item.summary || item.stage || item.status }}</small>
+            <small>{{ runSummaryLabel(item) }}</small>
             <small>{{ formatDateTime(item.updated_at || item.created_at) }}</small>
           </div>
-          <span class="run-list-meta">{{ item.progress ?? 0 }}%</span>
+          <span class="run-list-meta">{{ progressLabel(item.progress) }}</span>
         </Button>
 
-        <EmptyState v-if="!(runs || []).length" icon="📁" :message="t('workbench.noRuns')" />
+        <EmptyState
+          v-if="!(runs || []).length"
+          icon="pi pi-folder-open"
+          :message="t('workbench.noRuns')"
+        />
       </div>
 
       <div class="run-detail-body">
@@ -92,13 +166,13 @@
             <div>
               <strong>{{ selectedRun.title }}</strong>
               <p class="muted">
-                {{ selectedRun.summary || selectedRun.stage || selectedRun.status }}
+                {{ runSummaryLabel(selectedRun) }}
               </p>
               <small class="muted">{{
                 formatDateTime(selectedRun.updated_at || selectedRun.created_at)
               }}</small>
             </div>
-            <span class="run-progress">{{ selectedRun.progress ?? 0 }}%</span>
+            <span class="run-progress">{{ progressLabel(selectedRun.progress) }}</span>
           </div>
 
           <div v-if="metrics.length" class="run-metric-grid">
@@ -116,7 +190,7 @@
                   <strong>{{ item.label }}</strong>
                   <Tag
                     :severity="timelineSeverity(item.state)"
-                    :value="String(item.state || 'pending')"
+                    :value="timelineStateLabel(item.state)"
                   />
                 </div>
               </div>
@@ -147,7 +221,7 @@
           </section>
         </template>
 
-        <EmptyState v-else icon="🧭" :message="t('workbench.selectRunHint')" />
+        <EmptyState v-else icon="pi pi-compass" :message="t('workbench.selectRunHint')" />
       </div>
     </div>
   </section>
@@ -193,8 +267,7 @@
   }
 
   .run-list-copy small,
-  .run-detail-summary p,
-  .eyebrow.subtle {
+  .run-detail-summary p {
     color: var(--text-soft);
   }
 
@@ -212,8 +285,17 @@
     gap: 1rem;
     padding: 1rem;
     border-radius: 1rem;
-    border: 1px solid var(--border);
-    background: color-mix(in srgb, var(--surface-soft-subtle) 82%, white 18%);
+    border: 1px solid color-mix(in srgb, var(--border) 72%, var(--primary) 28%);
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface-card-strong) 98%, transparent),
+        transparent 120%
+      ),
+      var(--surface-subtle);
+    box-shadow:
+      inset 0 1px 0 var(--content-glow),
+      var(--shadow-sm);
   }
 
   .run-metric-grid,
@@ -228,8 +310,17 @@
   .context-row {
     padding: 0.9rem 1rem;
     border-radius: 1rem;
-    border: 1px solid var(--border);
-    background: linear-gradient(180deg, var(--surface-soft-subtle), var(--surface-soft));
+    border: 1px solid color-mix(in srgb, var(--border) 80%, var(--content-border-strong) 20%);
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface-card-strong) 98%, transparent),
+        transparent 120%
+      ),
+      var(--surface-panel);
+    box-shadow:
+      inset 0 1px 0 var(--content-glow),
+      var(--shadow-sm);
   }
 
   .run-metric-card span,
@@ -237,7 +328,7 @@
     display: block;
     margin-bottom: 0.3rem;
     color: var(--text-muted);
-    font-size: 0.82rem;
+    font-size: var(--text-sm);
     font-weight: 700;
   }
 
@@ -249,10 +340,14 @@
     gap: 0.85rem;
   }
 
+  .run-list-item :deep(.p-button-label) {
+    width: 100%;
+  }
+
   .artifact-row code {
     max-width: 100%;
     overflow-wrap: anywhere;
-    font-size: 0.78rem;
+    font-size: var(--text-sm);
   }
 
   @media (max-width: 980px) {

@@ -8,7 +8,10 @@
 </script>
 
 <template>
-  <label class="field-inline filter-field" :style="span ? { gridColumn: `span ${span}` } : undefined">
+  <label
+    class="field-inline filter-field"
+    :style="span ? { gridColumn: `span ${span}` } : undefined"
+  >
     <span>{{ label }}</span>
     <slot />
   </label>

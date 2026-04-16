@@ -176,7 +176,13 @@ async def run_training(ctx: dict, job_id: str, csv_path: str) -> dict:
         _schedule_progress(payload)
 
     try:
-        result = await asyncio.to_thread(train_from_csv, csv_path, None, status_callback)
+        result = await asyncio.to_thread(
+            train_from_csv,
+            csv_path,
+            None,
+            status_callback,
+            benchmark_per_type_variants=True,
+        )
         if pending_updates:
             await asyncio.gather(*pending_updates, return_exceptions=True)
         invalidate_model_cache()
@@ -327,4 +333,4 @@ class WorkerSettings:
     on_shutdown = shutdown
     redis_settings = _parse_redis_url(get_settings().redis_url)
     max_jobs = 1  # Only one training at a time
-    job_timeout = 3600  # 1 hour max
+    job_timeout = max(3600, int(get_settings().training_job_timeout_sec))  # Effectively unbounded for training

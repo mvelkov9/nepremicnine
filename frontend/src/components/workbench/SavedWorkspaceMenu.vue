@@ -168,24 +168,47 @@
     gap: 1rem;
   }
 
+  .workspace-creator {
+    padding: 1rem;
+    border: 1px solid color-mix(in srgb, var(--border) 72%, var(--primary) 28%);
+    border-radius: var(--radius-md);
+    background: var(--surface-panel);
+    box-shadow:
+      inset 0 1px 0 var(--content-glow),
+      var(--shadow-sm);
+  }
+
   .workspace-card {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
-    padding: 0.9rem 1rem;
-    border-radius: 1rem;
-    border: 1px solid var(--border);
-    background: color-mix(
-      in srgb,
-      var(--surface-card-strong, var(--surface-soft)) 86%,
-      transparent
-    );
+    padding: 0.95rem 1rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid color-mix(in srgb, var(--border) 72%, var(--primary) 28%);
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface-card-strong) 96%, transparent),
+        transparent 120%
+      ),
+      var(--surface-subtle);
+    box-shadow:
+      inset 0 1px 0 var(--content-glow),
+      var(--shadow-sm);
   }
 
   .workspace-card-main {
     display: grid;
-    gap: 0.2rem;
+    gap: 0.25rem;
+  }
+
+  .workspace-card-main strong {
+    font-size: 0.96rem;
+  }
+
+  .workspace-card-main small {
+    color: var(--text-muted);
   }
 
   .workspace-card-actions {
@@ -202,8 +225,10 @@
   .field span,
   .toggle-row span {
     color: var(--text-muted);
-    font-size: 0.84rem;
+    font-size: var(--text-sm);
     font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
   }
 
   .toggle-row {

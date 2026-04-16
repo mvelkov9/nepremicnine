@@ -28,6 +28,13 @@ describe('auth store', () => {
     expect(auth.isAuthenticated).toBe(false)
   })
 
+  it('isAuthenticated is false when token exists without a loaded user', () => {
+    const auth = useAuthStore()
+    auth.accessToken = 'test-token'
+    auth.user = null
+    expect(auth.isAuthenticated).toBe(false)
+  })
+
   it('isAdmin is false when user has viewer role', () => {
     const auth = useAuthStore()
     auth.user = { role: 'viewer' }
@@ -60,6 +67,29 @@ describe('auth store', () => {
 
     expect(auth.accessToken).toBe('test-token')
     expect(auth.user).toEqual({ id: 1, email: 'test@example.com', role: 'viewer' })
+    expect(auth.isReady).toBe(true)
+  })
+
+  it('init marks the store ready even without a token', async () => {
+    const auth = useAuthStore()
+
+    await auth.init()
+
+    expect(auth.isReady).toBe(true)
+    expect(auth.bootstrapStatus).toBe('ready')
+  })
+
+  it('fetchUser clears stale auth state when /me fails', async () => {
+    const api = (await import('@/composables/useApi')).default
+    api.get.mockRejectedValueOnce(new Error('unauthorized'))
+
+    const auth = useAuthStore()
+    auth.accessToken = 'stale-token'
+
+    await auth.fetchUser()
+    expect(auth.accessToken).toBeNull()
+    expect(auth.user).toBeNull()
+    expect(auth.isReady).toBe(true)
   })
 
   it('logout clears user and tokens', async () => {

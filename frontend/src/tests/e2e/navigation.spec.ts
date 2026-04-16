@@ -2,7 +2,6 @@ import { test, expect } from '@playwright/test'
 
 test.describe('Navigation', () => {
   test('protected routes redirect to login', async ({ page }) => {
-    // Dashboard should redirect unauthenticated users
     await page.goto('/napoved')
     await expect(page).toHaveURL(/\/login/)
 
@@ -15,12 +14,11 @@ test.describe('Navigation', () => {
 
   test('page title updates on navigation', async ({ page }) => {
     await page.goto('/login')
-    await expect(page).toHaveTitle(/Nepremičnine/)
+    await expect(page).toHaveTitle(/Nepremi(?:č|c)nine/)
   })
 
   test('page loader appears during boot', async ({ page }) => {
     await page.goto('/login')
-    // The page should eventually be ready (no infinite loading)
     await expect(page.locator('.app-boot-overlay')).not.toBeVisible({ timeout: 10000 })
   })
 
@@ -33,12 +31,11 @@ test.describe('Navigation', () => {
     await page.goto('/login')
     await page.waitForTimeout(2000)
 
-    // Filter out expected errors (e.g., API calls failing without backend)
     const unexpectedErrors = errors.filter(
-      (e) =>
-        !e.includes('Failed to fetch') &&
-        !e.includes('ERR_CONNECTION_REFUSED') &&
-        !e.includes('net::'),
+      (message) =>
+        !message.includes('Failed to fetch') &&
+        !message.includes('ERR_CONNECTION_REFUSED') &&
+        !message.includes('net::'),
     )
     expect(unexpectedErrors).toHaveLength(0)
   })

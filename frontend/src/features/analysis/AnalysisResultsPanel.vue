@@ -136,7 +136,9 @@
       </article>
       <article class="analysis-primary-card is-warning">
         <span>{{ t('analysis.deviation') }}</span>
-        <strong>{{ fmt(primaryListing.deviation_pct ?? primaryListing.deviation_percent, 1) }}%</strong>
+        <strong
+          >{{ fmt(primaryListing.deviation_pct ?? primaryListing.deviation_percent, 1) }}%</strong
+        >
       </article>
       <article class="analysis-primary-card">
         <span>{{ t('analysis.label') }}</span>
@@ -172,7 +174,9 @@
           <template #body="{ data }">{{ formatType(data.property_type) }}</template>
         </Column>
         <Column :header="t('predict.size')">
-          <template #body="{ data }">{{ fmt(data.uporabna_povrsina || data.size_m2, 1) }} m²</template>
+          <template #body="{ data }"
+            >{{ fmt(data.uporabna_povrsina || data.size_m2, 1) }} m²</template
+          >
         </Column>
         <Column :header="t('predict.floor')">
           <template #body="{ data }">{{ data.floor ?? '—' }}</template>
@@ -261,7 +265,11 @@
     padding: 1rem;
     border-radius: var(--radius-md);
     border: 1px solid color-mix(in srgb, var(--border) 74%, var(--primary) 26%);
-    background: color-mix(in srgb, var(--surface-card-strong, var(--surface-strong)) 94%, var(--primary) 6%);
+    background: color-mix(
+      in srgb,
+      var(--surface-card-strong, var(--surface-strong)) 94%,
+      var(--primary) 6%
+    );
     box-shadow: var(--shadow-sm);
   }
 
@@ -280,11 +288,19 @@
   }
 
   .analysis-primary-card.is-emphasis {
-    background: color-mix(in srgb, var(--surface-card-strong, var(--surface-strong)) 92%, var(--secondary) 8%);
+    background: color-mix(
+      in srgb,
+      var(--surface-card-strong, var(--surface-strong)) 92%,
+      var(--secondary) 8%
+    );
   }
 
   .analysis-primary-card.is-warning {
-    background: color-mix(in srgb, var(--surface-card-strong, var(--surface-strong)) 92%, var(--warning) 8%);
+    background: color-mix(
+      in srgb,
+      var(--surface-card-strong, var(--surface-strong)) 92%,
+      var(--warning) 8%
+    );
   }
 
   .analysis-summary-grid {

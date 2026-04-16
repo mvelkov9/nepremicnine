@@ -25,11 +25,7 @@
   import api from '../composables/useApi'
   import { useAuthStore } from '../stores/auth'
   import { useReferenceDataStore } from '../stores/referenceData'
-  import type {
-    BenchmarkProofRow,
-    BenchmarkSummaryResponse,
-    ServerTableResult,
-  } from '../types/api'
+  import type { BenchmarkProofRow, BenchmarkSummaryResponse, ServerTableResult } from '../types/api'
   import { getApiErrorMessage } from '../utils/apiError'
   import { formatCurrency, formatNumber, formatPercent } from '../utils/format'
 
@@ -112,7 +108,8 @@
       },
       {
         label: t('benchmark.winRateTitle'),
-        value: winRate.value != null ? formatPercent(winRate.value, { minimumFractionDigits: 1 }) : '-',
+        value:
+          winRate.value != null ? formatPercent(winRate.value, { minimumFractionDigits: 1 }) : '-',
         meta: t('benchmark.winRateMeta'),
         tone: (winRate.value ?? 0) > 0.5 ? ('success' as const) : undefined,
       },
@@ -132,7 +129,9 @@
     const imp = summary.value.improvement_vs_gurs
 
     if (winRate.value != null) {
-      pieces.push(`${t('benchmark.winRateTitle')}: ${formatPercent(winRate.value, { minimumFractionDigits: 1 })}`)
+      pieces.push(
+        `${t('benchmark.winRateTitle')}: ${formatPercent(winRate.value, { minimumFractionDigits: 1 })}`,
+      )
     }
 
     if (imp?.avg_gain_eur != null) {
@@ -162,8 +161,20 @@
           { label: 'MAE', value: formatCurrency(m?.mae) },
           { label: 'RMSE', value: formatCurrency(m?.rmse) },
           { label: 'Median AE', value: formatCurrency(m?.median_ae) },
-          { label: 'MAPE', value: m?.mape != null ? formatPercent(m.mape, { scale: 0.01, minimumFractionDigits: 1 }) : '-' },
-          { label: 'R²', value: m?.r2 != null ? formatNumber(m.r2, { minimumFractionDigits: 4, maximumFractionDigits: 4 }) : '-' },
+          {
+            label: 'MAPE',
+            value:
+              m?.mape != null
+                ? formatPercent(m.mape, { scale: 0.01, minimumFractionDigits: 1 })
+                : '-',
+          },
+          {
+            label: 'R²',
+            value:
+              m?.r2 != null
+                ? formatNumber(m.r2, { minimumFractionDigits: 4, maximumFractionDigits: 4 })
+                : '-',
+          },
         ],
       },
       {
@@ -174,8 +185,20 @@
           { label: 'MAE', value: formatCurrency(g?.mae) },
           { label: 'RMSE', value: formatCurrency(g?.rmse) },
           { label: 'Median AE', value: formatCurrency(g?.median_ae) },
-          { label: 'MAPE', value: g?.mape != null ? formatPercent(g.mape, { scale: 0.01, minimumFractionDigits: 1 }) : '-' },
-          { label: 'R²', value: g?.r2 != null ? formatNumber(g.r2, { minimumFractionDigits: 4, maximumFractionDigits: 4 }) : '-' },
+          {
+            label: 'MAPE',
+            value:
+              g?.mape != null
+                ? formatPercent(g.mape, { scale: 0.01, minimumFractionDigits: 1 })
+                : '-',
+          },
+          {
+            label: 'R²',
+            value:
+              g?.r2 != null
+                ? formatNumber(g.r2, { minimumFractionDigits: 4, maximumFractionDigits: 4 })
+                : '-',
+          },
         ],
       },
     ]
@@ -191,7 +214,8 @@
       },
       {
         label: t('benchmark.winRateTitle'),
-        value: winRate.value != null ? formatPercent(winRate.value, { minimumFractionDigits: 1 }) : '-',
+        value:
+          winRate.value != null ? formatPercent(winRate.value, { minimumFractionDigits: 1 }) : '-',
       },
       {
         label: t('benchmark.avgGainTitle'),
@@ -371,7 +395,11 @@
 
 <template>
   <div class="benchmark-page">
-    <PageHeader :eyebrow="t('benchmark.kicker')" :title="t('benchmark.title')" :description="t('benchmark.body')" />
+    <PageHeader
+      :eyebrow="t('benchmark.kicker')"
+      :title="t('benchmark.title')"
+      :description="t('benchmark.body')"
+    />
 
     <LoadingSpinner v-if="summaryLoading" :label="t('common.loading')" />
 
@@ -391,7 +419,10 @@
     </template>
 
     <template v-else-if="isUnavailable">
-      <EmptyState icon="pi pi-info-circle" :message="summary?.detail || t('benchmark.unavailableBody')" />
+      <EmptyState
+        icon="pi pi-info-circle"
+        :message="summary?.detail || t('benchmark.unavailableBody')"
+      />
       <div v-if="auth.isAdmin" class="benchmark-actions">
         <Button
           :as="RouterLink"
@@ -500,7 +531,9 @@
           <div class="benchmark-winner-grid">
             <article class="benchmark-winner-summary">
               <p class="eyebrow subtle">{{ t('benchmark.modelHeadline') }}</p>
-              <strong>{{ winRate != null ? formatPercent(winRate, { minimumFractionDigits: 1 }) : '-' }}</strong>
+              <strong>{{
+                winRate != null ? formatPercent(winRate, { minimumFractionDigits: 1 }) : '-'
+              }}</strong>
               <span>{{ t('benchmark.modelWins') }}</span>
               <small>{{ heroStory || summary.detail || t('benchmark.sharedCoverageBody') }}</small>
             </article>
@@ -509,17 +542,23 @@
               <div class="winner-card winner-model">
                 <strong>{{ formatNumber(summary.winners.model) }}</strong>
                 <span>{{ t('benchmark.modelWins') }}</span>
-                <small v-if="winTotal">{{ formatPercent(summary.winners.model / winTotal, { minimumFractionDigits: 1 }) }}</small>
+                <small v-if="winTotal">{{
+                  formatPercent(summary.winners.model / winTotal, { minimumFractionDigits: 1 })
+                }}</small>
               </div>
               <div class="winner-card winner-gurs">
                 <strong>{{ formatNumber(summary.winners.gurs) }}</strong>
                 <span>{{ t('benchmark.gursWins') }}</span>
-                <small v-if="winTotal">{{ formatPercent(summary.winners.gurs / winTotal, { minimumFractionDigits: 1 }) }}</small>
+                <small v-if="winTotal">{{
+                  formatPercent(summary.winners.gurs / winTotal, { minimumFractionDigits: 1 })
+                }}</small>
               </div>
               <div v-if="summary.winners.tie > 0" class="winner-card winner-tie">
                 <strong>{{ formatNumber(summary.winners.tie) }}</strong>
                 <span>{{ t('benchmark.ties') }}</span>
-                <small v-if="winTotal">{{ formatPercent(summary.winners.tie / winTotal, { minimumFractionDigits: 1 }) }}</small>
+                <small v-if="winTotal">{{
+                  formatPercent(summary.winners.tie / winTotal, { minimumFractionDigits: 1 })
+                }}</small>
               </div>
             </div>
           </div>
@@ -676,7 +715,9 @@
               <Column field="transaction_year" :header="t('map.year')" sortable />
 
               <Column field="vrsta_kupoprodajnega_posla" :header="t('benchmark.saleType')">
-                <template #body="{ data }">{{ saleTypeLabel(data.vrsta_kupoprodajnega_posla) }}</template>
+                <template #body="{ data }">{{
+                  saleTypeLabel(data.vrsta_kupoprodajnega_posla)
+                }}</template>
               </Column>
 
               <Column field="price_eur" :header="t('benchmark.actualPrice')" sortable>
@@ -701,8 +742,14 @@
 
               <Column field="improvement_eur" :header="t('benchmark.improvement')" sortable>
                 <template #body="{ data }">
-                  <span :class="{ 'text-success': data.improvement_eur > 0, 'text-danger': data.improvement_eur < 0 }">
-                    {{ data.improvement_eur > 0 ? '+' : '' }}{{ formatCurrency(data.improvement_eur) }}
+                  <span
+                    :class="{
+                      'text-success': data.improvement_eur > 0,
+                      'text-danger': data.improvement_eur < 0,
+                    }"
+                  >
+                    {{ data.improvement_eur > 0 ? '+' : ''
+                    }}{{ formatCurrency(data.improvement_eur) }}
                   </span>
                 </template>
               </Column>
@@ -757,9 +804,15 @@
     border-radius: var(--radius-md);
     border: 1px solid color-mix(in srgb, var(--border) 76%, var(--primary) 24%);
     background:
-      linear-gradient(180deg, color-mix(in srgb, var(--surface-card-strong) 96%, transparent), transparent 130%),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface-card-strong) 96%, transparent),
+        transparent 130%
+      ),
       var(--surface-panel-muted);
-    box-shadow: inset 0 1px 0 var(--content-glow), var(--shadow-sm);
+    box-shadow:
+      inset 0 1px 0 var(--content-glow),
+      var(--shadow-sm);
   }
 
   .benchmark-hero-kicker {
@@ -848,9 +901,15 @@
     border-radius: var(--radius-md);
     border: 1px solid color-mix(in srgb, var(--border) 78%, var(--content-border-strong) 22%);
     background:
-      linear-gradient(180deg, color-mix(in srgb, var(--surface-card-strong) 96%, transparent), transparent 130%),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface-card-strong) 96%, transparent),
+        transparent 130%
+      ),
       var(--surface-panel-muted);
-    box-shadow: inset 0 1px 0 var(--content-glow), var(--shadow-sm);
+    box-shadow:
+      inset 0 1px 0 var(--content-glow),
+      var(--shadow-sm);
   }
 
   .benchmark-comparison-card.tone-success {
@@ -924,9 +983,15 @@
     border-radius: var(--radius-md);
     border: 1px solid color-mix(in srgb, var(--border) 76%, var(--primary) 24%);
     background:
-      radial-gradient(circle at top right, color-mix(in srgb, var(--primary) 12%, transparent), transparent 28%),
+      radial-gradient(
+        circle at top right,
+        color-mix(in srgb, var(--primary) 12%, transparent),
+        transparent 28%
+      ),
       var(--surface-panel-muted);
-    box-shadow: inset 0 1px 0 var(--content-glow), var(--shadow-sm);
+    box-shadow:
+      inset 0 1px 0 var(--content-glow),
+      var(--shadow-sm);
   }
 
   .benchmark-winner-summary strong {
@@ -1023,9 +1088,15 @@
     border-radius: var(--radius-md);
     border: 1px solid color-mix(in srgb, var(--border) 76%, var(--primary) 24%);
     background:
-      linear-gradient(180deg, color-mix(in srgb, var(--surface-card-strong) 96%, transparent), transparent 130%),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface-card-strong) 96%, transparent),
+        transparent 130%
+      ),
       var(--surface-panel-muted);
-    box-shadow: inset 0 1px 0 var(--content-glow), var(--shadow-sm);
+    box-shadow:
+      inset 0 1px 0 var(--content-glow),
+      var(--shadow-sm);
   }
 
   .benchmark-proof-toolbar :deep(.p-iconfield) {

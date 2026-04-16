@@ -108,7 +108,11 @@
 .panel {
   padding: 1.4rem;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--surface-card-strong) 98%, transparent), transparent 120%),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface-card-strong) 98%, transparent),
+      transparent 120%
+    ),
     var(--surface-panel);
   box-shadow:
     inset 0 1px 0 var(--content-glow),
@@ -118,7 +122,11 @@
 .state-card {
   padding: var(--space-panel-sm) 1.2rem;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--primary-overlay) 18%, transparent), transparent 45%),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--primary-overlay) 18%, transparent),
+      transparent 45%
+    ),
     color-mix(in srgb, var(--surface-panel) 92%, var(--primary) 8%);
   box-shadow:
     inset 0 1px 0 var(--content-glow),
@@ -131,8 +139,16 @@
   border-radius: var(--radius-lg);
   padding: 1.25rem;
   background:
-    radial-gradient(circle at top right, color-mix(in srgb, var(--primary-overlay) 78%, transparent), transparent 32%),
-    linear-gradient(180deg, color-mix(in srgb, var(--surface-card-strong) 96%, transparent), transparent 130%),
+    radial-gradient(
+      circle at top right,
+      color-mix(in srgb, var(--primary-overlay) 78%, transparent),
+      transparent 32%
+    ),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface-card-strong) 96%, transparent),
+      transparent 130%
+    ),
     var(--surface-hero);
   box-shadow: var(--hero-shadow);
 }
@@ -180,7 +196,11 @@
   border-radius: var(--radius-sm);
   padding: 0.95rem 1rem;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--surface-card-strong) 96%, transparent), transparent 120%),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface-card-strong) 96%, transparent),
+      transparent 120%
+    ),
     var(--surface-subtle);
   box-shadow:
     inset 0 1px 0 var(--content-glow),
@@ -489,7 +509,6 @@
   gap: 1rem;
 }
 
-
 /* ----------------------------------------------------------------
    Glass Morphism — Panels & Cards
    ---------------------------------------------------------------- */
@@ -531,7 +550,11 @@
   border: 1px solid color-mix(in srgb, var(--border) 74%, var(--primary) 26%);
   border-radius: var(--radius-md);
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--surface-card-strong) 92%, transparent), transparent 120%),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface-card-strong) 92%, transparent),
+      transparent 120%
+    ),
     var(--surface-subtle);
   box-shadow: var(--shadow-sm);
 }

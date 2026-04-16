@@ -40,6 +40,10 @@ export const useWorkbenchStore = defineStore('workbench', () => {
   const trainingRuns = ref<AdminRunSummary[]>([])
   const selectedPrepareRun = ref<AdminRunDetail | null>(null)
   const selectedTrainingRun = ref<AdminRunDetail | null>(null)
+  const prepareRunDetailLoading = ref(false)
+  const trainingRunDetailLoading = ref(false)
+  let prepareRunDetailVersion = 0
+  let trainingRunDetailVersion = 0
 
   const compareTray = useLocalStorage<CompareTrayItem[]>('workbench_compare_tray', [])
   const recentRoutes = useLocalStorage<RecentRouteItem[]>('workbench_recent_routes', [])
@@ -163,15 +167,37 @@ export const useWorkbenchStore = defineStore('workbench', () => {
   }
 
   async function fetchPrepareRunDetail(jobId: string) {
-    const { data } = await api.get<AdminRunDetail>(`/api/admin/prepare-runs/${jobId}`)
-    selectedPrepareRun.value = data
-    return data
+    const requestVersion = ++prepareRunDetailVersion
+    prepareRunDetailLoading.value = true
+    selectedPrepareRun.value = null
+    try {
+      const { data } = await api.get<AdminRunDetail>(`/api/admin/prepare-runs/${jobId}`)
+      if (requestVersion === prepareRunDetailVersion) {
+        selectedPrepareRun.value = data
+      }
+      return data
+    } finally {
+      if (requestVersion === prepareRunDetailVersion) {
+        prepareRunDetailLoading.value = false
+      }
+    }
   }
 
   async function fetchTrainingRunDetail(jobId: string) {
-    const { data } = await api.get<AdminRunDetail>(`/api/admin/training-runs/${jobId}`)
-    selectedTrainingRun.value = data
-    return data
+    const requestVersion = ++trainingRunDetailVersion
+    trainingRunDetailLoading.value = true
+    selectedTrainingRun.value = null
+    try {
+      const { data } = await api.get<AdminRunDetail>(`/api/admin/training-runs/${jobId}`)
+      if (requestVersion === trainingRunDetailVersion) {
+        selectedTrainingRun.value = data
+      }
+      return data
+    } finally {
+      if (requestVersion === trainingRunDetailVersion) {
+        trainingRunDetailLoading.value = false
+      }
+    }
   }
 
   function addCompareItem(item: CompareTrayItem) {
@@ -209,6 +235,8 @@ export const useWorkbenchStore = defineStore('workbench', () => {
     trainingRuns,
     selectedPrepareRun,
     selectedTrainingRun,
+    prepareRunDetailLoading,
+    trainingRunDetailLoading,
     compareTray,
     recentRoutes,
     recentMunicipalities,

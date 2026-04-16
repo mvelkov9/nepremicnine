@@ -1,5 +1,6 @@
 <script setup lang="ts">
   import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+  import { useDebounceFn } from '@vueuse/core'
   import { useI18n } from 'vue-i18n'
   import { useRoute, useRouter } from 'vue-router'
   /* PrimeVue components (Button, Column, DataTable, Dialog, Select, Tag) are auto-imported */
@@ -7,17 +8,22 @@
   import 'leaflet/dist/leaflet.css'
   import EmptyState from '../components/EmptyState.vue'
   import LoadingSpinner from '../components/LoadingSpinner.vue'
+  import MapDetailDialog from '../components/map/MapDetailDialog.vue'
   import MetricCard from '../components/MetricCard.vue'
   import PageHeader from '../components/PageHeader.vue'
+  import SectionPanel from '../components/SectionPanel.vue'
   import SavedWorkspaceMenu from '../components/workbench/SavedWorkspaceMenu.vue'
+  import MapWorkspaceRail from '../features/map/MapWorkspaceRail.vue'
   import { toLocationQuery } from '../constants/workbench'
   import api from '../composables/useApi'
+  import { useFilterOptions } from '../composables/useFilterOptions'
+  import { useReferenceDataStore } from '../stores/referenceData'
   import { useWorkbenchStore } from '../stores/workbench'
+  import { useFormat } from '../composables/useFormat'
   import { getApiErrorMessage } from '../utils/apiError'
   import { buildNepremicnineSearchUrl } from '../utils/externalSearch'
-  import { formatCurrency, formatNumber } from '../utils/format'
   import { municipalitySlug } from '../utils/municipality'
-  import { getPropertyTypeLabel } from '../utils/propertyType'
+  import type { TransactionRecord } from '../types/api'
 
   interface MapFilterParams {
     property_type?: string
@@ -34,68 +40,133 @@
     range?: string
   }
 
+  interface MapLegendThresholds {
+    low_max?: number | null
+    mid_max?: number | null
+  }
+
+  interface MapLegendPayload {
+    thresholds?: MapLegendThresholds | null
+    counts?: Record<string, number> | null
+  }
+
+  interface MapActionState {
+    canUse: boolean
+    reason: string
+  }
+
+  interface MapSelectableRecordBase {
+    municipality: string
+    region?: string | null
+    naselje?: string | null
+    lat?: number | null
+    lon?: number | null
+    property_type?: string | null
+    size_m2?: number | null
+    price_eur?: number | null
+    year?: string | null
+    source_label?: string | null
+    year_built?: number | null
+    rooms?: number | null
+    floor?: number | null
+    lega_v_stavbi?: string | null
+    clusterCount?: number
+  }
+
+  interface MapTransactionRecord
+    extends Omit<TransactionRecord, 'slug' | 'naselje'>, MapSelectableRecordBase {
+    slug?: string
+    avg_price?: number | null
+    avg_price_per_m2?: number | null
+    price_band?: string | null
+  }
+
+  interface MapMunicipalityRecord extends MapSelectableRecordBase {
+    count: number
+    avg_price?: number | null
+    avg_price_per_m2?: number | null
+    median_price?: number | null
+    latest_year?: string | null
+    price_band?: string | null
+    slug?: string
+  }
+
+  interface MapRegionStatRecord {
+    region: string
+    count: number
+    avg_price?: number | null
+    median_price?: number | null
+    avg_price_per_m2?: number | null
+  }
+
+  type MapSelectableRecord = MapTransactionRecord | MapMunicipalityRecord
+
   const { t } = useI18n()
+  const { fmt, fmtCurrency, formatType } = useFormat()
   const route = useRoute()
   const router = useRouter()
+  const referenceData = useReferenceDataStore()
   const workbench = useWorkbenchStore()
 
-  const mapContainer = ref(null)
-  let map = null
-  let markersLayer = null
+  const mapContainer = ref<HTMLElement | null>(null)
+  let map: L.Map | null = null
+  let markersLayer: L.LayerGroup | null = null
 
   const initialized = ref(false)
   const loading = ref(false)
   const detailLoading = ref(false)
   const error = ref('')
-  const mapMetaReason = ref(null)
-  const mapLegend = ref(null)
+  const mapMetaReason = ref<string | null>(null)
+  const mapLegend = ref<MapLegendPayload | null>(null)
   const selectedType = ref('')
   const selectedRegion = ref('')
   const selectedYear = ref('')
   const selectedMunicipality = ref('')
   const selectedPriceBand = ref('')
-  const viewMode = ref('transactions')
+  const viewMode = ref<'transactions' | 'overview'>('transactions')
   const mapZoom = ref(8)
 
-  const municipalities = ref([])
-  const allMunicipalities = ref([])
-  const propertyTypes = ref([])
-  const regionStats = ref([])
-  const transactions = ref([])
-  const availableYears = ref([])
-  const detailComparables = ref([])
+  const municipalities = ref<MapMunicipalityRecord[]>([])
+  const regionStats = ref<MapRegionStatRecord[]>([])
+  const transactions = ref<MapTransactionRecord[]>([])
+  const detailComparables = ref<TransactionRecord[]>([])
 
   const detailVisible = ref(false)
-  const detailMode = ref('transaction')
-  const selectedRecord = ref(null)
+  const detailMode = ref<'transaction' | 'overview'>('transaction')
+  const selectedRecord = ref<MapSelectableRecord | null>(null)
   let syncingRoute = false
   let writingRoute = false
+  let activeMapRequestController: AbortController | null = null
+  let mapRequestToken = 0
+  const validPriceBands = new Set(['low', 'mid', 'high'])
 
-  const overviewColor = '#3b82f6'
-
-  function semanticColor(name, fallback) {
+  function semanticColor(name: string, fallback: string) {
     const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
     return value || fallback
   }
 
+  const overviewColor = computed(() =>
+    semanticColor('--chart-1', semanticColor('--primary', '#3b82f6')),
+  )
+  const markerStrokeColor = computed(() => semanticColor('--map-marker-stroke', '#20354d'))
+
   const defaultYear = computed(() => {
-    if (!availableYears.value.length) return ''
+    if (!referenceData.years.length) return ''
     const currentYear = new Date().getFullYear()
     return (
-      availableYears.value.find((year) => Number(year) < currentYear) ||
-      availableYears.value[0] ||
-      ''
+      referenceData.years.find((year) => Number(year) < currentYear) || referenceData.years[0] || ''
     )
   })
 
-  const municipalityOptions = computed(() => {
-    const rows = selectedRegion.value
-      ? allMunicipalities.value.filter((item) => item.region === selectedRegion.value)
-      : allMunicipalities.value
-    return [{ label: t('map.allMunicipalities'), value: '' }].concat(
-      rows.map((item) => ({ label: item.municipality, value: item.municipality })),
-    )
-  })
+  const { propertyTypeOptions, regionOptions, municipalityOptions, yearOptions } = useFilterOptions(
+    {
+      region: selectedRegion,
+      labels: {
+        allPropertyTypes: 'map.allTypes',
+        allRegions: 'map.allRegions',
+      },
+    },
+  )
 
   const totalCount = computed(() =>
     viewMode.value === 'transactions'
@@ -112,16 +183,24 @@
     return values.reduce((sum, value) => sum + value, 0) / values.length
   })
 
-  const topMunicipality = computed(() => municipalities.value[0] || transactions.value[0] || null)
-
-  const activityFeed = computed(() =>
-    viewMode.value === 'transactions'
-      ? transactions.value.slice(0, 12)
-      : municipalities.value.slice(0, 12),
-  )
-
   const clusteredTransactions = computed(() =>
     clusterTransactions(transactions.value, mapZoom.value),
+  )
+
+  const heroRecord = computed(() => {
+    if (viewMode.value === 'transactions') {
+      return (
+        transactions.value.find((item) => isActionableTransactionRecord(item)) ||
+        transactions.value[0] ||
+        null
+      )
+    }
+    return municipalities.value[0] || null
+  })
+
+  const heroActionState = computed(() => getMapActionState(heroRecord.value, viewMode.value))
+  const selectedActionState = computed(() =>
+    getMapActionState(selectedRecord.value, detailMode.value),
   )
 
   const bandOptions = computed<BandOption[]>(() => [
@@ -171,24 +250,21 @@
 
     return chips
   })
-
-  const propertyTypeOptions = computed(() => [
-    { label: t('map.allTypes'), value: '' },
-    ...propertyTypes.value.map((item) => ({
-      label: `${formatType(item.type)} (${fmt(item.count)})`,
-      value: item.type,
-    })),
-  ])
-
-  const regionOptions = computed(() => [
-    { label: t('map.allRegions'), value: '' },
-    ...regionStats.value.map((item) => ({ label: item.region, value: item.region })),
-  ])
-
-  const yearOptions = computed(() => [
-    { label: t('map.allYears'), value: '' },
-    ...availableYears.value.map((year) => ({ label: String(year), value: String(year) })),
-  ])
+  const selectedFilterCount = computed(
+    () =>
+      [
+        selectedType.value,
+        selectedRegion.value,
+        selectedYear.value,
+        selectedMunicipality.value,
+        selectedPriceBand.value,
+      ].filter(Boolean).length,
+  )
+  const selectedFilterTag = computed(() =>
+    selectedFilterCount.value > 0
+      ? t('dashboard.activeFilterCount', { count: selectedFilterCount.value })
+      : t('dashboard.noActiveFilters'),
+  )
 
   const comparisonUrl = computed(() => {
     if (!selectedRecord.value) return 'https://www.nepremicnine.net/oglasi-prodaja/'
@@ -204,7 +280,7 @@
   const detailDialogTitle = computed(() => {
     if (!selectedRecord.value) return t('common.noData')
     if (detailMode.value === 'transaction' && selectedRecord.value.property_type) {
-      return `${selectedRecord.value.municipality} · ${formatType(selectedRecord.value.property_type)}`
+      return `${selectedRecord.value.municipality} | ${formatType(selectedRecord.value.property_type)}`
     }
     return selectedRecord.value.municipality || t('common.noData')
   })
@@ -217,39 +293,24 @@
     return t('common.noData')
   })
 
-  function fmt(value, decimals = 0) {
-    return formatNumber(value, { maximumFractionDigits: decimals })
-  }
-
-  function fmtCurrency(value, decimals = 0) {
-    return formatCurrency(value, {
-      minimumFractionDigits: decimals,
-      maximumFractionDigits: decimals,
-    })
-  }
-
-  function formatType(value) {
-    return getPropertyTypeLabel(value, t)
-  }
-
   function bandColor(key) {
     const bandColors = {
-      low: semanticColor('--success', '#22c55e'),
-      mid: semanticColor('--warning', '#f59e0b'),
-      high: semanticColor('--danger', '#ef4444'),
+      low: semanticColor('--chart-3', semanticColor('--success', '#22c55e')),
+      mid: semanticColor('--chart-4', semanticColor('--warning', '#f59e0b')),
+      high: semanticColor('--chart-5', semanticColor('--danger', '#ef4444')),
     }
 
-    return bandColors[key] || semanticColor('--primary', overviewColor)
+    return bandColors[key] || overviewColor.value
   }
 
   function bandRangeLabel(key) {
     const thresholds = mapLegend.value?.thresholds
     if (!thresholds) return ''
-    if (key === 'low') return `≤ ${fmtCurrency(thresholds.low_max)}`
+    if (key === 'low') return `<= ${fmtCurrency(thresholds.low_max)}`
     if (key === 'mid') {
       return `${fmtCurrency(thresholds.low_max)} - ${fmtCurrency(thresholds.mid_max)}`
     }
-    return `≥ ${fmtCurrency(thresholds.mid_max)}`
+    return `>= ${fmtCurrency(thresholds.mid_max)}`
   }
 
   function markerRadius(count) {
@@ -264,11 +325,184 @@
     )
   }
 
-  function clusterTransactions(items, zoom) {
+  function isCancelledRequest(error: unknown) {
+    const candidate = error as { code?: string; name?: string }
+    return candidate?.code === 'ERR_CANCELED' || candidate?.name === 'CanceledError'
+  }
+
+  function hasText(value: unknown) {
+    return typeof value === 'string'
+      ? value.trim().length > 0
+      : String(value ?? '').trim().length > 0
+  }
+
+  function toNumber(value: unknown) {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : null
+    if (typeof value === 'string' && value.trim()) {
+      const parsed = Number(value)
+      return Number.isFinite(parsed) ? parsed : null
+    }
+    return null
+  }
+
+  function getMunicipalityReference(name: string) {
+    return referenceData.municipalities.find((item) => item.municipality === name) || null
+  }
+
+  function isRecordObject(value: unknown): value is Record<string, unknown> {
+    return !!value && typeof value === 'object'
+  }
+
+  function isActionableTransactionRecord(record: unknown): record is MapTransactionRecord {
+    if (!isRecordObject(record)) return false
+    return Boolean(
+      record &&
+      hasText(record.municipality) &&
+      hasText(record.property_type) &&
+      toNumber(record.size_m2) != null,
+    )
+  }
+
+  function getMapActionState(
+    record: MapSelectableRecord | null,
+    mode: 'transaction' | 'transactions' | 'overview',
+  ): MapActionState {
+    if (!record) {
+      return {
+        canUse: false,
+        reason: t('common.noData'),
+      }
+    }
+
+    if (mode === 'overview') {
+      return {
+        canUse: false,
+        reason: t('map.municipalitySummaryHint'),
+      }
+    }
+
+    const missing: string[] = []
+    if (!hasText(record.municipality)) missing.push(t('map.municipalityFilter'))
+    if (!hasText(record.property_type)) missing.push(t('predict.propertyType'))
+    if (toNumber(record.size_m2) == null) missing.push(t('predict.size'))
+
+    if (!missing.length) {
+      return { canUse: true, reason: '' }
+    }
+
+    return {
+      canUse: false,
+      reason: t('map.drawerHint'),
+    }
+  }
+
+  function normalizeSelectionState() {
+    if (!referenceData.loaded) return false
+
+    const previousSyncing = syncingRoute
+    syncingRoute = true
+    let changed = false
+
+    try {
+      if (selectedType.value && !referenceData.propertyTypes.includes(selectedType.value)) {
+        selectedType.value = ''
+        changed = true
+      }
+
+      if (selectedYear.value && !referenceData.years.includes(selectedYear.value)) {
+        selectedYear.value = defaultYear.value ? String(defaultYear.value) : ''
+        changed = true
+      }
+
+      if (selectedPriceBand.value && !validPriceBands.has(selectedPriceBand.value)) {
+        selectedPriceBand.value = ''
+        changed = true
+      }
+
+      const municipalityRef = selectedMunicipality.value
+        ? getMunicipalityReference(selectedMunicipality.value)
+        : null
+
+      if (selectedRegion.value && !referenceData.regions.includes(selectedRegion.value)) {
+        selectedRegion.value = municipalityRef?.region || ''
+        changed = true
+      }
+
+      if (municipalityRef?.region && selectedRegion.value !== municipalityRef.region) {
+        selectedRegion.value = municipalityRef.region
+        changed = true
+      }
+
+      if (selectedMunicipality.value && !municipalityRef) {
+        selectedMunicipality.value = ''
+        changed = true
+      }
+
+      if (selectedRegion.value && selectedMunicipality.value) {
+        const matchesRegion = referenceData.municipalities.some(
+          (item) =>
+            item.region === selectedRegion.value &&
+            item.municipality === selectedMunicipality.value,
+        )
+        if (!matchesRegion) {
+          selectedMunicipality.value = ''
+          changed = true
+        }
+      }
+
+      if (!selectedRegion.value && municipalityRef?.region) {
+        selectedRegion.value = municipalityRef.region
+        changed = true
+      }
+    } finally {
+      syncingRoute = previousSyncing
+    }
+
+    return changed
+  }
+
+  function buildScenarioQuery(item: MapSelectableRecord | null = heroRecord.value) {
+    const municipality = item?.municipality || selectedMunicipality.value || ''
+    const propertyType = item?.property_type || selectedType.value || ''
+
+    return toLocationQuery({
+      municipality,
+      naselje: item?.naselje || '',
+      property_type: propertyType || undefined,
+      size_m2: item?.size_m2 || '',
+      year_built: item?.year_built || '',
+      floor: item?.floor ?? '',
+      price_eur: item?.price_eur || item?.avg_price || '',
+      asking_price: item?.price_eur || item?.avg_price || '',
+      price_band: item?.price_band || selectedPriceBand.value || undefined,
+      region: item?.region || selectedRegion.value || undefined,
+    })
+  }
+
+  function clusterTransactions(
+    items: MapTransactionRecord[],
+    zoom: number,
+  ): MapTransactionRecord[] {
     if (zoom >= 12 || items.length <= 1200) return items
 
     const cellSize = zoom <= 7 ? 0.25 : zoom <= 9 ? 0.12 : 0.05
-    const buckets = new Map()
+    const buckets = new Map<
+      string,
+      {
+        id: string
+        lat: number
+        lon: number
+        count: number
+        clusterCount: number
+        sample: MapTransactionRecord
+        priceSum: number
+        pricePerM2Sum: number
+        pricePerM2Count: number
+        municipality?: string | null
+        region?: string | null
+        price_band_counts: Record<string, number>
+      }
+    >()
 
     for (const item of items) {
       const key = `${Math.round(item.lat / cellSize)}:${Math.round(item.lon / cellSize)}`
@@ -344,14 +578,17 @@
     })
   }
 
-  function focusMapItem(item, zoomOverride = null) {
+  function focusMapItem(item: MapSelectableRecord | null, zoomOverride: number | null = null) {
     if (!map || !item?.lat || !item?.lon) return
     map.flyTo([item.lat, item.lon], zoomOverride || (viewMode.value === 'transactions' ? 11 : 9), {
       duration: 0.45,
     })
   }
 
-  async function openDetails(item, mode = 'transaction') {
+  async function openDetails(
+    item: MapSelectableRecord,
+    mode: 'transaction' | 'overview' = 'transaction',
+  ) {
     if (mode === 'transaction' && item.clusterCount > 1) {
       focusMapItem(item, Math.min((map?.getZoom() || 8) + 2, 12))
       return
@@ -390,11 +627,12 @@
     markersLayer.clearLayers()
 
     for (const item of clusteredTransactions.value) {
+      if (item.lat == null || item.lon == null) continue
       const radius = markerRadius(item.clusterCount || 1)
       const marker = L.circleMarker([item.lat, item.lon], {
         radius,
         fillColor: bandColor(item.price_band),
-        color: '#0f172a',
+        color: markerStrokeColor.value,
         weight: item.clusterCount > 1 ? 1.2 : 0.9,
         opacity: 0.95,
         fillOpacity: item.clusterCount > 1 ? 0.68 : 0.82,
@@ -414,10 +652,11 @@
     markersLayer.clearLayers()
 
     for (const item of municipalities.value) {
+      if (item.lat == null || item.lon == null) continue
       const marker = L.circleMarker([item.lat, item.lon], {
         radius: markerRadius(item.count),
-        fillColor: bandColor(item.price_band) || overviewColor,
-        color: '#16324f',
+        fillColor: bandColor(item.price_band) || overviewColor.value,
+        color: markerStrokeColor.value,
         weight: 1.1,
         opacity: 0.92,
         fillOpacity: 0.58,
@@ -437,7 +676,7 @@
     }
   }
 
-  async function fetchTransactions() {
+  async function fetchTransactions(signal?: AbortSignal) {
     const params: MapFilterParams = {}
     if (selectedType.value) params.property_type = selectedType.value
     if (selectedRegion.value) params.statistical_region = selectedRegion.value
@@ -445,13 +684,13 @@
     if (selectedMunicipality.value) params.municipality = selectedMunicipality.value
     if (selectedPriceBand.value) params.price_band = selectedPriceBand.value
 
-    const { data } = await api.get('/api/stats/map-transactions', { params })
+    const { data } = await api.get('/api/stats/map-transactions', { params, signal })
     mapMetaReason.value = data.meta?.reason || null
     mapLegend.value = data.meta?.legend || null
     transactions.value = data.transactions || []
   }
 
-  async function fetchOverviewMarkers() {
+  async function fetchOverviewMarkers(signal?: AbortSignal) {
     const params: MapFilterParams = {}
     if (selectedType.value) params.property_type = selectedType.value
     if (selectedRegion.value) params.statistical_region = selectedRegion.value
@@ -459,53 +698,77 @@
     if (selectedMunicipality.value) params.municipality = selectedMunicipality.value
     if (selectedPriceBand.value) params.price_band = selectedPriceBand.value
 
-    const { data } = await api.get('/api/stats/map-overview', { params })
+    const { data } = await api.get('/api/stats/map-overview', { params, signal })
     mapMetaReason.value = data.meta?.reason || null
     mapLegend.value = data.meta?.legend || null
     municipalities.value = data.municipalities || []
   }
 
   async function loadReferenceData() {
-    const [overviewRes, regionsRes, municipalitiesRes, trendRes] = await Promise.all([
-      api.get('/api/stats/overview'),
+    const [regionsRes] = await Promise.all([
       api.get('/api/stats/regions'),
-      api.get('/api/regions/municipalities'),
-      api.get('/api/stats/trend'),
+      referenceData.ensureLoaded(),
     ])
 
-    propertyTypes.value = overviewRes.data.property_types || []
     regionStats.value = regionsRes.data || []
-    allMunicipalities.value = municipalitiesRes.data || []
-    availableYears.value = (trendRes.data || [])
-      .map((item) => item.year)
-      .sort((left, right) => Number(right) - Number(left))
 
     if (!selectedYear.value && defaultYear.value) {
       selectedYear.value = String(defaultYear.value)
     }
+
+    if (normalizeSelectionState()) {
+      syncRouteQuery()
+    }
+  }
+
+  async function initializePage() {
+    applyRouteQuery()
+    if (!map) initMap()
+    error.value = ''
+
+    try {
+      await loadReferenceData()
+      normalizeSelectionState()
+      initialized.value = true
+      await fetchData()
+    } catch (err) {
+      error.value = getApiErrorMessage(err, t)
+    }
   }
 
   async function fetchData() {
+    const requestToken = ++mapRequestToken
+    activeMapRequestController?.abort()
+    const controller = new AbortController()
+    activeMapRequestController = controller
     loading.value = true
     error.value = ''
     mapMetaReason.value = null
 
     try {
       if (viewMode.value === 'transactions') {
-        await fetchTransactions()
+        await fetchTransactions(controller.signal)
       } else {
-        await fetchOverviewMarkers()
+        await fetchOverviewMarkers(controller.signal)
       }
+
+      if (controller.signal.aborted || requestToken !== mapRequestToken) return
 
       await nextTick()
       map?.invalidateSize()
       renderMarkers()
     } catch (err) {
+      if (controller.signal.aborted || isCancelledRequest(err)) return
       error.value = getApiErrorMessage(err, t)
     } finally {
-      loading.value = false
+      if (activeMapRequestController === controller) activeMapRequestController = null
+      if (requestToken === mapRequestToken) loading.value = false
     }
   }
+
+  const debouncedFetchData = useDebounceFn(() => {
+    void fetchData()
+  }, 220)
 
   function clearFilters() {
     selectedType.value = ''
@@ -513,6 +776,9 @@
     selectedMunicipality.value = ''
     selectedPriceBand.value = ''
     selectedYear.value = defaultYear.value ? String(defaultYear.value) : ''
+    if (referenceData.loaded) {
+      syncRouteQuery()
+    }
   }
 
   function currentQuerySubset() {
@@ -556,6 +822,7 @@
       region: selectedRegion.value || undefined,
       year: selectedYear.value || undefined,
       municipality: selectedMunicipality.value || undefined,
+      price_band: selectedPriceBand.value || undefined,
       ...overrides,
     })
   }
@@ -593,22 +860,15 @@
     })
   }
 
-  function useForPrediction(item = selectedRecord.value) {
+  function useForPrediction(item: MapSelectableRecord | null = selectedRecord.value) {
     router.push({
       name: 'prediction',
-      query: {
-        municipality:
-          item?.municipality ||
-          selectedMunicipality.value ||
-          topMunicipality.value?.municipality ||
-          '',
-        naselje: item?.naselje || '',
-        property_type: item?.property_type || selectedType.value || 'stanovanje',
-        size_m2: item?.size_m2 || '',
-        year_built: item?.year_built || '',
-        price_eur: item?.price_eur || '',
-      },
+      query: buildScenarioQuery(item),
     })
+  }
+
+  function useHeroPrediction() {
+    useForPrediction(heroRecord.value || selectedRecord.value)
   }
 
   function openMarketExplorer() {
@@ -620,23 +880,15 @@
     })
   }
 
-  function openAnalysis(item = selectedRecord.value) {
+  function openAnalysis(item: MapSelectableRecord | null = selectedRecord.value) {
     router.push({
       name: 'analysis',
-      query: {
-        municipality:
-          item?.municipality ||
-          selectedMunicipality.value ||
-          topMunicipality.value?.municipality ||
-          '',
-        naselje: item?.naselje || '',
-        property_type: item?.property_type || selectedType.value || 'stanovanje',
-        size_m2: item?.size_m2 || '',
-        year_built: item?.year_built || '',
-        floor: item?.floor ?? '',
-        asking_price: item?.price_eur || item?.avg_price || '',
-      },
+      query: buildScenarioQuery(item),
     })
+  }
+
+  function openHeroAnalysis() {
+    openAnalysis(heroRecord.value || selectedRecord.value)
   }
 
   function applyRouteQuery() {
@@ -655,7 +907,7 @@
     () => {
       if (syncingRoute) return
       syncRouteQuery()
-      if (initialized.value) fetchData()
+      if (initialized.value) debouncedFetchData()
     },
   )
 
@@ -667,31 +919,43 @@
         return
       }
       applyRouteQuery()
-      if (initialized.value) void fetchData()
+      const normalized = referenceData.loaded ? normalizeSelectionState() : false
+      if (normalized) syncRouteQuery()
+      if (initialized.value) debouncedFetchData()
     },
   )
 
   watch(selectedRegion, (region) => {
-    if (!region || !selectedMunicipality.value) return
-    const valid = allMunicipalities.value.some(
+    if (syncingRoute || !selectedMunicipality.value) return
+    const municipalityRef = getMunicipalityReference(selectedMunicipality.value)
+    if (!region) {
+      if (municipalityRef?.region) {
+        selectedRegion.value = municipalityRef.region
+      } else {
+        selectedMunicipality.value = ''
+      }
+      return
+    }
+    const valid = referenceData.municipalities.some(
       (item) => item.region === region && item.municipality === selectedMunicipality.value,
     )
     if (!valid) selectedMunicipality.value = ''
   })
 
-  onMounted(async () => {
-    applyRouteQuery()
-    initMap()
-    try {
-      await loadReferenceData()
-      initialized.value = true
-      await fetchData()
-    } catch (err) {
-      error.value = getApiErrorMessage(err, t)
+  watch(selectedMunicipality, (municipality) => {
+    if (syncingRoute || !municipality) return
+    const match = getMunicipalityReference(municipality)
+    if (match?.region && selectedRegion.value !== match.region) {
+      selectedRegion.value = match.region
     }
   })
 
+  onMounted(() => {
+    void initializePage()
+  })
+
   onBeforeUnmount(() => {
+    activeMapRequestController?.abort()
     if (map) {
       map.remove()
       map = null
@@ -701,7 +965,7 @@
 
 <template>
   <div class="map-page">
-    <section class="card map-hero">
+    <section class="hero-shell map-hero">
       <PageHeader
         :eyebrow="t('map.title')"
         :title="t('map.explorerTitle')"
@@ -713,31 +977,11 @@
             :state="{ page: 'map', filters: viewerRouteQuery({ view: viewMode }) }"
           />
           <Button
-            severity="secondary"
-            outlined
-            icon="pi pi-table"
-            :label="t('market.viewMarket')"
-            @click="openMarketExplorer"
-          />
-          <Button
             icon="pi pi-chart-line"
             :label="t('map.useFiltersForPrediction')"
-            @click="useForPrediction()"
-          />
-          <Button
-            v-if="topMunicipality?.municipality"
-            severity="secondary"
-            outlined
-            icon="pi pi-building"
-            :label="t('map.openTopMunicipality')"
-            @click="openMunicipality(topMunicipality.municipality)"
-          />
-          <Button
-            severity="secondary"
-            text
-            icon="pi pi-bookmark"
-            :label="t('workbench.watch')"
-            @click="watchSelectedContext"
+            :disabled="!heroActionState.canUse"
+            :title="heroActionState.reason || undefined"
+            @click="useHeroPrediction"
           />
         </template>
       </PageHeader>
@@ -746,7 +990,7 @@
         <MetricCard :label="t('map.totalTransactions')" :value="fmt(totalCount)" />
         <MetricCard :label="t('map.avgPrice')" :value="fmtCurrency(avgPrice)" />
         <MetricCard :label="t('map.municipalities')" :value="fmt(municipalities.length)" />
-        <MetricCard :label="t('map.regions')" :value="fmt(regionStats.length)" />
+        <MetricCard :label="t('map.regions')" :value="fmt(referenceData.regions.length)" />
       </div>
 
       <div v-if="activeFilterChips.length" class="active-filter-ribbon">
@@ -761,184 +1005,83 @@
       </div>
     </section>
 
-    <section class="card filters-panel">
-      <PageHeader
-        compact
-        :eyebrow="t('map.legend')"
-        :title="t('map.filterTitle')"
-        :description="t('map.filterHint')"
-      />
-
-      <div class="filters-grid">
-        <label class="field">
-          <span>{{ t('map.viewMode') }}</span>
-          <Select
-            v-model="viewMode"
-            :options="[
-              { label: t('map.transactionView'), value: 'transactions' },
-              { label: t('map.overviewMode'), value: 'overview' },
-            ]"
-            option-label="label"
-            option-value="value"
-          />
-        </label>
-
-        <label class="field">
-          <span>{{ t('map.propertyType') }}</span>
-          <Select
-            v-model="selectedType"
-            :options="propertyTypeOptions"
-            option-label="label"
-            option-value="value"
-          />
-        </label>
-
-        <label class="field">
-          <span>{{ t('map.regionFilter') }}</span>
-          <Select
-            v-model="selectedRegion"
-            :options="regionOptions"
-            option-label="label"
-            option-value="value"
-          />
-        </label>
-
-        <label class="field">
-          <span>{{ t('map.yearFilter') }}</span>
-          <Select
-            v-model="selectedYear"
-            :options="yearOptions"
-            option-label="label"
-            option-value="value"
-          />
-        </label>
-
-        <label class="field">
-          <span>{{ t('map.municipalityFilter') }}</span>
-          <Select
-            v-model="selectedMunicipality"
-            :options="municipalityOptions"
-            option-label="label"
-            option-value="value"
-          />
-        </label>
-      </div>
-
-      <div class="legend-strip">
-        <Button
-          v-for="band in bandOptions"
-          :key="band.value || 'all'"
-          class="legend-chip"
-          :severity="selectedPriceBand === band.value ? undefined : 'secondary'"
-          :outlined="selectedPriceBand !== band.value"
-          @click="selectedPriceBand = band.value"
-        >
-          <span
-            v-if="band.value"
-            class="legend-dot"
-            :style="{ backgroundColor: bandColor(band.value) }"
-          ></span>
-          <span class="legend-copy">
-            <strong>{{ band.label }}</strong>
-            <small>{{ band.range || t('map.allBandsHint') }} · {{ fmt(band.count) }}</small>
-          </span>
-        </Button>
-
-        <Button
-          severity="secondary"
-          outlined
-          icon="pi pi-filter-slash"
-          :label="t('map.clearFilter')"
-          @click="clearFilters"
-        />
-      </div>
-    </section>
-
-    <div v-if="loading" class="card state-card">
-      <LoadingSpinner :label="t('map.loading')" />
-    </div>
-    <div v-else-if="error" class="card state-card">
-      <EmptyState icon="⚠️" :message="error" />
-    </div>
-    <div v-else-if="mapStateMessage" class="card state-card">
-      <EmptyState icon="🗺️" :message="mapStateMessage" />
-    </div>
-
-    <section class="explorer-grid">
+    <section class="map-workbench">
       <article class="card map-panel">
-        <div ref="mapContainer" class="map-container"></div>
+        <div class="map-panel-header">
+          <div>
+            <span class="eyebrow">{{
+              viewMode === 'transactions' ? t('map.transactionView') : t('map.overviewMode')
+            }}</span>
+            <h3>
+              {{ viewMode === 'transactions' ? t('map.activityFeed') : t('map.topMunicipalities') }}
+            </h3>
+            <p>{{ viewMode === 'transactions' ? t('map.drawerHint') : t('map.overviewHint') }}</p>
+          </div>
+          <Tag
+            :severity="selectedFilterCount > 0 ? 'contrast' : 'secondary'"
+            :value="selectedFilterTag"
+          />
+        </div>
+
+        <div class="map-shell">
+          <div
+            ref="mapContainer"
+            class="map-container"
+            role="region"
+            :aria-label="t('map.title')"
+          ></div>
+          <div v-if="loading || error || mapStateMessage" class="map-overlay">
+            <div v-if="loading" class="card state-card state-card-overlay" aria-busy="true">
+              <LoadingSpinner :label="t('map.loading')" />
+            </div>
+            <div
+              v-else-if="error"
+              class="card state-card state-card-overlay state-card-stack"
+              role="alert"
+            >
+              <EmptyState icon="pi pi-exclamation-triangle" :message="error" />
+              <div class="state-card-actions">
+                <Button
+                  size="small"
+                  severity="secondary"
+                  outlined
+                  icon="pi pi-refresh"
+                  :label="t('common.retry')"
+                  @click="initializePage"
+                />
+              </div>
+            </div>
+            <div v-else-if="mapStateMessage" class="card state-card state-card-overlay">
+              <EmptyState icon="pi pi-info-circle" :message="mapStateMessage" />
+            </div>
+          </div>
+        </div>
       </article>
 
-      <aside class="card rail-panel">
-        <PageHeader
-          compact
-          :eyebrow="
-            viewMode === 'transactions' ? t('map.transactions') : t('map.topMunicipalities')
-          "
-          :title="viewMode === 'transactions' ? t('map.activityFeed') : t('map.topMunicipalities')"
-          :description="viewMode === 'transactions' ? t('map.drawerHint') : t('map.overviewHint')"
-        />
-
-        <div v-if="activityFeed.length" class="rail-list">
-          <Button
-            v-for="item in activityFeed"
-            :key="item.id || item.slug"
-            class="rail-card"
-            severity="secondary"
-            outlined
-            @click="openDetails(item, viewMode === 'transactions' ? 'transaction' : 'overview')"
-          >
-            <div class="rail-card-top">
-              <strong>{{ item.municipality }}</strong>
-              <Tag
-                v-if="item.price_band"
-                :value="t(`map.${item.price_band}`)"
-                :severity="
-                  item.price_band === 'high'
-                    ? 'danger'
-                    : item.price_band === 'mid'
-                      ? 'warn'
-                      : 'success'
-                "
-              />
-            </div>
-            <p>
-              {{
-                viewMode === 'transactions'
-                  ? `${formatType(item.property_type)} · ${fmt(item.size_m2, 1)} m²`
-                  : `${fmt(item.count)} ${t('map.transactions')}`
-              }}
-            </p>
-            <div class="rail-card-foot">
-              <strong>
-                {{
-                  viewMode === 'transactions'
-                    ? fmtCurrency(item.price_eur)
-                    : fmtCurrency(item.avg_price_per_m2)
-                }}
-              </strong>
-              <small>
-                {{
-                  viewMode === 'transactions'
-                    ? `${fmtCurrency(item.price_per_m2)}/m²`
-                    : item.region || '—'
-                }}
-              </small>
-            </div>
-          </Button>
-        </div>
-        <EmptyState v-else icon="📍" :message="t('common.noData')" />
-      </aside>
+      <MapWorkspaceRail
+        v-model:view-mode="viewMode"
+        v-model:selected-type="selectedType"
+        v-model:selected-region="selectedRegion"
+        v-model:selected-year="selectedYear"
+        v-model:selected-municipality="selectedMunicipality"
+        v-model:selected-price-band="selectedPriceBand"
+        :selected-filter-count="selectedFilterCount"
+        :selected-filter-tag="selectedFilterTag"
+        :property-type-options="propertyTypeOptions"
+        :region-options="regionOptions"
+        :year-options="yearOptions"
+        :municipality-options="municipalityOptions"
+        :band-options="bandOptions"
+        :hero-action-can-use="heroActionState.canUse"
+        :hero-action-reason="heroActionState.reason"
+        @clear-filters="clearFilters"
+        @open-market="openMarketExplorer"
+        @open-analysis="openHeroAnalysis"
+      />
     </section>
 
-    <section class="card">
-      <PageHeader
-        compact
-        :eyebrow="t('map.regionStats')"
-        :title="t('map.regionSnapshot')"
-        :description="t('map.regionSnapshotHint')"
-      />
-
+    <SectionPanel :eyebrow="t('map.regionStats')" :title="t('map.regionSnapshot')" compact>
+      <p class="section-note">{{ t('map.regionSnapshotHint') }}</p>
       <DataTable
         :value="regionStats"
         paginator
@@ -962,227 +1105,121 @@
           <template #body="{ data }">{{ fmtCurrency(data.avg_price_per_m2) }}</template>
         </Column>
       </DataTable>
-    </section>
+    </SectionPanel>
 
-    <Dialog
+    <MapDetailDialog
       v-model:visible="detailVisible"
-      modal
-      maximizable
-      class="map-detail-dialog"
-      :header="detailDialogTitle"
-      :style="{ width: 'min(98vw, 1280px)' }"
-      :breakpoints="{ '1280px': '96vw', '768px': '100vw' }"
-    >
-      <div v-if="selectedRecord" class="detail-dialog">
-        <div class="detail-summary">
-          <div>
-            <span class="eyebrow">{{
-              detailMode === 'transaction' ? t('map.transactions') : t('map.topMunicipalities')
-            }}</span>
-            <h2>{{ selectedRecord.municipality }}</h2>
-            <p class="muted">{{ selectedRecord.region || '—' }}</p>
-          </div>
-          <Tag
-            v-if="selectedRecord.price_band"
-            :value="t(`map.${selectedRecord.price_band}`)"
-            :severity="
-              selectedRecord.price_band === 'high'
-                ? 'danger'
-                : selectedRecord.price_band === 'mid'
-                  ? 'warn'
-                  : 'success'
-            "
-          />
-        </div>
-
-        <div class="detail-metrics">
-          <MetricCard
-            :label="t('map.price')"
-            :value="
-              fmtCurrency(
-                detailMode === 'transaction' ? selectedRecord.price_eur : selectedRecord.avg_price,
-              )
-            "
-          />
-          <MetricCard
-            :label="t('dashboard.pricePerM2')"
-            :value="
-              fmtCurrency(
-                detailMode === 'transaction'
-                  ? selectedRecord.price_per_m2
-                  : selectedRecord.avg_price_per_m2,
-              )
-            "
-          />
-          <MetricCard
-            :label="detailMode === 'transaction' ? t('predict.size') : t('map.transactions')"
-            :value="
-              detailMode === 'transaction'
-                ? `${fmt(selectedRecord.size_m2, 1)} m²`
-                : fmt(selectedRecord.count)
-            "
-          />
-          <MetricCard
-            :label="t('map.year')"
-            :value="
-              detailMode === 'transaction'
-                ? selectedRecord.year || selectedRecord.source_label || '—'
-                : selectedRecord.latest_year || defaultYear || '—'
-            "
-          />
-        </div>
-
-        <div class="detail-grid">
-          <section class="detail-section detail-section-main">
-            <h3>{{ t('map.detailTitle') }}</h3>
-            <dl class="detail-list">
-              <div v-if="detailMode === 'transaction'">
-                <dt>{{ t('predict.propertyType') }}</dt>
-                <dd>{{ formatType(selectedRecord.property_type) }}</dd>
-              </div>
-              <div>
-                <dt>{{ t('map.region') }}</dt>
-                <dd>{{ selectedRecord.region || '—' }}</dd>
-              </div>
-              <div v-if="detailMode === 'transaction'">
-                <dt>{{ t('predict.yearBuilt') }}</dt>
-                <dd>{{ selectedRecord.year_built || '—' }}</dd>
-              </div>
-              <div v-if="detailMode === 'transaction'">
-                <dt>{{ t('predict.rooms') }}</dt>
-                <dd>{{ selectedRecord.rooms || '—' }}</dd>
-              </div>
-              <div v-if="detailMode === 'transaction'">
-                <dt>{{ t('predict.floor') }}</dt>
-                <dd>{{ selectedRecord.floor ?? '—' }}</dd>
-              </div>
-              <div v-if="detailMode === 'transaction'">
-                <dt>{{ t('predict.legaVStavbi') }}</dt>
-                <dd>{{ selectedRecord.lega_v_stavbi || '—' }}</dd>
-              </div>
-              <div v-if="detailMode === 'transaction'">
-                <dt>{{ t('map.sourceYear') }}</dt>
-                <dd>{{ selectedRecord.source_label || selectedRecord.year || '—' }}</dd>
-              </div>
-              <div v-if="detailMode === 'overview'">
-                <dt>{{ t('map.medianPrice') }}</dt>
-                <dd>{{ fmtCurrency(selectedRecord.median_price) }}</dd>
-              </div>
-            </dl>
-          </section>
-
-          <section v-if="detailMode === 'transaction'" class="detail-section detail-section-flags">
-            <h3>{{ t('predict.buildingFlags') }}</h3>
-            <div class="flag-grid">
-              <span
-                v-for="flag in [
-                  ['novogradnja', t('predict.novogradnja')],
-                  ['has_garaza', t('predict.hasGaraza')],
-                  ['has_klet', t('predict.hasKlet')],
-                  ['has_shramba', t('predict.hasShramba')],
-                  ['has_terasa', t('predict.hasTerasa')],
-                  ['stavba_je_dokoncana', t('predict.stavbaDokoncana')],
-                  ['ddv_vkljucen', t('predict.ddvVkljucen')],
-                ]"
-                :key="flag[0]"
-                class="flag-chip"
-                :class="{ active: selectedRecord[flag[0]] }"
-              >
-                {{ flag[1] }}
-              </span>
-            </div>
-          </section>
-
-          <section class="detail-section detail-section-comparables">
-            <h3>{{ t('predict.comparablesTitle') }}</h3>
-            <LoadingSpinner v-if="detailLoading" :label="t('common.loading')" />
-            <div v-else-if="detailComparables.length" class="comparables-list">
-              <article
-                v-for="item in detailComparables"
-                :key="`${item.slug}-${item.price_eur}-${item.size_m2}`"
-                class="comparable-card"
-              >
-                <div class="comparable-top">
-                  <strong>{{ item.municipality }}</strong>
-                  <span>{{ item.year || '—' }}</span>
-                </div>
-                <p>
-                  {{ formatType(item.property_type) }} · {{ fmt(item.size_m2, 1) }} m² ·
-                  {{ fmtCurrency(item.price_per_m2) }}/m²
-                </p>
-                <div class="comparable-bottom">
-                  <strong>{{ fmtCurrency(item.price_eur) }}</strong>
-                  <small>{{ t('predict.similarityLabel') }} {{ item.similarity_score }}</small>
-                </div>
-              </article>
-            </div>
-            <EmptyState
-              v-else
-              icon="📊"
-              :message="
-                detailMode === 'transaction'
-                  ? t('predict.noComparables')
-                  : t('map.municipalitySummaryHint')
-              "
-            />
-          </section>
-        </div>
-
-        <section class="detail-actions-panel">
-          <Button
-            icon="pi pi-building"
-            :label="t('map.openMunicipality')"
-            @click="openMunicipality()"
-          />
-          <Button
-            severity="secondary"
-            outlined
-            icon="pi pi-chart-line"
-            :label="t('map.useForPrediction')"
-            @click="useForPrediction()"
-          />
-          <Button
-            severity="secondary"
-            outlined
-            icon="pi pi-search"
-            :label="t('nav.analysis')"
-            @click="openAnalysis()"
-          />
-          <a :href="comparisonUrl" target="_blank" rel="noreferrer" class="detail-link">
-            <Button
-              severity="contrast"
-              outlined
-              icon="pi pi-external-link"
-              :label="t('predict.compareOnPortal')"
-            />
-          </a>
-        </section>
-      </div>
-    </Dialog>
+      :record="selectedRecord"
+      :detail-mode="detailMode"
+      :detail-loading="detailLoading"
+      :comparables="detailComparables"
+      :default-year="defaultYear"
+      :comparison-url="comparisonUrl"
+      :dialog-title="detailDialogTitle"
+      :can-open-municipality="Boolean(selectedRecord?.municipality)"
+      :municipality-disabled-reason="selectedRecord?.municipality ? '' : t('common.noData')"
+      :can-use-for-prediction="selectedActionState.canUse"
+      :prediction-disabled-reason="selectedActionState.reason"
+      :can-open-analysis="selectedActionState.canUse"
+      :analysis-disabled-reason="selectedActionState.reason"
+      @open-municipality="openMunicipality()"
+      @use-for-prediction="useForPrediction(selectedRecord || heroRecord)"
+      @open-analysis="openAnalysis(selectedRecord || heroRecord)"
+    />
   </div>
 </template>
 
 <style scoped>
   .map-page,
-  .metric-band,
-  .rail-list,
-  .detail-dialog,
-  .detail-metrics {
+  .metric-band {
     display: grid;
     gap: 1rem;
+  }
+
+  .map-page {
+    gap: var(--space-section);
   }
 
   .map-hero,
-  .filters-panel,
   .map-panel,
-  .rail-panel,
   .state-card {
     display: grid;
     gap: 1rem;
+    border-radius: var(--radius-lg);
+    border: 1px solid color-mix(in srgb, var(--border) 72%, var(--content-border-strong) 28%);
+    box-shadow: var(--accent-shadow, var(--shadow-sm));
+  }
+
+  .map-hero,
+  .map-panel,
+  .state-card,
+  .card {
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--glass-highlight) 88%, transparent),
+        transparent 38%
+      ),
+      var(--surface-panel);
+  }
+
+  .map-hero {
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--primary-overlay) 76%, transparent),
+        var(--surface-soft)
+      ),
+      var(--surface-soft);
   }
 
   .metric-band {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  }
+
+  .map-workbench {
+    display: grid;
+    grid-template-columns: minmax(0, 1.9fr) minmax(320px, 0.82fr);
+    gap: 1rem;
+    align-items: start;
+  }
+
+  .map-panel {
+    gap: 0.95rem;
+  }
+
+  .map-panel-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .map-panel-header h3 {
+    margin: 0.2rem 0 0;
+    font-size: clamp(1.08rem, 1.3vw, 1.28rem);
+  }
+
+  .map-panel-header p {
+    margin: 0.25rem 0 0;
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+  }
+
+  .map-shell {
+    position: relative;
+    min-height: clamp(680px, 78vh, 920px);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    border: 1px solid color-mix(in srgb, var(--border) 72%, var(--content-border-strong) 28%);
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface-panel) 94%, transparent),
+        var(--surface-panel)
+      ),
+      var(--surface-panel);
+    box-shadow: inset 0 1px 0 var(--glass-highlight);
   }
 
   .active-filter-ribbon {
@@ -1198,10 +1235,15 @@
     padding: 0.35rem 0.8rem;
     border-radius: 999px;
     border: 1px solid color-mix(in srgb, var(--primary) 18%, var(--border));
-    background: color-mix(in srgb, var(--primary-overlay) 62%, var(--surface-soft));
+    background: color-mix(
+      in srgb,
+      var(--surface-card-strong, var(--surface-strong)) 84%,
+      var(--primary) 16%
+    );
     color: var(--text);
-    font-size: 0.82rem;
+    font-size: var(--text-sm);
     font-weight: 700;
+    box-shadow: inset 0 1px 0 var(--glass-highlight);
   }
 
   .active-filter-chip.tone-low {
@@ -1219,271 +1261,70 @@
     background: color-mix(in srgb, var(--danger) 10%, var(--surface-soft));
   }
 
-  .filters-grid {
-    display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 0.9rem;
-  }
-
-  .legend-strip {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 0.75rem;
-    align-items: stretch;
-  }
-
-  :deep(.legend-chip.p-button) {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.8rem 0.9rem;
-    border-radius: 1rem;
-    text-align: left;
-    white-space: normal;
-    height: auto;
-  }
-
-  :deep(.legend-chip.p-button:not(.p-button-outlined)) {
-    border-color: color-mix(in srgb, var(--primary) 34%, transparent);
-    box-shadow: 0 18px 36px color-mix(in srgb, var(--primary) 12%, transparent);
-  }
-
-  .legend-dot {
-    width: 0.8rem;
-    height: 0.8rem;
-    border-radius: 50%;
-    flex-shrink: 0;
-  }
-
-  .legend-copy {
-    display: grid;
-    gap: 0.1rem;
-  }
-
-  .legend-copy strong {
-    font-size: 0.9rem;
-  }
-
-  .legend-copy small {
+  .section-note {
+    margin: -0.25rem 0 0;
     color: var(--text-muted);
-  }
-
-  .explorer-grid {
-    display: grid;
-    grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.6fr);
-    gap: 1rem;
+    font-size: var(--text-sm);
   }
 
   .map-container {
-    min-height: 620px;
-    border-radius: 1.5rem;
+    min-height: inherit;
+    border-radius: inherit;
     overflow: hidden;
   }
 
-  :deep(.rail-card.p-button) {
+  .map-overlay {
+    position: absolute;
+    inset: 0;
     display: grid;
-    gap: 0.4rem;
-    padding: 0.9rem;
-    border-radius: 1rem;
-    text-align: left;
-    white-space: normal;
-    height: auto;
-    background: linear-gradient(180deg, var(--surface-soft-subtle), var(--surface-soft));
-    transition:
-      transform 0.18s ease,
-      border-color 0.18s ease,
-      box-shadow 0.18s ease;
-  }
-
-  :deep(.rail-card.p-button:hover) {
-    transform: translateY(-1px);
-    border-color: color-mix(in srgb, var(--primary) 26%, transparent);
-    box-shadow: 0 18px 30px color-mix(in srgb, var(--shadow-color) 12%, transparent);
-  }
-
-  .rail-card-top,
-  .rail-card-foot,
-  .detail-summary,
-  .detail-actions,
-  .comparable-top,
-  .comparable-bottom {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-  }
-
-  .detail-summary {
-    align-items: flex-start;
-  }
-
-  .detail-metrics {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-
-  .detail-grid {
-    display: grid;
-    grid-template-columns: minmax(0, 0.95fr) minmax(0, 1fr) minmax(320px, 1.1fr);
-    gap: 1rem;
-    align-items: start;
-  }
-
-  .detail-section {
-    display: grid;
-    gap: 0.9rem;
+    place-items: center;
     padding: 1rem;
-    border: 1px solid var(--border);
-    border-radius: 1.25rem;
-    background: linear-gradient(180deg, var(--surface-soft-subtle), var(--surface-soft));
-    min-width: 0;
-  }
-
-  .detail-section-main {
+    pointer-events: none;
     background: linear-gradient(
       180deg,
-      color-mix(in srgb, var(--primary-overlay) 78%, transparent),
-      var(--surface-soft)
+      color-mix(in srgb, var(--surface-panel) 18%, transparent),
+      color-mix(in srgb, var(--surface-panel) 36%, transparent)
     );
   }
 
-  .detail-section-comparables {
-    background: linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--warning-overlay) 72%, transparent),
-      var(--surface-soft)
-    );
+  .state-card-overlay {
+    width: min(100%, 420px);
+    pointer-events: auto;
+    box-shadow: var(--shadow-lg);
   }
-
-  .detail-section h3 {
-    margin: 0;
-  }
-
-  .detail-list {
+  .state-card-stack {
     display: grid;
-    gap: 0.75rem;
-    margin: 0;
-  }
-
-  .detail-list div {
-    display: grid;
-    gap: 0.2rem;
-  }
-
-  .detail-list dt {
-    color: var(--text-muted);
-    font-size: 0.82rem;
-    font-weight: 700;
-  }
-
-  .detail-list dd {
-    margin: 0;
-    font-weight: 600;
-  }
-
-  .flag-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 0.65rem;
-  }
-
-  .detail-actions-panel {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 0.85rem;
-    padding: 1rem;
-    border: 1px solid var(--border);
-    border-radius: 1.25rem;
-    background: linear-gradient(180deg, var(--surface-soft-subtle), var(--surface-soft));
   }
-
-  .flag-chip {
-    display: inline-flex;
+  .state-card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
     align-items: center;
     justify-content: center;
-    min-height: 2.6rem;
-    border-radius: 999px;
-    border: 1px solid var(--border);
-    background: var(--surface-muted);
-    color: var(--text-muted);
-    font-weight: 700;
   }
 
-  .flag-chip.active {
-    color: var(--text);
-    border-color: color-mix(in srgb, var(--success) 28%, transparent);
-    background: color-mix(in srgb, var(--success) 10%, transparent);
-  }
-
-  .comparables-list {
-    display: grid;
-    gap: 0.75rem;
-  }
-
-  .comparable-card {
-    display: grid;
-    gap: 0.45rem;
-    padding: 0.9rem;
-    border-radius: 1rem;
-    border: 1px solid var(--border);
-    background: var(--surface-muted);
-  }
-
-  .detail-link {
-    text-decoration: none;
-    display: block;
-  }
-
-  .detail-actions-panel :deep(.p-button) {
-    width: 100%;
-    justify-content: center;
-  }
-
-  .map-detail-dialog :deep(.p-dialog-header) {
-    align-items: flex-start;
-    padding: 1.15rem 1.35rem;
-    border-bottom: 1px solid color-mix(in srgb, white 10%, transparent);
-    background:
-      linear-gradient(135deg, var(--surface-dark), var(--surface-dark-alt)),
-      linear-gradient(135deg, var(--primary-overlay), transparent);
-    color: var(--primary-contrast);
-  }
-
-  .map-detail-dialog :deep(.p-dialog-title),
-  .map-detail-dialog :deep(.p-dialog-header-icon) {
-    color: inherit;
-  }
-
-  .map-detail-dialog :deep(.p-dialog-content) {
-    padding: 1.25rem 1.35rem 1.35rem;
-  }
-
-  .detail-summary h2 {
-    margin: 0.2rem 0 0;
-    font-size: 1.45rem;
-  }
-
-  .detail-summary .muted {
-    margin: 0.25rem 0 0;
-  }
-
-  .comparables-list,
-  .detail-list {
-    min-width: 0;
+  @media (max-width: 1220px) {
+    .map-workbench {
+      grid-template-columns: 1fr;
+    }
   }
 
   @media (max-width: 1100px) {
-    .legend-strip,
-    .filters-grid,
-    .explorer-grid,
-    .detail-grid,
-    .detail-actions-panel,
-    .detail-metrics,
-    .metric-band {
-      grid-template-columns: 1fr;
+    .map-shell,
+    .map-container {
+      min-height: 520px;
     }
 
+    .map-panel-header {
+      flex-direction: column;
+    }
+  }
+
+  @media (max-width: 720px) {
+    .map-shell,
     .map-container {
-      min-height: 460px;
+      min-height: 440px;
     }
   }
 </style>

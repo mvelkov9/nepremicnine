@@ -86,7 +86,7 @@
           option-label="label"
           option-value="value"
           show-clear
-          @update:modelValue="updateCompareField(slot.key as CompareField, $event)"
+          @update:model-value="updateCompareField(slot.key as CompareField, $event)"
         />
       </label>
     </div>
@@ -236,7 +236,11 @@
     padding: 0.86rem 0.95rem;
     border-radius: calc(var(--radius-sm) + 0.15rem);
     background:
-      linear-gradient(180deg, color-mix(in srgb, var(--surface-card-strong) 92%, transparent), transparent 120%),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface-card-strong) 92%, transparent),
+        transparent 120%
+      ),
       var(--surface-subtle);
     border: 1px solid color-mix(in srgb, var(--border) 72%, var(--content-border-strong) 28%);
     box-shadow: inset 0 1px 0 var(--content-glow);
@@ -282,4 +286,3 @@
     }
   }
 </style>
-

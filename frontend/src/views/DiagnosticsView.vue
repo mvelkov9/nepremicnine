@@ -1,5 +1,6 @@
 <script setup lang="ts">
-  import { computed, onMounted } from 'vue'
+  import { computed, onMounted, watch } from 'vue'
+  import { RouterLink } from 'vue-router'
   import { useI18n } from 'vue-i18n'
   import { Bar } from 'vue-chartjs'
   import {
@@ -10,32 +11,148 @@
     LinearScale,
     Tooltip,
   } from 'chart.js'
+  import Button from 'primevue/button'
   import DataTable from 'primevue/datatable'
   import Column from 'primevue/column'
   import Select from 'primevue/select'
-  import SelectButton from 'primevue/selectbutton'
   import Tag from 'primevue/tag'
   import AdminRunDetailPanel from '../components/admin/AdminRunDetailPanel.vue'
   import AdminWorkspaceHero from '../components/admin/AdminWorkspaceHero.vue'
+  import SectionPanel from '../components/SectionPanel.vue'
   import SavedWorkspaceMenu from '../components/workbench/SavedWorkspaceMenu.vue'
+  import { useChartColors } from '../composables/useChartColors'
   import { useViewerQueryState } from '../composables/useViewerQueryState'
   import { adminWorkspaceLinks } from '../constants/adminWorkspace'
   import EmptyState from '../components/EmptyState.vue'
   import MetricCard from '../components/MetricCard.vue'
-  import PageHeader from '../components/PageHeader.vue'
   import { useDataStore } from '../stores/data'
   import { useModelStore } from '../stores/model'
   import { useWorkbenchStore } from '../stores/workbench'
   import { buildGursEnrichmentRows, summarizeGursEnrichment } from '../utils/enrichmentSummary'
+  import { useFormat } from '../composables/useFormat'
   import { formatCurrency, formatDateTime, formatNumber, formatPercent } from '../utils/format'
-  import { getPropertyTypeLabel } from '../utils/propertyType'
+  import PageHeader from '../components/PageHeader.vue'
 
   ChartJS.register(BarElement, CategoryScale, LinearScale, Tooltip, Legend)
 
   const { t } = useI18n()
+  const { formatType } = useFormat()
+  const { colors } = useChartColors()
   const model = useModelStore()
   const dataStore = useDataStore()
   const workbench = useWorkbenchStore()
+
+  interface DiagnosticsMetricSummary {
+    mae?: number | null
+    rmse?: number | null
+    r2?: number | null
+    mape?: number | null
+    median_ae?: number | null
+    n_train?: number | null
+    n_test?: number | null
+  }
+
+  interface DiagnosticsTypeMetric extends DiagnosticsMetricSummary {
+    n_train?: number | null
+    n_test?: number | null
+  }
+
+  interface DiagnosticsRegionMetric extends DiagnosticsMetricSummary {}
+
+  interface DiagnosticsSegmentRow {
+    segment: string
+    n: number
+    r2: number
+    mae: number
+    rmse: number
+    mape?: number | null
+  }
+
+  interface DiagnosticsVariantSources {
+    rn?: boolean
+    ev?: boolean
+    emv?: boolean
+  }
+
+  interface DiagnosticsSummaryCard {
+    label: string
+    value: string
+    meta?: string
+    tone?: 'default' | 'success' | 'warning'
+  }
+
+  interface DiagnosticsKeyValueRow {
+    key: string
+    val: string
+  }
+
+  interface DiagnosticsModelInfo {
+    version: string
+    trained_at: string
+    rows: number
+    duration_sec?: number | null
+    per_type_count: number
+    source_csv_path?: string | null
+    global_metrics?: DiagnosticsMetricSummary | null
+    per_type_metrics?: Record<string, DiagnosticsTypeMetric>
+    per_region_metrics?: Record<string, DiagnosticsRegionMetric>
+  }
+
+  interface DiagnosticsVariantRow {
+    key: string
+    label: string
+    sources: DiagnosticsVariantSources
+    mae?: number | null
+    rmse?: number | null
+    r2?: number | null
+    mape?: number | null
+    delta_r2?: number | null
+    delta_mae?: number | null
+    removedFeatures: string[]
+  }
+
+  interface DiagnosticsVariantMatrixRow {
+    key: string
+    label: string
+    sources: DiagnosticsVariantSources
+    globalR2?: number | null
+    globalMae?: number | null
+    combinedR2?: number | null
+    combinedMae?: number | null
+    perTypeCount: number
+  }
+
+  interface DiagnosticsEvBaselineTypeRow {
+    n: number
+    mae: number
+    rmse: number
+    r2: number
+    model_mae: number
+    model_r2: number
+  }
+
+  interface DiagnosticsEvBaselineSummary {
+    benchmark_metrics: DiagnosticsMetricSummary
+    model_metrics_on_coverage: DiagnosticsMetricSummary
+    coverage_rows: number
+    coverage_ratio?: number | null
+    coverage_by_source?: Record<string, number>
+    delta_vs_model?: DiagnosticsMetricSummary | null
+    per_type_metrics?: Record<string, DiagnosticsEvBaselineTypeRow>
+  }
+
+  interface DiagnosticsFilterStage {
+    stage: string
+    rows: number
+    dropped_since_previous: number
+    reports: number
+  }
+
+  interface DiagnosticsScoreDriverCard {
+    label: string
+    value: string
+    meta: string
+  }
 
   const viewerQuery = useViewerQueryState({
     metric: 'r2',
@@ -67,13 +184,9 @@
       void viewerQuery.patchState({ training_run: value })
     },
   })
-  const metrics = ['mae', 'rmse', 'r2', 'mape', 'median_ae']
+  const metrics = ['mae', 'rmse', 'r2', 'mape', 'median_ae'] as const
 
-  function formatType(value) {
-    return getPropertyTypeLabel(value, t)
-  }
-
-  function formatMetric(value, digits = 4) {
+  function formatMetric(value: number | string | null | undefined, digits = 4) {
     if (value == null || Number.isNaN(Number(value))) return '—'
     return formatNumber(value, {
       minimumFractionDigits: digits,
@@ -81,20 +194,48 @@
     })
   }
 
-  function formatDuration(value) {
+  function formatDuration(value: number | string | null | undefined) {
     if (value == null || Number.isNaN(Number(value))) return '—'
     return `${formatNumber(value, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}s`
   }
 
-  function humanizeStage(stage) {
+  function humanizeStage(stage: string | null | undefined) {
     if (!stage) return '—'
-    return String(stage)
-      .replace(/_/g, ' ')
-      .replace(/\b\w/g, (char) => char.toUpperCase())
+    const label = t('prepare.unknownYear')
+    switch (stage) {
+      case 'queued':
+        return t('prepare.stageQueued')
+      case 'initializing':
+        return t('prepare.stageInitializing')
+      case 'loading_sources':
+        return t('prepare.stageLoadingSources')
+      case 'loading_pair':
+        return t('prepare.stageLoadingPair', { label })
+      case 'building_rows':
+        return t('prepare.stageBuildingRows', { label })
+      case 'enriching_buildings':
+        return t('prepare.stageEnrichingBuildings', { label })
+      case 'enriching_land':
+        return t('prepare.stageEnrichingLand', { label })
+      case 'finalizing_pair':
+        return t('prepare.stageFinalizingPair', { label })
+      case 'merging_outputs':
+        return t('prepare.stageMergingOutputs')
+      case 'spatial_enrichment_merged':
+        return t('prepare.stageSpatialEnrichmentMerged', { rows: '...' })
+      case 'completed':
+        return t('prepare.stageCompleted')
+      case 'error':
+        return t('prepare.stageError')
+      default:
+        return String(stage)
+          .replace(/_/g, ' ')
+          .replace(/\b\w/g, (char) => char.toUpperCase())
+    }
   }
 
-  function segmentGroupLabel(group) {
-    const labels = {
+  function segmentGroupLabel(group: string) {
+    const labels: Record<string, string> = {
       property_type: t('diag.byPropertyType'),
       sale_type: t('diag.saleTypeSegments'),
       transaction_year: t('diag.yearSegments'),
@@ -119,36 +260,36 @@
     })),
   )
 
-  const selectedTypeMetrics = computed(() => {
+  const selectedTypeMetrics = computed<DiagnosticsMetricSummary | null>(() => {
     if (selectedType.value === 'all') return model.info?.global_metrics || null
     return model.info?.per_type_metrics?.[selectedType.value] || null
   })
   const selectedTrainingRun = computed(() => workbench.selectedTrainingRun)
 
-  const focusMetrics = computed(() => {
+  const focusMetrics = computed<DiagnosticsSummaryCard[]>(() => {
     const metricsData = selectedTypeMetrics.value
     if (!metricsData) return []
     return [
-      { label: 'MAE', value: formatCurrency(metricsData.mae), desc: t('diag.maeDesc') },
-      { label: 'RMSE', value: formatCurrency(metricsData.rmse), desc: t('diag.rmseDesc') },
-      { label: 'R²', value: formatMetric(metricsData.r2), desc: t('diag.r2Desc') },
+      { label: 'MAE', value: formatCurrency(metricsData.mae), meta: t('diag.maeDesc') },
+      { label: 'RMSE', value: formatCurrency(metricsData.rmse), meta: t('diag.rmseDesc') },
+      { label: 'R²', value: formatMetric(metricsData.r2), meta: t('diag.r2Desc') },
       {
         label: 'MAPE',
         value:
           metricsData.mape == null
             ? '—'
             : formatPercent(metricsData.mape, { scale: 0.01, minimumFractionDigits: 1 }),
-        desc: t('diag.mapeDesc'),
+        meta: t('diag.mapeDesc'),
       },
       {
         label: t('diag.medianError'),
         value: formatCurrency(metricsData.median_ae),
-        desc: t('diag.medianDesc'),
+        meta: t('diag.medianDesc'),
       },
       {
         label: t('diag.trainSamples'),
         value: formatNumber(metricsData.n_train),
-        desc:
+        meta:
           selectedType.value === 'all'
             ? t('diag.focusAllDesc')
             : t('diag.focusTypeDesc', { type: formatType(selectedType.value) }),
@@ -156,7 +297,7 @@
       {
         label: t('diag.testSamples'),
         value: formatNumber(metricsData.n_test),
-        desc: t('diag.testRows'),
+        meta: t('diag.testRows'),
       },
     ]
   })
@@ -164,14 +305,10 @@
   const featureHighlights = computed(() => model.importance.slice(0, 8))
 
   function getChartPalette() {
-    const style = getComputedStyle(document.documentElement)
     return {
-      primary: style.getPropertyValue('--primary').trim() || '#1d4ed8',
-      primarySoft:
-        style.getPropertyValue('--secondary').trim() ||
-        style.getPropertyValue('--primary').trim() ||
-        '#0f766e',
-      success: style.getPropertyValue('--success').trim() || '#15803d',
+      primary: colors.value.chart1 || colors.value.primary,
+      primarySoft: colors.value.chart2 || colors.value.secondary || colors.value.primary,
+      success: colors.value.chart3 || colors.value.success,
     }
   }
 
@@ -217,14 +354,47 @@
     }
   })
 
-  const chartOptions = {
+  const chartOptions = computed(() => ({
     responsive: true,
     maintainAspectRatio: false,
-    plugins: { legend: { display: false } },
-    scales: { y: { beginAtZero: true } },
-  }
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: colors.value.surface,
+        titleColor: colors.value.text,
+        bodyColor: colors.value.textMuted,
+        borderColor: colors.value.border,
+        borderWidth: 1,
+      },
+    },
+    scales: {
+      x: {
+        ticks: {
+          color: colors.value.textMuted,
+        },
+        grid: {
+          display: false,
+        },
+        border: {
+          color: colors.value.border,
+        },
+      },
+      y: {
+        beginAtZero: true,
+        ticks: {
+          color: colors.value.textMuted,
+        },
+        grid: {
+          color: colors.value.border,
+        },
+        border: {
+          color: colors.value.border,
+        },
+      },
+    },
+  }))
 
-  const combinedMetrics = computed(() => {
+  const combinedMetrics = computed<DiagnosticsSummaryCard[]>(() => {
     const metricsData = model.diagnostics?.combined_metrics
     if (!metricsData) return []
     return [
@@ -245,7 +415,7 @@
   const variantBenchmarks = computed(() => model.diagnostics?.variant_benchmarks || null)
   const variantMatrix = computed(() => model.diagnostics?.variant_matrix || null)
 
-  const variantBenchmarkCards = computed(() => {
+  const variantBenchmarkCards = computed<DiagnosticsSummaryCard[]>(() => {
     const variants = variantBenchmarks.value
     if (!variants) return []
 
@@ -279,41 +449,65 @@
     ]
   })
 
-  const variantBenchmarkRows = computed(() => {
+  const variantBenchmarkRows = computed<DiagnosticsVariantRow[]>(() => {
     const variants = variantBenchmarks.value
     if (!variants) return []
 
-    return Object.entries(variants).map(([key, variant]: [string, any]) => ({
-      key,
-      label: variant.label || key,
-      sources: variant.enabled_sources || {},
-      mae: variant.metrics?.mae,
-      rmse: variant.metrics?.rmse,
-      r2: variant.metrics?.r2,
-      mape: variant.metrics?.mape,
-      delta_r2: variant.delta_vs_full_global?.r2,
-      delta_mae: variant.delta_vs_full_global?.mae,
-      removedFeatures: Array.isArray(variant.removed_features) ? variant.removed_features : [],
-    }))
+    return Object.entries(variants).map(([key, variant]) => {
+      const typedVariant = variant as {
+        label?: string
+        enabled_sources?: DiagnosticsVariantSources
+        metrics?: DiagnosticsMetricSummary
+        delta_vs_full_global?: DiagnosticsMetricSummary
+        removed_features?: unknown
+      }
+
+      return {
+        key,
+        label: typedVariant.label || key,
+        sources: typedVariant.enabled_sources || {},
+        mae: typedVariant.metrics?.mae,
+        rmse: typedVariant.metrics?.rmse,
+        r2: typedVariant.metrics?.r2,
+        mape: typedVariant.metrics?.mape,
+        delta_r2: typedVariant.delta_vs_full_global?.r2,
+        delta_mae: typedVariant.delta_vs_full_global?.mae,
+        removedFeatures: Array.isArray(typedVariant.removed_features)
+          ? typedVariant.removed_features.filter((item): item is string => typeof item === 'string')
+          : [],
+      }
+    })
   })
 
-  const variantMatrixRows = computed(() => {
+  const variantMatrixRows = computed<DiagnosticsVariantMatrixRow[]>(() => {
     const variants = variantMatrix.value
     if (!variants) return []
 
-    return Object.entries(variants).map(([key, variant]: [string, any]) => ({
-      key,
-      label: variant.label || key,
-      sources: variant.enabled_sources || {},
-      globalR2: variant.global_metrics?.r2,
-      globalMae: variant.global_metrics?.mae,
-      combinedR2: variant.combined_metrics?.r2,
-      combinedMae: variant.combined_metrics?.mae,
-      perTypeCount: variant.per_type_count ?? 0,
-    }))
+    return Object.entries(variants).map(([key, variant]) => {
+      const typedVariant = variant as {
+        label?: string
+        enabled_sources?: DiagnosticsVariantSources
+        global_metrics?: DiagnosticsMetricSummary
+        combined_metrics?: DiagnosticsMetricSummary
+        per_type_count?: number | null
+      }
+
+      return {
+        key,
+        label: typedVariant.label || key,
+        sources: typedVariant.enabled_sources || {},
+        globalR2: typedVariant.global_metrics?.r2,
+        globalMae: typedVariant.global_metrics?.mae,
+        combinedR2: typedVariant.combined_metrics?.r2,
+        combinedMae: typedVariant.combined_metrics?.mae,
+        perTypeCount: typedVariant.per_type_count ?? 0,
+      }
+    })
   })
 
-  const evBaseline = computed(() => model.diagnostics?.ev_baseline_metrics || null)
+  const evBaseline = computed<DiagnosticsEvBaselineSummary | null>(
+    () => model.diagnostics?.ev_baseline_metrics || null,
+  )
 
   const evBaselineCards = computed(() => {
     const baseline = evBaseline.value
@@ -346,23 +540,30 @@
     ]
   })
 
-  const evBaselinePerTypeRows = computed(() => {
+  const evBaselinePerTypeRows = computed<
+    Array<
+      DiagnosticsEvBaselineTypeRow & { propertyType: string; typeLabel: string; delta_mae: number }
+    >
+  >(() => {
     const rows = evBaseline.value?.per_type_metrics
     if (!rows) return []
-    return Object.entries(rows).map(([propertyType, metricsData]: [string, any]) => ({
-      propertyType,
-      typeLabel: formatType(propertyType),
-      n: metricsData.n,
-      mae: metricsData.mae,
-      rmse: metricsData.rmse,
-      r2: metricsData.r2,
-      model_mae: metricsData.model_mae,
-      model_r2: metricsData.model_r2,
-      delta_mae: metricsData.mae - metricsData.model_mae,
-    }))
+    return Object.entries(rows).map(([propertyType, metricsData]) => {
+      const typedMetrics = metricsData as DiagnosticsEvBaselineTypeRow
+      return {
+        propertyType,
+        typeLabel: formatType(propertyType),
+        n: typedMetrics.n,
+        mae: typedMetrics.mae,
+        rmse: typedMetrics.rmse,
+        r2: typedMetrics.r2,
+        model_mae: typedMetrics.model_mae,
+        model_r2: typedMetrics.model_r2,
+        delta_mae: typedMetrics.mae - typedMetrics.model_mae,
+      }
+    })
   })
 
-  const diagnosticsSummaryCards = computed(() => [
+  const diagnosticsSummaryCards = computed<DiagnosticsSummaryCard[]>(() => [
     {
       label: 'R²',
       value:
@@ -395,9 +596,9 @@
     },
   ])
 
-  const modelDetailsRows = computed(() => {
+  const modelDetailsRows = computed<DiagnosticsKeyValueRow[]>(() => {
     if (!model.info) return []
-    const rows = [
+    const rows: DiagnosticsKeyValueRow[] = [
       { key: t('diag.version'), val: model.info.version },
       { key: t('diag.trainedAt'), val: formatDateTime(model.info.trained_at) },
       { key: t('diag.rows'), val: formatNumber(model.info.rows) },
@@ -424,35 +625,43 @@
     return rows
   })
 
-  const perTypeRows = computed(() => {
+  const perTypeRows = computed<
+    Array<DiagnosticsTypeMetric & { propertyType: string; typeLabel: string }>
+  >(() => {
     const ptm = model.info?.per_type_metrics
     if (!ptm) return []
-    return Object.entries(ptm).map(([propertyType, metricsData]: [string, any]) => ({
-      propertyType,
-      typeLabel: formatType(propertyType),
-      mae: metricsData.mae,
-      rmse: metricsData.rmse,
-      r2: metricsData.r2,
-      mape: metricsData.mape,
-      n_train: metricsData.n_train,
-      n_test: metricsData.n_test,
-    }))
+    return Object.entries(ptm).map(([propertyType, metricsData]) => {
+      const typedMetrics = metricsData as DiagnosticsTypeMetric
+      return {
+        propertyType,
+        typeLabel: formatType(propertyType),
+        mae: typedMetrics.mae,
+        rmse: typedMetrics.rmse,
+        r2: typedMetrics.r2,
+        mape: typedMetrics.mape,
+        n_train: typedMetrics.n_train,
+        n_test: typedMetrics.n_test,
+      }
+    })
   })
 
-  function perTypeRowClass(data) {
+  function perTypeRowClass(data: { propertyType: string }) {
     return selectedType.value === data.propertyType ? 'active-focus-row' : ''
   }
 
-  const perRegionRows = computed(() => {
+  const perRegionRows = computed<Array<DiagnosticsRegionMetric & { region: string }>>(() => {
     const prm = model.info?.per_region_metrics
     if (!prm) return []
-    return Object.entries(prm).map(([region, metricsData]: [string, any]) => ({
-      region,
-      mae: metricsData.mae,
-      rmse: metricsData.rmse,
-      r2: metricsData.r2,
-      mape: metricsData.mape,
-    }))
+    return Object.entries(prm).map(([region, metricsData]) => {
+      const typedMetrics = metricsData as DiagnosticsRegionMetric
+      return {
+        region,
+        mae: typedMetrics.mae,
+        rmse: typedMetrics.rmse,
+        r2: typedMetrics.r2,
+        mape: typedMetrics.mape,
+      }
+    })
   })
 
   const preparationMetadata = computed(
@@ -462,19 +671,32 @@
       null,
   )
 
-  const filterRows = computed(() => {
+  const filterRows = computed<
+    Array<{
+      group: string
+      groupLabel: string
+      stage: string
+      stageLabel: string
+      rows: number
+      dropped_since_previous: number
+      reports: number
+    }>
+  >(() => {
     const summary = preparationMetadata.value?.filter_summary
     if (!summary) return []
     return Object.entries(summary).flatMap(([group, stages]) =>
-      ((stages as any[]) || []).map((stage) => ({
-        group,
-        groupLabel: group === 'building' ? t('diag.buildingFlow') : t('diag.landFlow'),
-        stage: stage.stage,
-        stageLabel: humanizeStage(stage.stage),
-        rows: stage.rows,
-        dropped_since_previous: stage.dropped_since_previous,
-        reports: stage.reports,
-      })),
+      (Array.isArray(stages) ? stages : []).map((stage) => {
+        const typedStage = stage as DiagnosticsFilterStage
+        return {
+          group,
+          groupLabel: group === 'building' ? t('diag.buildingFlow') : t('diag.landFlow'),
+          stage: typedStage.stage,
+          stageLabel: humanizeStage(typedStage.stage),
+          rows: typedStage.rows,
+          dropped_since_previous: typedStage.dropped_since_previous,
+          reports: typedStage.reports,
+        }
+      }),
     )
   })
 
@@ -505,9 +727,9 @@
     () => model.diagnostics?.segment_diagnostics?.[selectedSegmentGroup.value] || [],
   )
 
-  const scoreDriverCards = computed(() => {
+  const scoreDriverCards = computed<DiagnosticsScoreDriverCard[]>(() => {
     const diagnostics = model.diagnostics?.segment_diagnostics || {}
-    const cards = []
+    const cards: DiagnosticsScoreDriverCard[] = []
     const property = diagnostics.property_type?.[0]
     if (property) {
       cards.push({
@@ -535,29 +757,29 @@
     return cards
   })
 
-  function r2Severity(value) {
+  function r2Severity(value: number | null | undefined) {
     if (value > 0.7) return 'success'
     if (value > 0.4) return 'warn'
     return 'danger'
   }
 
-  function formatMape(mape) {
+  function formatMape(mape: number | string | null | undefined) {
     return mape == null ? '—' : formatPercent(mape, { scale: 0.01, minimumFractionDigits: 1 })
   }
 
-  function formatSignedNumber(value, digits = 2) {
+  function formatSignedNumber(value: number | string | null | undefined, digits = 2) {
     if (value == null || Number.isNaN(Number(value))) return '—'
     const sign = Number(value) > 0 ? '+' : ''
     return `${sign}${formatMetric(value, digits)}`
   }
 
-  function formatSignedCurrency(value) {
+  function formatSignedCurrency(value: number | string | null | undefined) {
     if (value == null || Number.isNaN(Number(value))) return '—'
     const sign = Number(value) > 0 ? '+' : ''
     return `${sign}${formatCurrency(value)}`
   }
 
-  function variantSourceSummary(sources) {
+  function variantSourceSummary(sources?: DiagnosticsVariantSources | null) {
     const labels = []
     if (sources?.rn) labels.push('RN')
     if (sources?.ev) labels.push('EV')
@@ -565,17 +787,20 @@
     return labels.length ? labels.join(' + ') : t('diag.etnOnly')
   }
 
-  function enrichmentRunLabel(label) {
+  function enrichmentRunLabel(label: string) {
     return label === 'single' ? t('diag.currentRun') : String(label)
   }
 
-  function enrichmentSeverity(available, matched) {
+  function enrichmentSeverity(
+    available: boolean | null | undefined,
+    matched: boolean | null | undefined,
+  ) {
     if (matched) return 'success'
     if (available) return 'warn'
     return 'contrast'
   }
 
-  function enrichmentSourcesLabel(row) {
+  function enrichmentSourcesLabel(row: { matchedSources: string[]; sources: string[] }) {
     if (row.matchedSources.length) return row.matchedSources.join(', ')
     if (row.sources.length) {
       return t('diag.detectedOnlySources', { sources: row.sources.join(', ') })
@@ -583,8 +808,8 @@
     return t('common.noData')
   }
 
-  onMounted(async () => {
-    await Promise.all([
+  async function bootstrapDiagnosticsPage() {
+    await Promise.allSettled([
       model.fetchInfo(),
       model.fetchDiagnostics(),
       model.fetchImportance(),
@@ -599,12 +824,24 @@
     ) {
       selectedSegmentGroup.value = segmentGroupOptions.value[0].value
     }
+  }
+
+  onMounted(async () => {
+    await bootstrapDiagnosticsPage()
   })
 
   async function loadTrainingRunDetail(jobId: string) {
     selectedTrainingRunId.value = jobId
     await workbench.fetchTrainingRunDetail(jobId)
   }
+
+  watch(
+    () => selectedTrainingRunId.value,
+    (jobId, previousJobId) => {
+      if (!jobId || jobId === previousJobId) return
+      void workbench.fetchTrainingRunDetail(jobId)
+    },
+  )
 </script>
 
 <template>
@@ -619,6 +856,22 @@
       status-severity="secondary"
     >
       <template #actions>
+        <Button
+          severity="secondary"
+          outlined
+          icon="pi pi-refresh"
+          :label="t('common.retry')"
+          @click="bootstrapDiagnosticsPage"
+        />
+        <Button
+          :as="RouterLink"
+          to="/admin/dokaz"
+          class="hero-link"
+          severity="secondary"
+          outlined
+          icon="pi pi-chart-line"
+          :label="t('nav.benchmark')"
+        />
         <SavedWorkspaceMenu
           page="diagnostics"
           :state="{
@@ -634,244 +887,264 @@
       </template>
     </AdminWorkspaceHero>
 
-    <div v-if="!model.info" class="card diagnostics-card">
-      <p class="muted">{{ t('diag.noModel') }}</p>
+    <div v-if="model.loading" class="card diagnostics-card">
+      <p class="muted">{{ t('common.loading') }}</p>
+    </div>
+
+    <div v-else-if="!model.info" class="card diagnostics-card state-card-stack" role="alert">
+      <EmptyState icon="pi pi-chart-bar" :message="t('diag.noModel')" />
+      <div class="state-card-actions">
+        <Button
+          size="small"
+          severity="secondary"
+          outlined
+          icon="pi pi-refresh"
+          :label="t('common.retry')"
+          @click="bootstrapDiagnosticsPage"
+        />
+      </div>
     </div>
 
     <template v-else>
-      <AdminRunDetailPanel
-        :eyebrow="t('nav.model')"
-        :title="t('workbench.recentTrainingRuns')"
-        :description="t('workbench.trainingRunDetailHint')"
-        :runs="workbench.trainingRuns.slice(0, 8)"
-        :selected-run="selectedTrainingRun"
-        @select="loadTrainingRunDetail"
-      />
+      <section class="diagnostics-summary-grid">
+        <SectionPanel
+          class="diagnostics-panel diagnostics-focus-panel"
+          :eyebrow="t('diag.focusType')"
+          :title="t('diag.focusType')"
+          :description="
+            selectedType === 'all'
+              ? t('diag.focusAllDesc')
+              : t('diag.focusTypeDesc', { type: formatType(selectedType) })
+          "
+        >
+          <template #actions>
+            <Select
+              v-model="selectedType"
+              :options="typeOptions"
+              option-label="label"
+              option-value="value"
+              class="focus-type-select"
+            />
+          </template>
 
-      <!-- Focus type selector + KPI cards -->
-      <div class="card diagnostics-card focus-card">
-        <div class="focus-head">
-          <div>
-            <h2>{{ t('diag.focusType') }}</h2>
-            <p class="muted">
-              {{
-                selectedType === 'all'
-                  ? t('diag.focusAllDesc')
-                  : t('diag.focusTypeDesc', { type: formatType(selectedType) })
-              }}
-            </p>
+          <div class="kpi-grid diagnostics-kpi-grid">
+            <MetricCard
+              v-for="item in focusMetrics"
+              :key="item.label"
+              :label="item.label"
+              :value="item.value"
+              :meta="item.meta"
+              :tone="item.tone"
+            />
           </div>
-          <SelectButton
-            v-model="selectedType"
-            :options="typeOptions"
-            option-label="label"
-            option-value="value"
-          />
-        </div>
+        </SectionPanel>
 
-        <div class="kpi-grid diagnostics-kpi-grid">
-          <MetricCard
-            v-for="item in focusMetrics"
-            :key="item.label"
-            :label="item.label"
-            :value="item.value"
-            :meta="item.desc"
-          />
-        </div>
-      </div>
+        <AdminRunDetailPanel
+          :eyebrow="t('nav.model')"
+          :title="t('workbench.recentTrainingRuns')"
+          :description="t('workbench.trainingRunDetailHint')"
+          run-type="training"
+          :runs="workbench.trainingRuns.slice(0, 8)"
+          :selected-run="selectedTrainingRun"
+          :loading="workbench.trainingRunDetailLoading"
+          @select="loadTrainingRunDetail"
+        />
+      </section>
 
-      <!-- Combined metrics -->
-      <div v-if="combinedMetrics.length" class="card diagnostics-card">
-        <PageHeader
-          compact
+      <section class="diagnostics-report-grid diagnostics-report-grid--wide">
+        <SectionPanel
+          v-if="combinedMetrics.length"
+          class="diagnostics-panel"
           :eyebrow="t('diag.combinedMetrics')"
           :title="t('diag.combinedMetrics')"
           :description="t('diag.combinedDesc')"
-        />
-        <div class="kpi-grid">
-          <MetricCard
-            v-for="item in combinedMetrics"
-            :key="item.label"
-            :label="item.label"
-            :value="item.value"
-          />
-        </div>
-      </div>
-
-      <div v-if="variantBenchmarkRows.length" class="card diagnostics-card">
-        <PageHeader
-          compact
-          :eyebrow="t('diag.variantBenchmarks')"
-          :title="t('diag.variantBenchmarks')"
-          :description="t('diag.variantBenchmarksDesc')"
-        />
-
-        <div v-if="variantBenchmarkCards.length" class="kpi-grid">
-          <MetricCard
-            v-for="item in variantBenchmarkCards"
-            :key="item.label"
-            :label="item.label"
-            :value="item.value"
-            :meta="item.meta"
-          />
-        </div>
-
-        <DataTable
-          :value="variantBenchmarkRows"
-          size="small"
-          striped-rows
-          table-style="min-width: 100%"
         >
-          <Column field="label" :header="t('diag.variant')" sortable />
-          <Column :header="t('diag.sources')">
-            <template #body="{ data }">
-              <span class="muted source-cell">{{ variantSourceSummary(data.sources) }}</span>
-            </template>
-          </Column>
-          <Column field="r2" header="R²" sortable>
-            <template #body="{ data }">
-              <Tag :value="formatMetric(data.r2, 3)" :severity="r2Severity(data.r2)" />
-            </template>
-          </Column>
-          <Column field="mae" header="MAE" sortable>
-            <template #body="{ data }">{{ formatCurrency(data.mae) }}</template>
-          </Column>
-          <Column field="rmse" header="RMSE" sortable>
-            <template #body="{ data }">{{ formatCurrency(data.rmse) }}</template>
-          </Column>
-          <Column field="mape" header="MAPE" sortable>
-            <template #body="{ data }">{{ formatMape(data.mape) }}</template>
-          </Column>
-          <Column field="delta_r2" :header="t('diag.deltaVsFullR2')" sortable>
-            <template #body="{ data }">{{ formatSignedNumber(data.delta_r2, 3) }}</template>
-          </Column>
-          <Column field="delta_mae" :header="t('diag.deltaVsFullMae')" sortable>
-            <template #body="{ data }">{{ formatSignedCurrency(data.delta_mae) }}</template>
-          </Column>
-          <Column :header="t('diag.variantRemovedFeatures')">
-            <template #body="{ data }">
-              <span class="muted source-cell">
-                {{
-                  data.removedFeatures.length ? data.removedFeatures.join(', ') : t('common.noData')
-                }}
-              </span>
-            </template>
-          </Column>
-        </DataTable>
-      </div>
+          <div class="kpi-grid">
+            <MetricCard
+              v-for="item in combinedMetrics"
+              :key="item.label"
+              :label="item.label"
+              :value="item.value"
+              :meta="item.meta"
+              :tone="item.tone"
+            />
+          </div>
+        </SectionPanel>
 
-      <div v-if="variantMatrixRows.length" class="card diagnostics-card">
-        <PageHeader
-          compact
-          :eyebrow="t('diag.variantMatrix')"
-          :title="t('diag.variantMatrix')"
-          :description="t('diag.variantMatrixDesc')"
-        />
-
-        <DataTable
-          :value="variantMatrixRows"
-          size="small"
-          striped-rows
-          table-style="min-width: 100%"
+        <SectionPanel
+          class="diagnostics-panel"
+          :eyebrow="t('diag.modelDetails')"
+          :title="t('diag.modelDetails')"
         >
-          <Column field="label" :header="t('diag.variant')" sortable />
-          <Column :header="t('diag.sources')">
-            <template #body="{ data }">
-              <span class="muted source-cell">{{ variantSourceSummary(data.sources) }}</span>
-            </template>
-          </Column>
-          <Column field="globalR2" :header="t('diag.globalR2')" sortable>
-            <template #body="{ data }">{{ formatMetric(data.globalR2, 3) }}</template>
-          </Column>
-          <Column field="combinedR2" :header="t('diag.routedR2')" sortable>
-            <template #body="{ data }">{{ formatMetric(data.combinedR2, 3) }}</template>
-          </Column>
-          <Column field="globalMae" :header="t('diag.globalMae')" sortable>
-            <template #body="{ data }">{{ formatCurrency(data.globalMae) }}</template>
-          </Column>
-          <Column field="combinedMae" :header="t('diag.routedMae')" sortable>
-            <template #body="{ data }">{{ formatCurrency(data.combinedMae) }}</template>
-          </Column>
-          <Column field="perTypeCount" :header="t('diag.perTypeModels')" sortable>
-            <template #body="{ data }">{{ formatNumber(data.perTypeCount) }}</template>
-          </Column>
-        </DataTable>
-      </div>
+          <DataTable :value="modelDetailsRows" size="small" table-style="min-width: 100%">
+            <Column field="key" :header="t('diag.property')" />
+            <Column field="val" :header="t('diag.value')" />
+          </DataTable>
+        </SectionPanel>
+      </section>
 
-      <div v-if="evBaselineCards.length" class="card diagnostics-card">
-        <PageHeader
-          compact
-          :eyebrow="t('diag.evBaseline')"
-          :title="t('diag.evBaseline')"
-          :description="t('diag.evBaselineDesc')"
-        />
-
-        <div class="kpi-grid">
-          <MetricCard
-            v-for="item in evBaselineCards"
-            :key="item.label"
-            :label="item.label"
-            :value="item.value"
-            :meta="item.meta"
+      <section class="diagnostics-benchmark-grid">
+        <div v-if="variantBenchmarkRows.length" class="card diagnostics-card">
+          <PageHeader
+            compact
+            :eyebrow="t('diag.variantBenchmarks')"
+            :title="t('diag.variantBenchmarks')"
+            :description="t('diag.variantBenchmarksDesc')"
           />
+
+          <div v-if="variantBenchmarkCards.length" class="kpi-grid">
+            <MetricCard
+              v-for="item in variantBenchmarkCards"
+              :key="item.label"
+              :label="item.label"
+              :value="item.value"
+              :meta="item.meta"
+            />
+          </div>
+
+          <DataTable :value="variantBenchmarkRows" striped-rows table-style="min-width: 100%">
+            <Column field="label" :header="t('diag.variant')" sortable />
+            <Column :header="t('diag.sources')">
+              <template #body="{ data }">
+                <span class="muted source-cell">{{ variantSourceSummary(data.sources) }}</span>
+              </template>
+            </Column>
+            <Column field="r2" header="R²" sortable>
+              <template #body="{ data }">
+                <Tag :value="formatMetric(data.r2, 3)" :severity="r2Severity(data.r2)" />
+              </template>
+            </Column>
+            <Column field="mae" header="MAE" sortable>
+              <template #body="{ data }">{{ formatCurrency(data.mae) }}</template>
+            </Column>
+            <Column field="rmse" header="RMSE" sortable>
+              <template #body="{ data }">{{ formatCurrency(data.rmse) }}</template>
+            </Column>
+            <Column field="mape" header="MAPE" sortable>
+              <template #body="{ data }">{{ formatMape(data.mape) }}</template>
+            </Column>
+            <Column field="delta_r2" :header="t('diag.deltaVsFullR2')" sortable>
+              <template #body="{ data }">{{ formatSignedNumber(data.delta_r2, 3) }}</template>
+            </Column>
+            <Column field="delta_mae" :header="t('diag.deltaVsFullMae')" sortable>
+              <template #body="{ data }">{{ formatSignedCurrency(data.delta_mae) }}</template>
+            </Column>
+            <Column :header="t('diag.variantRemovedFeatures')">
+              <template #body="{ data }">
+                <span class="muted source-cell">
+                  {{
+                    data.removedFeatures.length
+                      ? data.removedFeatures.join(', ')
+                      : t('common.noData')
+                  }}
+                </span>
+              </template>
+            </Column>
+          </DataTable>
         </div>
 
-        <div v-if="evBaseline?.coverage_by_source" class="coverage-source-list muted">
-          <span
-            v-for="(count, source) in evBaseline.coverage_by_source"
-            :key="source"
-            class="coverage-source-item"
+        <div v-if="variantMatrixRows.length" class="card diagnostics-card benchmark-full">
+          <PageHeader
+            compact
+            :eyebrow="t('diag.variantMatrix')"
+            :title="t('diag.variantMatrix')"
+            :description="t('diag.variantMatrixDesc')"
+          />
+
+          <DataTable :value="variantMatrixRows" striped-rows table-style="min-width: 100%">
+            <Column field="label" :header="t('diag.variant')" sortable />
+            <Column :header="t('diag.sources')">
+              <template #body="{ data }">
+                <span class="muted source-cell">{{ variantSourceSummary(data.sources) }}</span>
+              </template>
+            </Column>
+            <Column field="globalR2" :header="t('diag.globalR2')" sortable>
+              <template #body="{ data }">{{ formatMetric(data.globalR2, 3) }}</template>
+            </Column>
+            <Column field="combinedR2" :header="t('diag.routedR2')" sortable>
+              <template #body="{ data }">{{ formatMetric(data.combinedR2, 3) }}</template>
+            </Column>
+            <Column field="globalMae" :header="t('diag.globalMae')" sortable>
+              <template #body="{ data }">{{ formatCurrency(data.globalMae) }}</template>
+            </Column>
+            <Column field="combinedMae" :header="t('diag.routedMae')" sortable>
+              <template #body="{ data }">{{ formatCurrency(data.combinedMae) }}</template>
+            </Column>
+            <Column field="perTypeCount" :header="t('diag.perTypeModels')" sortable>
+              <template #body="{ data }">{{ formatNumber(data.perTypeCount) }}</template>
+            </Column>
+          </DataTable>
+        </div>
+
+        <div v-if="evBaselineCards.length" class="card diagnostics-card">
+          <PageHeader
+            compact
+            :eyebrow="t('diag.evBaseline')"
+            :title="t('diag.evBaseline')"
+            :description="t('diag.evBaselineDesc')"
+          />
+
+          <div class="kpi-grid">
+            <MetricCard
+              v-for="item in evBaselineCards"
+              :key="item.label"
+              :label="item.label"
+              :value="item.value"
+              :meta="item.meta"
+            />
+          </div>
+
+          <div v-if="evBaseline?.coverage_by_source" class="coverage-source-list muted">
+            <span
+              v-for="(count, source) in evBaseline.coverage_by_source"
+              :key="source"
+              class="coverage-source-item"
+            >
+              {{ variantSourceSummary({ [source]: true }) }}: {{ formatNumber(count) }}
+            </span>
+          </div>
+
+          <DataTable
+            v-if="evBaselinePerTypeRows.length"
+            :value="evBaselinePerTypeRows"
+            size="small"
+            striped-rows
+            table-style="min-width: 100%"
           >
-            {{ source }}: {{ formatNumber(count) }}
-          </span>
+            <Column field="typeLabel" :header="t('diag.type')" sortable />
+            <Column field="n" :header="t('diag.sampleCount')" sortable>
+              <template #body="{ data }">{{ formatNumber(data.n) }}</template>
+            </Column>
+            <Column field="model_mae" :header="t('diag.modelMaeOnCoverage')" sortable>
+              <template #body="{ data }">{{ formatCurrency(data.model_mae) }}</template>
+            </Column>
+            <Column field="mae" :header="t('diag.evBenchmarkMae')" sortable>
+              <template #body="{ data }">{{ formatCurrency(data.mae) }}</template>
+            </Column>
+            <Column field="delta_mae" :header="t('diag.evMaeSaved')" sortable>
+              <template #body="{ data }">
+                <Tag
+                  :value="formatSignedCurrency(data.delta_mae)"
+                  :severity="data.delta_mae > 0 ? 'success' : 'danger'"
+                />
+              </template>
+            </Column>
+            <Column field="model_r2" :header="t('diag.modelR2OnCoverage')" sortable>
+              <template #body="{ data }">
+                <Tag
+                  :value="formatMetric(data.model_r2, 3)"
+                  :severity="r2Severity(data.model_r2)"
+                />
+              </template>
+            </Column>
+            <Column field="r2" :header="t('diag.evBenchmarkR2')" sortable>
+              <template #body="{ data }">
+                <Tag :value="formatMetric(data.r2, 3)" :severity="r2Severity(data.r2)" />
+              </template>
+            </Column>
+          </DataTable>
         </div>
-
-        <DataTable
-          v-if="evBaselinePerTypeRows.length"
-          :value="evBaselinePerTypeRows"
-          size="small"
-          striped-rows
-          table-style="min-width: 100%"
-        >
-          <Column field="typeLabel" :header="t('diag.type')" sortable />
-          <Column field="n" :header="t('diag.sampleCount')" sortable>
-            <template #body="{ data }">{{ formatNumber(data.n) }}</template>
-          </Column>
-          <Column field="model_mae" :header="t('diag.modelMaeOnCoverage')" sortable>
-            <template #body="{ data }">{{ formatCurrency(data.model_mae) }}</template>
-          </Column>
-          <Column field="mae" :header="t('diag.evBenchmarkMae')" sortable>
-            <template #body="{ data }">{{ formatCurrency(data.mae) }}</template>
-          </Column>
-          <Column field="delta_mae" :header="t('diag.evMaeSaved')" sortable>
-            <template #body="{ data }">
-              <Tag
-                :value="formatSignedCurrency(data.delta_mae)"
-                :severity="data.delta_mae > 0 ? 'success' : 'danger'"
-              />
-            </template>
-          </Column>
-          <Column field="model_r2" :header="t('diag.modelR2OnCoverage')" sortable>
-            <template #body="{ data }">
-              <Tag :value="formatMetric(data.model_r2, 3)" :severity="r2Severity(data.model_r2)" />
-            </template>
-          </Column>
-          <Column field="r2" :header="t('diag.evBenchmarkR2')" sortable>
-            <template #body="{ data }">
-              <Tag :value="formatMetric(data.r2, 3)" :severity="r2Severity(data.r2)" />
-            </template>
-          </Column>
-        </DataTable>
-      </div>
-
-      <!-- Model details table -->
-      <div class="card diagnostics-card">
-        <PageHeader compact :eyebrow="t('diag.modelDetails')" :title="t('diag.modelDetails')" />
-        <DataTable :value="modelDetailsRows" size="small" table-style="min-width: 100%">
-          <Column field="key" :header="t('diag.property')" />
-          <Column field="val" :header="t('diag.value')" />
-        </DataTable>
-      </div>
+      </section>
 
       <div v-if="scoreDriverCards.length" class="card diagnostics-card">
         <PageHeader
@@ -1094,17 +1367,19 @@
           />
         </div>
 
-        <div v-if="perTypeChart" class="chart-block">
-          <h3>{{ t('diag.byPropertyType') }}</h3>
-          <div class="chart-frame">
-            <Bar :data="perTypeChart" :options="chartOptions" />
+        <div class="compare-chart-grid">
+          <div v-if="perTypeChart" class="chart-block">
+            <h3>{{ t('diag.byPropertyType') }}</h3>
+            <div class="chart-frame">
+              <Bar :data="perTypeChart" :options="chartOptions" />
+            </div>
           </div>
-        </div>
 
-        <div v-if="perRegionChart">
-          <h3>{{ t('diag.byRegion') }}</h3>
-          <div class="chart-frame">
-            <Bar :data="perRegionChart" :options="chartOptions" />
+          <div v-if="perRegionChart" class="chart-block">
+            <h3>{{ t('diag.byRegion') }}</h3>
+            <div class="chart-frame">
+              <Bar :data="perRegionChart" :options="chartOptions" />
+            </div>
           </div>
         </div>
       </div>
@@ -1136,7 +1411,7 @@
         <PageHeader compact :eyebrow="t('diag.perTypeTable')" :title="t('diag.perTypeTable')" />
         <EmptyState
           v-if="!Object.keys(model.info.per_type_metrics).length"
-          icon="📊"
+          icon="pi pi-chart-bar"
           :message="t('empty.noResults')"
         />
         <DataTable
@@ -1176,7 +1451,7 @@
         <PageHeader compact :eyebrow="t('diag.perRegionTable')" :title="t('diag.perRegionTable')" />
         <EmptyState
           v-if="!Object.keys(model.info.per_region_metrics).length"
-          icon="🗺️"
+          icon="pi pi-map"
           :message="t('empty.noResults')"
         />
         <DataTable
@@ -1206,15 +1481,114 @@
 </template>
 
 <style scoped>
+  .hero-link {
+    text-decoration: none;
+  }
+
   .diagnostics-page {
     display: grid;
+    gap: var(--space-section);
+  }
+
+  .diagnostics-summary-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--space-section);
+    align-items: start;
+  }
+
+  .diagnostics-report-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--space-section);
+    align-items: start;
+  }
+
+  .diagnostics-report-grid--wide {
+    grid-template-columns: 1fr;
+  }
+
+  .diagnostics-panel {
+    display: grid;
     gap: 1rem;
+  }
+
+  .diagnostics-focus-panel {
+    min-width: 0;
+  }
+
+  .diagnostics-primary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: var(--space-section);
+    align-items: start;
+  }
+
+  .diagnostics-primary-grid > .focus-card {
+    order: -1;
+  }
+
+  .diagnostics-benchmark-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--space-section);
+    align-items: start;
+  }
+
+  .benchmark-full {
+    grid-column: 1 / -1;
   }
 
   .diagnostics-hero,
   .diagnostics-card {
     display: grid;
-    gap: 1rem;
+    gap: 0.9rem;
+  }
+
+  .diagnostics-card {
+    padding: clamp(1.05rem, 1.5vw, 1.45rem);
+    border-radius: 1.25rem;
+  }
+
+  .state-card-stack {
+    display: grid;
+    gap: 0.85rem;
+  }
+
+  .state-card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    align-items: center;
+  }
+
+  .focus-type-select {
+    min-width: 14rem;
+  }
+
+  .diagnostics-card :deep(.p-datatable-wrapper) {
+    overflow-x: auto;
+  }
+
+  .diagnostics-benchmark-grid :deep(.p-datatable),
+  .diagnostics-report-grid :deep(.p-datatable) {
+    min-width: 100%;
+  }
+
+  .diagnostics-benchmark-grid :deep(.p-datatable-table) {
+    min-width: 58rem;
+  }
+
+  .diagnostics-report-grid :deep(.p-datatable-table) {
+    min-width: 36rem;
+  }
+
+  .diagnostics-card :deep(.p-datatable-table) {
+    width: 100%;
+  }
+
+  .diagnostics-card :deep(.p-datatable-thead > tr > th) {
+    white-space: nowrap;
   }
 
   .focus-head {
@@ -1223,6 +1597,14 @@
     align-items: flex-start;
     justify-content: space-between;
     flex-wrap: wrap;
+  }
+
+  .focus-head > div {
+    min-width: 0;
+  }
+
+  .focus-head :deep(.p-select) {
+    max-width: 100%;
   }
 
   .coverage-tags {
@@ -1260,17 +1642,26 @@
     align-items: start;
   }
 
+  .compare-chart-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr));
+    gap: 1rem;
+  }
+
   .chart-block {
     display: grid;
     gap: 0.8rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
   }
 
-  .chart-block + .chart-block {
-    margin-top: 1.2rem;
+  .chart-block:first-child {
+    padding-top: 0;
+    border-top: 0;
   }
 
   .chart-frame {
-    height: 300px;
+    height: clamp(240px, 32vw, 320px);
   }
 
   .feature-list {
@@ -1280,7 +1671,7 @@
 
   .feature-row {
     display: grid;
-    grid-template-columns: minmax(0, 1.2fr) minmax(140px, 1fr) auto;
+    grid-template-columns: minmax(0, 1.35fr) minmax(120px, 1fr) auto;
     gap: 0.8rem;
     align-items: center;
   }
@@ -1308,7 +1699,7 @@
     background: linear-gradient(
       90deg,
       var(--primary),
-      color-mix(in srgb, var(--primary) 40%, white)
+      color-mix(in srgb, var(--primary) 40%, var(--surface-strong))
     );
   }
 
@@ -1324,8 +1715,29 @@
   }
 
   @media (max-width: 860px) {
+    .diagnostics-summary-grid,
+    .diagnostics-report-grid,
+    .diagnostics-benchmark-grid,
+    .compare-chart-grid,
     .feature-row {
       grid-template-columns: 1fr;
+    }
+
+    .focus-head {
+      align-items: stretch;
+    }
+
+    .focus-head :deep(.p-select) {
+      width: 100%;
+    }
+
+    .focus-type-select {
+      min-width: 0;
+      width: 100%;
+    }
+
+    .chart-frame {
+      height: 260px;
     }
   }
 </style>

@@ -86,6 +86,15 @@
       <path d="M8.5 11H13" />
     </template>
 
+    <template v-else-if="name === 'benchmark'">
+      <path d="M4 19.5h16" />
+      <path d="M6 17V9.5" />
+      <path d="M12 17V6.5" />
+      <path d="M18 17v-4.5" />
+      <path d="M5 8.5 9.5 5 13 7.5 19 4.5" />
+      <path d="M17 4.5h2v2" />
+    </template>
+
     <template v-else-if="name === 'search'">
       <circle cx="11" cy="11" r="5.5" />
       <path d="m19 19-4-4" />

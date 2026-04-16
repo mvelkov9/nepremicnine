@@ -5,7 +5,7 @@ import math
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -42,16 +42,48 @@ class UpdateUserRequest(BaseModel):
 async def list_users(
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=200),
+    search: str | None = Query(None),
+    role: str | None = Query(None),
+    status_filter: str | None = Query(None, alias="status"),
+    sort: str = Query("created_at"),
+    order: str = Query("desc", pattern="^(asc|desc)$"),
     db: AsyncSession = Depends(get_db),
     _admin: User = Depends(require_admin),
 ):
     offset = (page - 1) * per_page
-    stmt = (
-        select(User, func.count(User.id).over().label("total_count"))
-        .order_by(User.created_at.desc())
-        .offset(offset)
-        .limit(per_page)
-    )
+    stmt = select(User, func.count(User.id).over().label("total_count"))
+
+    normalized_search = (search or "").strip()
+    if normalized_search:
+        pattern = f"%{normalized_search.lower()}%"
+        stmt = stmt.where(
+            or_(
+                func.lower(func.coalesce(User.full_name, "")).like(pattern),
+                func.lower(func.coalesce(User.email, "")).like(pattern),
+            )
+        )
+
+    normalized_role = (role or "").strip().lower()
+    if normalized_role in {member.value for member in UserRole}:
+        stmt = stmt.where(User.role == UserRole(normalized_role))
+
+    normalized_status = (status_filter or "").strip().lower()
+    if normalized_status == "active":
+        stmt = stmt.where(User.is_active == True)  # noqa: E712
+    elif normalized_status == "disabled":
+        stmt = stmt.where(User.is_active == False)  # noqa: E712
+
+    sort_columns = {
+        "id": User.id,
+        "full_name": User.full_name,
+        "email": User.email,
+        "role": User.role,
+        "is_active": User.is_active,
+        "created_at": User.created_at,
+    }
+    sort_column = sort_columns.get(sort, User.created_at)
+    stmt = stmt.order_by(sort_column.asc() if order == "asc" else sort_column.desc())
+    stmt = stmt.offset(offset).limit(per_page)
     rows = (await db.execute(stmt)).all()
     total = rows[0].total_count if rows else 0
     pages = math.ceil(total / per_page) if total > 0 else 0
@@ -67,7 +99,21 @@ async def list_users(
         )
         for u in rows
     ]
-    return {"items": items, "total": total, "page": page, "per_page": per_page, "pages": pages}
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "page_size": per_page,
+        "pages": pages,
+        "filters": {
+            "search": normalized_search or None,
+            "role": normalized_role or None,
+            "status": normalized_status or None,
+        },
+        "sort": sort if sort in sort_columns else "created_at",
+        "order": order,
+    }
 
 
 @router.patch("/users/{user_id}", response_model=UserListItem)
@@ -162,6 +208,10 @@ async def admin_stats(
     result = {
         "total_users": int(stats_row.total_users or 0),
         "active_users": int(stats_row.active_users or 0),
+        "disabled_users": max(int(stats_row.total_users or 0) - int(stats_row.active_users or 0), 0),
+        "admin_users": int(
+            (await db.execute(select(func.count(User.id)).where(User.role == UserRole.admin))).scalar_one() or 0
+        ),
         "total_predictions": int(stats_row.total_predictions or 0),
         "total_training_jobs": int(stats_row.total_training_jobs or 0),
         "completed_jobs": int(stats_row.completed_jobs or 0),

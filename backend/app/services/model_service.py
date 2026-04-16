@@ -2002,13 +2002,13 @@ def _compute_engineered_features(
         if group_col in X_train.columns:
             normalized_values = X_train[group_col].fillna("unknown").astype(str)
             if group_col in {"ime_ko", "naselje"}:
-                counts = normalized_values[~normalized_values.apply(_is_unknown_category_value)].value_counts().to_dict()
+                counts = (
+                    normalized_values[~normalized_values.apply(_is_unknown_category_value)].value_counts().to_dict()
+                )
             else:
                 counts = normalized_values.value_counts().to_dict()
             count_maps[group_col] = counts
-            train_count_features[feat_col] = (
-                normalized_values.map(counts).fillna(0).astype(float)
-            )
+            train_count_features[feat_col] = normalized_values.map(counts).fillna(0).astype(float)
             test_count_features[feat_col] = (
                 X_test[group_col].fillna("unknown").astype(str).map(counts).fillna(0).astype(float)
             )
@@ -2091,7 +2091,7 @@ def _compute_engineered_features(
         return pd.DataFrame(
             {
                 "hyperlocal_premium": (knn_type - comp_muni).astype(float),
-                "building_age_sq": (building_age ** 2 / 1000.0).astype(float),
+                "building_age_sq": (building_age**2 / 1000.0).astype(float),
             },
             index=split_X.index,
         )
@@ -2233,13 +2233,19 @@ def _compute_engineered_features(
     if "municipality_normalized" in X_train.columns and "transaction_year" in X_train.columns:
         train_size_clip = X_train["size_m2"].clip(lower=1).values.astype(float)
         train_ppm2 = y_train / train_size_clip
-        trend_df = pd.DataFrame({
-            "muni": X_train["municipality_normalized"].fillna("unknown").astype(str).values,
-            "ptype": X_train.get("property_type", pd.Series("unknown", index=X_train.index)).astype(str).values,
-            "year": pd.to_numeric(X_train["transaction_year"], errors="coerce").fillna(2020).values,
-            "qtr": pd.to_numeric(X_train.get("transaction_quarter", pd.Series(1, index=X_train.index)), errors="coerce").fillna(1).values,
-            "ppm2": train_ppm2,
-        })
+        trend_df = pd.DataFrame(
+            {
+                "muni": X_train["municipality_normalized"].fillna("unknown").astype(str).values,
+                "ptype": X_train.get("property_type", pd.Series("unknown", index=X_train.index)).astype(str).values,
+                "year": pd.to_numeric(X_train["transaction_year"], errors="coerce").fillna(2020).values,
+                "qtr": pd.to_numeric(
+                    X_train.get("transaction_quarter", pd.Series(1, index=X_train.index)), errors="coerce"
+                )
+                .fillna(1)
+                .values,
+                "ppm2": train_ppm2,
+            }
+        )
         trend_df["period"] = trend_df["year"] * 4 + trend_df["qtr"]
         # Compute median ppm2 per municipality+type+period
         muni_type_period_median = trend_df.groupby(["muni", "ptype", "period"])["ppm2"].median()
@@ -2262,10 +2268,16 @@ def _compute_engineered_features(
                 level_map[(muni, ptype, period)] = float(median_val / alltime)
 
         def _apply_map(split_X: pd.DataFrame, mapping: dict, default: float) -> pd.Series:
-            muni = split_X.get("municipality_normalized", pd.Series("unknown", index=split_X.index)).fillna("unknown").astype(str)
+            muni = (
+                split_X.get("municipality_normalized", pd.Series("unknown", index=split_X.index))
+                .fillna("unknown")
+                .astype(str)
+            )
             ptype = split_X.get("property_type", pd.Series("unknown", index=split_X.index)).astype(str)
             yr = pd.to_numeric(split_X.get("transaction_year"), errors="coerce").fillna(2020)
-            qtr = pd.to_numeric(split_X.get("transaction_quarter", pd.Series(1, index=split_X.index)), errors="coerce").fillna(1)
+            qtr = pd.to_numeric(
+                split_X.get("transaction_quarter", pd.Series(1, index=split_X.index)), errors="coerce"
+            ).fillna(1)
             period = yr * 4 + qtr
             return pd.Series(
                 [mapping.get((m, p, per), default) for m, p, per in zip(muni, ptype, period, strict=False)],
@@ -2496,7 +2508,9 @@ def _select_best_metrics_candidate(
     mape_tolerance = float(selection_prior.get("mape_tolerance", 0.0))
     prefer_r2 = bool(selection_prior.get("prefer_r2", False))
 
-    best_r2 = max(float((candidate.get("metrics") or {}).get("r2", float("-inf")) or float("-inf")) for candidate in candidates)
+    best_r2 = max(
+        float((candidate.get("metrics") or {}).get("r2", float("-inf")) or float("-inf")) for candidate in candidates
+    )
     viable = [
         candidate
         for candidate in candidates
@@ -2506,11 +2520,14 @@ def _select_best_metrics_candidate(
         viable = candidates
 
     if mape_tolerance > 0.0:
-        best_mape = min(float((candidate.get("metrics") or {}).get("mape", float("inf")) or float("inf")) for candidate in viable)
+        best_mape = min(
+            float((candidate.get("metrics") or {}).get("mape", float("inf")) or float("inf")) for candidate in viable
+        )
         mape_viable = [
             candidate
             for candidate in viable
-            if float((candidate.get("metrics") or {}).get("mape", float("inf")) or float("inf")) <= best_mape + mape_tolerance
+            if float((candidate.get("metrics") or {}).get("mape", float("inf")) or float("inf"))
+            <= best_mape + mape_tolerance
         ]
         if mape_viable:
             viable = mape_viable
@@ -2705,7 +2722,9 @@ def _predict_with_model_meta(
 
     raw_pred = np.clip(pipeline.predict(X), -30, 30)  # prevent exp overflow
     if target_transform == "log_ppm2":
-        size_vals = X["size_m2"].clip(lower=1).values.astype(float) if "size_m2" in X.columns else np.ones(len(X), dtype=float)
+        size_vals = (
+            X["size_m2"].clip(lower=1).values.astype(float) if "size_m2" in X.columns else np.ones(len(X), dtype=float)
+        )
         return np.maximum(size_vals * np.exp(raw_pred), 0)
     if target_transform == "log_price":
         return np.maximum(np.expm1(raw_pred), 0)
@@ -2981,7 +3000,9 @@ def _compute_per_type_blend_weight(
         metrics = _compute_metrics(y_true, blended)
         candidates.append({"weight": float(weight), "metrics": metrics})
 
-    best_r2 = max(float((candidate["metrics"] or {}).get("r2", float("-inf")) or float("-inf")) for candidate in candidates)
+    best_r2 = max(
+        float((candidate["metrics"] or {}).get("r2", float("-inf")) or float("-inf")) for candidate in candidates
+    )
     viable = [
         candidate
         for candidate in candidates
@@ -4430,9 +4451,7 @@ def train_from_csv(
                     sub_outlier = vz_grp.index[(lp < fence_lo) | (lp > fence_hi)]
                     keep_mask.loc[sub_outlier] = False
                 n_sub_removed = int((type_mask & ~keep_mask).sum())
-                logger.info(
-                    "  %s: per-subtype IQR outlier removal removed %d rows", ptype, n_sub_removed
-                )
+                logger.info("  %s: per-subtype IQR outlier removal removed %d rows", ptype, n_sub_removed)
             else:
                 lp = df.loc[type_mask, "_log_ppm2_tmp"]
                 q1, q3 = lp.quantile(0.25), lp.quantile(0.75)
@@ -4760,7 +4779,9 @@ def train_from_csv(
             # Too few rows in this fold — fill with global model predictions as fallback
             logger.warning(
                 "  OOF fold %d: only %d train rows (< %d) — using global model as fallback",
-                fold_idx + 1, len(fold_X_tr), _MIN_OOF_FOLD_ROWS,
+                fold_idx + 1,
+                len(fold_X_tr),
+                _MIN_OOF_FOLD_ROWS,
             )
             fallback_pred = _predict_with_model_meta(
                 fold_X_val,
@@ -4920,7 +4941,9 @@ def train_from_csv(
             ]
             preferred_policy_names = [str(name) for name in type_search_prior.get("policy_candidates") or []]
             if preferred_policy_names:
-                policy_candidates = [item for item in policy_candidates if item[0] in preferred_policy_names] or policy_candidates
+                policy_candidates = [
+                    item for item in policy_candidates if item[0] in preferred_policy_names
+                ] or policy_candidates
             preferred_policy = str(type_training_prior.get("training_policy", "")).strip()
             if preferred_policy:
                 policy_candidates = sorted(
@@ -4941,7 +4964,11 @@ def train_from_csv(
                 property_type=ptype,
             )
             feature_variant_names = (
-                [name for name in (type_search_prior.get("feature_variants") or feature_variants.keys()) if name in feature_variants]
+                [
+                    name
+                    for name in (type_search_prior.get("feature_variants") or feature_variants.keys())
+                    if name in feature_variants
+                ]
                 if search_variants
                 else [str(type_training_prior.get("feature_variant", "rich"))]
             )
@@ -5084,7 +5111,9 @@ def train_from_csv(
                 specialist_pred = _predict_specialist_fallback_meta(
                     Xte,
                     specialist_fallback,
-                    default_target_transform=str(specialist_fallback.get("target_transform") or chosen_target_transform),
+                    default_target_transform=str(
+                        specialist_fallback.get("target_transform") or chosen_target_transform
+                    ),
                 )
                 specialist_blend_weight, specialist_routed_metrics = _compute_per_type_blend_weight(
                     ptype,
@@ -5107,7 +5136,9 @@ def train_from_csv(
             blend_weight = float(chosen_route.get("blend_weight", 0.0))
             routed_metrics = dict(chosen_route.get("metrics") or {})
             fallback_source = str(chosen_route.get("fallback_source") or "global")
-            chosen_specialist_fallback = chosen_route.get("specialist_fallback") if fallback_source == "specialist" else None
+            chosen_specialist_fallback = (
+                chosen_route.get("specialist_fallback") if fallback_source == "specialist" else None
+            )
             if blend_weight <= 0.0:
                 routing_mode = "specialist_only" if fallback_source == "specialist" else "global_only"
             elif blend_weight >= 0.999:
@@ -5223,7 +5254,9 @@ def train_from_csv(
                 ],
             }
             if specialist_fallback is not None:
-                specialist_default = specialist_fallback.get("default_model") if isinstance(specialist_fallback, dict) else None
+                specialist_default = (
+                    specialist_fallback.get("default_model") if isinstance(specialist_fallback, dict) else None
+                )
                 specialist_numeric = (
                     specialist_fallback.get("numeric_features")
                     if isinstance(specialist_fallback, dict) and specialist_fallback.get("numeric_features") is not None
@@ -5231,8 +5264,11 @@ def train_from_csv(
                 ) or []
                 specialist_categorical = (
                     specialist_fallback.get("categorical_features")
-                    if isinstance(specialist_fallback, dict) and specialist_fallback.get("categorical_features") is not None
-                    else (specialist_default.get("categorical_features") if isinstance(specialist_default, dict) else [])
+                    if isinstance(specialist_fallback, dict)
+                    and specialist_fallback.get("categorical_features") is not None
+                    else (
+                        specialist_default.get("categorical_features") if isinstance(specialist_default, dict) else []
+                    )
                 ) or []
                 specialist_summary = {
                     "mode": str(specialist_fallback.get("mode") or "single_model"),
@@ -5243,7 +5279,11 @@ def train_from_csv(
                     "total_feature_count": int(len(specialist_numeric) + len(specialist_categorical)),
                     "model_hyperparameters": dict(
                         specialist_fallback.get("model_hyperparameters")
-                        or (specialist_default.get("model_hyperparameters") if isinstance(specialist_default, dict) else {})
+                        or (
+                            specialist_default.get("model_hyperparameters")
+                            if isinstance(specialist_default, dict)
+                            else {}
+                        )
                         or {}
                     ),
                     "metrics": {
@@ -5251,7 +5291,9 @@ def train_from_csv(
                         for key, value in (specialist_fallback.get("metrics") or {}).items()
                     },
                 }
-                subtype_models = specialist_fallback.get("subtype_models") if isinstance(specialist_fallback, dict) else None
+                subtype_models = (
+                    specialist_fallback.get("subtype_models") if isinstance(specialist_fallback, dict) else None
+                )
                 if isinstance(subtype_models, dict) and subtype_models:
                     specialist_summary["subtype_models"] = {
                         str(subtype_key): {
@@ -6023,7 +6065,10 @@ def _build_normalized_payload(
             ko_ppm2_map,
             ko_lookup_key,
             ko_lookup_raw,
-            row.get("price_per_m2_municipality", deploy_eng.get("global_median_ppm2_for_ko", eng.get("global_median_ppm2_for_ko", global_median))),
+            row.get(
+                "price_per_m2_municipality",
+                deploy_eng.get("global_median_ppm2_for_ko", eng.get("global_median_ppm2_for_ko", global_median)),
+            ),
         )
 
     # Price ratio features (derived from already-computed features)
@@ -6213,7 +6258,9 @@ def _prediction_feature_present(features: dict[str, Any], key: str) -> bool:
 
 
 def _prediction_enrichment_options(features: dict[str, Any]) -> dict[str, Any]:
-    has_coords = _prediction_feature_present(features, "latitude") and _prediction_feature_present(features, "longitude")
+    has_coords = _prediction_feature_present(features, "latitude") and _prediction_feature_present(
+        features, "longitude"
+    )
     spatial_enabled = _ENABLE_PREDICTION_SPATIAL_ENRICHMENT
     has_address = any(
         _prediction_feature_present(features, key)
@@ -6265,7 +6312,10 @@ def _prediction_enrichment_cache_key(features: dict[str, Any]) -> str:
 def _enrich_prediction_features_cached(cache_key: str, upload_dir: str) -> dict[str, Any]:
     features = json.loads(cache_key)
     options = _prediction_enrichment_options(features)
-    if not any(bool(options.get(name)) for name in ("enable_rn", "enable_ev", "enable_kn", "enable_gji", "enable_dtm", "enable_emv")):
+    if not any(
+        bool(options.get(name))
+        for name in ("enable_rn", "enable_ev", "enable_kn", "enable_gji", "enable_dtm", "enable_emv")
+    ):
         return dict(features)
 
     frame = pd.DataFrame([dict(features)])
@@ -6346,7 +6396,9 @@ def predict_one(features: dict[str, Any]) -> dict[str, Any]:
             "pipeline": artifact["global_pipeline"],
             "numeric_features": NUMERIC_FEATURES,
             "categorical_features": CATEGORICAL_FEATURES,
-            "target_transform": str(artifact.get("target_transform") or ("log_price" if artifact.get("log_target") else "none")),
+            "target_transform": str(
+                artifact.get("target_transform") or ("log_price" if artifact.get("log_target") else "none")
+            ),
         }
     )
     blend_weight = 1.0
@@ -6360,19 +6412,29 @@ def predict_one(features: dict[str, Any]) -> dict[str, Any]:
         blend_weight = float(tm.get("blend_weight", 1.0)) if isinstance(tm, dict) else 1.0
         fallback_source = str(tm.get("fallback_source") or "global") if isinstance(tm, dict) else "global"
         selected_target_transform = str(tm.get("target_transform", artifact.get("target_transform", "log_ppm2")))
-        prediction_meta = tm if isinstance(tm, dict) and "pipeline" in tm else {
-            "pipeline": tm,
-            "numeric_features": PERTYPE_NUMERIC,
-            "categorical_features": PERTYPE_CATEGORICAL,
-            "target_transform": selected_target_transform,
-        }
+        prediction_meta = (
+            tm
+            if isinstance(tm, dict) and "pipeline" in tm
+            else {
+                "pipeline": tm,
+                "numeric_features": PERTYPE_NUMERIC,
+                "categorical_features": PERTYPE_CATEGORICAL,
+                "target_transform": selected_target_transform,
+            }
+        )
         if blend_weight <= 0:
-            if fallback_source == "specialist" and isinstance(tm, dict) and isinstance(tm.get("specialist_fallback"), dict):
+            if (
+                fallback_source == "specialist"
+                and isinstance(tm, dict)
+                and isinstance(tm.get("specialist_fallback"), dict)
+            ):
                 specialist_fallback = tm["specialist_fallback"]
                 prediction_meta = specialist_fallback
                 model_used = f"specialist:{ptype}"
                 routing_mode = "specialist_only"
-                selected_target_transform = str(specialist_fallback.get("target_transform") or selected_target_transform)
+                selected_target_transform = str(
+                    specialist_fallback.get("target_transform") or selected_target_transform
+                )
             else:
                 prediction_meta = global_model_meta
                 model_used = "global"
@@ -6385,7 +6447,11 @@ def predict_one(features: dict[str, Any]) -> dict[str, Any]:
         else:
             model_used = f"per_type:{ptype}"
             routing_mode = "blend_specialist" if fallback_source == "specialist" else "blend"
-            if routing_mode == "blend_specialist" and isinstance(tm, dict) and isinstance(tm.get("specialist_fallback"), dict):
+            if (
+                routing_mode == "blend_specialist"
+                and isinstance(tm, dict)
+                and isinstance(tm.get("specialist_fallback"), dict)
+            ):
                 fallback_meta = tm["specialist_fallback"]
             else:
                 fallback_meta = global_model_meta
@@ -6725,9 +6791,7 @@ def build_gurs_benchmark_payload() -> dict[str, Any]:
     per_type_models = artifact.get("per_type_models") or {}
     global_model_entry = artifact.get("global_model") or {}
     global_pipeline = (
-        global_model_entry.get("pipeline")
-        if isinstance(global_model_entry, dict)
-        else artifact.get("global_pipeline")
+        global_model_entry.get("pipeline") if isinstance(global_model_entry, dict) else artifact.get("global_pipeline")
     )
     if global_pipeline is None:
         raise RuntimeError("Current model artifact is incomplete.")
@@ -6767,7 +6831,9 @@ def build_gurs_benchmark_payload() -> dict[str, Any]:
     benchmark_frame["actual_price_eur"] = y_test[ev_mask.values]
     benchmark_frame["model_price_eur"] = y_pred_model[ev_mask.values]
     benchmark_frame["gurs_price_eur"] = ev_vals.loc[ev_mask].values
-    benchmark_frame["model_abs_error"] = (benchmark_frame["actual_price_eur"] - benchmark_frame["model_price_eur"]).abs()
+    benchmark_frame["model_abs_error"] = (
+        benchmark_frame["actual_price_eur"] - benchmark_frame["model_price_eur"]
+    ).abs()
     benchmark_frame["gurs_abs_error"] = (benchmark_frame["actual_price_eur"] - benchmark_frame["gurs_price_eur"]).abs()
     benchmark_frame["improvement_eur"] = benchmark_frame["gurs_abs_error"] - benchmark_frame["model_abs_error"]
     benchmark_frame["improvement_pct"] = np.where(
@@ -6783,8 +6849,10 @@ def build_gurs_benchmark_payload() -> dict[str, Any]:
 
     rows: list[dict[str, Any]] = []
     for position, (_, row) in enumerate(benchmark_frame.iterrows(), start=1):
-        municipality = format_municipality_label(row.get("municipality")) or row.get("municipality") or row.get(
-            "municipality_normalized"
+        municipality = (
+            format_municipality_label(row.get("municipality"))
+            or row.get("municipality")
+            or row.get("municipality_normalized")
         )
         region = format_region_label(row.get("statistical_region")) or row.get("statistical_region")
         year_value = row.get("transaction_year")
@@ -6808,7 +6876,9 @@ def build_gurs_benchmark_payload() -> dict[str, Any]:
                     else None
                 ),
                 "transaction_year": year,
-                "year_built": int(row["year_built"]) if "year_built" in row.index and pd.notna(row["year_built"]) else None,
+                "year_built": int(row["year_built"])
+                if "year_built" in row.index and pd.notna(row["year_built"])
+                else None,
                 "size_m2": round(float(size_m2), 1) if pd.notna(size_m2) else None,
                 "price_eur": round(price_eur, 2),
                 "model_price_eur": round(float(row.get("model_price_eur")), 2),

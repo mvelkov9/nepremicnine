@@ -290,12 +290,20 @@ async def get_training_status(
 
 @router.get("/jobs")
 async def list_jobs(
+    request: Request,
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
     """List all training jobs (most recent first)."""
+    redis, should_close = await _get_request_redis(request)
+    try:
+        await _reconcile_active_job(db, redis)
+    finally:
+        if should_close:
+            await redis.close()
+
     offset = (page - 1) * per_page
     stmt = (
         select(TrainingJob, func.count(TrainingJob.id).over().label("total_count"))

@@ -866,6 +866,10 @@ def _load_ev_building_value_lookup(del_enota_csv_path: str) -> pd.DataFrame:
 def _load_ev_parcel_lookup_cached(parcela_csv_path: str, mtime: float) -> pd.DataFrame:
     parcela_cols = ["EID_PARCELA", "KO_SIFKO", "PARCELA", "POVRSINA", "BONITETA", "ODPRTOST", "RK", "RPE_OBCINE_SIFRA"]
     parcela_df = read_csv_flexible(parcela_csv_path, usecols=lambda col: col in parcela_cols)
+    if "KO_SIFKO" not in parcela_df.columns or "PARCELA" not in parcela_df.columns:
+        return pd.DataFrame(columns=["parcel_join_key", *parcela_cols])
+    if "EID_PARCELA" not in parcela_df.columns:
+        parcela_df["EID_PARCELA"] = pd.NA
     parcela_df["ko_key"] = _normalize_numeric_key_series(parcela_df["KO_SIFKO"])
     parcela_df["parcela_key"] = _normalize_parcel_key_series(parcela_df["PARCELA"])
     parcela_df["parcel_join_key"] = [
@@ -885,6 +889,8 @@ def _load_ev_parcel_lookup(parcela_csv_path: str) -> pd.DataFrame:
 def _load_ev_parcel_value_lookup_cached(parc_enota_csv_path: str, mtime: float) -> pd.DataFrame:
     parc_enota_cols = ["EID_PARCELA", "POSPLOSENA_VREDNOST"]
     value_df = read_csv_flexible(parc_enota_csv_path, usecols=lambda col: col in parc_enota_cols)
+    if "EID_PARCELA" not in value_df.columns or "POSPLOSENA_VREDNOST" not in value_df.columns:
+        return pd.DataFrame(columns=["EID_PARCELA_KEY", "POSPLOSENA_VREDNOST"])
     value_df["EID_PARCELA_KEY"] = _normalize_numeric_key_series(value_df["EID_PARCELA"])
     value_df["POSPLOSENA_VREDNOST"] = pd.to_numeric(value_df["POSPLOSENA_VREDNOST"], errors="coerce")
     value_df = value_df.dropna(subset=["EID_PARCELA_KEY", "POSPLOSENA_VREDNOST"])
@@ -1363,47 +1369,59 @@ def apply_gurs_deterministic_enrichment(
     parcel_path = discovered_sources.get("ev_parcela")
     if resolved_options["enable_ev"] and parcel_path is not None:
         summary["ev"]["parcel_available"] = True
-        ev_parcel_df = _load_ev_parcel_lookup(parcel_path)
-        result["parcel_join_key"] = [
-            _compose_join_key(ko, parcela, allow_empty_trailing=False)
-            for ko, parcela in zip(
-                _normalize_numeric_key_series(result.get("sifra_ko", pd.Series(np.nan, index=result.index))),
-                _normalize_parcel_key_series(result.get("parcelna_stevilka", pd.Series(np.nan, index=result.index))),
-                strict=False,
-            )
-        ]
-        parcel_lookup = ev_parcel_df.set_index("parcel_join_key")
-        matched_parcels = parcel_lookup.reindex(result["parcel_join_key"])
-        parcel_column_map = {
-            "ev_parcela_povrsina": "POVRSINA",
-            "ev_boniteta": "BONITETA",
-            "ev_odprtost": "ODPRTOST",
-            "ev_rk": "RK",
-        }
-        for target_col, source_col in parcel_column_map.items():
-            if source_col in matched_parcels.columns:
-                result[target_col] = pd.to_numeric(matched_parcels[source_col], errors="coerce").values
-        if "EID_PARCELA" in matched_parcels.columns:
-            result["eid_parcela"] = _normalize_numeric_key_series(matched_parcels["EID_PARCELA"]).values
+        try:
+            ev_parcel_df = _load_ev_parcel_lookup(parcel_path)
+            result["parcel_join_key"] = [
+                _compose_join_key(ko, parcela, allow_empty_trailing=False)
+                for ko, parcela in zip(
+                    _normalize_numeric_key_series(result.get("sifra_ko", pd.Series(np.nan, index=result.index))),
+                    _normalize_parcel_key_series(
+                        result.get("parcelna_stevilka", pd.Series(np.nan, index=result.index))
+                    ),
+                    strict=False,
+                )
+            ]
+            parcel_lookup = ev_parcel_df.set_index("parcel_join_key")
+            matched_parcels = parcel_lookup.reindex(result["parcel_join_key"])
+            parcel_column_map = {
+                "ev_parcela_povrsina": "POVRSINA",
+                "ev_boniteta": "BONITETA",
+                "ev_odprtost": "ODPRTOST",
+                "ev_rk": "RK",
+            }
+            for target_col, source_col in parcel_column_map.items():
+                if source_col in matched_parcels.columns:
+                    result[target_col] = pd.to_numeric(matched_parcels[source_col], errors="coerce").values
+            if "EID_PARCELA" in matched_parcels.columns:
+                result["eid_parcela"] = _normalize_numeric_key_series(matched_parcels["EID_PARCELA"]).values
 
-        summary["ev"]["rows_with_parcel_match"] = int(matched_parcels["KO_SIFKO"].notna().sum())
+            summary["ev"]["rows_with_parcel_match"] = int(
+                matched_parcels.get("KO_SIFKO", pd.Series(dtype="object")).notna().sum()
+            )
 
-        parcel_value_path = discovered_sources.get("ev_parc_enota")
-        if parcel_value_path is not None and "EID_PARCELA" in matched_parcels.columns:
-            summary["ev"]["parcel_value_available"] = True
-            ev_parcel_value_df = _load_ev_parcel_value_lookup(parcel_value_path)
-            parcel_value_lookup = ev_parcel_value_df.set_index("EID_PARCELA_KEY")
-            matched_parcel_values = parcel_value_lookup.reindex(
-                _normalize_numeric_key_series(matched_parcels["EID_PARCELA"])
-            )
-            parcel_values = pd.to_numeric(
-                matched_parcel_values.get("POSPLOSENA_VREDNOST"),
-                errors="coerce",
-            )
-            parcel_value_mask = parcel_values.notna().values & pd.isna(result["ev_benchmark_price_eur"]).values
-            result.loc[parcel_value_mask, "ev_benchmark_price_eur"] = parcel_values.values[parcel_value_mask]
-            result.loc[parcel_value_mask, "ev_benchmark_source"] = "parc_enota"
-            summary["ev"]["rows_with_parcel_value_match"] = int(parcel_values.notna().sum())
+            parcel_value_path = discovered_sources.get("ev_parc_enota")
+            if parcel_value_path is not None and "EID_PARCELA" in matched_parcels.columns:
+                summary["ev"]["parcel_value_available"] = True
+                try:
+                    ev_parcel_value_df = _load_ev_parcel_value_lookup(parcel_value_path)
+                    parcel_value_lookup = ev_parcel_value_df.set_index("EID_PARCELA_KEY")
+                    matched_parcel_values = parcel_value_lookup.reindex(
+                        _normalize_numeric_key_series(matched_parcels["EID_PARCELA"])
+                    )
+                    parcel_values = pd.to_numeric(
+                        matched_parcel_values.get("POSPLOSENA_VREDNOST"),
+                        errors="coerce",
+                    )
+                    parcel_value_mask = parcel_values.notna().values & pd.isna(result["ev_benchmark_price_eur"]).values
+                    result.loc[parcel_value_mask, "ev_benchmark_price_eur"] = parcel_values.values[parcel_value_mask]
+                    result.loc[parcel_value_mask, "ev_benchmark_source"] = "parc_enota"
+                    summary["ev"]["rows_with_parcel_value_match"] = int(parcel_values.notna().sum())
+                except Exception as exc:
+                    logger.warning("Skipping EV parcel-value enrichment for %s: %s", parcel_value_path, exc)
+                    summary["ev"]["parcel_value_error"] = str(exc)
+        except Exception as exc:
+            logger.warning("Skipping EV parcel enrichment for %s: %s", parcel_path, exc)
+            summary["ev"]["parcel_error"] = str(exc)
 
     # Adjust EV benchmark for partial-ownership shares.
     # POSPLOSENA_VREDNOST is the value of the ENTIRE unit/parcel (100%),
@@ -4213,7 +4231,7 @@ def _merge_staged_prepared_frames(
 
     write_header = True
     for staged_csv_path in staged_csv_paths:
-        frame = pd.read_csv(staged_csv_path, dtype=_EID_CSV_DTYPES)
+        frame = pd.read_csv(staged_csv_path, dtype=_EID_CSV_DTYPES, low_memory=False)
         rows_before_dedup += len(frame)
 
         if dedupe_columns:
@@ -4659,7 +4677,7 @@ def prepare_training_csv_from_etn_kpp_bulk(
 
             emit_status(_sp_unit, "spatial_enrichment_merged", rows=_sp_rows)
             try:
-                merged_df = pd.read_csv(output_csv_path, dtype=_EID_CSV_DTYPES)
+                merged_df = pd.read_csv(output_csv_path, dtype=_EID_CSV_DTYPES, low_memory=False)
                 if resolved_options["enable_kn"]:
                     _sp_emit("kn")
                     with stage_heartbeat(_sp_unit, "spatial_enrichment_merged", rows=_sp_rows, spatial_phase="kn"):

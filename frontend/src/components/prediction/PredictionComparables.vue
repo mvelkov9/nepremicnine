@@ -30,11 +30,7 @@
         :key="`${item.slug}-${item.price_eur}-${item.size_m2}`"
         :item="item"
       >
-        <Button
-          size="small"
-          :label="t('predict.reuseComparable')"
-          @click="emit('reuse', item)"
-        />
+        <Button size="small" :label="t('predict.reuseComparable')" @click="emit('reuse', item)" />
       </ComparableCard>
     </div>
     <EmptyState v-else icon="pi pi-chart-bar" :message="t('predict.noComparables')" />
@@ -65,7 +61,11 @@
     padding: 0.45rem 0.7rem;
     border-radius: 999px;
     border: 1px solid color-mix(in srgb, var(--border) 76%, var(--primary) 24%);
-    background: color-mix(in srgb, var(--surface-card-strong, var(--surface-strong)) 92%, var(--primary) 8%);
+    background: color-mix(
+      in srgb,
+      var(--surface-card-strong, var(--surface-strong)) 92%,
+      var(--primary) 8%
+    );
     color: var(--text-muted);
     font-weight: 700;
     white-space: nowrap;

@@ -1,6 +1,6 @@
 import { i18n } from '../i18n'
 
-const FALLBACK = '—'
+const FALLBACK = '\u2014'
 
 function activeLocale() {
   const locale = i18n.global.locale?.value || 'sl'

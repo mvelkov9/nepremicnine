@@ -44,6 +44,6 @@ test.describe('Authentication', () => {
   test('skip navigation link is present', async ({ page }) => {
     await page.goto('/login')
     const skipLink = page.locator('.skip-link')
-    await expect(skipLink).toHaveAttribute('href', '#main-content')
+    await expect(skipLink).toHaveAttribute('href', '#guest-main-content')
   })
 })

@@ -5,6 +5,10 @@
   import AppIcon from '../AppIcon.vue'
   import type { NavItem } from '../../constants/navigation'
 
+  const emit = defineEmits<{
+    close: []
+  }>()
+
   const props = defineProps<{
     navItems: NavItem[]
     collapsed: boolean
@@ -45,7 +49,29 @@
 <template>
   <aside class="shell-sidebar" :class="{ 'mobile-open': mobileOpen, collapsed: collapsed }">
     <div class="sidebar-pane">
-      <RouterLink to="/" class="shell-brand">
+      <div class="sidebar-mobile-header">
+        <RouterLink to="/" class="shell-brand">
+          <span class="brand-mark">
+            <AppIcon name="brand" :size="24" :stroke="1.95" />
+          </span>
+          <div class="brand-copy">
+            <strong>{{ t('app.title') }}</strong>
+            <small>{{ t('layout.brandTagline') }}</small>
+          </div>
+        </RouterLink>
+
+        <Button
+          class="sidebar-close-button shell-icon-button"
+          text
+          rounded
+          :aria-label="t('ui.closeMenu')"
+          @click="emit('close')"
+        >
+          <i class="pi pi-times" aria-hidden="true"></i>
+        </Button>
+      </div>
+
+      <RouterLink to="/" class="shell-brand shell-brand-desktop">
         <span class="brand-mark">
           <AppIcon name="brand" :size="24" :stroke="1.95" />
         </span>
@@ -72,6 +98,7 @@
             :to="item.to"
             class="shell-nav-link"
             :class="{ active: isActiveRoute(item) }"
+            :aria-current="isActiveRoute(item) ? 'page' : undefined"
             v-tooltip.right="sidebarTooltip(t(item.label))"
           >
             <span class="shell-nav-icon">
@@ -109,12 +136,12 @@
     top: 0;
     height: 100vh;
     overflow-y: auto;
-    background: var(--shell-chrome-bg);
-    color: var(--shell-text);
-    border-right: 1px solid var(--shell-chrome-border);
+    background: var(--app-shell-bg);
+    color: var(--app-shell-text);
+    border-right: 1px solid var(--app-shell-border);
     box-shadow:
-      inset -1px 0 0 var(--shell-highlight-soft),
-      inset 0 1px 0 var(--shell-highlight);
+      inset -1px 0 0 var(--app-shell-highlight-soft),
+      inset 0 1px 0 var(--app-shell-highlight);
     transition:
       width 180ms ease,
       transform 180ms ease;
@@ -125,11 +152,15 @@
     min-height: 100%;
     display: flex;
     flex-direction: column;
-    gap: 1rem;
-    padding: 1.1rem 0.85rem 0.9rem;
+    gap: 0.84rem;
+    padding: 1rem 0.9rem 0.98rem;
     background:
-      radial-gradient(circle at 0% 0%, var(--shell-ambient-start), transparent 30%),
-      radial-gradient(circle at 100% 12%, var(--shell-ambient-end), transparent 24%);
+      radial-gradient(circle at 0% 0%, var(--app-shell-ambient-start), transparent 40%),
+      radial-gradient(circle at 100% 12%, var(--app-shell-ambient-end), transparent 32%);
+  }
+
+  .sidebar-mobile-header {
+    display: none;
   }
 
   .shell-brand {
@@ -142,17 +173,17 @@
   }
 
   .brand-mark {
-    width: 2.7rem;
-    height: 2.7rem;
+    width: 2.45rem;
+    height: 2.45rem;
     flex-shrink: 0;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border-radius: 1.1rem;
-    background: linear-gradient(145deg, var(--shell-brand-start), var(--shell-brand-end));
-    color: var(--shell-brand-contrast);
-    border: 1px solid var(--shell-control-border);
-    box-shadow: 0 16px 30px var(--shell-depth-shadow-strong);
+    border-radius: var(--radius-sm);
+    background: linear-gradient(145deg, var(--app-shell-brand-start), var(--app-shell-brand-end));
+    color: var(--app-shell-brand-contrast);
+    border: 1px solid var(--app-shell-control-border);
+    box-shadow: 0 10px 20px var(--app-shell-depth-shadow-strong);
   }
 
   .brand-copy {
@@ -162,43 +193,43 @@
   }
 
   .brand-copy strong {
-    color: var(--shell-text);
-    font-size: 0.93rem;
+    color: var(--app-shell-text);
+    font-size: 0.9rem;
     font-weight: 800;
     letter-spacing: 0.01em;
   }
 
   .brand-copy small {
-    color: var(--shell-text-soft);
-    font-size: 0.74rem;
+    color: var(--app-shell-text-soft);
+    font-size: var(--text-xs);
   }
 
   .sidebar-context {
     display: grid;
-    gap: 0.3rem;
-    padding: 0.9rem;
-    border-radius: 1.05rem;
-    border: 1px solid var(--shell-panel-border);
-    background: var(--shell-panel-bg);
+    gap: 0.24rem;
+    padding: 0.74rem 0.82rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--app-shell-panel-border);
+    background: color-mix(in srgb, var(--app-shell-panel-bg) 94%, transparent);
     box-shadow:
-      inset 0 1px 0 var(--shell-highlight),
-      0 18px 34px var(--shell-depth-shadow);
+      inset 0 1px 0 var(--app-shell-highlight-soft),
+      0 10px 20px var(--app-shell-depth-shadow);
   }
 
   .sidebar-context strong {
-    color: var(--shell-text);
-    font-size: 0.92rem;
+    color: var(--app-shell-text);
+    font-size: 0.86rem;
   }
 
   .sidebar-context p {
     margin: 0;
-    color: var(--shell-text-soft);
-    font-size: 0.78rem;
-    line-height: 1.45;
+    color: var(--app-shell-text-soft);
+    font-size: 0.74rem;
+    line-height: 1.4;
   }
 
   .sidebar-section-label {
-    color: var(--shell-text-muted);
+    color: var(--app-shell-text-muted);
     font-size: 0.68rem;
     font-weight: 800;
     letter-spacing: 0.14em;
@@ -207,7 +238,7 @@
 
   .shell-nav {
     display: grid;
-    gap: 0.65rem;
+    gap: 0.5rem;
   }
 
   .shell-nav-group {
@@ -216,8 +247,8 @@
   }
 
   .shell-nav-group + .shell-nav-group {
-    padding-top: 0.55rem;
-    border-top: 1px solid var(--shell-divider);
+    padding-top: 0.45rem;
+    border-top: 1px solid var(--app-shell-divider);
   }
 
   .shell-nav-group > .sidebar-section-label {
@@ -231,43 +262,69 @@
     align-items: center;
     gap: 0.85rem;
     min-width: 0;
-    padding: 0.68rem 0.72rem;
-    border-radius: 0.95rem;
+    padding: 0.62rem 0.72rem;
+    border-radius: 1rem;
     border: 1px solid transparent;
     text-decoration: none;
-    color: var(--shell-text-soft);
-    box-shadow: inset 0 1px 0 var(--shell-highlight-soft);
+    color: var(--app-shell-text-soft);
+    background: transparent;
+    box-shadow: inset 0 1px 0 transparent;
     transition:
       background 160ms ease,
       border-color 160ms ease,
       color 160ms ease,
-      transform 160ms ease;
+      transform 160ms ease,
+      box-shadow 160ms ease;
   }
 
   .shell-nav-link:hover,
   .shell-switch-link:hover,
   .shell-nav-link.active {
-    background: var(--shell-active-bg);
-    border-color: var(--shell-active-border);
-    color: var(--shell-text);
+    background: linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--app-shell-active-bg) 86%, transparent),
+      color-mix(in srgb, var(--app-shell-highlight) 62%, transparent)
+    );
+    border-color: var(--app-shell-active-border);
+    color: var(--app-shell-text);
     transform: translateX(2px);
     box-shadow:
-      inset 0 1px 0 var(--shell-highlight-strong),
-      0 20px 34px var(--shell-depth-shadow);
+      inset 0 1px 0 var(--app-shell-highlight-strong),
+      0 12px 24px var(--app-shell-depth-shadow);
+  }
+
+  .shell-nav-link.active {
+    border-color: color-mix(
+      in srgb,
+      var(--app-shell-active-border) 76%,
+      var(--app-shell-control-border) 24%
+    );
+  }
+
+  .shell-nav-link.active::before {
+    content: '';
+    width: 0.3rem;
+    align-self: stretch;
+    margin: -0.28rem 0 -0.28rem -0.12rem;
+    border-radius: 999px;
+    background: linear-gradient(180deg, var(--app-shell-brand-start), var(--app-shell-brand-end));
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--app-shell-brand-start) 40%, transparent);
   }
 
   .shell-nav-icon {
-    width: 2.35rem;
-    height: 2.35rem;
+    width: 2.1rem;
+    height: 2.1rem;
     flex-shrink: 0;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border-radius: 0.95rem;
-    background: var(--shell-control-bg);
-    border: 1px solid var(--shell-control-border);
-    color: var(--shell-icon-color);
-    box-shadow: inset 0 1px 0 var(--shell-highlight);
+    border-radius: var(--radius-xs);
+    background: var(--app-shell-control-bg);
+    border: 1px solid var(--app-shell-control-border);
+    color: var(--app-shell-icon-color);
+    box-shadow:
+      inset 0 1px 0 var(--app-shell-highlight-soft),
+      0 8px 18px var(--app-shell-depth-shadow);
   }
 
   .shell-nav-icon.subtle {
@@ -285,16 +342,16 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 0.86rem;
+    font-size: 0.84rem;
     font-weight: 700;
   }
 
   .sidebar-footer {
     margin-top: auto;
     display: grid;
-    gap: 0.65rem;
-    padding-top: 0.85rem;
-    border-top: 1px solid var(--shell-divider);
+    gap: 0.5rem;
+    padding-top: 0.7rem;
+    border-top: 1px solid var(--app-shell-divider);
   }
 
   .collapsed .sidebar-context,
@@ -318,6 +375,13 @@
     padding-inline: 0.5rem;
   }
 
+  .shell-nav-link:focus-visible,
+  .shell-switch-link:focus-visible,
+  .shell-brand:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
+  }
+
   @media (max-width: 960px) {
     .shell-sidebar {
       position: fixed;
@@ -331,10 +395,29 @@
       transform: translateX(0);
     }
 
+    .sidebar-mobile-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 0.75rem;
+    }
+
+    .shell-brand-desktop {
+      display: none;
+    }
+
     .collapsed .brand-copy,
     .collapsed .shell-nav-copy,
     .collapsed .sidebar-context {
       display: initial;
+    }
+
+    .collapsed .shell-brand-desktop {
+      display: none;
+    }
+
+    .sidebar-close-button {
+      align-self: flex-start;
     }
   }
 </style>

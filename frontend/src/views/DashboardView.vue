@@ -1,6 +1,6 @@
 <script setup lang="ts">
-  import { computed, onMounted, ref, watch } from 'vue'
-  import { RouterLink } from 'vue-router'
+  import { computed, onMounted, reactive, ref, watch } from 'vue'
+  import { RouterLink, type RouteLocationRaw } from 'vue-router'
   import Button from 'primevue/button'
   import Column from 'primevue/column'
   import DataTable from 'primevue/datatable'
@@ -8,90 +8,209 @@
   import Tag from 'primevue/tag'
   import { useI18n } from 'vue-i18n'
   import EmptyState from '../components/EmptyState.vue'
+  import FilterBar from '../components/FilterBar.vue'
+  import FilterField from '../components/FilterField.vue'
   import LoadingSpinner from '../components/LoadingSpinner.vue'
   import MetricCard from '../components/MetricCard.vue'
   import PageHeader from '../components/PageHeader.vue'
+  import SectionPanel from '../components/SectionPanel.vue'
   import PropertyTypePieChart from '../components/charts/PropertyTypePieChart.vue'
   import TrendLineChart from '../components/charts/TrendLineChart.vue'
-  import SavedWorkspaceMenu from '../components/workbench/SavedWorkspaceMenu.vue'
+  import DashboardActionGrid from '../features/dashboard/DashboardActionGrid.vue'
+  import DashboardWorkspaceHub from '../features/dashboard/DashboardWorkspaceHub.vue'
+  import { useFilterOptions } from '../composables/useFilterOptions'
+  import { useViewerQueryState } from '../composables/useViewerQueryState'
   import {
     buildWorkspaceRoute,
+    describeRoute,
     toLocationQuery,
     workspacePageTitleKeys,
   } from '../constants/workbench'
-  import { useViewerQueryState } from '../composables/useViewerQueryState'
-  import api from '../composables/useApi'
-  import { useAuthStore } from '../stores/auth'
+  import { useReferenceDataStore } from '../stores/referenceData'
   import { useStatsStore } from '../stores/stats'
   import { useWorkbenchStore } from '../stores/workbench'
-  import type { SavedWorkspace } from '../types/api'
+  import type {
+    MunicipalityExplorerItem,
+    PropertyTypeMix,
+    RegionExplorerItem,
+    SavedWorkspace,
+    TransactionRecord,
+    WatchlistFeedItem,
+  } from '../types/api'
   import { getApiErrorMessage } from '../utils/apiError'
+  import { useFormat } from '../composables/useFormat'
   import { formatCurrency, formatNumber } from '../utils/format'
-  import { getPropertyTypeLabel } from '../utils/propertyType'
 
   const { t } = useI18n()
-  const auth = useAuthStore()
+  const { formatType } = useFormat()
   const stats = useStatsStore()
   const workbench = useWorkbenchStore()
+  const referenceData = useReferenceDataStore()
   const viewerQuery = useViewerQueryState({
     property_type: '',
     region: '',
     municipality: '',
     year: '',
   })
+  const { propertyTypeOptions, regionOptions, municipalityOptions, yearOptions } = useFilterOptions(
+    {
+      region: computed(() => viewerQuery.state.region),
+      labels: {
+        allPropertyTypes: 'dashboard.filterAllTypes',
+      },
+    },
+  )
 
-  const loading = ref(true)
-  const pageError = ref('')
-  const allMunicipalities = ref<Array<{ municipality: string; region?: string }>>([])
+  const dashboardReady = ref(false)
+  const workspacesLoading = ref(true)
+  const workspacesError = ref('')
+  const watchlistLoading = ref(true)
+  const watchlistError = ref('')
+  const sectionLoading = reactive({
+    marketHome: false,
+    trend: false,
+    transactions: false,
+    regions: false,
+    municipalities: false,
+  })
+  const sectionErrors = reactive({
+    marketHome: '',
+    trend: '',
+    transactions: '',
+    regions: '',
+    municipalities: '',
+  })
+  let dashboardRequestToken = 0
 
-  const marketHome = computed<any>(
+  interface DashboardMarketHome {
+    headline: {
+      total_records?: number | null
+      earliest_year?: number | string | null
+      latest_year?: number | string | null
+      median_price?: number | null
+      avg_price_per_m2?: number | null
+    }
+    market_coverage?: {
+      present?: number | null
+      official_total?: number | null
+    }
+    property_type_mix?: PropertyTypeMix[]
+    year_coverage?: Array<Record<string, unknown>>
+  }
+
+  interface DashboardQuickLink {
+    id: string
+    label: string
+    description: string
+    to: RouteLocationRaw
+    icon: string
+    tone?: 'primary' | 'secondary' | 'success'
+  }
+
+  interface DashboardWorkspaceLink {
+    id: number
+    name: string
+    subtitle: string
+    to: RouteLocationRaw
+  }
+
+  interface DashboardFeedLink {
+    id: string
+    label: string
+    summary: string
+    trend?: string
+    to?: RouteLocationRaw | null
+  }
+
+  interface DashboardWorkflowLink {
+    id: string
+    label: string
+    subtitle: string
+    to: RouteLocationRaw
+  }
+
+  const marketHome = computed<DashboardMarketHome>(
     () =>
-      stats.marketHome || {
+      (stats.marketHome as DashboardMarketHome | null) || {
         headline: {},
         market_coverage: {},
-        largest_markets: [],
-        price_leaders: [],
-        region_snapshot: [],
-        latest_sales: [],
         property_type_mix: [],
         year_coverage: [],
       },
   )
 
-  const propertyTypeOptions = computed(() => [
-    { label: t('dashboard.filterAllTypes'), value: '' },
-    ...(marketHome.value.property_type_mix || []).map((item: any) => ({
-      label: getPropertyTypeLabel(item.property_type, t),
-      value: item.property_type,
-    })),
+  const propertyMix = computed<PropertyTypeMix[]>(() => marketHome.value.property_type_mix || [])
+  const latestSales = computed<TransactionRecord[]>(() => stats.transactionsExplorer?.items || [])
+  const topRegions = computed<RegionExplorerItem[]>(
+    () => stats.regionsExplorer?.items?.slice(0, 5) || [],
+  )
+  const municipalitySpotlight = computed<MunicipalityExplorerItem | null>(
+    () => stats.municipalitiesExplorer?.items?.[0] || null,
+  )
+  const trendData = computed(() => stats.trend || [])
+  const pinnedWorkspaces = computed(() => workbench.pinnedWorkspaces.slice(0, 4))
+  const watchlistFeed = computed(() => workbench.watchlistFeed.slice(0, 4))
+  const recentWorkflows = computed(() => workbench.recentRoutes.slice(0, 4))
+  const dashboardQuickLinks = computed<DashboardQuickLink[]>(() => [
+    {
+      id: 'market',
+      label: t('nav.market'),
+      description: t('market.consumerBody'),
+      to: { path: '/trg', query: routeQuery({ tab: 'overview' }) },
+      icon: 'pi pi-chart-bar',
+      tone: 'primary',
+    },
+    {
+      id: 'map',
+      label: t('nav.map'),
+      description: t('map.explorerBody'),
+      to: { path: '/zemljevid', query: routeQuery({ view: 'transactions' }) },
+      icon: 'pi pi-compass',
+      tone: 'secondary',
+    },
+    {
+      id: 'municipalities',
+      label: t('nav.municipalities'),
+      description: t('municipalities.consumerBody'),
+      to: { path: '/obcine', query: routeQuery({ tab: 'cards' }) },
+      icon: 'pi pi-building',
+      tone: 'success',
+    },
   ])
-
-  const regionOptions = computed(() => {
-    const regions = [...new Set(allMunicipalities.value.map((item) => item.region).filter(Boolean))]
-    return [
-      { label: t('municipalities.allRegions'), value: '' },
-      ...regions.sort().map((region) => ({ label: region as string, value: region as string })),
-    ]
-  })
-
-  const municipalityOptions = computed(() => {
-    const items = viewerQuery.state.region
-      ? allMunicipalities.value.filter((item) => item.region === viewerQuery.state.region)
-      : allMunicipalities.value
-    return [
-      { label: t('map.allMunicipalities'), value: '' },
-      ...items.map((item) => ({ label: item.municipality, value: item.municipality })),
-    ]
-  })
-
-  const yearOptions = computed(() => [
-    { label: t('map.allYears'), value: '' },
-    ...((marketHome.value.year_coverage || []) as any[]).map((item) => ({
-      label: String(item.year),
-      value: String(item.year),
+  const pinnedWorkspaceLinks = computed<DashboardWorkspaceLink[]>(() =>
+    pinnedWorkspaces.value.map((item) => ({
+      id: item.id,
+      name: item.name,
+      subtitle: workspacePageLabel(item.page),
+      to: workspaceLink(item),
     })),
-  ])
-
+  )
+  const watchlistFeedLinks = computed<DashboardFeedLink[]>(() =>
+    watchlistFeed.value.map((item) => ({
+      id: item.id,
+      label: item.display_label,
+      summary: watchlistFeedSummary(item),
+      trend: watchlistFeedTrend(item) || undefined,
+      to: item.link ? { path: item.link } : null,
+    })),
+  )
+  const recentWorkflowLinks = computed<DashboardWorkflowLink[]>(() =>
+    recentWorkflows.value.map((item) => ({
+      id: `${item.path}-${item.label}`,
+      label: item.label,
+      subtitle: recentWorkflowLabel(item),
+      to: { path: item.path, query: toLocationQuery(item.query as Record<string, unknown>) },
+    })),
+  )
+  const activeFilterCountValue = computed(() => viewerQuery.activeFilterCount.value)
+  const activeFilterTagSeverity = computed(() =>
+    activeFilterCountValue.value > 0 ? 'contrast' : 'secondary',
+  )
+  const activeFilterTagLabel = computed(() =>
+    activeFilterCountValue.value > 0
+      ? t('dashboard.activeFilterCount', { count: activeFilterCountValue.value })
+      : t('dashboard.noActiveFilters'),
+  )
   const summaryCards = computed(() => [
     {
       label: t('dashboard.totalRecords'),
@@ -127,24 +246,6 @@
     },
   ])
 
-  const latestSales = computed(() => stats.transactionsExplorer?.items || [])
-  const topRegions = computed(() => stats.regionsExplorer?.items?.slice(0, 5) || [])
-  const municipalitySpotlight = computed(() => stats.municipalitiesExplorer?.items?.[0] || null)
-  const trendData = computed(() => stats.trend || [])
-  const propertyMix = computed(() => marketHome.value.property_type_mix || [])
-  const pinnedWorkspaces = computed(() => workbench.pinnedWorkspaces.slice(0, 4))
-  const watchlistFeed = computed(() => workbench.watchlistFeed.slice(0, 4))
-  const recentWorkflows = computed(() => workbench.recentRoutes.slice(0, 4))
-  const activeFilterCountValue = computed(() => viewerQuery.activeFilterCount.value)
-  const activeFilterTagSeverity = computed(() =>
-    activeFilterCountValue.value > 0 ? 'contrast' : 'secondary',
-  )
-  const activeFilterTagLabel = computed(() =>
-    activeFilterCountValue.value > 0
-      ? t('dashboard.activeFilterCount', { count: activeFilterCountValue.value })
-      : t('dashboard.noActiveFilters'),
-  )
-
   function viewerParams() {
     return {
       property_type: viewerQuery.state.property_type || undefined,
@@ -170,55 +271,156 @@
     return t(workspacePageTitleKeys[page] || 'app.title')
   }
 
-  async function loadReferenceData() {
+  function recentWorkflowLabel(item: { path: string; query?: Record<string, unknown> | null }) {
+    return describeRoute(item.path, (item.query as Record<string, unknown>) || {})
+  }
+
+  function watchlistFeedSummary(item: WatchlistFeedItem) {
+    if (item.headline_label && item.headline_value != null) {
+      return `${item.headline_label}: ${formatCurrency(item.headline_value)}`
+    }
+    if (item.headline_label) return item.headline_label
+    return t('common.noData')
+  }
+
+  function watchlistFeedTrend(item: WatchlistFeedItem) {
+    if (item.trend_value == null) return ''
+    const value = `${formatNumber(item.trend_value, { maximumFractionDigits: 1 })}%`
+    return item.trend_label ? `${item.trend_label}: ${value}` : value
+  }
+
+  function normalizeViewerSelection() {
+    if (!referenceData.loaded) return
+
+    const currentRegion = viewerQuery.state.region
+    const currentMunicipality = viewerQuery.state.municipality
+    const municipalityRecord = currentMunicipality
+      ? referenceData.municipalities.find((item) => item.municipality === currentMunicipality)
+      : null
+    const next: Record<string, string> = {}
+
+    if (currentRegion && !referenceData.regions.includes(currentRegion)) {
+      next.region = ''
+      next.municipality = ''
+    }
+
+    if (currentMunicipality && !municipalityRecord) {
+      next.municipality = ''
+    }
+
+    if (municipalityRecord?.region && municipalityRecord.region !== currentRegion) {
+      next.region = municipalityRecord.region
+    }
+
+    if (Object.keys(next).length > 0) {
+      viewerQuery.patchState(next)
+    }
+  }
+
+  async function loadWorkspaces() {
+    workspacesLoading.value = true
+    workspacesError.value = ''
     try {
-      const { data } = await api.get('/api/regions/municipalities')
-      allMunicipalities.value = data || []
-    } catch {
-      allMunicipalities.value = []
+      await workbench.fetchWorkspaces()
+    } catch (error) {
+      workspacesError.value = getApiErrorMessage(error, t)
+    } finally {
+      workspacesLoading.value = false
+    }
+  }
+
+  async function loadWatchlistFeed() {
+    watchlistLoading.value = true
+    watchlistError.value = ''
+    try {
+      await workbench.fetchWatchlistFeed()
+    } catch (error) {
+      watchlistError.value = getApiErrorMessage(error, t)
+    } finally {
+      watchlistLoading.value = false
+    }
+  }
+
+  async function loadSection(
+    key: keyof typeof sectionLoading,
+    request: (params: Record<string, string | undefined>) => Promise<unknown>,
+    params: Record<string, string | undefined>,
+    token: number,
+  ) {
+    if (token !== dashboardRequestToken) return
+    sectionLoading[key] = true
+    sectionErrors[key] = ''
+
+    try {
+      await request(params)
+    } catch (error) {
+      if (token === dashboardRequestToken) {
+        sectionErrors[key] = getApiErrorMessage(error, t)
+      }
+    } finally {
+      if (token === dashboardRequestToken) {
+        sectionLoading[key] = false
+      }
     }
   }
 
   async function loadDashboard() {
-    loading.value = true
-    pageError.value = ''
+    const token = ++dashboardRequestToken
+    const params = viewerParams()
 
-    try {
-      const params = viewerParams()
-      await Promise.all([
-        stats.fetchMarketHome(params),
-        stats.fetchTrend({
-          property_type: params.property_type,
-          region: params.region,
-          municipality: params.municipality,
-        }),
-        stats.fetchTransactionsExplorer({
-          ...params,
-          page: 1,
-          page_size: 6,
-          sort: 'recent',
-          order: 'desc',
-        }),
-        stats.fetchRegionsExplorer({
-          ...params,
-          page: 1,
-          page_size: 8,
-          sort: 'count',
-          order: 'desc',
-        }),
-        stats.fetchMunicipalitiesExplorer({
-          ...params,
-          page: 1,
-          page_size: 8,
-          sort: 'count',
-          order: 'desc',
-        }),
-      ])
-    } catch (error) {
-      pageError.value = getApiErrorMessage(error, t)
-    } finally {
-      loading.value = false
-    }
+    await Promise.allSettled([
+      loadSection('marketHome', stats.fetchMarketHome, params, token),
+      loadSection(
+        'trend',
+        (requestParams) =>
+          stats.fetchTrend({
+            property_type: requestParams.property_type,
+            region: requestParams.region,
+            municipality: requestParams.municipality,
+          }),
+        params,
+        token,
+      ),
+      loadSection(
+        'transactions',
+        (requestParams) =>
+          stats.fetchTransactionsExplorer({
+            ...requestParams,
+            page: 1,
+            page_size: 6,
+            sort: 'recent',
+            order: 'desc',
+          }),
+        params,
+        token,
+      ),
+      loadSection(
+        'regions',
+        (requestParams) =>
+          stats.fetchRegionsExplorer({
+            ...requestParams,
+            page: 1,
+            page_size: 8,
+            sort: 'count',
+            order: 'desc',
+          }),
+        params,
+        token,
+      ),
+      loadSection(
+        'municipalities',
+        (requestParams) =>
+          stats.fetchMunicipalitiesExplorer({
+            ...requestParams,
+            page: 1,
+            page_size: 8,
+            sort: 'count',
+            order: 'desc',
+          }),
+        params,
+        token,
+      ),
+    ])
   }
 
   function clearFilters() {
@@ -236,18 +438,15 @@
         region: municipalitySpotlight.value.region,
       },
     })
-    await workbench.fetchWatchlistFeed()
+    void loadWatchlistFeed()
   }
 
   watch(
-    () => viewerQuery.state.region,
-    (region) => {
-      if (!region) return
-      const valid = allMunicipalities.value.some(
-        (item) => item.region === region && item.municipality === viewerQuery.state.municipality,
-      )
-      if (!valid) viewerQuery.patchState({ municipality: '' })
+    () => [referenceData.loaded, viewerQuery.state.region, viewerQuery.state.municipality],
+    () => {
+      normalizeViewerSelection()
     },
+    { immediate: true },
   )
 
   watch(
@@ -258,66 +457,70 @@
       viewerQuery.state.year,
     ],
     () => {
+      if (!dashboardReady.value) return
       void loadDashboard()
     },
   )
 
   onMounted(async () => {
-    await Promise.all([
-      loadReferenceData(),
-      workbench.fetchWorkspaces(),
-      workbench.fetchWatchlistFeed(),
-    ])
+    await referenceData.ensureLoaded().catch(() => undefined)
+    normalizeViewerSelection()
+    void loadWorkspaces()
+    void loadWatchlistFeed()
     await loadDashboard()
+    dashboardReady.value = true
   })
 </script>
 
 <template>
   <div class="dashboard-page">
     <section class="hero-shell dashboard-hero">
-      <PageHeader
-        :eyebrow="t('dashboard.consumerKicker')"
-        :title="t('dashboard.consumerTitle')"
-        :description="t('dashboard.consumerBody')"
-      >
-        <template #actions>
-          <SavedWorkspaceMenu
-            page="dashboard"
-            :state="{
-              page: 'dashboard',
-              filters: viewerParams(),
-            }"
-          />
-          <RouterLink
-            :to="{ path: '/trg', query: routeQuery({ tab: 'overview' }) }"
-            class="hero-link"
-          >
-            <Button severity="secondary" outlined icon="pi pi-chart-bar" :label="t('nav.market')" />
-          </RouterLink>
-          <RouterLink
-            :to="{ path: '/zemljevid', query: routeQuery({ view: 'transactions' }) }"
-            class="hero-link"
-          >
-            <Button
-              severity="secondary"
-              outlined
-              icon="pi pi-map"
-              :label="t('dashboard.quickMap')"
-            />
-          </RouterLink>
-          <RouterLink :to="{ path: '/napoved', query: routeQuery() }" class="hero-link">
-            <Button icon="pi pi-bolt" :label="t('dashboard.quickPrediction')" />
-          </RouterLink>
-          <RouterLink v-if="auth.isAdmin" to="/admin" class="hero-link">
-            <Button severity="contrast" outlined icon="pi pi-cog" :label="t('nav.admin')" />
-          </RouterLink>
-        </template>
-      </PageHeader>
+      <div class="dashboard-hero-copy">
+        <PageHeader
+          :eyebrow="t('dashboard.consumerKicker')"
+          :title="t('dashboard.consumerTitle')"
+          :description="t('dashboard.consumerBody')"
+        >
+          <template #actions>
+            <div class="hero-actions">
+              <SavedWorkspaceMenu
+                page="dashboard"
+                :state="{
+                  page: 'dashboard',
+                  filters: viewerParams(),
+                }"
+              />
+              <Button
+                :as="RouterLink"
+                :to="{ path: '/trg', query: routeQuery({ tab: 'overview' }) }"
+                class="hero-link"
+                severity="secondary"
+                outlined
+                icon="pi pi-chart-bar"
+                :label="t('nav.market')"
+              />
+              <Button
+                :as="RouterLink"
+                :to="{ path: '/napoved', query: routeQuery() }"
+                class="hero-link hero-link--primary"
+                icon="pi pi-bolt"
+                :label="t('dashboard.quickPrediction')"
+              />
+            </div>
+          </template>
+        </PageHeader>
+
+        <div class="hero-status">
+          <Tag :severity="activeFilterTagSeverity" :value="activeFilterTagLabel" />
+          <span>{{ t('dashboard.marketLens') }}</span>
+        </div>
+      </div>
 
       <div class="hero-summary">
         <MetricCard
-          v-for="card in summaryCards"
+          v-for="(card, index) in summaryCards"
           :key="card.label"
+          :class="{ 'summary-card--feature': index === 0 }"
           :label="card.label"
           :value="card.value"
           :meta="card.meta"
@@ -326,12 +529,12 @@
       </div>
     </section>
 
-    <section class="panel filter-panel">
-      <div class="panel-head compact">
-        <div>
-          <p class="eyebrow subtle">{{ t('dashboard.activeFilters') }}</p>
-          <h2>{{ t('dashboard.marketLens') }}</h2>
-        </div>
+    <SectionPanel
+      :eyebrow="t('dashboard.activeFilters')"
+      :title="t('dashboard.marketLens')"
+      compact
+    >
+      <template #actions>
         <div class="filter-summary">
           <Tag :severity="activeFilterTagSeverity" :value="activeFilterTagLabel" />
           <Button
@@ -342,456 +545,469 @@
             @click="clearFilters"
           />
         </div>
-      </div>
+      </template>
 
-      <div class="filter-grid">
-        <label class="field-inline">
-          <span>{{ t('dashboard.filterByType') }}</span>
+      <FilterBar :columns="4">
+        <FilterField :label="t('dashboard.filterByType')">
           <Select
             v-model="viewerQuery.state.property_type"
             :options="propertyTypeOptions"
             option-label="label"
             option-value="value"
           />
-        </label>
+        </FilterField>
 
-        <label class="field-inline">
-          <span>{{ t('municipalities.filterByRegion') }}</span>
+        <FilterField :label="t('municipalities.filterByRegion')">
           <Select
             v-model="viewerQuery.state.region"
             :options="regionOptions"
             option-label="label"
             option-value="value"
           />
-        </label>
+        </FilterField>
 
-        <label class="field-inline">
-          <span>{{ t('dashboard.municipality') }}</span>
+        <FilterField :label="t('dashboard.municipality')">
           <Select
             v-model="viewerQuery.state.municipality"
             :options="municipalityOptions"
             option-label="label"
             option-value="value"
           />
-        </label>
+        </FilterField>
 
-        <label class="field-inline">
-          <span>{{ t('map.year') }}</span>
+        <FilterField :label="t('map.year')">
           <Select
             v-model="viewerQuery.state.year"
             :options="yearOptions"
             option-label="label"
             option-value="value"
           />
-        </label>
-      </div>
-    </section>
+        </FilterField>
+      </FilterBar>
+    </SectionPanel>
 
-    <LoadingSpinner v-if="loading" :label="t('common.loading')" />
-    <p v-else-if="pageError" class="state-card error-text">{{ pageError }}</p>
+    <SectionPanel :eyebrow="t('common.explore')" :title="t('dashboard.quickActionsTitle')" compact>
+      <DashboardActionGrid :items="dashboardQuickLinks" />
+    </SectionPanel>
 
-    <template v-else>
-      <div class="dashboard-grid">
-        <section class="panel trend-panel">
-          <div class="panel-head">
-            <div>
-              <p class="eyebrow subtle">{{ t('dashboard.priceTrend') }}</p>
-              <h2>{{ t('market.trendTitle') }}</h2>
-            </div>
-            <RouterLink
-              :to="{ path: '/trg', query: routeQuery({ tab: 'overview' }) }"
-              class="hero-link"
-            >
-              <Button
-                severity="secondary"
-                outlined
-                size="small"
-                :label="t('market.viewAll')"
-                icon="pi pi-arrow-right"
-                icon-pos="right"
-              />
-            </RouterLink>
-          </div>
-          <TrendLineChart v-if="trendData.length" :data="trendData" compact />
-          <EmptyState v-else :message="t('common.noData')" />
-        </section>
-
-        <section class="panel mix-panel">
-          <div class="panel-head">
-            <div>
-              <p class="eyebrow subtle">{{ t('dashboard.propertyMix') }}</p>
-              <h2>{{ t('dashboard.propertyMixTitle') }}</h2>
-            </div>
-            <RouterLink
-              :to="{ path: '/trg', query: routeQuery({ tab: 'distribution' }) }"
-              class="hero-link"
-            >
-              <Button
-                severity="secondary"
-                outlined
-                size="small"
-                :label="t('market.viewAll')"
-                icon="pi pi-arrow-right"
-                icon-pos="right"
-              />
-            </RouterLink>
-          </div>
-          <PropertyTypePieChart v-if="propertyMix.length" :items="propertyMix" />
-          <EmptyState v-else :message="t('common.noData')" />
-        </section>
-
-        <aside class="panel municipality-spotlight">
-          <div class="panel-head">
-            <div>
-              <p class="eyebrow subtle">{{ t('dashboard.municipalitySpotlight') }}</p>
-              <h2>{{ municipalitySpotlight?.municipality || t('common.noData') }}</h2>
-            </div>
-            <Tag severity="contrast" :value="t('dashboard.marketTableTitle')" />
-          </div>
-
-          <template v-if="municipalitySpotlight">
-            <p class="spotlight-copy">{{ municipalitySpotlight.region || '-' }}</p>
-            <div class="spotlight-metrics">
-              <div>
-                <span>{{ t('dashboard.transactions') }}</span>
-                <strong>{{ formatNumber(municipalitySpotlight.count) }}</strong>
-              </div>
-              <div>
-                <span>{{ t('dashboard.pricePerM2') }}</span>
-                <strong>{{ formatCurrency(municipalitySpotlight.median_price_per_m2) }}</strong>
-              </div>
-            </div>
-            <div class="spotlight-actions">
-              <RouterLink :to="`/obcine/${municipalitySpotlight.slug}`" class="hero-link">
-                <Button
-                  severity="contrast"
-                  outlined
-                  icon="pi pi-building"
-                  :label="t('municipalities.viewDetail')"
-                />
-              </RouterLink>
-              <RouterLink
-                :to="{
-                  path: '/trg',
-                  query: routeQuery({
-                    tab: 'transactions',
-                    municipality: municipalitySpotlight.municipality,
-                  }),
-                }"
-                class="hero-link"
-              >
-                <Button
-                  severity="secondary"
-                  outlined
-                  icon="pi pi-table"
-                  :label="t('market.tabTransactions')"
-                />
-              </RouterLink>
-              <Button
-                severity="secondary"
-                text
-                icon="pi pi-bookmark"
-                :label="t('workbench.watch')"
-                @click="watchMunicipalitySpotlight"
-              />
-            </div>
-          </template>
-          <EmptyState v-else :message="t('common.noData')" />
-        </aside>
-      </div>
-
-      <div class="dashboard-grid bottom-grid">
-        <section class="panel">
-          <div class="panel-head">
-            <div>
-              <p class="eyebrow subtle">{{ t('dashboard.regionSnapshot') }}</p>
-              <h2>{{ t('dashboard.regionTableTitle') }}</h2>
-            </div>
-            <RouterLink
-              :to="{ path: '/regije', query: routeQuery({ tab: 'table' }) }"
-              class="hero-link"
-            >
-              <Button
-                severity="secondary"
-                outlined
-                size="small"
-                :label="t('market.viewAll')"
-                icon="pi pi-arrow-right"
-                icon-pos="right"
-              />
-            </RouterLink>
-          </div>
-
-          <div v-if="topRegions.length" class="region-ranking">
-            <RouterLink
-              v-for="(region, index) in topRegions"
-              :key="region.region"
-              :to="{
-                path: '/regije',
-                query: routeQuery({ tab: 'drilldown', region: region.region }),
-              }"
-              class="region-rank-row"
-            >
-              <span class="rank-badge">#{{ index + 1 }}</span>
-              <div>
-                <strong>{{ region.region }}</strong>
-                <p class="muted">
-                  {{ formatNumber(region.count) }} {{ t('dashboard.transactions') }}
-                </p>
-              </div>
-              <Tag severity="success" :value="`${formatCurrency(region.median_price_per_m2)}/m²`" />
-            </RouterLink>
-          </div>
-          <EmptyState v-else :message="t('common.noData')" />
-        </section>
-
-        <section class="panel quick-panel">
-          <div class="panel-head">
-            <div>
-              <p class="eyebrow subtle">{{ t('dashboard.workflowTitle') }}</p>
-              <h2>{{ t('dashboard.quickActionsTitle') }}</h2>
-            </div>
-          </div>
-
-          <div class="quick-actions">
-            <RouterLink
-              :to="{ path: '/trg', query: routeQuery({ tab: 'transactions' }) }"
-              class="quick-link"
-            >
-              <strong>{{ t('market.tabTransactions') }}</strong>
-              <small>{{ t('dashboard.quickTransactionsBody') }}</small>
-            </RouterLink>
-            <RouterLink
-              :to="{ path: '/regije', query: routeQuery({ tab: 'table' }) }"
-              class="quick-link"
-            >
-              <strong>{{ t('nav.regions') }}</strong>
-              <small>{{ t('dashboard.quickRegionsBody') }}</small>
-            </RouterLink>
-            <RouterLink
-              :to="{ path: '/obcine', query: routeQuery({ tab: 'table' }) }"
-              class="quick-link"
-            >
-              <strong>{{ t('nav.municipalities') }}</strong>
-              <small>{{ t('dashboard.quickMunicipalitiesBody') }}</small>
-            </RouterLink>
-            <RouterLink :to="{ path: '/analiza', query: routeQuery() }" class="quick-link">
-              <strong>{{ t('nav.analysis') }}</strong>
-              <small>{{ t('dashboard.quickAnalysisBody') }}</small>
-            </RouterLink>
-          </div>
-        </section>
-      </div>
-
-      <div class="dashboard-grid bottom-grid">
-        <section class="panel">
-          <div class="panel-head">
-            <div>
-              <p class="eyebrow subtle">{{ t('workbench.pinnedWorkspaces') }}</p>
-              <h2>{{ t('workbench.resumeWork') }}</h2>
-            </div>
-          </div>
-
-          <div v-if="pinnedWorkspaces.length" class="quick-actions">
-            <RouterLink
-              v-for="item in pinnedWorkspaces"
-              :key="item.id"
-              :to="workspaceLink(item)"
-              class="quick-link"
-            >
-              <strong>{{ item.name }}</strong>
-              <small>{{ workspacePageLabel(item.page) }}</small>
-            </RouterLink>
-          </div>
-          <EmptyState v-else :message="t('workbench.noPinnedWorkspaces')" />
-        </section>
-
-        <section class="panel">
-          <div class="panel-head">
-            <div>
-              <p class="eyebrow subtle">{{ t('workbench.watchlistFeed') }}</p>
-              <h2>{{ t('workbench.marketSignals') }}</h2>
-            </div>
-          </div>
-
-          <div v-if="watchlistFeed.length" class="quick-actions">
-            <RouterLink
-              v-for="item in watchlistFeed"
-              :key="item.id"
-              :to="item.link || '/obcine'"
-              class="quick-link"
-            >
-              <strong>{{ item.display_label }}</strong>
-              <small>
-                {{ item.headline_label }}: {{ formatCurrency(item.headline_value) }}
-                <template v-if="item.trend_value != null"> · {{ item.trend_value }}%</template>
-              </small>
-            </RouterLink>
-          </div>
-          <EmptyState v-else :message="t('workbench.noWatchlistFeed')" />
-        </section>
-      </div>
-
-      <section class="panel">
-        <div class="panel-head">
-          <div>
-            <p class="eyebrow subtle">{{ t('workbench.recentWorkflows') }}</p>
-            <h2>{{ t('workbench.recentWorkflowsTitle') }}</h2>
-          </div>
-        </div>
-
-        <div v-if="recentWorkflows.length" class="quick-actions">
-          <RouterLink
-            v-for="item in recentWorkflows"
-            :key="`${item.path}-${item.label}`"
-            :to="{ path: item.path, query: toLocationQuery(item.query as Record<string, unknown>) }"
-            class="quick-link"
-          >
-            <strong>{{ item.label }}</strong>
-            <small>{{ item.path }}</small>
-          </RouterLink>
-        </div>
-        <EmptyState v-else :message="t('workbench.noRecentWorkflows')" />
-      </section>
-
-      <section class="panel">
-        <div class="panel-head">
-          <div>
-            <p class="eyebrow subtle">{{ t('dashboard.recentSales') }}</p>
-            <h2>{{ t('dashboard.latestTransactions') }}</h2>
-          </div>
-          <RouterLink
-            :to="{ path: '/trg', query: routeQuery({ tab: 'transactions' }) }"
+    <div class="dashboard-grid dashboard-grid--primary">
+      <SectionPanel
+        class="dashboard-chart-panel"
+        :eyebrow="t('dashboard.priceTrend')"
+        :title="t('market.trendTitle')"
+      >
+        <template #actions>
+          <Button
+            :as="RouterLink"
+            :to="{ path: '/trg', query: routeQuery({ tab: 'overview' }) }"
             class="hero-link"
-          >
+            severity="secondary"
+            outlined
+            size="small"
+            :label="t('market.viewAll')"
+            icon="pi pi-arrow-right"
+            icon-pos="right"
+          />
+        </template>
+
+        <LoadingSpinner
+          v-if="sectionLoading.trend && !trendData.length"
+          :label="t('common.loading')"
+        />
+        <div
+          v-else-if="sectionErrors.trend && !trendData.length"
+          class="state-card state-card-stack"
+          role="alert"
+        >
+          <EmptyState icon="pi pi-exclamation-triangle" :message="sectionErrors.trend" />
+          <div class="state-card-actions">
             <Button
+              icon="pi pi-refresh"
               severity="secondary"
               outlined
-              size="small"
-              :label="t('market.viewAll')"
-              icon="pi pi-arrow-right"
-              icon-pos="right"
+              :label="t('common.retry')"
+              @click="loadDashboard"
             />
+          </div>
+        </div>
+        <TrendLineChart v-else-if="trendData.length" :data="trendData" compact />
+        <EmptyState v-else :message="t('common.noData')" />
+      </SectionPanel>
+
+      <SectionPanel
+        class="dashboard-spotlight-panel municipality-spotlight"
+        :eyebrow="t('dashboard.municipalitySpotlight')"
+        :title="municipalitySpotlight?.municipality || t('common.noData')"
+      >
+        <template #actions>
+          <Tag severity="contrast" :value="t('dashboard.marketTableTitle')" />
+        </template>
+
+        <LoadingSpinner
+          v-if="sectionLoading.municipalities && !municipalitySpotlight"
+          :label="t('common.loading')"
+        />
+        <div
+          v-else-if="sectionErrors.municipalities && !municipalitySpotlight"
+          class="state-card state-card-stack"
+          role="alert"
+        >
+          <EmptyState icon="pi pi-exclamation-triangle" :message="sectionErrors.municipalities" />
+          <div class="state-card-actions">
+            <Button
+              icon="pi pi-refresh"
+              severity="secondary"
+              outlined
+              :label="t('common.retry')"
+              @click="loadDashboard"
+            />
+          </div>
+        </div>
+        <template v-else-if="municipalitySpotlight">
+          <p class="spotlight-copy">{{ municipalitySpotlight.region || '-' }}</p>
+          <div class="spotlight-metrics">
+            <div>
+              <span>{{ t('dashboard.transactions') }}</span>
+              <strong>{{ formatNumber(municipalitySpotlight.count) }}</strong>
+            </div>
+            <div>
+              <span>{{ t('dashboard.pricePerM2') }}</span>
+              <strong>{{ formatCurrency(municipalitySpotlight.median_price_per_m2) }}</strong>
+            </div>
+          </div>
+          <div class="spotlight-actions">
+            <Button
+              :as="RouterLink"
+              :to="`/obcine/${municipalitySpotlight.slug}`"
+              class="hero-link"
+              severity="contrast"
+              outlined
+              icon="pi pi-building"
+              :label="t('municipalities.viewDetail')"
+            />
+            <Button
+              :as="RouterLink"
+              :to="{
+                path: '/trg',
+                query: routeQuery({
+                  tab: 'transactions',
+                  municipality: municipalitySpotlight.municipality,
+                }),
+              }"
+              class="hero-link"
+              severity="secondary"
+              outlined
+              icon="pi pi-table"
+              :label="t('market.tabTransactions')"
+            />
+            <Button
+              severity="secondary"
+              text
+              icon="pi pi-bookmark"
+              :label="t('workbench.watch')"
+              @click="watchMunicipalitySpotlight"
+            />
+          </div>
+        </template>
+        <EmptyState v-else :message="t('common.noData')" />
+      </SectionPanel>
+    </div>
+
+    <div class="dashboard-grid dashboard-grid--secondary">
+      <SectionPanel
+        class="dashboard-chart-panel"
+        :eyebrow="t('dashboard.propertyMix')"
+        :title="t('dashboard.propertyMixTitle')"
+      >
+        <template #actions>
+          <Button
+            :as="RouterLink"
+            :to="{ path: '/trg', query: routeQuery({ tab: 'distribution' }) }"
+            class="hero-link"
+            severity="secondary"
+            outlined
+            size="small"
+            :label="t('market.viewAll')"
+            icon="pi pi-arrow-right"
+            icon-pos="right"
+          />
+        </template>
+        <PropertyTypePieChart v-if="propertyMix.length" :items="propertyMix" />
+        <EmptyState v-else :message="t('common.noData')" />
+      </SectionPanel>
+
+      <SectionPanel
+        class="dashboard-table-panel"
+        :eyebrow="t('dashboard.regionSnapshot')"
+        :title="t('dashboard.regionTableTitle')"
+      >
+        <template #actions>
+          <Button
+            :as="RouterLink"
+            :to="{ path: '/regije', query: routeQuery({ tab: 'table' }) }"
+            class="hero-link"
+            severity="secondary"
+            outlined
+            size="small"
+            :label="t('market.viewAll')"
+            icon="pi pi-arrow-right"
+            icon-pos="right"
+          />
+        </template>
+
+        <div v-if="topRegions.length" class="region-ranking">
+          <RouterLink
+            v-for="(region, index) in topRegions"
+            :key="region.region"
+            :to="{
+              path: '/regije',
+              query: routeQuery({ tab: 'drilldown', region: region.region }),
+            }"
+            class="region-rank-row"
+          >
+            <span class="rank-badge">#{{ index + 1 }}</span>
+            <div>
+              <strong>{{ region.region }}</strong>
+              <p class="muted">
+                {{ formatNumber(region.count) }} {{ t('dashboard.transactions') }}
+              </p>
+            </div>
+            <Tag severity="success" :value="`${formatCurrency(region.median_price_per_m2)}/m²`" />
           </RouterLink>
         </div>
+        <EmptyState v-else :message="t('common.noData')" />
+      </SectionPanel>
+    </div>
 
-        <DataTable
-          :value="latestSales"
+    <SectionPanel
+      class="dashboard-workspace-panel"
+      :eyebrow="t('workbench.pinnedWorkspaces')"
+      :title="t('workbench.resumeWork')"
+    >
+      <DashboardWorkspaceHub
+        :pinned-workspaces="pinnedWorkspaceLinks"
+        :watchlist-feed="watchlistFeedLinks"
+        :recent-workflows="recentWorkflowLinks"
+        :workspaces-loading="workspacesLoading"
+        :workspaces-error="workspacesError"
+        :watchlist-loading="watchlistLoading"
+        :watchlist-error="watchlistError"
+        @retry-workspaces="loadWorkspaces"
+        @retry-watchlist="loadWatchlistFeed"
+      />
+    </SectionPanel>
+
+    <SectionPanel :eyebrow="t('dashboard.recentSales')" :title="t('dashboard.latestTransactions')">
+      <template #actions>
+        <Button
+          :as="RouterLink"
+          :to="{ path: '/trg', query: routeQuery({ tab: 'transactions' }) }"
+          class="hero-link"
+          severity="secondary"
+          outlined
           size="small"
-          striped-rows
-          responsive-layout="scroll"
-          table-style="min-width: 100%"
-        >
-          <Column field="municipality" :header="t('dashboard.municipality')">
-            <template #body="{ data }">
-              <RouterLink :to="`/obcine/${data.slug}`" class="table-link">
-                {{ data.municipality }}
-              </RouterLink>
-            </template>
-          </Column>
-          <Column field="region" :header="t('map.region')" />
-          <Column field="property_type" :header="t('predict.propertyType')">
-            <template #body="{ data }">{{ getPropertyTypeLabel(data.property_type, t) }}</template>
-          </Column>
-          <Column field="size_m2" :header="t('predict.size')">
-            <template #body="{ data }">
-              {{ formatNumber(data.size_m2, { maximumFractionDigits: 1 }) }} m²
-            </template>
-          </Column>
-          <Column field="price_eur" :header="t('dashboard.medianPrice')">
-            <template #body="{ data }">{{ formatCurrency(data.price_eur) }}</template>
-          </Column>
-          <Column field="price_per_m2" header="€/m²">
-            <template #body="{ data }">{{ formatCurrency(data.price_per_m2) }}</template>
-          </Column>
-          <Column field="year" :header="t('map.year')">
-            <template #body="{ data }">{{ data.year || '-' }}</template>
-          </Column>
-        </DataTable>
-      </section>
-    </template>
+          :label="t('market.viewAll')"
+          icon="pi pi-arrow-right"
+          icon-pos="right"
+        />
+      </template>
+
+      <LoadingSpinner
+        v-if="sectionLoading.transactions && !latestSales.length"
+        :label="t('common.loading')"
+      />
+      <div
+        v-else-if="sectionErrors.transactions && !latestSales.length"
+        class="state-card state-card-stack"
+        role="alert"
+      >
+        <EmptyState icon="pi pi-exclamation-triangle" :message="sectionErrors.transactions" />
+        <div class="state-card-actions">
+          <Button
+            icon="pi pi-refresh"
+            severity="secondary"
+            outlined
+            :label="t('common.retry')"
+            @click="loadDashboard"
+          />
+        </div>
+      </div>
+      <DataTable
+        v-else-if="latestSales.length"
+        :value="latestSales"
+        size="small"
+        striped-rows
+        responsive-layout="scroll"
+        table-style="min-width: 100%"
+      >
+        <Column field="municipality" :header="t('dashboard.municipality')">
+          <template #body="{ data }">
+            <RouterLink :to="`/obcine/${data.slug}`" class="table-link">
+              {{ data.municipality }}
+            </RouterLink>
+          </template>
+        </Column>
+        <Column field="region" :header="t('map.region')" />
+        <Column field="property_type" :header="t('predict.propertyType')">
+          <template #body="{ data }">{{ formatType(data.property_type) }}</template>
+        </Column>
+        <Column field="size_m2" :header="t('predict.size')">
+          <template #body="{ data }">
+            {{ formatNumber(data.size_m2, { maximumFractionDigits: 1 }) }} m²
+          </template>
+        </Column>
+        <Column field="price_eur" :header="t('dashboard.medianPrice')">
+          <template #body="{ data }">{{ formatCurrency(data.price_eur) }}</template>
+        </Column>
+        <Column field="price_per_m2" header="€/m²">
+          <template #body="{ data }">{{ formatCurrency(data.price_per_m2) }}</template>
+        </Column>
+        <Column field="year" :header="t('map.year')">
+          <template #body="{ data }">{{ data.year || '-' }}</template>
+        </Column>
+      </DataTable>
+      <EmptyState v-else :message="t('common.noData')" />
+    </SectionPanel>
   </div>
 </template>
 
 <style scoped>
   .dashboard-page {
     display: grid;
+    gap: var(--space-section);
+  }
+
+  .dashboard-hero {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1.18fr) minmax(320px, 0.82fr);
     gap: 1.2rem;
-  }
-
-  .dashboard-hero,
-  .panel,
-  .state-card {
-    border: 1px solid var(--border);
-    border-radius: 1.6rem;
-  }
-
-  .dashboard-hero,
-  .panel {
+    overflow: hidden;
+    padding: clamp(1.1rem, 2vw, 1.55rem);
+    border: 1px solid color-mix(in srgb, var(--border) 60%, var(--primary) 40%);
+    border-radius: calc(var(--radius-md) + 0.4rem);
     background:
-      linear-gradient(180deg, var(--surface-soft-subtle), var(--surface-soft)), var(--surface-soft);
+      radial-gradient(
+        circle at top right,
+        color-mix(in srgb, var(--primary) 18%, transparent),
+        transparent 34%
+      ),
+      radial-gradient(
+        circle at bottom left,
+        color-mix(in srgb, var(--primary) 10%, transparent),
+        transparent 30%
+      ),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface-hero) 90%, var(--primary) 10%),
+        var(--surface-panel)
+      );
     box-shadow: var(--shadow-sm);
-    padding: 1.25rem;
+  }
+
+  .dashboard-hero::before,
+  .dashboard-hero::after {
+    content: '';
+    position: absolute;
+    inset: auto;
+    pointer-events: none;
+    border-radius: 999px;
+    filter: blur(0.2px);
+  }
+
+  .dashboard-hero::before {
+    top: -2rem;
+    right: 2rem;
+    width: 10rem;
+    height: 10rem;
+    background: color-mix(in srgb, var(--primary) 15%, transparent);
+    opacity: 0.9;
+  }
+
+  .dashboard-hero::after {
+    bottom: -3.5rem;
+    left: 35%;
+    width: 12rem;
+    height: 12rem;
+    background: color-mix(in srgb, var(--primary) 8%, transparent);
+    opacity: 0.65;
+  }
+
+  .dashboard-hero-copy,
+  .hero-summary {
+    position: relative;
+    z-index: 1;
+  }
+
+  .dashboard-hero-copy {
+    display: grid;
+    gap: 1rem;
+    align-content: start;
+  }
+
+  .hero-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+    width: 100%;
+  }
+
+  .hero-actions > * {
+    flex: 1 1 11.5rem;
+  }
+
+  .hero-status {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.7rem;
+    padding: 0.85rem 0.95rem;
+    border: 1px solid color-mix(in srgb, var(--border) 62%, var(--primary) 38%);
+    border-radius: var(--radius-md);
+    background: color-mix(in srgb, var(--surface-card) 90%, var(--primary) 10%);
+    box-shadow: inset 0 1px 0 var(--glass-highlight);
+  }
+
+  .hero-status span {
+    color: var(--text-muted);
+    font-size: 0.86rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
   }
 
   .hero-summary,
-  .filter-grid,
   .dashboard-grid,
-  .quick-actions,
+  .workspace-hub,
   .spotlight-metrics {
     display: grid;
     gap: 0.9rem;
   }
 
   .hero-summary {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-
-  .filter-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-self: stretch;
   }
 
   .dashboard-grid {
-    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(300px, 0.78fr);
     align-items: stretch;
   }
 
-  .bottom-grid {
-    grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+  .dashboard-grid--primary {
+    grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.82fr);
   }
 
-  .panel-head {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 0.75rem;
-    margin-bottom: 0.85rem;
+  .dashboard-grid--secondary {
+    grid-template-columns: 1fr;
   }
 
-  .panel-head.compact {
-    align-items: center;
-  }
-
-  .panel h2 {
-    margin: 0;
-    font-family: var(--font-display);
-    font-size: clamp(1.12rem, 1.8vw, 1.48rem);
-    line-height: 1.08;
-  }
-
-  .eyebrow.subtle {
-    color: var(--text-soft);
-  }
-
-  .field-inline {
+  .state-card-stack {
     display: grid;
-    gap: 0.35rem;
+    gap: 0.85rem;
   }
 
-  .field-inline span {
-    color: var(--text-muted);
-    font-size: 0.82rem;
-    font-weight: 700;
+  .state-card-actions {
+    display: flex;
+    justify-content: flex-start;
   }
 
   .filter-summary {
@@ -802,16 +1018,48 @@
   }
 
   .municipality-spotlight {
-    display: grid;
-    gap: 0.9rem;
-    align-content: start;
+    background: color-mix(in srgb, var(--surface-hero) 88%, var(--primary) 12%);
+  }
+
+  .dashboard-spotlight-panel {
+    background:
+      radial-gradient(
+        circle at top right,
+        color-mix(in srgb, var(--primary) 10%, transparent),
+        transparent 38%
+      ),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface-hero) 94%, var(--primary) 6%),
+        var(--surface-panel)
+      );
+  }
+
+  .dashboard-chart-panel {
     background:
       linear-gradient(
         180deg,
-        color-mix(in srgb, var(--primary-overlay) 84%, transparent),
-        var(--surface-soft)
+        color-mix(in srgb, var(--surface-panel) 96%, var(--primary) 4%),
+        var(--surface-panel)
       ),
-      var(--surface-soft);
+      var(--surface-panel);
+  }
+
+  .dashboard-table-panel {
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface-panel) 92%, var(--secondary) 8%),
+        var(--surface-panel)
+      ),
+      var(--surface-panel);
+  }
+
+  .dashboard-workspace-panel {
+    background: transparent;
+    box-shadow: none;
+    padding: 0.2rem 0 0;
+    border: 0;
   }
 
   .spotlight-copy {
@@ -823,12 +1071,11 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .spotlight-metrics div,
-  .quick-link {
+  .spotlight-metrics div {
     border: 1px solid color-mix(in srgb, var(--border) 68%, var(--primary) 32%);
-    border-radius: 1.15rem;
+    border-radius: var(--radius-sm);
     padding: 0.9rem 1rem;
-    background: color-mix(in srgb, var(--surface-strong) 88%, var(--overlay-strong) 12%);
+    background: var(--surface-subtle);
   }
 
   .spotlight-metrics span {
@@ -851,16 +1098,14 @@
     gap: 0.65rem;
   }
 
-  .region-ranking,
-  .quick-actions {
+  .region-ranking {
     display: grid;
     gap: 0.7rem;
   }
 
   .region-rank-row,
   .hero-link,
-  .table-link,
-  .quick-link {
+  .table-link {
     text-decoration: none;
     color: inherit;
   }
@@ -872,19 +1117,18 @@
     gap: 0.75rem;
     padding: 0.8rem 1rem;
     border: 1px solid color-mix(in srgb, var(--border) 68%, var(--primary) 32%);
-    border-radius: 1.15rem;
-    background: color-mix(in srgb, var(--surface-strong) 88%, var(--overlay-strong) 12%);
+    border-radius: var(--radius-sm);
+    background: var(--surface-subtle);
     transition:
       transform 0.16s ease,
       border-color 0.16s ease,
       box-shadow 0.16s ease;
   }
 
-  .region-rank-row:hover,
-  .quick-link:hover {
+  .region-rank-row:hover {
     transform: translateY(-1px);
     border-color: color-mix(in srgb, var(--primary) 34%, transparent);
-    box-shadow: 0 16px 28px color-mix(in srgb, var(--shadow-color) 12%, transparent);
+    box-shadow: inset 0 1px 0 var(--glass-highlight);
   }
 
   .rank-badge {
@@ -893,59 +1137,79 @@
     justify-content: center;
     width: 2rem;
     height: 2rem;
-    border-radius: 999px;
+    border-radius: var(--radius-xs);
     background: color-mix(in srgb, var(--primary) 12%, transparent);
     color: var(--primary);
     font-weight: 800;
-  }
-
-  .quick-link {
-    display: grid;
-    gap: 0.25rem;
-  }
-
-  .quick-link strong {
-    font-size: 0.96rem;
-  }
-
-  .quick-link small {
-    color: var(--text-muted);
-    line-height: 1.5;
   }
 
   .table-link {
     font-weight: 700;
   }
 
-  .state-card {
-    padding: 1.1rem 1.2rem;
+  .summary-card--feature {
+    grid-column: span 2;
+    min-height: 8.4rem;
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface-panel) 84%, var(--primary) 16%),
+        var(--surface-panel)
+      ),
+      var(--surface-panel);
+  }
+
+  .summary-card--feature :deep(.metric-card-value) {
+    font-size: clamp(1.45rem, 2.3vw, 2.1rem);
+  }
+
+  .summary-card--feature :deep(.metric-card-meta) {
+    max-width: 28ch;
+  }
+
+  .hero-link--primary {
+    box-shadow: 0 18px 30px color-mix(in srgb, var(--primary) 20%, transparent);
   }
 
   @media (max-width: 1200px) {
-    .dashboard-grid,
-    .bottom-grid {
+    .dashboard-hero,
+    .dashboard-grid--primary,
+    .dashboard-grid--secondary {
       grid-template-columns: 1fr;
+    }
+
+    .summary-card--feature {
+      grid-column: auto;
     }
   }
 
   @media (max-width: 980px) {
-    .hero-summary,
-    .filter-grid {
+    .hero-summary {
       grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .hero-actions {
+      flex-direction: column;
     }
   }
 
   @media (max-width: 720px) {
     .hero-summary,
-    .filter-grid,
     .spotlight-metrics {
       grid-template-columns: 1fr;
     }
 
+    .hero-status {
+      width: 100%;
+    }
+
     .dashboard-hero :deep(.page-header-actions) {
       width: 100%;
-      display: grid;
-      grid-template-columns: 1fr;
+      display: block;
+    }
+
+    .dashboard-hero :deep(.page-header-actions > *) {
+      width: 100%;
     }
 
     .dashboard-hero :deep(.page-header-actions .p-button) {

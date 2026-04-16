@@ -30,7 +30,12 @@ body {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   font-variant-numeric: tabular-nums;
-  font-feature-settings: 'cv01' 1, 'cv02' 1, 'cv03' 1, 'ss01' 1, 'tnum' 1;
+  font-feature-settings:
+    'cv01' 1,
+    'cv02' 1,
+    'cv03' 1,
+    'ss01' 1,
+    'tnum' 1;
 }
 
 a {
@@ -133,7 +138,11 @@ button:disabled {
   align-items: center;
   justify-content: center;
   background:
-    radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--primary) 12%, transparent), transparent 32%),
+    radial-gradient(
+      circle at 50% 50%,
+      color-mix(in srgb, var(--primary) 12%, transparent),
+      transparent 32%
+    ),
     var(--bg-accent);
   z-index: 9999;
 }

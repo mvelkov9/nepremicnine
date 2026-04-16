@@ -1,3 +1,4 @@
+import axios from 'axios'
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import api from '../composables/useApi'
@@ -26,6 +27,33 @@ export const useStatsStore = defineStore('stats', () => {
   const municipalityTransactions = ref<ExplorerResponse<TransactionRecord> | null>(null)
   const loading = ref(false)
   const error = ref(null)
+  const inflightControllers = new Map<string, AbortController>()
+
+  async function runLatestRequest<T>(
+    key: string,
+    request: (signal: AbortSignal) => Promise<T>,
+    fallback: () => T,
+  ) {
+    inflightControllers.get(key)?.abort()
+    const controller = new AbortController()
+    inflightControllers.set(key, controller)
+
+    try {
+      return await request(controller.signal)
+    } catch (requestError) {
+      if (
+        axios.isCancel(requestError) ||
+        (requestError as { code?: string })?.code === 'ERR_CANCELED'
+      ) {
+        return fallback()
+      }
+      throw requestError
+    } finally {
+      if (inflightControllers.get(key) === controller) {
+        inflightControllers.delete(key)
+      }
+    }
+  }
 
   async function fetchOverview(params = {}) {
     const { data } = await api.get('/api/stats/overview', { params })
@@ -33,39 +61,75 @@ export const useStatsStore = defineStore('stats', () => {
   }
 
   async function fetchRegions(params = {}) {
-    const { data } = await api.get('/api/stats/regions', { params })
-    regions.value = data
-    return data
+    return runLatestRequest(
+      'regions',
+      async (signal) => {
+        const { data } = await api.get('/api/stats/regions', { params, signal })
+        regions.value = data
+        return data
+      },
+      () => regions.value,
+    )
   }
 
   async function fetchPriceDistribution(params = {}) {
-    const { data } = await api.get('/api/stats/price-distribution', { params })
-    priceDistribution.value = data
-    return data
+    return runLatestRequest(
+      'priceDistribution',
+      async (signal) => {
+        const { data } = await api.get('/api/stats/price-distribution', { params, signal })
+        priceDistribution.value = data
+        return data
+      },
+      () => priceDistribution.value,
+    )
   }
 
   async function fetchTrend(params = {}) {
-    const { data } = await api.get('/api/stats/trend', { params })
-    trend.value = data
-    return data
+    return runLatestRequest(
+      'trend',
+      async (signal) => {
+        const { data } = await api.get('/api/stats/trend', { params, signal })
+        trend.value = data
+        return data
+      },
+      () => trend.value,
+    )
   }
 
   async function fetchMarketHome(params = {}) {
-    const { data } = await api.get('/api/stats/market-home', { params })
-    marketHome.value = data
-    return data
+    return runLatestRequest(
+      'marketHome',
+      async (signal) => {
+        const { data } = await api.get('/api/stats/market-home', { params, signal })
+        marketHome.value = data
+        return data
+      },
+      () => marketHome.value,
+    )
   }
 
   async function fetchMunicipalityDetail(slug) {
-    const { data } = await api.get(`/api/stats/municipality/${slug}`)
-    municipalityDetail.value = data
-    return data
+    return runLatestRequest(
+      `municipalityDetail:${slug}`,
+      async (signal) => {
+        const { data } = await api.get(`/api/stats/municipality/${slug}`, { signal })
+        municipalityDetail.value = data
+        return data
+      },
+      () => municipalityDetail.value,
+    )
   }
 
   async function fetchComparables(params) {
-    const { data } = await api.get('/api/stats/comparables', { params })
-    comparables.value = data
-    return data
+    return runLatestRequest(
+      'comparables',
+      async (signal) => {
+        const { data } = await api.get('/api/stats/comparables', { params, signal })
+        comparables.value = data
+        return data
+      },
+      () => comparables.value,
+    )
   }
 
   function resetMunicipalityDetail() {
@@ -85,33 +149,66 @@ export const useStatsStore = defineStore('stats', () => {
   async function fetchMunicipalitiesByRegion(region?: string) {
     const params: Record<string, string> = {}
     if (region) params.region = region
-    const { data } = await api.get('/api/stats/municipalities-by-region', { params })
-    municipalitiesByRegion.value = data
-    return data
+    return runLatestRequest(
+      `municipalitiesByRegion:${region || 'all'}`,
+      async (signal) => {
+        const { data } = await api.get('/api/stats/municipalities-by-region', { params, signal })
+        municipalitiesByRegion.value = data
+        return data
+      },
+      () => municipalitiesByRegion.value,
+    )
   }
 
   async function fetchTransactionsExplorer(params = {}) {
-    const { data } = await api.get('/api/stats/transactions', { params })
-    transactionsExplorer.value = data
-    return data
+    return runLatestRequest(
+      'transactionsExplorer',
+      async (signal) => {
+        const { data } = await api.get('/api/stats/transactions', { params, signal })
+        transactionsExplorer.value = data
+        return data
+      },
+      () => transactionsExplorer.value,
+    )
   }
 
   async function fetchMunicipalitiesExplorer(params = {}) {
-    const { data } = await api.get('/api/stats/municipalities', { params })
-    municipalitiesExplorer.value = data
-    return data
+    return runLatestRequest(
+      'municipalitiesExplorer',
+      async (signal) => {
+        const { data } = await api.get('/api/stats/municipalities', { params, signal })
+        municipalitiesExplorer.value = data
+        return data
+      },
+      () => municipalitiesExplorer.value,
+    )
   }
 
   async function fetchRegionsExplorer(params = {}) {
-    const { data } = await api.get('/api/stats/regions-explorer', { params })
-    regionsExplorer.value = data
-    return data
+    return runLatestRequest(
+      'regionsExplorer',
+      async (signal) => {
+        const { data } = await api.get('/api/stats/regions-explorer', { params, signal })
+        regionsExplorer.value = data
+        return data
+      },
+      () => regionsExplorer.value,
+    )
   }
 
   async function fetchMunicipalityTransactions(slug: string, params = {}) {
-    const { data } = await api.get(`/api/stats/municipality/${slug}/transactions`, { params })
-    municipalityTransactions.value = data
-    return data
+    return runLatestRequest(
+      `municipalityTransactions:${slug}`,
+      async (signal) => {
+        const { data } = await api.get(`/api/stats/municipality/${slug}/transactions`, {
+          params,
+          signal,
+        })
+        municipalityTransactions.value = data
+        return data
+      },
+      () => municipalityTransactions.value,
+    )
   }
 
   function resetExplorerData() {

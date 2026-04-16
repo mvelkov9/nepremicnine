@@ -8,9 +8,12 @@ import App from './App.vue'
 import router from './router'
 import { i18n } from './i18n'
 import MarketPreset from './theme/preset'
+import { initThemeMode } from './composables/useDarkMode'
 import 'primeicons/primeicons.css'
 import './styles/main.css'
 import './utils/chartSetup'
+
+initThemeMode()
 
 const app = createApp(App)
 app.use(createPinia())

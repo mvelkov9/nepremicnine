@@ -56,7 +56,9 @@
     <div class="prediction-result-meta">
       <article>
         <span>{{ t('predict.propertyType') }}</span>
-        <strong>{{ props.propertyTypeLabel || formatType(props.form.property_type) || '-' }}</strong>
+        <strong>{{
+          props.propertyTypeLabel || formatType(props.form.property_type) || '-'
+        }}</strong>
       </article>
       <article>
         <span>{{ t('predict.municipality') }}</span>
@@ -123,11 +125,23 @@
     border-radius: var(--radius-lg);
     border: 1px solid color-mix(in srgb, var(--border) 68%, var(--primary) 32%);
     background:
-      radial-gradient(circle at top left, color-mix(in srgb, var(--primary) 16%, transparent), transparent 36%),
-      radial-gradient(circle at top right, color-mix(in srgb, var(--secondary) 12%, transparent), transparent 30%),
+      radial-gradient(
+        circle at top left,
+        color-mix(in srgb, var(--primary) 16%, transparent),
+        transparent 36%
+      ),
+      radial-gradient(
+        circle at top right,
+        color-mix(in srgb, var(--secondary) 12%, transparent),
+        transparent 30%
+      ),
       linear-gradient(
         180deg,
-        color-mix(in srgb, var(--surface-card-strong, var(--surface-strong)) 92%, var(--primary) 8%),
+        color-mix(
+          in srgb,
+          var(--surface-card-strong, var(--surface-strong)) 92%,
+          var(--primary) 8%
+        ),
         var(--surface-panel)
       );
     box-shadow:
@@ -212,7 +226,11 @@
     padding: 0.9rem 0.95rem;
     border-radius: var(--radius-sm);
     border: 1px solid color-mix(in srgb, var(--border) 74%, var(--primary) 26%);
-    background: color-mix(in srgb, var(--surface-card-strong, var(--surface-strong)) 94%, var(--primary) 6%);
+    background: color-mix(
+      in srgb,
+      var(--surface-card-strong, var(--surface-strong)) 94%,
+      var(--primary) 6%
+    );
     box-shadow: inset 0 1px 0 var(--content-glow);
   }
 
@@ -278,7 +296,11 @@
     padding: 0.42rem 0.68rem;
     border-radius: 999px;
     border: 1px solid color-mix(in srgb, var(--border) 76%, var(--primary) 24%);
-    background: color-mix(in srgb, var(--surface-card-strong, var(--surface-strong)) 92%, var(--primary) 8%);
+    background: color-mix(
+      in srgb,
+      var(--surface-card-strong, var(--surface-strong)) 92%,
+      var(--primary) 8%
+    );
     color: var(--text);
     font-size: 0.88rem;
   }

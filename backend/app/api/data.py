@@ -20,7 +20,7 @@ import pandas as pd
 from arq import create_pool
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, UploadFile, status
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -795,6 +795,9 @@ async def list_datasets(
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=200),
     sync: bool = Query(False),
+    search: str | None = Query(None),
+    sort: str = Query("uploaded_at"),
+    order: str = Query("desc", pattern="^(asc|desc)$"),
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
@@ -806,12 +809,30 @@ async def list_datasets(
             logger.info("Dataset registry sync finished: indexed=%d deleted_stale=%d", indexed, deleted)
 
     offset = (page - 1) * per_page
-    stmt = (
-        select(DatasetFile, func.count(DatasetFile.id).over().label("total_count"))
-        .order_by(DatasetFile.uploaded_at.desc())
-        .offset(offset)
-        .limit(per_page)
-    )
+    stmt = select(DatasetFile, func.count(DatasetFile.id).over().label("total_count"))
+
+    normalized_search = (search or "").strip()
+    if normalized_search:
+        pattern = f"%{normalized_search.lower()}%"
+        stmt = stmt.where(
+            or_(
+                func.lower(func.coalesce(DatasetFile.original_name, "")).like(pattern),
+                func.lower(func.coalesce(DatasetFile.source_type, "")).like(pattern),
+                func.lower(func.coalesce(DatasetFile.stored_path, "")).like(pattern),
+            )
+        )
+
+    sort_columns = {
+        "id": DatasetFile.id,
+        "original_name": DatasetFile.original_name,
+        "relative_path": DatasetFile.stored_path,
+        "source_type": DatasetFile.source_type,
+        "row_count": DatasetFile.row_count,
+        "uploaded_at": DatasetFile.uploaded_at,
+    }
+    sort_column = sort_columns.get(sort, DatasetFile.uploaded_at)
+    stmt = stmt.order_by(sort_column.asc() if order == "asc" else sort_column.desc())
+    stmt = stmt.offset(offset).limit(per_page)
     rows = (await db.execute(stmt)).all()
     total = rows[0].total_count if rows else 0
     pages = math.ceil(total / per_page) if total > 0 else 0
@@ -822,7 +843,13 @@ async def list_datasets(
         "total": total,
         "page": page,
         "per_page": per_page,
+        "page_size": per_page,
         "pages": pages,
+        "filters": {
+            "search": normalized_search or None,
+        },
+        "sort": sort if sort in sort_columns else "uploaded_at",
+        "order": order,
     }
 
 

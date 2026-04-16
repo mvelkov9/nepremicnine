@@ -54,8 +54,16 @@
     align-content: start;
     border-color: color-mix(in srgb, var(--border) 68%, var(--primary) 32%);
     background:
-      radial-gradient(circle at top right, color-mix(in srgb, var(--primary) 10%, transparent), transparent 32%),
-      linear-gradient(180deg, color-mix(in srgb, var(--surface-card-strong) 94%, var(--primary) 6%), var(--surface-panel));
+      radial-gradient(
+        circle at top right,
+        color-mix(in srgb, var(--primary) 10%, transparent),
+        transparent 32%
+      ),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface-card-strong) 94%, var(--primary) 6%),
+        var(--surface-panel)
+      );
   }
 
   .region-insight-panel__head {

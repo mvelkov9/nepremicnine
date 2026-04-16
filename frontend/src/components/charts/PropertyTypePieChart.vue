@@ -3,7 +3,7 @@
   import { Doughnut } from 'vue-chartjs'
   import { useI18n } from 'vue-i18n'
   import { useChartColors } from '../../composables/useChartColors'
-  import { getPropertyTypeLabel } from '../../utils/propertyType'
+  import { useFormat } from '../../composables/useFormat'
 
   interface TypeItem {
     property_type: string
@@ -16,6 +16,7 @@
   }>()
 
   const { t } = useI18n()
+  const { formatType } = useFormat()
   const { colors, palette } = useChartColors()
   const chartKey = ref(0)
 
@@ -25,7 +26,7 @@
 
   const chartData = computed(() => {
     return {
-      labels: props.items.map((i) => getPropertyTypeLabel(i.property_type, t)),
+      labels: props.items.map((i) => formatType(i.property_type)),
       datasets: [
         {
           data: props.items.map((i) => i.count),

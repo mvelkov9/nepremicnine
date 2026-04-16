@@ -4,24 +4,31 @@
   import { useI18n } from 'vue-i18n'
   import AutoComplete from 'primevue/autocomplete'
   import Button from 'primevue/button'
-  import DataTable from 'primevue/datatable'
-  import Column from 'primevue/column'
   import InputNumber from 'primevue/inputnumber'
-  import InputText from 'primevue/inputtext'
   import Select from 'primevue/select'
-  import Tag from 'primevue/tag'
   import Textarea from 'primevue/textarea'
   import ToggleSwitch from 'primevue/toggleswitch'
   import api from '../composables/useApi'
   import { useAuthStore } from '../stores/auth'
-  import SavedWorkspaceMenu from '../components/workbench/SavedWorkspaceMenu.vue'
+  import { useReferenceDataStore } from '../stores/referenceData'
+  import EmptyState from '../components/EmptyState.vue'
+  import SectionPanel from '../components/SectionPanel.vue'
+  import AnalysisWorkspaceHero from '../features/analysis/AnalysisWorkspaceHero.vue'
+  import AnalysisResultsPanel from '../features/analysis/AnalysisResultsPanel.vue'
   import { useExport } from '../composables/useExport'
   import { useWorkbenchStore } from '../stores/workbench'
   import { buildNepremicnineSearchUrl } from '../utils/externalSearch'
   import { getApiErrorMessage } from '../utils/apiError'
-  import { formatCurrency, formatNumber } from '../utils/format'
+  import { useFormat } from '../composables/useFormat'
   import { municipalitySlug, normalizeMunicipalityName } from '../utils/municipality'
-  import { getPropertyTypeLabel } from '../utils/propertyType'
+  import type {
+    AnalysisHeroMetric,
+    AnalysisHeroPill,
+    AnalysisListing,
+    AnalysisReadinessItem,
+    AnalysisResultPayload,
+    AnalysisSummaryCard,
+  } from '../features/analysis/types'
 
   interface GuidedAnalysisForm {
     naselje: string
@@ -55,13 +62,15 @@
     | 'ddv_vkljucen'
 
   const { t } = useI18n()
+  const { fmt, fmtCurrency, formatType } = useFormat()
   const auth = useAuthStore()
+  const referenceData = useReferenceDataStore()
   const workbench = useWorkbenchStore()
   const { exportToCSV } = useExport()
   const route = useRoute()
   const router = useRouter()
 
-  const guidedForm = ref<GuidedAnalysisForm>({
+  const defaultGuidedForm: GuidedAnalysisForm = {
     naselje: '',
     municipality: '',
     ime_ko: '',
@@ -81,13 +90,14 @@
     ddv_vkljucen: 0,
     asking_price: null,
     notes: '',
-  })
+  }
+  const guidedForm = ref<GuidedAnalysisForm>({ ...defaultGuidedForm })
   const threshold = ref(15)
   const loading = ref(false)
   const error = ref('')
-  const result = ref(null)
+  const result = ref<AnalysisResultPayload | null>(null)
   const advancedJson = ref('')
-  const municipalities = ref([])
+  const lastRunMode = ref<'guided' | 'advanced' | null>(null)
   const municipalitySuggestions = ref([])
   const naseljeSuggestions = ref([])
   const naseljeOptions = ref([])
@@ -106,7 +116,7 @@
 
   const propertyTypeOptions = computed(() =>
     propertyTypes.map((value) => ({
-      label: getPropertyTypeLabel(value, t),
+      label: formatType(value),
       value,
     })),
   )
@@ -129,11 +139,57 @@
     },
   ]
 
-  const primaryListing = computed(() => result.value?.listings?.[0] || null)
+  const resultListings = computed(() =>
+    Array.isArray(result.value?.listings) ? result.value.listings : [],
+  )
+  const resultStats = computed(() => {
+    const listings = resultListings.value
+    const deviations = listings
+      .map((item) => Number(item.deviation_pct ?? item.deviation_percent))
+      .filter((value) => Number.isFinite(value))
+    const aligned = listings.filter((item) => item.label === 'market_aligned').length
+    const averageDeviation = deviations.length
+      ? deviations.reduce((sum, value) => sum + value, 0) / deviations.length
+      : null
+
+    return {
+      count: listings.length,
+      aligned,
+      averageDeviation,
+      alignedShare: listings.length ? (aligned / listings.length) * 100 : null,
+    }
+  })
+  const resultSummaryCards = computed<AnalysisSummaryCard[]>(() => [
+    {
+      key: 'count',
+      label: t('analysis.scoredListings'),
+      value: String(resultStats.value.count || 0),
+      hint: t('analysis.previewVerdictBody'),
+    },
+    {
+      key: 'deviation',
+      label: t('analysis.deviation'),
+      value:
+        resultStats.value.averageDeviation == null
+          ? '—'
+          : `${fmt(resultStats.value.averageDeviation, 1)}%`,
+      hint: t('analysis.previewGapBody'),
+    },
+    {
+      key: 'aligned',
+      label: t('analysis.marketAligned'),
+      value:
+        resultStats.value.alignedShare == null ? '—' : `${fmt(resultStats.value.alignedShare, 0)}%`,
+      hint: t('analysis.previewActionBody'),
+    },
+  ])
   const municipalityIndex = computed(
     () =>
       new Map(
-        municipalities.value.map((item) => [normalizeMunicipalityName(item.municipality), item]),
+        referenceData.municipalities.map((item) => [
+          normalizeMunicipalityName(item.municipality),
+          item,
+        ]),
       ),
   )
   const selectedMunicipalityMeta = computed(() => {
@@ -157,6 +213,105 @@
   const effectiveMunicipality = computed(
     () => guidedForm.value.municipality || selectedNaseljeMeta.value?.municipality || '',
   )
+  const effectiveSize = computed(
+    () => guidedForm.value.uporabna_povrsina || guidedForm.value.size_m2 || null,
+  )
+  const enabledSignalsCount = computed(
+    () =>
+      (
+        [
+          'novogradnja',
+          'has_garaza',
+          'has_klet',
+          'has_shramba',
+          'has_terasa',
+          'stavba_je_dokoncana',
+          'ddv_vkljucen',
+        ] as BinaryGuidedField[]
+      ).filter((field) => guidedForm.value[field] === 1).length,
+  )
+  const heroMetrics = computed<AnalysisHeroMetric[]>(() => [
+    {
+      key: 'coverage',
+      title: t('analysis.previewCoverageTitle'),
+      value: effectiveMunicipality.value || t('predict.municipalityPlaceholder'),
+      body: selectedMunicipalityMeta.value?.region || t('analysis.previewCoverageBody'),
+    },
+    {
+      key: 'threshold',
+      title: t('analysis.previewThresholdTitle'),
+      value: `${threshold.value}%`,
+      body: t('analysis.previewThresholdBody'),
+    },
+    {
+      key: 'signals',
+      title: t('analysis.previewSignalsTitle'),
+      value: `${enabledSignalsCount.value}`,
+      body: t('analysis.previewSignalsBody'),
+    },
+  ])
+  const heroPills = computed<AnalysisHeroPill[]>(() => [
+    {
+      key: 'property',
+      label: t('predict.propertyType'),
+      value: formatType(guidedForm.value.property_type),
+    },
+    {
+      key: 'region',
+      label: t('map.region'),
+      value: selectedMunicipalityMeta.value?.region || t('common.noData'),
+    },
+    {
+      key: 'size',
+      label: t('predict.size'),
+      value: effectiveSize.value ? `${fmt(effectiveSize.value, 1)} m²` : t('common.noData'),
+    },
+  ])
+  const analysisPreviewCards = computed(() => [
+    {
+      key: 'verdict',
+      icon: 'pi pi-compass',
+      title: t('analysis.previewVerdictTitle'),
+      body: t('analysis.previewVerdictBody'),
+    },
+    {
+      key: 'gap',
+      icon: 'pi pi-percentage',
+      title: t('analysis.previewGapTitle'),
+      body: t('analysis.previewGapBody'),
+    },
+    {
+      key: 'action',
+      icon: 'pi pi-arrow-right',
+      title: t('analysis.previewActionTitle'),
+      body: t('analysis.previewActionBody'),
+    },
+  ])
+  const guidedReadiness = computed<AnalysisReadinessItem[]>(() => [
+    {
+      key: 'subject',
+      ready: Boolean(guidedForm.value.property_type && effectiveSize.value),
+      text:
+        guidedForm.value.property_type && effectiveSize.value
+          ? t('analysis.readinessSubjectReady')
+          : t('analysis.readinessSubjectMissing'),
+    },
+    {
+      key: 'pricing',
+      ready: Boolean(guidedForm.value.asking_price),
+      text: guidedForm.value.asking_price
+        ? t('analysis.readinessPricingReady')
+        : t('analysis.readinessPricingMissing'),
+    },
+    {
+      key: 'location',
+      ready: Boolean(effectiveMunicipality.value || guidedForm.value.naselje),
+      text:
+        effectiveMunicipality.value || guidedForm.value.naselje
+          ? t('analysis.readinessLocationReady')
+          : t('analysis.readinessLocationMissing'),
+    },
+  ])
 
   function queryNumber(value: unknown) {
     if (typeof value !== 'string' || !value) return null
@@ -164,38 +319,28 @@
     return Number.isFinite(parsed) ? parsed : null
   }
 
-  function fmt(value, decimals = 0) {
-    return formatNumber(value, { maximumFractionDigits: decimals })
-  }
-
-  function fmtCurrency(value) {
-    return formatCurrency(value)
-  }
-
-  function labelSeverity(label) {
+  function labelSeverity(label?: string | null) {
     if (label === 'overpriced') return 'danger'
     if (label === 'underpriced') return 'success'
     return 'info'
   }
 
-  function labelText(label) {
+  function labelText(label?: string | null) {
     if (label === 'market_aligned') return t('analysis.marketAligned')
+    if (!label) return t('common.noData')
     return t(`analysis.${label}`)
   }
 
-  function formatType(value) {
-    return getPropertyTypeLabel(value, t)
-  }
-
   function buildGuidedPayload() {
-    if (!guidedForm.value.municipality && selectedNaseljeMeta.value?.municipality) {
-      guidedForm.value.municipality = selectedNaseljeMeta.value.municipality
+    const payload: Record<string, unknown> = { ...guidedForm.value }
+    if (!payload.municipality && selectedNaseljeMeta.value?.municipality) {
+      payload.municipality = selectedNaseljeMeta.value.municipality
     }
     if (selectedNaseljeMeta.value?.naselje) {
-      guidedForm.value.naselje = selectedNaseljeMeta.value.naselje
+      payload.naselje = selectedNaseljeMeta.value.naselje
     }
     return Object.fromEntries(
-      Object.entries(guidedForm.value).filter(
+      Object.entries(payload).filter(
         ([key, value]) => key !== 'notes' && value !== null && value !== '',
       ),
     )
@@ -209,47 +354,47 @@
   }
 
   function applyRouteQuery(query = route.query) {
-    if (typeof query.naselje === 'string') guidedForm.value.naselje = query.naselje
-    if (typeof query.municipality === 'string') guidedForm.value.municipality = query.municipality
-    if (typeof query.property_type === 'string')
-      guidedForm.value.property_type = query.property_type
+    guidedForm.value = {
+      ...defaultGuidedForm,
+      ...guidedForm.value,
+      naselje: typeof query.naselje === 'string' ? query.naselje : defaultGuidedForm.naselje,
+      municipality:
+        typeof query.municipality === 'string'
+          ? query.municipality
+          : defaultGuidedForm.municipality,
+      property_type:
+        typeof query.property_type === 'string'
+          ? query.property_type
+          : defaultGuidedForm.property_type,
+    }
 
     const size = queryNumber(query.size_m2)
-    if (size != null) guidedForm.value.size_m2 = size
+    guidedForm.value.size_m2 = size ?? defaultGuidedForm.size_m2
 
     const usable = queryNumber(query.uporabna_povrsina)
-    if (usable != null) guidedForm.value.uporabna_povrsina = usable
+    guidedForm.value.uporabna_povrsina = usable ?? defaultGuidedForm.uporabna_povrsina
 
     const rooms = queryNumber(query.rooms)
-    if (rooms != null) guidedForm.value.rooms = rooms
+    guidedForm.value.rooms = rooms ?? defaultGuidedForm.rooms
 
     const yearBuilt = queryNumber(query.year_built)
-    if (yearBuilt != null) guidedForm.value.year_built = yearBuilt
+    guidedForm.value.year_built = yearBuilt ?? defaultGuidedForm.year_built
 
     const floor = queryNumber(query.floor)
-    if (floor != null) guidedForm.value.floor = floor
+    guidedForm.value.floor = floor ?? defaultGuidedForm.floor
 
     const askingPrice = queryNumber(query.asking_price)
-    if (askingPrice != null) guidedForm.value.asking_price = askingPrice
-  }
-
-  async function fetchMunicipalities() {
-    try {
-      const { data } = await api.get('/api/regions/municipalities')
-      municipalities.value = data || []
-    } catch {
-      municipalities.value = []
-    }
+    guidedForm.value.asking_price = askingPrice ?? defaultGuidedForm.asking_price
   }
 
   function searchMunicipalities(event) {
     const query = normalizeMunicipalityName(event.query || '')
     municipalitySuggestions.value = query
-      ? municipalities.value
+      ? referenceData.municipalities
           .filter((item) => normalizeMunicipalityName(item.municipality).includes(query))
           .map((item) => item.municipality)
           .slice(0, 12)
-      : municipalities.value.map((item) => item.municipality).slice(0, 12)
+      : referenceData.municipalities.map((item) => item.municipality).slice(0, 12)
   }
 
   async function searchNaselja(event) {
@@ -277,6 +422,7 @@
     loading.value = true
     error.value = ''
     result.value = null
+    lastRunMode.value = 'guided'
 
     try {
       const { data } = await api.post('/api/analysis/score', {
@@ -295,6 +441,7 @@
     loading.value = true
     error.value = ''
     result.value = null
+    lastRunMode.value = 'advanced'
 
     try {
       const parsed = JSON.parse(advancedJson.value)
@@ -344,6 +491,14 @@
     )
   }
 
+  function retryAnalysis() {
+    if (lastRunMode.value === 'advanced') {
+      void analyzeAdvanced()
+      return
+    }
+    void analyzeGuided()
+  }
+
   const comparisonUrl = computed(() =>
     buildNepremicnineSearchUrl({
       municipality: guidedForm.value.municipality || selectedNaseljeMeta.value?.municipality,
@@ -351,6 +506,10 @@
       propertyType: guidedForm.value.property_type,
     }),
   )
+  const guidedWorkspaceState = computed(() => ({
+    page: 'analysis',
+    filters: buildGuidedPayload(),
+  }))
 
   function toggleValue(field: BinaryGuidedField) {
     return guidedForm.value[field] === 1
@@ -374,7 +533,7 @@
     })
   }
 
-  function openPredictionForListing(listing: any) {
+  function openPredictionForListing(listing: AnalysisListing) {
     router.push({
       name: 'prediction',
       query: {
@@ -387,7 +546,6 @@
             : undefined,
         year_built: listing.year_built != null ? String(listing.year_built) : undefined,
         floor: listing.floor != null ? String(listing.floor) : undefined,
-        price_eur: listing.asking_price != null ? String(listing.asking_price) : undefined,
       },
     })
   }
@@ -438,7 +596,7 @@
     })
   }
 
-  function openMunicipalityForListing(listing: any) {
+  function openMunicipalityForListing(listing: AnalysisListing) {
     if (!listing?.municipality) return
     router.push({
       path: `/obcine/${municipalitySlug(listing.municipality)}`,
@@ -450,7 +608,7 @@
 
   onMounted(() => {
     applyRouteQuery()
-    void fetchMunicipalities()
+    void referenceData.ensureLoaded()
   })
 
   watch(
@@ -463,272 +621,274 @@
 
 <template>
   <div class="analysis-page">
-    <section class="hero-shell">
-      <div class="hero-copy">
-        <p class="eyebrow">{{ t('analysis.consumerKicker') }}</p>
-        <h1>{{ t('analysis.consumerTitle') }}</h1>
-        <p class="muted">{{ t('analysis.consumerBody') }}</p>
-      </div>
+    <AnalysisWorkspaceHero
+      :kicker="t('analysis.consumerKicker')"
+      :title="t('analysis.consumerTitle')"
+      :body="t('analysis.consumerBody')"
+      :note-title="t('analysis.previewTitle')"
+      :note-body="t('analysis.previewBody')"
+      :metrics="heroMetrics"
+      :pills="heroPills"
+      workspace-page="analysis"
+      :workspace-state="guidedWorkspaceState"
+      @watch="addCurrentToWatchlist"
+      @open-prediction="openPrediction"
+    >
+      <template #actions>
+        <Button
+          severity="secondary"
+          text
+          icon="pi pi-table"
+          :label="t('nav.market')"
+          @click="openMarketExplorer"
+        />
+        <Button
+          severity="secondary"
+          text
+          icon="pi pi-map"
+          :label="t('nav.map')"
+          @click="openMapExplorer"
+        />
+        <Button
+          severity="secondary"
+          text
+          icon="pi pi-building"
+          :label="t('map.openMunicipality')"
+          @click="openMunicipality"
+        />
+      </template>
+    </AnalysisWorkspaceHero>
 
-      <div class="hero-side">
-        <div class="hero-pill-grid">
-          <article class="hero-pill">
-            <span>{{ t('predict.propertyType') }}</span>
-            <strong>{{ formatType(guidedForm.property_type) }}</strong>
+    <SectionPanel :eyebrow="t('analysis.guidedCheck')" :title="t('analysis.guidedTitle')">
+      <template #actions>
+        <div class="threshold">
+          <label for="analysis-threshold">{{ t('analysis.threshold') }}</label>
+          <InputNumber
+            v-model="threshold"
+            input-id="analysis-threshold"
+            :min="1"
+            :max="100"
+            suffix="%"
+          />
+        </div>
+      </template>
+
+      <div class="guided-workbench">
+        <div class="guided-summary">
+          <article class="summary-chip">
+            <span>{{ t('predict.naselje') }}</span>
+            <strong>{{ guidedForm.naselje || t('predict.naseljePlaceholder') }}</strong>
           </article>
-          <article class="hero-pill">
-            <span>{{ t('map.region') }}</span>
-            <strong>{{ selectedMunicipalityMeta?.region || t('common.noData') }}</strong>
+          <article class="summary-chip">
+            <span>{{ t('predict.size') }}</span>
+            <strong>{{ fmt(guidedForm.uporabna_povrsina || guidedForm.size_m2, 1) }} m²</strong>
           </article>
-          <article class="hero-pill">
-            <span>{{ t('analysis.threshold') }}</span>
-            <strong>{{ threshold }}%</strong>
+          <article class="summary-chip">
+            <span>{{ t('analysis.askingPrice') }}</span>
+            <strong>{{ fmtCurrency(guidedForm.asking_price) }}</strong>
           </article>
         </div>
 
-        <a :href="comparisonUrl" target="_blank" rel="noreferrer" class="hero-link">
+        <div class="actions-row">
           <Button
+            v-for="preset in guidedPresets"
+            :key="preset.key"
             severity="secondary"
             outlined
-            icon="pi pi-external-link"
-            :label="t('analysis.compareOnPortal')"
-          />
-        </a>
-        <div class="hero-actions">
-          <SavedWorkspaceMenu
-            page="analysis"
-            :state="{ page: 'analysis', filters: buildGuidedPayload() }"
-          />
-          <Button
-            severity="secondary"
-            text
-            icon="pi pi-bookmark"
-            :label="t('workbench.watch')"
-            @click="addCurrentToWatchlist"
-          />
-          <Button
-            severity="secondary"
-            text
-            icon="pi pi-calculator"
-            :label="t('predict.title')"
-            @click="openPrediction"
-          />
-          <Button
-            severity="secondary"
-            text
-            icon="pi pi-table"
-            :label="t('nav.market')"
-            @click="openMarketExplorer"
-          />
-          <Button
-            severity="secondary"
-            text
-            icon="pi pi-map"
-            :label="t('nav.map')"
-            @click="openMapExplorer"
-          />
-          <Button
-            severity="secondary"
-            text
-            icon="pi pi-building"
-            :label="t('map.openMunicipality')"
-            @click="openMunicipality"
+            :label="t(preset.label)"
+            @click="applyGuidedPreset(preset.values)"
           />
         </div>
-      </div>
-    </section>
 
-    <section class="panel">
-      <div class="panel-head">
-        <div>
-          <p class="eyebrow subtle">{{ t('analysis.guidedCheck') }}</p>
-          <h2>{{ t('analysis.guidedTitle') }}</h2>
+        <div class="form-grid">
+          <label class="field">
+            <span>{{ t('predict.naselje') }}</span>
+            <AutoComplete
+              v-model="guidedForm.naselje"
+              :suggestions="naseljeSuggestions"
+              :placeholder="t('predict.naseljePlaceholder')"
+              dropdown
+              fluid
+              @complete="searchNaselja"
+            />
+          </label>
+
+          <label class="field">
+            <span>{{ t('predict.municipality') }}</span>
+            <AutoComplete
+              v-model="guidedForm.municipality"
+              :suggestions="municipalitySuggestions"
+              :placeholder="t('predict.municipalityPlaceholder')"
+              dropdown
+              fluid
+              @complete="searchMunicipalities"
+            />
+          </label>
+
+          <label class="field">
+            <span>{{ t('predict.propertyType') }}</span>
+            <Select
+              v-model="guidedForm.property_type"
+              :options="propertyTypeOptions"
+              option-label="label"
+              option-value="value"
+              fluid
+            />
+          </label>
+
+          <label class="field">
+            <span>{{ t('predict.size') }}</span>
+            <InputNumber v-model="guidedForm.size_m2" :min="1" suffix=" m²" fluid />
+          </label>
+
+          <label class="field">
+            <span>{{ t('predict.uporabnaPovrsina') }}</span>
+            <InputNumber v-model="guidedForm.uporabna_povrsina" :min="0" suffix=" m²" fluid />
+          </label>
+
+          <label class="field">
+            <span>{{ t('predict.rooms') }}</span>
+            <InputNumber v-model="guidedForm.rooms" :min="0" :step="0.5" fluid />
+          </label>
+
+          <label class="field">
+            <span>{{ t('predict.yearBuilt') }}</span>
+            <InputNumber v-model="guidedForm.year_built" :min="1800" :max="2100" fluid />
+          </label>
+
+          <label class="field">
+            <span>{{ t('predict.floor') }}</span>
+            <InputNumber v-model="guidedForm.floor" :min="-2" :max="60" fluid />
+          </label>
+
+          <label class="field">
+            <span>{{ t('predict.legaVStavbi') }}</span>
+            <Select
+              v-model="guidedForm.lega_v_stavbi"
+              :options="[
+                { label: t('common.noData'), value: '' },
+                { label: t('predict.lega.pritlicje'), value: 'pritlicje' },
+                { label: t('predict.lega.nadstropje'), value: 'nadstropje' },
+                { label: t('predict.lega.klet'), value: 'klet' },
+                { label: t('predict.lega.unknown'), value: 'unknown' },
+              ]"
+              option-label="label"
+              option-value="value"
+              fluid
+            />
+          </label>
+
+          <label class="field">
+            <span>{{ t('analysis.askingPrice') }}</span>
+            <InputNumber
+              v-model="guidedForm.asking_price"
+              mode="currency"
+              currency="EUR"
+              locale="sl-SI"
+              fluid
+            />
+          </label>
+
+          <label class="field notes-field">
+            <span>{{ t('analysis.contextNotes') }}</span>
+            <Textarea v-model="guidedForm.notes" rows="3" auto-resize />
+          </label>
         </div>
 
-        <div class="threshold">
-          <label>{{ t('analysis.threshold') }}</label>
-          <InputNumber v-model="threshold" input-id="threshold" :min="1" :max="100" suffix="%" />
+        <div class="flag-row">
+          <label class="focus-chip">
+            <ToggleSwitch
+              :model-value="toggleValue('novogradnja')"
+              @update:model-value="updateToggle('novogradnja', $event)"
+            />
+            <span>{{ t('predict.novogradnja') }}</span>
+          </label>
+          <label class="focus-chip">
+            <ToggleSwitch
+              :model-value="toggleValue('has_garaza')"
+              @update:model-value="updateToggle('has_garaza', $event)"
+            />
+            <span>{{ t('predict.hasGaraza') }}</span>
+          </label>
+          <label class="focus-chip">
+            <ToggleSwitch
+              :model-value="toggleValue('has_klet')"
+              @update:model-value="updateToggle('has_klet', $event)"
+            />
+            <span>{{ t('predict.hasKlet') }}</span>
+          </label>
+          <label class="focus-chip">
+            <ToggleSwitch
+              :model-value="toggleValue('has_shramba')"
+              @update:model-value="updateToggle('has_shramba', $event)"
+            />
+            <span>{{ t('predict.hasShramba') }}</span>
+          </label>
+          <label class="focus-chip">
+            <ToggleSwitch
+              :model-value="toggleValue('has_terasa')"
+              @update:model-value="updateToggle('has_terasa', $event)"
+            />
+            <span>{{ t('predict.hasTerasa') }}</span>
+          </label>
+          <label class="focus-chip">
+            <ToggleSwitch
+              :model-value="toggleValue('stavba_je_dokoncana')"
+              @update:model-value="updateToggle('stavba_je_dokoncana', $event)"
+            />
+            <span>{{ t('predict.stavbaDokoncana') }}</span>
+          </label>
+          <label class="focus-chip">
+            <ToggleSwitch
+              :model-value="toggleValue('ddv_vkljucen')"
+              @update:model-value="updateToggle('ddv_vkljucen', $event)"
+            />
+            <span>{{ t('predict.ddvVkljucen') }}</span>
+          </label>
+        </div>
+
+        <div class="workspace-status">
+          <div class="guided-readiness">
+            <article
+              v-for="item in guidedReadiness"
+              :key="item.key"
+              class="guided-readiness-item"
+              :class="{ ready: item.ready }"
+            >
+              <i :class="item.ready ? 'pi pi-check-circle' : 'pi pi-circle'" aria-hidden="true"></i>
+              <span>{{ item.text }}</span>
+            </article>
+          </div>
+
+          <div class="actions-row">
+            <Button
+              icon="pi pi-search"
+              :loading="loading"
+              :label="t('analysis.analyzeButton')"
+              @click="analyzeGuided"
+            />
+          </div>
         </div>
       </div>
+    </SectionPanel>
 
-      <div class="guided-summary">
-        <article class="summary-chip">
-          <span>{{ t('predict.naselje') }}</span>
-          <strong>{{ guidedForm.naselje || t('predict.naseljePlaceholder') }}</strong>
+    <SectionPanel
+      class="analysis-explore-panel"
+      :eyebrow="t('nav.market')"
+      :title="t('analysis.previewHeading')"
+    >
+      <div class="analysis-preview-grid">
+        <article v-for="card in analysisPreviewCards" :key="card.key" class="analysis-preview-card">
+          <span class="preview-icon"><i :class="card.icon"></i></span>
+          <div>
+            <strong>{{ card.title }}</strong>
+            <p>{{ card.body }}</p>
+          </div>
         </article>
-        <article class="summary-chip">
-          <span>{{ t('predict.size') }}</span>
-          <strong>{{ fmt(guidedForm.uporabna_povrsina || guidedForm.size_m2, 1) }} m²</strong>
-        </article>
-        <article class="summary-chip">
-          <span>{{ t('analysis.askingPrice') }}</span>
-          <strong>{{ fmtCurrency(guidedForm.asking_price) }}</strong>
-        </article>
       </div>
 
-      <div class="actions-row">
-        <Button
-          v-for="preset in guidedPresets"
-          :key="preset.key"
-          severity="secondary"
-          outlined
-          :label="t(preset.label)"
-          @click="applyGuidedPreset(preset.values)"
-        />
-      </div>
-
-      <div class="form-grid">
-        <label class="field">
-          <span>{{ t('predict.naselje') }}</span>
-          <AutoComplete
-            v-model="guidedForm.naselje"
-            :suggestions="naseljeSuggestions"
-            :placeholder="t('predict.naseljePlaceholder')"
-            dropdown
-            fluid
-            @complete="searchNaselja"
-          />
-        </label>
-
-        <label class="field">
-          <span>{{ t('predict.municipality') }}</span>
-          <AutoComplete
-            v-model="guidedForm.municipality"
-            :suggestions="municipalitySuggestions"
-            :placeholder="t('predict.municipalityPlaceholder')"
-            dropdown
-            fluid
-            @complete="searchMunicipalities"
-          />
-        </label>
-
-        <label class="field">
-          <span>{{ t('predict.propertyType') }}</span>
-          <Select
-            v-model="guidedForm.property_type"
-            :options="propertyTypeOptions"
-            option-label="label"
-            option-value="value"
-          />
-        </label>
-
-        <label class="field">
-          <span>{{ t('predict.size') }}</span>
-          <InputNumber v-model="guidedForm.size_m2" :min="1" suffix=" m²" />
-        </label>
-
-        <label class="field">
-          <span>{{ t('predict.uporabnaPovrsina') }}</span>
-          <InputNumber v-model="guidedForm.uporabna_povrsina" :min="0" suffix=" m²" />
-        </label>
-
-        <label class="field">
-          <span>{{ t('predict.rooms') }}</span>
-          <InputNumber v-model="guidedForm.rooms" :min="0" :step="0.5" />
-        </label>
-
-        <label class="field">
-          <span>{{ t('predict.yearBuilt') }}</span>
-          <InputNumber v-model="guidedForm.year_built" :min="1800" :max="2100" />
-        </label>
-
-        <label class="field">
-          <span>{{ t('predict.floor') }}</span>
-          <InputNumber v-model="guidedForm.floor" :min="-2" :max="60" />
-        </label>
-
-        <label class="field">
-          <span>{{ t('predict.legaVStavbi') }}</span>
-          <Select
-            v-model="guidedForm.lega_v_stavbi"
-            :options="[
-              { label: t('common.noData'), value: '' },
-              { label: t('predict.lega.pritlicje'), value: 'pritlicje' },
-              { label: t('predict.lega.nadstropje'), value: 'nadstropje' },
-              { label: t('predict.lega.klet'), value: 'klet' },
-              { label: t('predict.lega.unknown'), value: 'unknown' },
-            ]"
-            option-label="label"
-            option-value="value"
-          />
-        </label>
-
-        <label class="field">
-          <span>{{ t('analysis.askingPrice') }}</span>
-          <InputNumber
-            v-model="guidedForm.asking_price"
-            mode="currency"
-            currency="EUR"
-            locale="sl-SI"
-          />
-        </label>
-
-        <label class="field notes-field">
-          <span>{{ t('analysis.contextNotes') }}</span>
-          <InputText v-model="guidedForm.notes" />
-        </label>
-      </div>
-
-      <div class="flag-row">
-        <label class="focus-chip">
-          <ToggleSwitch
-            :model-value="toggleValue('novogradnja')"
-            @update:model-value="updateToggle('novogradnja', $event)"
-          />
-          <span>{{ t('predict.novogradnja') }}</span>
-        </label>
-        <label class="focus-chip">
-          <ToggleSwitch
-            :model-value="toggleValue('has_garaza')"
-            @update:model-value="updateToggle('has_garaza', $event)"
-          />
-          <span>{{ t('predict.hasGaraza') }}</span>
-        </label>
-        <label class="focus-chip">
-          <ToggleSwitch
-            :model-value="toggleValue('has_klet')"
-            @update:model-value="updateToggle('has_klet', $event)"
-          />
-          <span>{{ t('predict.hasKlet') }}</span>
-        </label>
-        <label class="focus-chip">
-          <ToggleSwitch
-            :model-value="toggleValue('has_shramba')"
-            @update:model-value="updateToggle('has_shramba', $event)"
-          />
-          <span>{{ t('predict.hasShramba') }}</span>
-        </label>
-        <label class="focus-chip">
-          <ToggleSwitch
-            :model-value="toggleValue('has_terasa')"
-            @update:model-value="updateToggle('has_terasa', $event)"
-          />
-          <span>{{ t('predict.hasTerasa') }}</span>
-        </label>
-        <label class="focus-chip">
-          <ToggleSwitch
-            :model-value="toggleValue('stavba_je_dokoncana')"
-            @update:model-value="updateToggle('stavba_je_dokoncana', $event)"
-          />
-          <span>{{ t('predict.stavbaDokoncana') }}</span>
-        </label>
-        <label class="focus-chip">
-          <ToggleSwitch
-            :model-value="toggleValue('ddv_vkljucen')"
-            @update:model-value="updateToggle('ddv_vkljucen', $event)"
-          />
-          <span>{{ t('predict.ddvVkljucen') }}</span>
-        </label>
-      </div>
-
-      <div class="actions-row">
-        <Button
-          icon="pi pi-search"
-          :loading="loading"
-          :label="t('analysis.analyzeButton')"
-          @click="analyzeGuided"
-        />
-        <a :href="comparisonUrl" target="_blank" rel="noreferrer">
+      <div class="analysis-explore-actions">
+        <a :href="comparisonUrl" target="_blank" rel="noreferrer" class="hero-link">
           <Button
             severity="contrast"
             outlined
@@ -736,17 +896,82 @@
             :label="t('analysis.compareOnPortal')"
           />
         </a>
+        <Button
+          severity="secondary"
+          text
+          icon="pi pi-table"
+          :label="t('nav.market')"
+          @click="openMarketExplorer"
+        />
+        <Button
+          severity="secondary"
+          text
+          icon="pi pi-map"
+          :label="t('nav.map')"
+          @click="openMapExplorer"
+        />
+        <Button
+          severity="secondary"
+          text
+          icon="pi pi-building"
+          :label="t('map.openMunicipality')"
+          @click="openMunicipality"
+        />
       </div>
-    </section>
+    </SectionPanel>
 
-    <section v-if="auth.isAdmin" class="panel">
-      <div class="panel-head">
-        <div>
-          <p class="eyebrow subtle">{{ t('analysis.bulkMode') }}</p>
-          <h2>{{ t('analysis.advancedTitle') }}</h2>
-        </div>
+    <div v-if="error" class="state-card state-card-stack" role="alert">
+      <EmptyState icon="pi pi-exclamation-triangle" :message="error" />
+      <div class="state-card-actions">
+        <Button
+          size="small"
+          severity="secondary"
+          outlined
+          icon="pi pi-refresh"
+          :label="t('common.retry')"
+          @click="retryAnalysis"
+        />
       </div>
+    </div>
 
+    <AnalysisResultsPanel
+      v-if="result"
+      :eyebrow="t('analysis.results')"
+      :title="t('analysis.scoredListings')"
+      :result="result"
+      :primary-listing="resultListings[0] || null"
+      :summary-cards="resultSummaryCards"
+      :comparison-url="comparisonUrl"
+      @export="exportToCSV(result.listings || [], 'analysis.csv')"
+      @open-prediction="openPredictionForListing"
+      @open-municipality="openMunicipalityForListing"
+    />
+
+    <SectionPanel
+      v-if="!result"
+      class="preview-panel"
+      :eyebrow="t('analysis.previewTitle')"
+      :title="t('analysis.previewHeading')"
+    >
+      <div class="guided-readiness">
+        <article
+          v-for="item in guidedReadiness"
+          :key="item.key"
+          class="guided-readiness-item"
+          :class="{ ready: item.ready }"
+        >
+          <i :class="item.ready ? 'pi pi-check-circle' : 'pi pi-circle'" aria-hidden="true"></i>
+          <span>{{ item.text }}</span>
+        </article>
+      </div>
+    </SectionPanel>
+
+    <SectionPanel
+      v-if="auth.isAdmin"
+      class="analysis-advanced-panel"
+      :eyebrow="t('analysis.bulkMode')"
+      :title="t('analysis.advancedTitle')"
+    >
       <Textarea
         v-model="advancedJson"
         rows="8"
@@ -770,158 +995,62 @@
           @click="analyzeAdvanced"
         />
       </div>
-    </section>
-
-    <p v-if="error" class="error-text">{{ error }}</p>
-
-    <template v-if="result">
-      <section v-if="primaryListing" class="result-band">
-        <article class="result-card tone-default">
-          <span>{{ t('analysis.askingPrice') }}</span>
-          <strong>{{ fmtCurrency(primaryListing.asking_price) }}</strong>
-        </article>
-        <article class="result-card tone-primary">
-          <span>{{ t('analysis.predictedPrice') }}</span>
-          <strong>{{ fmtCurrency(primaryListing.predicted_price) }}</strong>
-        </article>
-        <article class="result-card tone-warning">
-          <span>{{ t('analysis.deviation') }}</span>
-          <strong
-            >{{ fmt(primaryListing.deviation_pct ?? primaryListing.deviation_percent, 1) }}%</strong
-          >
-        </article>
-        <article class="result-card tone-label">
-          <span>{{ t('analysis.label') }}</span>
-          <Tag
-            :severity="labelSeverity(primaryListing.label)"
-            :value="labelText(primaryListing.label)"
-          />
-        </article>
-      </section>
-
-      <section class="panel">
-        <div class="panel-head">
-          <div>
-            <p class="eyebrow subtle">{{ t('analysis.results') }}</p>
-            <h2>{{ t('analysis.scoredListings') }}</h2>
-          </div>
-
-          <Button
-            v-if="result.listings?.length"
-            severity="contrast"
-            outlined
-            icon="pi pi-download"
-            :label="t('analysis.export')"
-            @click="exportToCSV(result.listings, 'analysis.csv')"
-          />
-        </div>
-
-        <DataTable
-          :value="result.listings || []"
-          paginator
-          :rows="10"
-          size="small"
-          striped-rows
-          responsive-layout="scroll"
-          table-style="min-width: 100%"
-        >
-          <Column :header="t('dashboard.municipality')">
-            <template #body="{ data }">{{ data.municipality || '—' }}</template>
-          </Column>
-          <Column :header="t('predict.propertyType')">
-            <template #body="{ data }">{{ formatType(data.property_type) }}</template>
-          </Column>
-          <Column :header="t('predict.size')">
-            <template #body="{ data }">
-              {{ fmt(data.uporabna_povrsina || data.size_m2, 1) }} m²
-            </template>
-          </Column>
-          <Column :header="t('predict.floor')">
-            <template #body="{ data }">{{ data.floor ?? '—' }}</template>
-          </Column>
-          <Column :header="t('analysis.askingPrice')">
-            <template #body="{ data }">{{ fmtCurrency(data.asking_price) }}</template>
-          </Column>
-          <Column :header="t('analysis.predictedPrice')">
-            <template #body="{ data }">{{ fmtCurrency(data.predicted_price) }}</template>
-          </Column>
-          <Column :header="t('analysis.deviation')">
-            <template #body="{ data }">
-              {{ fmt(data.deviation_pct ?? data.deviation_percent, 1) }}%
-            </template>
-          </Column>
-          <Column :header="t('analysis.label')">
-            <template #body="{ data }">
-              <Tag :severity="labelSeverity(data.label)" :value="labelText(data.label)" />
-            </template>
-          </Column>
-          <Column :header="t('common.actions')">
-            <template #body="{ data }">
-              <div class="row-actions">
-                <Button
-                  size="small"
-                  severity="secondary"
-                  text
-                  icon="pi pi-calculator"
-                  :label="t('predict.title')"
-                  @click="openPredictionForListing(data)"
-                />
-                <Button
-                  v-if="data.municipality"
-                  size="small"
-                  severity="secondary"
-                  text
-                  icon="pi pi-building"
-                  :label="t('map.openMunicipality')"
-                  @click="openMunicipalityForListing(data)"
-                />
-              </div>
-            </template>
-          </Column>
-        </DataTable>
-      </section>
-    </template>
+    </SectionPanel>
   </div>
 </template>
 
 <style scoped>
   .analysis-page {
     display: grid;
-    gap: 1rem;
+    gap: var(--space-section);
   }
 
-  .hero-shell,
-  .panel,
+  .state-card-stack {
+    display: grid;
+    gap: 0.85rem;
+  }
+
+  .state-card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    align-items: center;
+  }
+
   .result-card {
-    border: 1px solid var(--border);
-    border-radius: 1.5rem;
-    background: linear-gradient(180deg, var(--surface-soft-subtle), var(--surface-soft-strong));
-    box-shadow: var(--shadow-sm);
-  }
-
-  .hero-shell,
-  .panel {
-    padding: 1.15rem;
+    border: 1px solid color-mix(in srgb, var(--border) 72%, var(--content-border-strong) 28%);
+    border-radius: var(--radius-md);
+    box-shadow: var(--accent-shadow, var(--shadow-sm));
   }
 
   .hero-shell {
     display: grid;
     grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
     align-items: stretch;
-    gap: 1rem;
+    gap: 1.15rem;
+    background:
+      radial-gradient(
+        circle at top right,
+        color-mix(in srgb, var(--secondary) 10%, transparent),
+        transparent 26%
+      ),
+      var(--surface-hero);
+  }
+
+  .panel {
     background:
       linear-gradient(
         180deg,
-        color-mix(in srgb, var(--primary-overlay) 76%, transparent),
-        var(--surface-soft-strong)
+        color-mix(in srgb, var(--glass-highlight) 88%, transparent),
+        transparent 38%
       ),
-      var(--surface-soft-strong);
+      var(--surface-panel);
   }
 
-  .hero-shell h1,
-  .panel h2 {
+  .hero-shell h1 {
     margin: 0;
     font-family: var(--font-display);
+    text-wrap: balance;
   }
 
   .hero-link {
@@ -940,16 +1069,28 @@
 
   .hero-side,
   .hero-pill-grid,
-  .guided-summary {
+  .guided-summary,
+  .hero-story-grid,
+  .analysis-preview-grid,
+  .guided-readiness {
     display: grid;
     gap: 0.85rem;
   }
 
   .hero-side {
     align-content: space-between;
+    padding: 0.15rem 0;
   }
 
+  .hero-metric-stack,
   .hero-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    align-items: stretch;
+  }
+
+  .analysis-explore-actions {
     display: flex;
     flex-wrap: wrap;
     gap: 0.6rem;
@@ -957,41 +1098,132 @@
 
   .hero-pill-grid,
   .guided-summary {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  }
+
+  .hero-metric-stack {
+    flex-direction: column;
+  }
+
+  .hero-story-grid,
+  .analysis-preview-grid {
+    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
   }
 
   .hero-pill,
-  .summary-chip {
+  .summary-chip,
+  .hero-story-card,
+  .analysis-preview-card,
+  .hero-note,
+  .guided-readiness-item {
     padding: 0.9rem 1rem;
-    border-radius: 1.15rem;
-    border: 1px solid color-mix(in srgb, var(--border) 72%, var(--primary) 28%);
-    background: color-mix(in srgb, var(--surface-strong) 86%, white 14%);
+    border-radius: var(--radius-md);
+    border: 1px solid color-mix(in srgb, var(--border) 76%, var(--primary) 24%);
+    background: color-mix(
+      in srgb,
+      var(--surface-card-strong, var(--surface-strong)) 92%,
+      var(--primary) 8%
+    );
+    box-shadow: var(--shadow-sm);
+  }
+
+  .hero-pill {
+    background: color-mix(
+      in srgb,
+      var(--surface-card-strong, var(--surface-strong)) 90%,
+      var(--secondary) 10%
+    );
   }
 
   .hero-pill span,
-  .summary-chip span {
+  .summary-chip span,
+  .hero-story-card span {
     display: block;
     margin-bottom: 0.3rem;
     color: var(--text-soft);
-    font-size: 0.76rem;
+    font-size: var(--text-xs);
     font-weight: 800;
     letter-spacing: 0.12em;
     text-transform: uppercase;
   }
 
   .hero-pill strong,
-  .summary-chip strong {
+  .summary-chip strong,
+  .hero-story-card strong,
+  .analysis-preview-card strong {
     display: block;
     font-size: 1rem;
     line-height: 1.2;
   }
 
-  .panel-head {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
+  .hero-story-card p,
+  .analysis-preview-card p,
+  .hero-note p {
+    margin: 0.3rem 0 0;
+    color: var(--text-muted);
+  }
+
+  .guided-workbench {
+    display: grid;
     gap: 1rem;
-    margin-bottom: 0.9rem;
+  }
+
+  .hero-note {
+    background: color-mix(
+      in srgb,
+      var(--surface-card-strong, var(--surface-strong)) 92%,
+      var(--warning) 8%
+    );
+  }
+
+  .analysis-advanced-panel {
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface-subtle) 88%, transparent),
+        transparent 24%
+      ),
+      var(--surface-panel);
+  }
+
+  .results-overview {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+    gap: 0.85rem;
+    margin-bottom: 1rem;
+  }
+
+  .results-summary-card {
+    padding: 1rem;
+    border-radius: var(--radius-md);
+    border: 1px solid color-mix(in srgb, var(--border) 76%, var(--secondary) 24%);
+    background: color-mix(
+      in srgb,
+      var(--surface-card-strong, var(--surface-strong)) 93%,
+      var(--secondary) 7%
+    );
+    box-shadow: var(--shadow-sm);
+  }
+
+  .results-summary-card span {
+    display: block;
+    margin-bottom: 0.25rem;
+    color: var(--text-soft);
+    font-size: var(--text-xs);
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .results-summary-card strong {
+    display: block;
+    font-size: 1.4rem;
+    line-height: 1.1;
+  }
+
+  .results-summary-card p {
+    margin: 0.35rem 0 0;
+    color: var(--text-muted);
   }
 
   .threshold {
@@ -1003,12 +1235,15 @@
     display: block;
     margin-bottom: 0.35rem;
     color: var(--text-muted);
-    font-size: 0.86rem;
+    font-size: 0.8rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
   }
 
   .form-grid {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
     gap: 0.9rem;
   }
 
@@ -1018,7 +1253,7 @@
   }
 
   .notes-field {
-    grid-column: span 2;
+    grid-column: 1 / -1;
   }
 
   .actions-row {
@@ -1046,86 +1281,175 @@
     grid-template-columns: auto 1fr;
     align-items: center;
     gap: 0.7rem;
-    border: 1px solid var(--border);
+    border: 1px solid color-mix(in srgb, var(--border) 76%, var(--primary) 24%);
     border-radius: 999px;
-    background: var(--surface-soft);
+    background: color-mix(
+      in srgb,
+      var(--surface-card-strong, var(--surface-strong)) 92%,
+      var(--secondary) 8%
+    );
     color: var(--text);
     padding: 0.7rem 0.9rem;
     font-weight: 700;
+    box-shadow: var(--shadow-sm);
     transition:
       transform 0.16s ease,
       border-color 0.16s ease,
-      box-shadow 0.16s ease;
+      box-shadow 0.16s ease,
+      background 0.16s ease;
   }
 
   .focus-chip:hover {
     transform: translateY(-1px);
-    border-color: color-mix(in srgb, var(--primary) 28%, transparent);
+    border-color: color-mix(in srgb, var(--primary) 34%, transparent);
+    background: color-mix(
+      in srgb,
+      var(--surface-card-strong, var(--surface-strong)) 88%,
+      var(--secondary) 12%
+    );
     box-shadow: 0 16px 28px color-mix(in srgb, var(--shadow-color) 12%, transparent);
+  }
+
+  .preview-panel {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .analysis-preview-card,
+  .guided-readiness-item {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.85rem;
+    align-items: start;
+  }
+
+  .preview-icon {
+    display: inline-grid;
+    place-items: center;
+    width: 2.55rem;
+    height: 2.55rem;
+    border-radius: var(--radius-xs);
+    background: color-mix(
+      in srgb,
+      var(--primary) 14%,
+      var(--surface-card-strong, var(--surface-strong))
+    );
+    color: var(--primary-strong);
+  }
+
+  .guided-readiness {
+    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  }
+
+  .guided-readiness-item {
+    align-items: center;
+    border-radius: 999px;
+    padding: 0.85rem 1rem;
+    font-weight: 700;
+    background: color-mix(
+      in srgb,
+      var(--surface-card-strong, var(--surface-strong)) 94%,
+      transparent
+    );
+  }
+
+  .guided-readiness-item i {
+    color: var(--text-soft);
+  }
+
+  .guided-readiness-item.ready {
+    border-color: color-mix(in srgb, var(--success) 26%, var(--border));
+    background: color-mix(
+      in srgb,
+      var(--surface-card-strong, var(--surface-strong)) 92%,
+      var(--success) 8%
+    );
+  }
+
+  .guided-readiness-item.ready i {
+    color: var(--success-strong, var(--success));
   }
 
   .result-band {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
     gap: 0.85rem;
+    margin-bottom: 0.9rem;
   }
 
   .result-card {
     padding: 1rem;
     display: grid;
     gap: 0.35rem;
+    background: color-mix(
+      in srgb,
+      var(--surface-card-strong, var(--surface-strong)) 94%,
+      transparent
+    );
   }
 
   .result-card.tone-primary {
-    background:
-      linear-gradient(
-        180deg,
-        color-mix(in srgb, var(--primary-overlay) 82%, transparent),
-        var(--surface-soft-strong)
-      ),
-      var(--surface-soft-strong);
+    background: color-mix(in srgb, var(--surface-soft-strong) 94%, var(--primary) 6%);
   }
 
   .result-card.tone-warning {
-    background:
-      linear-gradient(
-        180deg,
-        color-mix(in srgb, var(--warning-overlay) 80%, transparent),
-        var(--surface-soft-strong)
-      ),
-      var(--surface-soft-strong);
+    background: color-mix(in srgb, var(--surface-soft-strong) 94%, var(--warning) 6%);
   }
 
   .result-card.tone-label {
-    background:
-      linear-gradient(
-        180deg,
-        color-mix(in srgb, var(--surface-dark-muted) 100%, transparent),
-        var(--surface-soft-strong)
-      ),
-      var(--surface-soft-strong);
+    background: color-mix(in srgb, var(--surface-soft-strong) 94%, var(--secondary) 6%);
   }
 
   .result-card span {
     color: var(--text-muted);
-    font-size: 0.84rem;
+    font-size: var(--text-sm);
   }
 
   .result-card strong {
     font-size: 1.25rem;
   }
 
-  @media (max-width: 900px) {
-    .hero-shell,
-    .panel-head {
+  @media (max-width: 1040px) {
+    .hero-shell {
       grid-template-columns: 1fr;
     }
 
-    .form-grid,
+    .form-grid {
+      grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+    }
+  }
+
+  @media (max-width: 640px) {
+    .analysis-page {
+      gap: 1rem;
+    }
+
+    .hero-shell,
     .result-band,
-    .hero-pill-grid,
-    .guided-summary {
+    .results-overview {
+      gap: 0.7rem;
+    }
+
+    .hero-story-card,
+    .hero-pill,
+    .summary-chip,
+    .analysis-preview-card,
+    .results-summary-card {
+      padding: 0.85rem 0.9rem;
+    }
+
+    .form-grid {
       grid-template-columns: 1fr;
+    }
+
+    .notes-field {
+      grid-column: auto;
+    }
+
+    .actions-row,
+    .analysis-explore-actions,
+    .hero-actions {
+      width: 100%;
     }
   }
 </style>

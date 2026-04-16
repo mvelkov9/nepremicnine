@@ -56,6 +56,18 @@ const routes: RouteRecordRaw[] = [
     },
   },
   {
+    path: '/dokaz',
+    name: 'benchmark',
+    alias: '/benchmark',
+    component: () => import('../views/BenchmarkView.vue'),
+    meta: {
+      requiresAuth: true,
+      appArea: 'viewer',
+      titleKey: 'nav.benchmark',
+      descriptionKey: 'layout.page.benchmark',
+    },
+  },
+  {
     path: '/trg',
     name: 'market',
     alias: '/market',
@@ -163,6 +175,18 @@ const routes: RouteRecordRaw[] = [
     },
   },
   {
+    path: '/admin/dokaz',
+    name: 'admin-benchmark',
+    component: () => import('../views/BenchmarkView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      appArea: 'admin',
+      titleKey: 'nav.benchmark',
+      descriptionKey: 'layout.page.benchmark',
+    },
+  },
+  {
     path: '/admin/uporabniki',
     name: 'admin-users',
     component: () => import('../views/AdminView.vue'),
@@ -206,6 +230,10 @@ const routes: RouteRecordRaw[] = [
     path: '/admin/diagnostics',
     redirect: { name: 'admin-diagnostics' },
   },
+  {
+    path: '/admin/benchmark',
+    redirect: { name: 'admin-benchmark' },
+  },
 ]
 
 const router = createRouter({
@@ -213,10 +241,14 @@ const router = createRouter({
   routes,
 })
 
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
   const auth = useAuthStore()
   const ui = useUiStore()
   ui.routeTransitioning = true
+
+  if (auth.hasToken && !auth.isReady) {
+    await auth.init()
+  }
 
   if (to.meta.requiresAuth && !auth.isAuthenticated) {
     return { name: 'login', query: { redirect: to.fullPath } }
@@ -227,7 +259,7 @@ router.beforeEach((to) => {
   }
 
   if (to.meta.guest && auth.isAuthenticated) {
-    return { name: 'dashboard' }
+    return { name: auth.isAdmin ? 'admin-home' : 'dashboard' }
   }
 })
 

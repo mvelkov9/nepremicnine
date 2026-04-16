@@ -15,7 +15,10 @@
     class="market-section-card"
     :class="{ 'market-section-card--featured': featured, 'market-section-card--compact': compact }"
   >
-    <div class="market-section-card__head" :class="{ 'market-section-card__head--compact': compact }">
+    <div
+      class="market-section-card__head"
+      :class="{ 'market-section-card__head--compact': compact }"
+    >
       <div class="market-section-card__heading">
         <p v-if="eyebrow" class="eyebrow subtle">{{ eyebrow }}</p>
         <h2 class="market-section-card__title">{{ title }}</h2>
@@ -41,12 +44,11 @@
     padding: 1.15rem;
     border-radius: calc(var(--radius-md) + 0.25rem);
     border: 1px solid color-mix(in srgb, var(--border) 72%, var(--primary) 18%);
-    background:
-      linear-gradient(
-        180deg,
-        color-mix(in srgb, var(--surface-strong) 96%, var(--primary-overlay) 4%),
-        var(--surface-strong)
-      );
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface-strong) 96%, var(--primary-overlay) 4%),
+      var(--surface-strong)
+    );
     box-shadow: 0 14px 32px color-mix(in srgb, var(--shadow-color) 8%, transparent);
     overflow: hidden;
   }
@@ -68,8 +70,16 @@
   .market-section-card--featured {
     border-color: color-mix(in srgb, var(--border) 58%, var(--primary) 42%);
     background:
-      radial-gradient(circle at top right, color-mix(in srgb, var(--primary) 12%, transparent), transparent 30%),
-      linear-gradient(180deg, color-mix(in srgb, var(--surface-panel) 88%, var(--primary) 12%), var(--surface-panel));
+      radial-gradient(
+        circle at top right,
+        color-mix(in srgb, var(--primary) 12%, transparent),
+        transparent 30%
+      ),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface-panel) 88%, var(--primary) 12%),
+        var(--surface-panel)
+      );
   }
 
   .market-section-card--compact {

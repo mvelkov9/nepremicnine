@@ -15,14 +15,16 @@ from app.database import get_db
 from app.dependencies.auth import get_current_user, require_admin
 from app.models.model_run import ModelRun
 from app.models.user import User
-from app.schemas.model import ModelInfoResponse
-from app.services.model_service import get_model_info
+from app.schemas.model import BenchmarkProofResponse, BenchmarkSummaryResponse, ModelInfoResponse
+from app.services.model_service import build_gurs_benchmark_payload, get_model_info
 from app.utils.cache import cache_get, cache_set
+from app.utils.slovenian_labels import labels_match
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/model", tags=["model"])
 DATA_DIR = os.path.realpath(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data"))
+RESEARCH_QUEUE_DIR = os.path.join(DATA_DIR, "models", "research_queue")
 
 
 def _relative_data_path(path: str | None) -> str | None:
@@ -32,6 +34,29 @@ def _relative_data_path(path: str | None) -> str | None:
     if resolved.startswith(DATA_DIR + os.sep) or resolved == DATA_DIR:
         return os.path.relpath(resolved, DATA_DIR).replace("\\", "/")
     return path
+
+
+def _load_research_impact_report() -> dict | None:
+    report_path = os.path.join(RESEARCH_QUEUE_DIR, "impact_report.json")
+    if not os.path.exists(report_path):
+        return None
+    try:
+        with open(report_path, encoding="utf-8") as handle:
+            return json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        logger.warning("Failed to read research impact report from %s", report_path)
+        return None
+
+
+async def _load_cached_gurs_benchmark_payload(request: Request) -> dict:
+    cache_key = "cache:model:benchmark:gurs:all"
+    cached = await cache_get(request, cache_key)
+    if cached is not None:
+        return cached
+
+    payload = build_gurs_benchmark_payload()
+    await cache_set(request, cache_key, payload)
+    return payload
 
 
 @router.get("/info", response_model=ModelInfoResponse)
@@ -116,6 +141,7 @@ async def model_diagnostics(request: Request, response: Response, _user: User = 
         "type_models_trained": info.get("type_models_trained", []),
         "data_preparation": info.get("data_preparation"),
         "segment_diagnostics": info.get("segment_diagnostics"),
+        "research_impact": _load_research_impact_report(),
     }
     await cache_set(request, cache_key, result)
     return result
@@ -169,6 +195,128 @@ async def model_runs(
         "per_page": per_page,
         "pages": pages,
     }
+
+
+@router.get("/benchmark/gurs-summary", response_model=BenchmarkSummaryResponse)
+async def gurs_benchmark_summary(
+    request: Request,
+    response: Response,
+    _user: User = Depends(get_current_user),
+):
+    """Return summary proof that compares the current model against GURS on shared coverage."""
+    response.headers["Cache-Control"] = "private, max-age=300"
+
+    info = get_model_info()
+    if info is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No trained model found")
+
+    payload = await _load_cached_gurs_benchmark_payload(request)
+    return BenchmarkSummaryResponse(**payload.get("summary", {}))
+
+
+@router.get("/benchmark/gurs-transactions", response_model=BenchmarkProofResponse)
+async def gurs_benchmark_transactions(
+    request: Request,
+    response: Response,
+    region: str | None = None,
+    municipality: str | None = None,
+    property_type: str | None = None,
+    year: int | None = Query(None, ge=1800, le=2100),
+    winner: str | None = None,
+    search: str | None = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=200),
+    sort: str = Query("improvement_eur"),
+    order: str = Query("desc"),
+    _user: User = Depends(require_admin),
+):
+    """Return transaction-level proof rows comparing model predictions against GURS."""
+    response.headers["Cache-Control"] = "private, max-age=300"
+
+    info = get_model_info()
+    if info is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No trained model found")
+
+    payload = await _load_cached_gurs_benchmark_payload(request)
+    rows = list(payload.get("rows", []))
+
+    if region:
+        rows = [row for row in rows if labels_match(row.get("region"), region)]
+    if municipality:
+        rows = [row for row in rows if labels_match(row.get("municipality"), municipality)]
+    if property_type:
+        property_key = str(property_type).casefold()
+        rows = [row for row in rows if str(row.get("property_type") or "").casefold() == property_key]
+    if year is not None:
+        rows = [row for row in rows if row.get("transaction_year") == year]
+    if winner:
+        winner_key = str(winner).casefold()
+        rows = [row for row in rows if str(row.get("winner") or "").casefold() == winner_key]
+    if search:
+        search_key = str(search).strip().casefold()
+        rows = [
+            row
+            for row in rows
+            if search_key
+            in " ".join(
+                [
+                    str(row.get("municipality") or ""),
+                    str(row.get("region") or ""),
+                    str(row.get("property_type") or ""),
+                    str(row.get("transaction_year") or ""),
+                ]
+            ).casefold()
+        ]
+
+    sort_field_map = {
+        "municipality": "municipality",
+        "region": "region",
+        "property_type": "property_type",
+        "transaction_year": "transaction_year",
+        "price_eur": "price_eur",
+        "model_price_eur": "model_price_eur",
+        "gurs_price_eur": "gurs_price_eur",
+        "model_abs_error": "model_abs_error",
+        "gurs_abs_error": "gurs_abs_error",
+        "improvement_eur": "improvement_eur",
+        "improvement_pct": "improvement_pct",
+        "winner": "winner",
+    }
+    sort_field = sort_field_map.get(sort, "improvement_eur")
+    reverse = str(order).casefold() != "asc"
+    rows = sorted(
+        rows,
+        key=lambda row: (
+            row.get(sort_field) is None,
+            str(row.get(sort_field) or "").casefold()
+            if sort_field in {"municipality", "region", "property_type", "winner"}
+            else float(row.get(sort_field) or 0),
+        ),
+        reverse=reverse,
+    )
+
+    total = len(rows)
+    pages = math.ceil(total / page_size) if total > 0 else 0
+    offset = (page - 1) * page_size
+    items = rows[offset : offset + page_size]
+
+    return BenchmarkProofResponse(
+        items=items,
+        total=total,
+        page=page,
+        page_size=page_size,
+        pages=pages,
+        filters={
+            "region": region,
+            "municipality": municipality,
+            "property_type": property_type,
+            "year": year,
+            "winner": winner,
+            "search": search,
+        },
+        sort=sort_field,
+        order="desc" if reverse else "asc",
+    )
 
 
 @router.delete("/runs/clear", status_code=status.HTTP_200_OK)

@@ -140,6 +140,7 @@ export interface TransactionRecord {
   id: string
   municipality: string
   slug: string
+  naselje?: string | null
   region?: string | null
   property_type?: string | null
   price_eur?: number | null
@@ -187,6 +188,27 @@ export interface ExplorerResponse<T> {
   order: string
 }
 
+export interface ServerTableState {
+  page: number
+  pageSize: number
+  sort: string
+  order: 'asc' | 'desc'
+  search: string
+  filters: Record<string, string>
+  visibleColumns?: string[]
+}
+
+export interface ServerTableResult<T> {
+  items: T[]
+  total: number
+  page: number
+  page_size: number
+  pages: number
+  filters: Record<string, unknown>
+  sort: string
+  order: string
+}
+
 export interface MunicipalityExplorerItem extends MunicipalityStat {
   avg_price?: number | null
   avg_price_per_m2?: number | null
@@ -196,6 +218,76 @@ export interface MunicipalityExplorerItem extends MunicipalityStat {
 export interface RegionExplorerItem extends RegionStat {
   municipality_count?: number
   latest_year?: string | null
+}
+
+export interface BenchmarkMetricSummary {
+  mae?: number | null
+  rmse?: number | null
+  r2?: number | null
+  mape?: number | null
+  median_ae?: number | null
+}
+
+export interface BenchmarkImprovementSummary {
+  mae?: number | null
+  rmse?: number | null
+  median_ae?: number | null
+  mape?: number | null
+  r2?: number | null
+  avg_gain_eur?: number | null
+  median_gain_eur?: number | null
+}
+
+export interface BenchmarkWinnerSummary {
+  model: number
+  gurs: number
+  tie: number
+}
+
+export interface BenchmarkSegmentSummary {
+  segment: string
+  count: number
+  model_win_rate: number
+  avg_gain_eur: number
+  median_gain_eur: number
+  model_mae?: number | null
+  gurs_mae?: number | null
+}
+
+export interface BenchmarkSummaryResponse {
+  coverage_rows: number
+  model_metrics: BenchmarkMetricSummary | null
+  gurs_metrics: BenchmarkMetricSummary | null
+  improvement_vs_gurs: BenchmarkImprovementSummary | null
+  winners: BenchmarkWinnerSummary
+  top_regions: BenchmarkSegmentSummary[]
+  top_property_types: BenchmarkSegmentSummary[]
+  top_years: BenchmarkSegmentSummary[]
+  methodology: string
+  status?: string
+  detail?: string | null
+}
+
+export interface BenchmarkProofRow {
+  id: string
+  municipality?: string | null
+  slug?: string | null
+  region?: string | null
+  property_type?: string | null
+  vrsta_kupoprodajnega_posla?: string | null
+  transaction_year?: number | null
+  year_built?: number | null
+  size_m2?: number | null
+  price_eur: number
+  model_price_eur: number
+  gurs_price_eur: number
+  model_abs_error: number
+  gurs_abs_error: number
+  improvement_eur: number
+  improvement_pct: number
+  winner: string
+  source_label?: string | null
+  ev_benchmark_source?: string | null
 }
 
 export interface SavedWorkspace {

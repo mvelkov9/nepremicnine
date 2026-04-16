@@ -55,8 +55,15 @@
         </div>
       </div>
 
-      <LoadingSpinner v-if="workspacesLoading && !pinnedWorkspaces.length" :label="t('common.loading')" />
-      <div v-else-if="workspacesError && !pinnedWorkspaces.length" class="state-card state-card-stack" role="alert">
+      <LoadingSpinner
+        v-if="workspacesLoading && !pinnedWorkspaces.length"
+        :label="t('common.loading')"
+      />
+      <div
+        v-else-if="workspacesError && !pinnedWorkspaces.length"
+        class="state-card state-card-stack"
+        role="alert"
+      >
         <EmptyState icon="pi pi-exclamation-triangle" :message="workspacesError" />
         <div class="state-card-actions">
           <Button
@@ -90,8 +97,15 @@
         </div>
       </div>
 
-      <LoadingSpinner v-if="watchlistLoading && !watchlistFeed.length" :label="t('common.loading')" />
-      <div v-else-if="watchlistError && !watchlistFeed.length" class="state-card state-card-stack" role="alert">
+      <LoadingSpinner
+        v-if="watchlistLoading && !watchlistFeed.length"
+        :label="t('common.loading')"
+      />
+      <div
+        v-else-if="watchlistError && !watchlistFeed.length"
+        class="state-card state-card-stack"
+        role="alert"
+      >
         <EmptyState icon="pi pi-exclamation-triangle" :message="watchlistError" />
         <div class="state-card-actions">
           <Button
@@ -105,26 +119,18 @@
       </div>
       <div v-else-if="watchlistFeed.length" class="workspace-list">
         <template v-for="item in watchlistFeed" :key="item.id">
-          <RouterLink
-            v-if="item.to"
-            :to="item.to"
-            class="workspace-card workspace-card--feed"
-          >
+          <RouterLink v-if="item.to" :to="item.to" class="workspace-card workspace-card--feed">
             <strong>{{ item.label }}</strong>
             <small>
               {{ item.summary }}
-              <template v-if="item.trend">
-                | {{ item.trend }}
-              </template>
+              <template v-if="item.trend"> | {{ item.trend }} </template>
             </small>
           </RouterLink>
           <article v-else class="workspace-card workspace-card--feed workspace-card--static">
             <strong>{{ item.label }}</strong>
             <small>
               {{ item.summary }}
-              <template v-if="item.trend">
-                | {{ item.trend }}
-              </template>
+              <template v-if="item.trend"> | {{ item.trend }} </template>
             </small>
           </article>
         </template>
@@ -171,7 +177,11 @@
     border-radius: var(--radius-md);
     border: 1px solid color-mix(in srgb, var(--border) 76%, var(--primary) 24%);
     background:
-      linear-gradient(180deg, color-mix(in srgb, var(--surface-card-strong) 96%, transparent), transparent 120%),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface-card-strong) 96%, transparent),
+        transparent 120%
+      ),
       var(--surface-panel);
     box-shadow:
       inset 0 1px 0 var(--glass-highlight),
@@ -255,7 +265,11 @@
 
   .workspace-card--feed {
     background:
-      radial-gradient(circle at top right, color-mix(in srgb, var(--primary) 10%, transparent), transparent 32%),
+      radial-gradient(
+        circle at top right,
+        color-mix(in srgb, var(--primary) 10%, transparent),
+        transparent 32%
+      ),
       var(--surface-subtle);
   }
 

@@ -5,14 +5,25 @@
   import Button from 'primevue/button'
   import Dialog from 'primevue/dialog'
   import Tag from 'primevue/tag'
+  import EmptyState from '../EmptyState.vue'
   import { useUiStore } from '../../stores/ui'
   import { useWorkbenchStore } from '../../stores/workbench'
+  import type { ActivityFeedItem } from '../../types/api'
+  import {
+    activityCategoryLabel,
+    activityCategorySeverity,
+    activitySummary,
+  } from '../../utils/activity'
   import { formatDateTime } from '../../utils/format'
 
   const { t } = useI18n()
   const router = useRouter()
   const ui = useUiStore()
   const workbench = useWorkbenchStore()
+
+  function canMarkItemRead(item: ActivityFeedItem) {
+    return !item.is_read && String(item.id || '').startsWith('event:')
+  }
 
   watch(
     () => ui.activityCenterOpen,
@@ -22,14 +33,28 @@
     },
   )
 
-  async function openItem(item: any) {
-    if (!item.is_read && item.id.startsWith('event:')) {
+  async function openItem(item: ActivityFeedItem) {
+    const shouldMarkRead = canMarkItemRead(item)
+    if (shouldMarkRead) {
       await workbench.markActivityRead(item.id)
     }
     if (item.link) {
       await router.push(item.link)
+      ui.toggleActivityCenter(false)
+      return
     }
-    ui.toggleActivityCenter(false)
+  }
+
+  function itemActionLabel(item: ActivityFeedItem) {
+    if (item.link) return t('common.open')
+    if (canMarkItemRead(item)) return t('workbench.markRead')
+    return t('workbench.read')
+  }
+
+  function itemActionIcon(item: ActivityFeedItem) {
+    if (item.link) return 'pi pi-arrow-right'
+    if (canMarkItemRead(item)) return 'pi pi-check'
+    return 'pi pi-check-circle'
   }
 </script>
 
@@ -45,12 +70,18 @@
         <div class="activity-card-main">
           <div class="activity-card-head">
             <strong>{{ item.title }}</strong>
-            <Tag
-              :value="item.is_read ? t('workbench.read') : t('workbench.unread')"
-              :severity="item.is_read ? 'secondary' : 'contrast'"
-            />
+            <div class="activity-card-tags">
+              <Tag
+                :value="activityCategoryLabel(item.category, t)"
+                :severity="activityCategorySeverity(item.category)"
+              />
+              <Tag
+                :value="item.is_read ? t('workbench.read') : t('workbench.unread')"
+                :severity="item.is_read ? 'secondary' : 'contrast'"
+              />
+            </div>
           </div>
-          <p>{{ item.body || item.category }}</p>
+          <p>{{ activitySummary(item, t) }}</p>
           <small>{{ formatDateTime(item.created_at) }}</small>
         </div>
 
@@ -58,15 +89,18 @@
           size="small"
           severity="secondary"
           text
-          icon="pi pi-arrow-right"
-          :label="t('common.open')"
+          :icon="itemActionIcon(item)"
+          :label="itemActionLabel(item)"
+          :disabled="!item.link && !canMarkItemRead(item)"
           @click="openItem(item)"
         />
       </article>
 
-      <p v-if="!workbench.activityFeed.length" class="muted">
-        {{ t('workbench.noActivity') }}
-      </p>
+      <EmptyState
+        v-if="!workbench.activityFeed.length"
+        icon="pi pi-compass"
+        :message="t('workbench.noActivity')"
+      />
     </div>
   </Dialog>
 </template>
@@ -74,7 +108,7 @@
 <style scoped>
   .activity-center {
     display: grid;
-    gap: 0.9rem;
+    gap: 0.95rem;
   }
 
   .activity-card {
@@ -82,19 +116,22 @@
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
-    padding: 0.9rem 1rem;
-    border-radius: 1rem;
-    border: 1px solid var(--border);
-    background: color-mix(
-      in srgb,
-      var(--surface-card-strong, var(--surface-soft)) 86%,
-      transparent
-    );
+    padding: 1rem 1.05rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid color-mix(in srgb, var(--border) 78%, var(--content-border-strong) 22%);
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface-card-strong) 95%, transparent),
+        transparent 120%
+      ),
+      var(--surface-subtle);
+    box-shadow: var(--shadow-sm);
   }
 
   .activity-card-main {
     display: grid;
-    gap: 0.25rem;
+    gap: 0.3rem;
   }
 
   .activity-card-head {
@@ -104,10 +141,21 @@
     flex-wrap: wrap;
   }
 
+  .activity-card-tags {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    flex-wrap: wrap;
+  }
+
   .activity-card p,
   .activity-card small {
     margin: 0;
     color: var(--text-muted);
+  }
+
+  .activity-card strong {
+    font-size: 0.97rem;
   }
 
   @media (max-width: 720px) {

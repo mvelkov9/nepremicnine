@@ -167,7 +167,11 @@
     border-radius: var(--radius-lg);
     border: 1px solid color-mix(in srgb, var(--border) 72%, var(--content-border-strong) 28%);
     background:
-      linear-gradient(180deg, color-mix(in srgb, var(--surface-card-strong) 98%, transparent), transparent 120%),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface-card-strong) 98%, transparent),
+        transparent 120%
+      ),
       var(--surface-panel);
     box-shadow:
       inset 0 1px 0 var(--content-glow),
@@ -220,7 +224,11 @@
     border-radius: var(--radius-sm);
     border: 1px solid color-mix(in srgb, var(--border) 74%, var(--primary) 26%);
     background:
-      linear-gradient(180deg, color-mix(in srgb, var(--surface-card-strong) 96%, transparent), transparent 120%),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface-card-strong) 96%, transparent),
+        transparent 120%
+      ),
       var(--surface-subtle);
     box-shadow:
       inset 0 1px 0 var(--content-glow),

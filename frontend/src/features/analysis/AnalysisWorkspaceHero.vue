@@ -85,8 +85,16 @@
     border-radius: var(--radius-lg);
     border: 1px solid color-mix(in srgb, var(--border) 70%, var(--primary) 30%);
     background:
-      radial-gradient(circle at top right, color-mix(in srgb, var(--secondary) 12%, transparent), transparent 28%),
-      radial-gradient(circle at bottom left, color-mix(in srgb, var(--primary) 10%, transparent), transparent 26%),
+      radial-gradient(
+        circle at top right,
+        color-mix(in srgb, var(--secondary) 12%, transparent),
+        transparent 28%
+      ),
+      radial-gradient(
+        circle at bottom left,
+        color-mix(in srgb, var(--primary) 10%, transparent),
+        transparent 26%
+      ),
       var(--surface-hero);
     box-shadow:
       inset 0 1px 0 var(--content-glow),
@@ -119,7 +127,11 @@
   .analysis-hero-pill {
     border: 1px solid color-mix(in srgb, var(--border) 76%, var(--primary) 24%);
     border-radius: var(--radius-md);
-    background: color-mix(in srgb, var(--surface-card-strong, var(--surface-strong)) 92%, var(--primary) 8%);
+    background: color-mix(
+      in srgb,
+      var(--surface-card-strong, var(--surface-strong)) 92%,
+      var(--primary) 8%
+    );
     box-shadow: var(--shadow-sm);
   }
 
@@ -127,7 +139,11 @@
     display: grid;
     gap: 0.35rem;
     padding: 0.95rem 1rem;
-    background: color-mix(in srgb, var(--surface-card-strong, var(--surface-strong)) 92%, var(--warning) 8%);
+    background: color-mix(
+      in srgb,
+      var(--surface-card-strong, var(--surface-strong)) 92%,
+      var(--warning) 8%
+    );
   }
 
   .analysis-hero-note strong,
@@ -177,7 +193,11 @@
 
   .analysis-hero-pill {
     padding: 0.9rem 0.95rem;
-    background: color-mix(in srgb, var(--surface-card-strong, var(--surface-strong)) 90%, var(--secondary) 10%);
+    background: color-mix(
+      in srgb,
+      var(--surface-card-strong, var(--surface-strong)) 90%,
+      var(--secondary) 10%
+    );
   }
 
   .analysis-hero-actions {

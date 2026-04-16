@@ -91,7 +91,12 @@
 </script>
 
 <template>
-  <SectionPanel class="model-workspace" :eyebrow="eyebrow" :title="title" :description="description">
+  <SectionPanel
+    class="model-workspace"
+    :eyebrow="eyebrow"
+    :title="title"
+    :description="description"
+  >
     <div class="workspace-grid">
       <div class="workspace-source">
         <label class="workspace-field">
@@ -111,9 +116,7 @@
           <span class="eyebrow subtle">{{ t('model.selectedSource') }}</span>
           <strong>{{ sourceSummary.title }}</strong>
           <p>{{ sourceSummary.path }}</p>
-          <p class="muted">
-            {{ sourceSummary.rows }} &middot; {{ sourceSummary.updatedAt }}
-          </p>
+          <p class="muted">{{ sourceSummary.rows }} &middot; {{ sourceSummary.updatedAt }}</p>
         </div>
       </div>
 
@@ -137,11 +140,7 @@
           <span class="eyebrow subtle">{{ t('model.trainingStatus') }}</span>
           <h3>{{ stageLabel || t('common.loading') }}</h3>
         </div>
-        <Tag
-          :severity="statusSeverity"
-          :value="statusLabel || t('common.loading')"
-          rounded
-        />
+        <Tag :severity="statusSeverity" :value="statusLabel || t('common.loading')" rounded />
       </div>
 
       <ProgressBar :value="progressValue" :show-value="false" />
@@ -154,7 +153,11 @@
         <div>
           <span>{{ t('model.elapsed') }}</span>
           <strong>
-            {{ activeStatus.elapsed_sec != null ? `${formatNumber(activeStatus.elapsed_sec, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}s` : t('common.noData') }}
+            {{
+              activeStatus.elapsed_sec != null
+                ? `${formatNumber(activeStatus.elapsed_sec, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}s`
+                : t('common.noData')
+            }}
           </strong>
         </div>
         <div>
@@ -207,8 +210,16 @@
   .model-workspace {
     gap: 1rem;
     background:
-      radial-gradient(circle at top right, color-mix(in srgb, var(--primary) 14%, transparent), transparent 24%),
-      linear-gradient(180deg, color-mix(in srgb, var(--surface-card-strong) 98%, transparent), transparent 120%),
+      radial-gradient(
+        circle at top right,
+        color-mix(in srgb, var(--primary) 14%, transparent),
+        transparent 24%
+      ),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface-card-strong) 98%, transparent),
+        transparent 120%
+      ),
       var(--surface-panel);
   }
 
@@ -233,7 +244,11 @@
     border-radius: var(--radius-md);
     border: 1px solid color-mix(in srgb, var(--border) 78%, var(--primary) 22%);
     background:
-      linear-gradient(180deg, color-mix(in srgb, var(--surface-card-strong) 96%, transparent), transparent 120%),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface-card-strong) 96%, transparent),
+        transparent 120%
+      ),
       var(--surface-panel-muted);
     box-shadow: var(--shadow-sm);
   }
@@ -278,7 +293,11 @@
     border-radius: var(--radius-md);
     border: 1px solid color-mix(in srgb, var(--warning) 24%, var(--border) 76%);
     background:
-      radial-gradient(circle at top right, color-mix(in srgb, var(--warning) 12%, transparent), transparent 26%),
+      radial-gradient(
+        circle at top right,
+        color-mix(in srgb, var(--warning) 12%, transparent),
+        transparent 26%
+      ),
       var(--surface-panel-muted);
     box-shadow: var(--shadow-sm);
   }

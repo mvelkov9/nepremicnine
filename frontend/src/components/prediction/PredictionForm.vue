@@ -168,8 +168,8 @@
     }
     const hasLocationContext = Boolean(
       form.value.naselje?.trim() ||
-        form.value.municipality?.trim() ||
-        (form.value.latitude != null && form.value.longitude != null),
+      form.value.municipality?.trim() ||
+      (form.value.latitude != null && form.value.longitude != null),
     )
     if (!hasLocationContext) {
       errors.location = t('validation.required')
@@ -184,7 +184,9 @@
     () => form.value.naselje,
     (value) => {
       formErrors.value.location = null
-      const target = String(value || '').trim().toLowerCase()
+      const target = String(value || '')
+        .trim()
+        .toLowerCase()
       const match = naseljeOptions.value.find(
         (item) =>
           item.naselje.trim().toLowerCase() === target ||
@@ -285,13 +287,7 @@
 
         <label class="field">
           <span>{{ t('predict.floor') }}</span>
-          <InputNumber
-            v-model="form.floor"
-            input-class="form-input"
-            :min="-2"
-            :max="60"
-            fluid
-          />
+          <InputNumber v-model="form.floor" input-class="form-input" :min="-2" :max="60" fluid />
         </label>
 
         <label class="field">
@@ -369,7 +365,9 @@
           <span>{{ t('predict.marketContext') }}</span>
           <strong>{{ municipalityRegion || t('predict.coordsAutoHint') }}</strong>
           <small class="muted">
-            {{ municipalityRegion ? t('predict.coordsAutoHint') : t('predict.pickMunicipalityHint') }}
+            {{
+              municipalityRegion ? t('predict.coordsAutoHint') : t('predict.pickMunicipalityHint')
+            }}
           </small>
         </div>
       </div>
@@ -379,7 +377,11 @@
           severity="secondary"
           outlined
           icon="pi pi-map-marker"
-          :label="showAdvancedLocation ? t('predict.hideAdvancedLocation') : t('predict.showAdvancedLocation')"
+          :label="
+            showAdvancedLocation
+              ? t('predict.hideAdvancedLocation')
+              : t('predict.showAdvancedLocation')
+          "
           @click="showAdvancedLocation = !showAdvancedLocation"
         />
       </div>

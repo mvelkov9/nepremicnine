@@ -18,86 +18,70 @@
 <style scoped>
   .metric-card {
     position: relative;
-    overflow: hidden;
     display: grid;
-    gap: 0.42rem;
-    padding: 1.05rem 1.1rem;
-    border-radius: 1.4rem;
-    border: 1px solid color-mix(in srgb, var(--border) 84%, white 16%);
+    align-content: start;
+    gap: 0.35rem;
+    min-height: 7rem;
+    padding: 1rem;
+    border-radius: var(--radius-md);
+    border: 1px solid color-mix(in srgb, var(--border) 80%, var(--content-border-strong) 20%);
     background:
       linear-gradient(
         180deg,
-        color-mix(in srgb, var(--overlay-soft) 84%, transparent),
-        transparent 34%
+        color-mix(in srgb, var(--surface-card-strong) 98%, transparent),
+        transparent 120%
       ),
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--surface-strong) 90%, var(--primary) 10%),
-        color-mix(in srgb, var(--surface-soft) 93%, var(--secondary) 7%)
-      );
-    box-shadow: var(--shadow-sm);
+      var(--surface-panel, var(--surface-strong));
+    box-shadow:
+      inset 0 1px 0 var(--content-glow),
+      var(--shadow-sm);
+    overflow: hidden;
   }
 
   .metric-card::before {
     content: '';
     position: absolute;
-    inset: 0 auto auto 0;
-    width: 5.25rem;
-    height: 5.25rem;
-    background: radial-gradient(circle, var(--accent-glow-start), transparent 70%);
-    pointer-events: none;
+    inset: 0 auto 0 0;
+    width: 0.22rem;
+    background: linear-gradient(180deg, var(--primary), var(--secondary));
+    opacity: 0.9;
   }
 
   .metric-card-label {
-    position: relative;
     color: var(--text-soft);
-    font-size: 0.7rem;
+    font-size: var(--text-xs);
     font-weight: 800;
-    letter-spacing: 0.15em;
+    letter-spacing: 0.13em;
     text-transform: uppercase;
   }
 
   .metric-card-value {
-    position: relative;
-    font-size: clamp(1.18rem, 2.2vw, 1.82rem);
-    line-height: 1.02;
+    max-width: 14ch;
+    font-size: clamp(1.22rem, 1.9vw, 1.85rem);
+    line-height: 0.98;
     letter-spacing: -0.05em;
+    text-wrap: balance;
   }
 
   .metric-card-meta {
-    position: relative;
-    color: var(--text-muted);
-    font-size: 0.84rem;
-    line-height: 1.5;
+    color: var(--text-soft);
+    font-size: 0.78rem;
+    line-height: 1.45;
+    max-width: 30ch;
+    text-wrap: pretty;
   }
 
   .metric-card.tone-success {
-    border-color: color-mix(in srgb, var(--success) 28%, transparent);
+    border-color: color-mix(in srgb, var(--success) 28%, var(--border) 72%);
     background:
-      linear-gradient(
-        180deg,
-        color-mix(in srgb, var(--overlay-soft) 84%, transparent),
-        transparent 34%
-      ),
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--surface-strong) 86%, var(--success) 14%),
-        color-mix(in srgb, var(--surface-soft) 92%, var(--success) 8%)
-      );
+      linear-gradient(180deg, color-mix(in srgb, var(--success) 12%, transparent), transparent 35%),
+      color-mix(in srgb, var(--surface-panel, var(--surface-strong)) 90%, var(--success) 10%);
   }
 
   .metric-card.tone-warning {
-    border-color: color-mix(in srgb, var(--warning) 28%, transparent);
+    border-color: color-mix(in srgb, var(--warning) 28%, var(--border) 72%);
     background:
-      linear-gradient(
-        180deg,
-        color-mix(in srgb, var(--overlay-soft) 84%, transparent),
-        transparent 34%
-      ),
-      linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--surface-strong) 88%, var(--warning) 12%),
-        color-mix(in srgb, var(--surface-soft) 93%, var(--warning) 7%)
-      );
+      linear-gradient(180deg, color-mix(in srgb, var(--warning) 12%, transparent), transparent 35%),
+      color-mix(in srgb, var(--surface-panel, var(--surface-strong)) 90%, var(--warning) 10%);
   }
 </style>

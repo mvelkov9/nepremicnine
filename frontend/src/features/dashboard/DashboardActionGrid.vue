@@ -48,8 +48,16 @@
     border-radius: var(--radius-md);
     border: 1px solid color-mix(in srgb, var(--border) 70%, var(--primary) 30%);
     background:
-      radial-gradient(circle at top right, color-mix(in srgb, var(--primary) 12%, transparent), transparent 40%),
-      linear-gradient(180deg, color-mix(in srgb, var(--surface-card-strong) 96%, transparent), var(--surface-panel));
+      radial-gradient(
+        circle at top right,
+        color-mix(in srgb, var(--primary) 12%, transparent),
+        transparent 40%
+      ),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface-card-strong) 96%, transparent),
+        var(--surface-panel)
+      );
     color: inherit;
     text-decoration: none;
     box-shadow:

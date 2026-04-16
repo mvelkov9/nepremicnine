@@ -93,7 +93,11 @@
 .p-autocomplete-overlay,
 .p-drawer {
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--surface-card-strong) 96%, transparent), transparent 120%),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface-card-strong) 96%, transparent),
+      transparent 120%
+    ),
     var(--surface-card-strong);
   color: var(--control-text);
   border: 1px solid var(--control-border);
@@ -114,7 +118,11 @@
   overflow: hidden;
   border: 1px solid var(--control-border);
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--surface-card-strong) 96%, transparent), transparent 120%),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface-card-strong) 96%, transparent),
+      transparent 120%
+    ),
     var(--surface-strong);
   box-shadow: var(--shadow-lg);
 }
@@ -134,7 +142,11 @@
   overflow: hidden;
   border: 1px solid var(--control-border);
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--surface-card-strong) 94%, transparent), transparent 120%),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface-card-strong) 94%, transparent),
+      transparent 120%
+    ),
     var(--surface-card-strong);
 }
 
@@ -142,7 +154,11 @@
 .p-datatable .p-datatable-footer,
 .p-datatable .p-paginator {
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--surface-card-strong) 94%, transparent), transparent 120%),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface-card-strong) 94%, transparent),
+      transparent 120%
+    ),
     var(--surface-soft);
   color: var(--text);
   border-color: var(--control-border);
@@ -262,12 +278,11 @@
 .p-tooltip .p-tooltip-text {
   border-radius: var(--radius-xs);
   border: 1px solid color-mix(in srgb, var(--border-strong) 74%, var(--content-border-strong) 26%);
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--surface-elevated) 94%, var(--surface-card) 6%),
-      color-mix(in srgb, var(--surface-elevated) 88%, var(--surface) 12%)
-    );
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--surface-elevated) 94%, var(--surface-card) 6%),
+    color-mix(in srgb, var(--surface-elevated) 88%, var(--surface) 12%)
+  );
   color: var(--text);
   box-shadow:
     inset 0 1px 0 var(--glass-highlight),
@@ -512,7 +527,11 @@
 #app .p-card {
   border: 1px solid color-mix(in srgb, var(--border) 74%, var(--content-border-strong) 26%);
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--surface-card-strong) 95%, transparent), transparent 120%),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface-card-strong) 95%, transparent),
+      transparent 120%
+    ),
     var(--surface-panel);
   box-shadow: var(--shadow-sm);
 }
@@ -683,7 +702,11 @@
   border: 1px solid color-mix(in srgb, var(--control-border) 82%, var(--content-border-strong) 18%);
   border-radius: 999px;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--surface-card-strong) 92%, transparent), transparent 120%),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface-card-strong) 92%, transparent),
+      transparent 120%
+    ),
     color-mix(in srgb, var(--surface-soft-strong) 90%, transparent);
   box-shadow: inset 0 1px 0 var(--content-glow);
 }
@@ -747,7 +770,11 @@
 .p-fileupload-content,
 .p-fileupload-file {
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--surface-card-strong) 96%, transparent), transparent 120%),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface-card-strong) 96%, transparent),
+      transparent 120%
+    ),
     var(--surface-panel);
   color: var(--text);
   border-color: var(--control-border);

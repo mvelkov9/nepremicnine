@@ -115,7 +115,11 @@
 #app .municipalities-page .metric-card,
 #app .diagnostics-page .metric-card {
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--surface-card-strong) 98%, transparent), transparent 120%),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface-card-strong) 98%, transparent),
+      transparent 120%
+    ),
     var(--surface-panel);
 }
 
@@ -127,7 +131,11 @@
 
 #app .municipalities-page .municipality-card {
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--surface-card-strong) 96%, var(--primary) 4%), transparent),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface-card-strong) 96%, var(--primary) 4%),
+      transparent
+    ),
     var(--surface-panel);
   border: 1px solid color-mix(in srgb, var(--border) 78%, var(--primary) 22%);
   box-shadow: var(--shadow-sm);

@@ -1,22 +1,37 @@
 <script setup lang="ts">
   import { computed, onMounted, ref } from 'vue'
+  import { RouterLink } from 'vue-router'
   import Button from 'primevue/button'
   import { useI18n } from 'vue-i18n'
-  import { RouterLink } from 'vue-router'
-  import AppIcon from '../components/AppIcon.vue'
   import AdminWorkspaceHero from '../components/admin/AdminWorkspaceHero.vue'
+  import AdminHomeActivityFeed from '../components/adminHome/AdminHomeActivityFeed.vue'
+  import AdminHomeRunList from '../components/adminHome/AdminHomeRunList.vue'
   import { adminWorkspaceLinks } from '../constants/adminWorkspace'
   import api from '../composables/useApi'
   import { useDataStore } from '../stores/data'
   import { useModelStore } from '../stores/model'
+  import { useUiStore } from '../stores/ui'
   import { useWorkbenchStore } from '../stores/workbench'
+  import { getApiErrorMessage } from '../utils/apiError'
   import { formatDateTime, formatNumber } from '../utils/format'
 
   const { t } = useI18n()
   const dataStore = useDataStore()
   const modelStore = useModelStore()
+  const ui = useUiStore()
   const workbench = useWorkbenchStore()
-  const userCount = ref<number | null>(null)
+
+  const pageReady = ref(false)
+  const heroError = ref('')
+  const statsLoading = ref(false)
+  const statsError = ref('')
+  const adminStats = ref<{ total_users?: number } | null>(null)
+  const activityLoading = ref(false)
+  const activityError = ref('')
+  const prepareLoading = ref(false)
+  const prepareError = ref('')
+  const trainingLoading = ref(false)
+  const trainingError = ref('')
 
   const summaryCards = computed(() => [
     {
@@ -42,32 +57,108 @@
       value: modelStore.diagnostics ? t('common.open') : t('common.noData'),
       meta:
         modelStore.info?.global_metrics?.r2 != null
-          ? `R² ${modelStore.info.global_metrics.r2.toFixed(3)}`
+          ? `R2 ${modelStore.info.global_metrics.r2.toFixed(3)}`
           : t('layout.page.diagnostics'),
     },
     {
       label: t('admin.userManagement'),
-      value: userCount.value != null ? formatNumber(userCount.value) : t('common.noData'),
-      meta: t('admin.totalUsers', { count: userCount.value ?? 0 }),
+      value:
+        adminStats.value?.total_users != null
+          ? formatNumber(adminStats.value.total_users)
+          : t('common.noData'),
+      meta: t('admin.totalUsers', { count: adminStats.value?.total_users ?? 0 }),
     },
   ])
 
-  const featuredSections = computed(() =>
-    adminWorkspaceLinks.filter((item) => item.to !== '/admin'),
-  )
+  const activityItems = computed(() => workbench.adminActivity.slice(0, 5))
+  const prepareRuns = computed(() => workbench.prepareRuns.slice(0, 5))
+  const trainingRuns = computed(() => workbench.trainingRuns.slice(0, 5))
+
+  const heroStatus = computed(() => {
+    if (heroError.value || statsError.value) return t('common.error')
+    if (statsLoading.value || !pageReady.value) return t('common.loading')
+    return t('admin.active')
+  })
+
+  const heroStatusSeverity = computed(() => {
+    if (heroError.value || statsError.value) return 'danger'
+    if (statsLoading.value || !pageReady.value) return 'secondary'
+    return 'success'
+  })
+
+  async function loadHero() {
+    heroError.value = ''
+    statsError.value = ''
+    statsLoading.value = true
+    try {
+      await Promise.all([
+        dataStore.fetchTrainingDataset(),
+        modelStore.fetchInfo(),
+        modelStore.fetchDiagnostics(),
+      ])
+    } catch (error) {
+      heroError.value = getApiErrorMessage(error, t)
+    } finally {
+      statsLoading.value = false
+    }
+
+    try {
+      const { data } = await api.get('/api/admin/stats')
+      adminStats.value = data
+    } catch (error) {
+      adminStats.value = null
+      statsError.value = getApiErrorMessage(error, t)
+    }
+  }
+
+  async function loadActivity() {
+    activityLoading.value = true
+    activityError.value = ''
+    try {
+      await workbench.fetchAdminActivity()
+    } catch (error) {
+      activityError.value = getApiErrorMessage(error, t)
+    } finally {
+      activityLoading.value = false
+    }
+  }
+
+  async function loadPrepareRuns() {
+    prepareLoading.value = true
+    prepareError.value = ''
+    try {
+      await workbench.fetchPrepareRuns()
+    } catch (error) {
+      prepareError.value = getApiErrorMessage(error, t)
+    } finally {
+      prepareLoading.value = false
+    }
+  }
+
+  async function loadTrainingRuns() {
+    trainingLoading.value = true
+    trainingError.value = ''
+    try {
+      await workbench.fetchTrainingRuns()
+    } catch (error) {
+      trainingError.value = getApiErrorMessage(error, t)
+    } finally {
+      trainingLoading.value = false
+    }
+  }
+
+  async function reloadAdminHome() {
+    pageReady.value = false
+    await Promise.allSettled([loadHero(), loadActivity(), loadPrepareRuns(), loadTrainingRuns()])
+    pageReady.value = true
+  }
+
+  function openActivityCenter() {
+    ui.toggleActivityCenter(true)
+  }
 
   onMounted(async () => {
-    await Promise.allSettled([
-      dataStore.fetchTrainingDataset(),
-      modelStore.fetchInfo(),
-      modelStore.fetchDiagnostics(),
-      workbench.fetchAdminActivity(),
-      workbench.fetchPrepareRuns(),
-      workbench.fetchTrainingRuns(),
-      api.get('/api/admin/users').then(({ data }) => {
-        userCount.value = data.items?.length || 0
-      }),
-    ])
+    await reloadAdminHome()
   })
 </script>
 
@@ -79,102 +170,76 @@
       :description="t('layout.adminWorkbenchBody')"
       :metrics="summaryCards"
       :links="adminWorkspaceLinks"
+      :status="heroStatus"
+      :status-severity="heroStatusSeverity"
     >
       <template #actions>
-        <RouterLink to="/" class="hero-link">
-          <Button
-            severity="contrast"
-            outlined
-            icon="pi pi-arrow-left"
-            :label="t('layout.backToMarket')"
-          />
-        </RouterLink>
+        <Button
+          severity="secondary"
+          outlined
+          icon="pi pi-bell"
+          :label="t('workbench.activityCenterShort')"
+          @click="openActivityCenter"
+        />
+        <Button
+          :as="RouterLink"
+          to="/"
+          class="hero-link"
+          severity="contrast"
+          outlined
+          icon="pi pi-arrow-left"
+          :label="t('layout.backToMarket')"
+        />
       </template>
     </AdminWorkspaceHero>
 
-    <section class="admin-grid">
-      <article v-for="section in featuredSections" :key="section.to" class="admin-card">
-        <div class="admin-card-head">
-          <span class="admin-card-icon">
-            <AppIcon :name="section.icon" :size="18" />
-          </span>
-          <div class="admin-card-copy">
-            <p class="eyebrow subtle">{{ t('layout.adminWorkbenchShort') }}</p>
-            <h2>{{ t(section.label) }}</h2>
-          </div>
-        </div>
-
-        <p class="muted">{{ t(section.description) }}</p>
-
-        <RouterLink :to="section.to" class="admin-card-link">
-          <Button icon="pi pi-arrow-right" :label="t('common.open')" />
-        </RouterLink>
-      </article>
+    <section v-if="heroError || statsError" class="admin-banner" role="alert">
+      <div>
+        <strong>{{ t('common.error') }}</strong>
+        <p class="muted">{{ heroError || statsError }}</p>
+      </div>
+      <Button
+        severity="secondary"
+        outlined
+        icon="pi pi-refresh"
+        :label="t('common.retry')"
+        @click="reloadAdminHome"
+      />
     </section>
 
-    <section class="admin-grid admin-grid-wide">
-      <article class="admin-card timeline-card">
-        <div class="admin-card-head">
-          <div class="admin-card-copy">
-            <p class="eyebrow subtle">{{ t('workbench.activityCenter') }}</p>
-            <h2>{{ t('workbench.adminTimeline') }}</h2>
-          </div>
-        </div>
+    <section class="admin-home-grid">
+      <AdminHomeActivityFeed
+        :eyebrow="t('workbench.activityCenter')"
+        :title="t('workbench.adminTimeline')"
+        :items="activityItems"
+        :loading="!pageReady || activityLoading"
+        :error="activityError"
+        @retry="loadActivity"
+      />
 
-        <div v-if="workbench.adminActivity.length" class="timeline-list">
-          <div
-            v-for="item in workbench.adminActivity.slice(0, 6)"
-            :key="item.id"
-            class="timeline-row"
-          >
-            <strong>{{ item.title }}</strong>
-            <p class="muted">{{ item.body || item.category }}</p>
-          </div>
-        </div>
-        <p v-else class="muted">{{ t('workbench.noActivity') }}</p>
-      </article>
+      <div class="admin-home-rail">
+        <AdminHomeRunList
+          :eyebrow="t('nav.prepare')"
+          :title="t('workbench.recentPrepareRuns')"
+          :items="prepareRuns"
+          :loading="!pageReady || prepareLoading"
+          :error="prepareError"
+          to="/admin/priprava"
+          run-type="prepare"
+          @retry="loadPrepareRuns"
+        />
 
-      <article class="admin-card timeline-card">
-        <div class="admin-card-head">
-          <div class="admin-card-copy">
-            <p class="eyebrow subtle">{{ t('nav.prepare') }}</p>
-            <h2>{{ t('workbench.recentPrepareRuns') }}</h2>
-          </div>
-        </div>
-
-        <div v-if="workbench.prepareRuns.length" class="timeline-list">
-          <div
-            v-for="item in workbench.prepareRuns.slice(0, 5)"
-            :key="item.id"
-            class="timeline-row"
-          >
-            <strong>{{ item.title }}</strong>
-            <p class="muted">{{ item.summary || item.stage || item.status }}</p>
-          </div>
-        </div>
-        <p v-else class="muted">{{ t('common.noData') }}</p>
-      </article>
-
-      <article class="admin-card timeline-card">
-        <div class="admin-card-head">
-          <div class="admin-card-copy">
-            <p class="eyebrow subtle">{{ t('nav.model') }}</p>
-            <h2>{{ t('workbench.recentTrainingRuns') }}</h2>
-          </div>
-        </div>
-
-        <div v-if="workbench.trainingRuns.length" class="timeline-list">
-          <div
-            v-for="item in workbench.trainingRuns.slice(0, 5)"
-            :key="item.id"
-            class="timeline-row"
-          >
-            <strong>{{ item.title }}</strong>
-            <p class="muted">{{ item.summary || item.stage || item.status }}</p>
-          </div>
-        </div>
-        <p v-else class="muted">{{ t('common.noData') }}</p>
-      </article>
+        <AdminHomeRunList
+          :eyebrow="t('nav.model')"
+          :title="t('workbench.recentTrainingRuns')"
+          :items="trainingRuns"
+          :loading="!pageReady || trainingLoading"
+          :error="trainingError"
+          to="/admin/model"
+          run-type="training"
+          @retry="loadTrainingRuns"
+        />
+      </div>
     </section>
   </div>
 </template>
@@ -182,87 +247,73 @@
 <style scoped>
   .admin-home {
     display: grid;
-    gap: 1.25rem;
+    gap: 1rem;
   }
 
   .hero-link {
     text-decoration: none;
   }
 
-  .admin-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-    gap: 1rem;
-  }
-
-  .admin-grid-wide {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .admin-card {
-    display: grid;
-    gap: 1rem;
-    padding: 1.2rem;
-    border-radius: 1.45rem;
-    border: 1px solid var(--border);
-    background:
-      linear-gradient(180deg, rgb(255 255 255 / 24%), transparent 32%),
-      color-mix(in srgb, var(--surface-soft) 86%, var(--primary) 14%);
-    box-shadow: var(--shadow-sm);
-  }
-
-  .admin-card-head {
+  .admin-banner {
     display: flex;
-    align-items: flex-start;
-    gap: 0.9rem;
-  }
-
-  .admin-card-icon {
-    width: 2.9rem;
-    height: 2.9rem;
-    display: inline-flex;
     align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    border-radius: 1rem;
-    background: linear-gradient(145deg, var(--primary), var(--secondary));
-    color: var(--primary-contrast);
-    box-shadow: 0 18px 34px rgb(45 132 121 / 24%);
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1.1rem 1.15rem;
+    border-radius: var(--radius-lg);
+    border: 1px solid color-mix(in srgb, var(--danger) 28%, var(--border) 72%);
+    background:
+      radial-gradient(
+        circle at top right,
+        color-mix(in srgb, var(--danger) 12%, transparent),
+        transparent 34%
+      ),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface-card-strong) 98%, transparent),
+        transparent 120%
+      ),
+      var(--surface-panel);
+    box-shadow:
+      inset 0 1px 0 var(--content-glow),
+      var(--shadow-sm);
   }
 
-  .admin-card-copy {
-    display: grid;
-    gap: 0.35rem;
+  .admin-banner strong {
+    display: block;
+    margin-bottom: 0.18rem;
   }
 
-  .admin-card-copy h2 {
+  .admin-banner p {
     margin: 0;
-    font-family: var(--font-display);
-    font-size: 1.25rem;
-    line-height: 1.05;
   }
 
-  .admin-card-link {
-    text-decoration: none;
-  }
-
-  .eyebrow.subtle {
-    color: var(--text-soft);
-  }
-
-  .timeline-list {
+  .admin-home-grid {
     display: grid;
-    gap: 0.8rem;
+    gap: 1rem;
+    align-items: start;
   }
 
-  .timeline-row {
-    padding: 0.85rem 0.95rem;
-    border-radius: 1rem;
-    border: 1px solid color-mix(in srgb, var(--border) 72%, var(--primary) 28%);
-    background: color-mix(in srgb, var(--surface-strong) 84%, transparent);
+  .admin-home-rail {
+    display: grid;
+    gap: 1rem;
   }
 
-  .timeline-row p {
-    margin: 0.2rem 0 0;
+  @media (min-width: 1120px) {
+    .admin-home-grid {
+      grid-template-columns: minmax(0, 1.35fr) minmax(20rem, 0.95fr);
+    }
+
+    .admin-home-rail {
+      position: sticky;
+      top: 1rem;
+    }
+  }
+
+  @media (max-width: 860px) {
+    .admin-banner {
+      flex-direction: column;
+      align-items: stretch;
+    }
   }
 </style>

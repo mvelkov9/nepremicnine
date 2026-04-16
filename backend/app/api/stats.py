@@ -26,12 +26,12 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/stats", tags=["stats"])
 
-TRAIN_CSV = os.path.join(
+RAW_DATA_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
     "data",
     "raw",
-    "train.csv",
 )
+TRAIN_CSV = os.path.join(RAW_DATA_DIR, "train.csv")
 
 _STATS_CSV_COLUMNS = {
     "source_row_key",
@@ -76,6 +76,7 @@ _STATS_CSV_COLUMNS = {
 
 _RAW_DF_CACHE: dict[str, object] = {"mtime": None, "size": None, "df": None}
 _PREPARED_DF_CACHE: dict[str, object] = {
+    "path": None,
     "mtime": None,
     "size": None,
     "shape": None,
@@ -84,6 +85,13 @@ _PREPARED_DF_CACHE: dict[str, object] = {
 }
 _CACHE_LOCK = threading.RLock()
 _CANONICAL_REGION_TOTAL = len(CANONICAL_REGION_ROWS)
+
+
+def _resolve_train_csv_path() -> str:
+    env_path = os.getenv("STATS_TRAIN_CSV")
+    if env_path:
+        return os.path.abspath(env_path)
+    return TRAIN_CSV
 
 
 def _first_present(*values: object) -> object | None:
@@ -150,16 +158,17 @@ def _d96tm_to_wgs84(n: np.ndarray, e: np.ndarray) -> tuple[np.ndarray, np.ndarra
     return np.degrees(lat), np.degrees(lon)
 
 
-def _training_file_signature() -> tuple[int | None, int | None]:
+def _training_file_signature() -> tuple[str, int | None, int | None]:
+    train_csv = _resolve_train_csv_path()
     try:
-        stats = os.stat(TRAIN_CSV)
+        stats = os.stat(train_csv)
     except OSError:
-        return None, None
-    return int(stats.st_mtime_ns), int(stats.st_size)
+        return train_csv, None, None
+    return train_csv, int(stats.st_mtime_ns), int(stats.st_size)
 
 
 def _load_df(property_type: str | None = None) -> pd.DataFrame | None:
-    mtime_ns, size_bytes = _training_file_signature()
+    train_csv, mtime_ns, size_bytes = _training_file_signature()
     if mtime_ns is None:
         with _CACHE_LOCK:
             _RAW_DF_CACHE["mtime"] = None
@@ -183,7 +192,7 @@ def _load_df(property_type: str | None = None) -> pd.DataFrame | None:
                 _RAW_DF_CACHE["mtime"] = mtime_ns
                 _RAW_DF_CACHE["size"] = size_bytes
                 _RAW_DF_CACHE["df"] = pd.read_csv(
-                    TRAIN_CSV,
+                    train_csv,
                     usecols=lambda col: col in _STATS_CSV_COLUMNS,
                     low_memory=False,
                 )
@@ -314,6 +323,7 @@ def _ensure_regions(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _prepare_market_df(property_type: str | None = None) -> pd.DataFrame | None:
+    train_csv = _resolve_train_csv_path()
     df = _load_df()
     if df is None or df.empty:
         return None
@@ -321,26 +331,30 @@ def _prepare_market_df(property_type: str | None = None) -> pd.DataFrame | None:
     size = _RAW_DF_CACHE.get("size")
     shape = tuple(df.shape)
     columns = tuple(df.columns)
+    cached_path = _PREPARED_DF_CACHE.get("path")
     cached_mtime = _PREPARED_DF_CACHE.get("mtime")
     cached_size = _PREPARED_DF_CACHE.get("size")
     cached_shape = _PREPARED_DF_CACHE.get("shape")
     cached_columns = _PREPARED_DF_CACHE.get("columns")
     cached_df = _PREPARED_DF_CACHE.get("df")
     if (
-        cached_mtime != mtime
+        cached_path != train_csv
+        or cached_mtime != mtime
         or cached_size != size
         or cached_shape != shape
         or cached_columns != columns
         or cached_df is None
     ):
         with _CACHE_LOCK:
+            cached_path = _PREPARED_DF_CACHE.get("path")
             cached_mtime = _PREPARED_DF_CACHE.get("mtime")
             cached_size = _PREPARED_DF_CACHE.get("size")
             cached_shape = _PREPARED_DF_CACHE.get("shape")
             cached_columns = _PREPARED_DF_CACHE.get("columns")
             cached_df = _PREPARED_DF_CACHE.get("df")
             if (
-                cached_mtime != mtime
+                cached_path != train_csv
+                or cached_mtime != mtime
                 or cached_size != size
                 or cached_shape != shape
                 or cached_columns != columns
@@ -397,6 +411,7 @@ def _prepare_market_df(property_type: str | None = None) -> pd.DataFrame | None:
                 else:
                     frame["_sale_date"] = pd.NaT
 
+                _PREPARED_DF_CACHE["path"] = train_csv
                 _PREPARED_DF_CACHE["mtime"] = mtime
                 _PREPARED_DF_CACHE["size"] = size
                 _PREPARED_DF_CACHE["shape"] = shape
@@ -667,7 +682,8 @@ def _explorer_cache_key(
 
 def warm_market_data_cache() -> None:
     try:
-        logger.info("Starting stats dataset warmup")
+        source = _resolve_train_csv_path()
+        logger.info("Starting stats dataset warmup source=%s", source)
         df = _prepare_market_df()
         logger.info("Completed stats dataset warmup rows=%s", 0 if df is None else len(df))
     except Exception:
@@ -1836,7 +1852,13 @@ async def comparables(
     candidates["location_bonus"] = 0.0
     if target_naselje and "_naselje_normalized" in candidates.columns:
         candidates["location_bonus"] += np.where(candidates["_naselje_normalized"] == target_naselje_key, 0.24, 0.0)
-    candidates["location_bonus"] += np.where(candidates["_municipality_slug"] == target["slug"], 0.14, 0.0)
+    if "_municipality_slug" in candidates.columns:
+        municipality_match = candidates["_municipality_slug"] == target["slug"]
+    elif "municipality" in candidates.columns:
+        municipality_match = candidates["municipality"].map(municipality_slug) == target["slug"]
+    else:
+        municipality_match = pd.Series(False, index=candidates.index)
+    candidates["location_bonus"] += np.where(municipality_match, 0.14, 0.0)
     if region:
         candidates["location_bonus"] += np.where(candidates["statistical_region"] == region, 0.06, 0.0)
 

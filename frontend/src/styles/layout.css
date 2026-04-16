@@ -61,7 +61,11 @@ body {
       transparent 26%
     ),
     linear-gradient(180deg, transparent, color-mix(in srgb, var(--surface-strong) 5%, transparent)),
-      radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--primary) 6%, transparent), transparent 28%);
+    radial-gradient(
+      circle at 50% 0%,
+      color-mix(in srgb, var(--primary) 6%, transparent),
+      transparent 28%
+    );
   opacity: 0.58;
 }
 

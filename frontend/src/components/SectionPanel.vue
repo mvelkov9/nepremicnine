@@ -13,7 +13,11 @@
 
 <template>
   <component :is="tag || 'section'" class="section-panel">
-    <div v-if="eyebrow || title || $slots.title || $slots.actions" class="panel-head" :class="{ compact }">
+    <div
+      v-if="eyebrow || title || $slots.title || $slots.actions"
+      class="panel-head"
+      :class="{ compact }"
+    >
       <div>
         <p v-if="eyebrow" class="eyebrow subtle">{{ eyebrow }}</p>
         <h2 v-if="title">{{ title }}</h2>
@@ -33,7 +37,11 @@
     border-radius: var(--radius-md);
     border: 1px solid color-mix(in srgb, var(--border) 80%, var(--content-border-strong) 20%);
     background:
-      linear-gradient(180deg, color-mix(in srgb, var(--surface-card-strong) 98%, transparent), transparent 120%),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface-card-strong) 98%, transparent),
+        transparent 120%
+      ),
       var(--surface-panel, var(--surface-strong));
     box-shadow:
       inset 0 1px 0 var(--content-glow),

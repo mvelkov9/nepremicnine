@@ -222,3 +222,25 @@ async def test_list_users_pagination_page2(
     id_p1 = resp_p1.json()["items"][0]["id"]
     id_p2 = resp_p2.json()["items"][0]["id"]
     assert id_p1 != id_p2
+
+
+@pytest.mark.asyncio
+async def test_list_users_search_filter_and_sort(
+    client: AsyncClient,
+    admin_headers: dict,
+    viewer_headers: dict,  # noqa: ARG001
+):
+    resp = await client.get(
+        "/api/admin/users?search=viewer&role=viewer&status=active&sort=email&order=asc",
+        headers=admin_headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["filters"]["search"] == "viewer"
+    assert data["filters"]["role"] == "viewer"
+    assert data["filters"]["status"] == "active"
+    assert data["sort"] == "email"
+    assert data["order"] == "asc"
+    assert data["page_size"] == data["per_page"]
+    assert len(data["items"]) == 1
+    assert data["items"][0]["email"] == "viewer@test.com"

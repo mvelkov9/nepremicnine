@@ -48,7 +48,9 @@ export const useReferenceDataStore = defineStore('referenceData', () => {
         propertyTypes.value = (marketRes.data?.property_type_mix || [])
           .map((item: { property_type: string }) => String(item.property_type || '').trim())
           .filter((value) => SUPPORTED_PROPERTY_TYPES.has(value))
-        years.value = (trendRes.data || []).map((item: { year: string | number }) => String(item.year))
+        years.value = (trendRes.data || []).map((item: { year: string | number }) =>
+          String(item.year),
+        )
         loaded.value = true
         lastLoadedAt.value = new Date().toISOString()
       } finally {

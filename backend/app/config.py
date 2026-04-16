@@ -14,7 +14,7 @@ class Settings(BaseSettings):
 
     # App
     app_env: str = "development"
-    app_version: str = "0.14.0"
+    app_version: str = "0.15.0"
     max_upload_size_mb: int = 10240
     upload_disk_reserve_mb: int = 2048
     sql_echo: bool = False
@@ -24,6 +24,7 @@ class Settings(BaseSettings):
 
     # Redis
     redis_url: str = "redis://redis:6379/0"
+    training_job_timeout_sec: int = 86400
 
     # JWT
     jwt_secret_key: str = "changeme_generate_a_real_secret_key"

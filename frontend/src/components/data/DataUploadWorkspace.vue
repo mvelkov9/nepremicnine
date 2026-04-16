@@ -35,9 +35,7 @@
   }>()
 
   const { t } = useI18n()
-  const fileInput = ref<{ choose?: () => void; clear?: () => void; $el?: HTMLElement } | null>(
-    null,
-  )
+  const fileInput = ref<{ choose?: () => void; clear?: () => void; $el?: HTMLElement } | null>(null)
   const isDragActive = ref(false)
 
   const selectedCount = computed(() => props.selectedFiles.length)
@@ -197,7 +195,9 @@
         </div>
         <div class="capacity-banner" :class="capacityTone">
           <strong>{{ capacityMessage }}</strong>
-          <span>{{ t('data.capacityBody', { free: serverFreeLabel, reserve: reserveLabel }) }}</span>
+          <span>{{
+            t('data.capacityBody', { free: serverFreeLabel, reserve: reserveLabel })
+          }}</span>
         </div>
       </div>
 
@@ -251,7 +251,10 @@
       </div>
     </div>
 
-    <div class="upload-status-card" :class="{ 'is-uploading': uploading, 'has-result': Boolean(uploadResult) }">
+    <div
+      class="upload-status-card"
+      :class="{ 'is-uploading': uploading, 'has-result': Boolean(uploadResult) }"
+    >
       <div class="upload-status-head">
         <div>
           <span class="upload-status-label">{{ t('data.uploadQueue') }}</span>
@@ -295,10 +298,10 @@
           :class="`status-${item.status}`"
         >
           <div class="upload-file-main">
-          <div class="upload-file-meta">
-            <strong>{{ item.file.name }}</strong>
-            <span>{{ formatFileSize(item.file.size || 0) }}</span>
-          </div>
+            <div class="upload-file-meta">
+              <strong>{{ item.file.name }}</strong>
+              <span>{{ formatFileSize(item.file.size || 0) }}</span>
+            </div>
             <div class="upload-file-status">
               <Tag
                 :severity="
@@ -463,7 +466,11 @@
     padding: 0.85rem 0.95rem;
     border-radius: var(--radius-sm);
     border: 1px solid color-mix(in srgb, var(--border) 78%, var(--content-border-strong) 22%);
-    background: color-mix(in srgb, var(--surface-card-strong, var(--surface-strong)) 94%, transparent);
+    background: color-mix(
+      in srgb,
+      var(--surface-card-strong, var(--surface-strong)) 94%,
+      transparent
+    );
     box-shadow: var(--shadow-sm);
   }
 
@@ -615,7 +622,11 @@
     gap: 0.9rem;
     padding: 0.95rem 1rem;
     border-radius: var(--radius-md);
-    background: color-mix(in srgb, var(--surface-card-strong, var(--surface-strong)) 94%, transparent);
+    background: color-mix(
+      in srgb,
+      var(--surface-card-strong, var(--surface-strong)) 94%,
+      transparent
+    );
     border: 1px solid color-mix(in srgb, var(--border) 78%, var(--content-border-strong) 22%);
     box-shadow: var(--shadow-sm);
   }

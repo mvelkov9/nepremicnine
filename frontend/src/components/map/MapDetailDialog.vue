@@ -54,8 +54,12 @@
   }
 
   type MapDetailRecord =
-    | (TransactionRecord & MapDetailCommonRecord & Partial<Record<MapBuildingFlagKey, number | boolean | null>>)
-    | (MapOverviewRecord & MapDetailCommonRecord & Partial<Record<MapBuildingFlagKey, number | boolean | null>>)
+    | (TransactionRecord &
+        MapDetailCommonRecord &
+        Partial<Record<MapBuildingFlagKey, number | boolean | null>>)
+    | (MapOverviewRecord &
+        MapDetailCommonRecord &
+        Partial<Record<MapBuildingFlagKey, number | boolean | null>>)
 
   const props = defineProps<{
     record: MapDetailRecord | null
@@ -84,15 +88,18 @@
   const { t } = useI18n()
   const { fmt, fmtCurrency, formatType } = useFormat()
 
-  const buildingFlags = computed(() => [
-    { key: 'novogradnja', label: t('predict.novogradnja') },
-    { key: 'has_garaza', label: t('predict.hasGaraza') },
-    { key: 'has_klet', label: t('predict.hasKlet') },
-    { key: 'has_shramba', label: t('predict.hasShramba') },
-    { key: 'has_terasa', label: t('predict.hasTerasa') },
-    { key: 'stavba_je_dokoncana', label: t('predict.stavbaDokoncana') },
-    { key: 'ddv_vkljucen', label: t('predict.ddvVkljucen') },
-  ] as const)
+  const buildingFlags = computed(
+    () =>
+      [
+        { key: 'novogradnja', label: t('predict.novogradnja') },
+        { key: 'has_garaza', label: t('predict.hasGaraza') },
+        { key: 'has_klet', label: t('predict.hasKlet') },
+        { key: 'has_shramba', label: t('predict.hasShramba') },
+        { key: 'has_terasa', label: t('predict.hasTerasa') },
+        { key: 'stavba_je_dokoncana', label: t('predict.stavbaDokoncana') },
+        { key: 'ddv_vkljucen', label: t('predict.ddvVkljucen') },
+      ] as const,
+  )
 
   function toNumber(value: unknown): number | null {
     if (typeof value === 'number') return Number.isFinite(value) ? value : null
@@ -164,19 +171,37 @@
       <div class="detail-metrics">
         <MetricCard
           :label="t('map.price')"
-          :value="metricCurrency(props.detailMode === 'transaction' ? props.record.price_eur : props.record.avg_price)"
+          :value="
+            metricCurrency(
+              props.detailMode === 'transaction' ? props.record.price_eur : props.record.avg_price,
+            )
+          "
         />
         <MetricCard
           :label="t('dashboard.pricePerM2')"
-          :value="metricCurrency(props.detailMode === 'transaction' ? props.record.price_per_m2 : props.record.avg_price_per_m2)"
+          :value="
+            metricCurrency(
+              props.detailMode === 'transaction'
+                ? props.record.price_per_m2
+                : props.record.avg_price_per_m2,
+            )
+          "
         />
         <MetricCard
           :label="props.detailMode === 'transaction' ? t('predict.size') : t('map.transactions')"
-          :value="props.detailMode === 'transaction' ? `${metricNumber(props.record.size_m2, 1)} m²` : metricNumber(props.record.count)"
+          :value="
+            props.detailMode === 'transaction'
+              ? `${metricNumber(props.record.size_m2, 1)} m²`
+              : metricNumber(props.record.count)
+          "
         />
         <MetricCard
           :label="t('map.year')"
-          :value="props.detailMode === 'transaction' ? recordYearLabel(props.record) : displayValue(props.record.latest_year || props.defaultYear)"
+          :value="
+            props.detailMode === 'transaction'
+              ? recordYearLabel(props.record)
+              : displayValue(props.record.latest_year || props.defaultYear)
+          "
         />
       </div>
 
@@ -219,7 +244,10 @@
           </dl>
         </section>
 
-        <section v-if="props.detailMode === 'transaction'" class="detail-section detail-section-flags">
+        <section
+          v-if="props.detailMode === 'transaction'"
+          class="detail-section detail-section-flags"
+        >
           <h3>{{ t('predict.buildingFlags') }}</h3>
           <div class="flag-grid">
             <span
@@ -246,7 +274,11 @@
           <EmptyState
             v-else
             icon="pi pi-info-circle"
-            :message="props.detailMode === 'transaction' ? t('predict.noComparables') : t('map.municipalitySummaryHint')"
+            :message="
+              props.detailMode === 'transaction'
+                ? t('predict.noComparables')
+                : t('map.municipalitySummaryHint')
+            "
           />
         </section>
       </div>
@@ -361,13 +393,21 @@
     padding: 1rem 1.05rem;
     border: 1px solid color-mix(in srgb, var(--border) 76%, var(--primary) 24%);
     border-radius: var(--radius-md);
-    background: color-mix(in srgb, var(--surface-card-strong, var(--surface-strong)) 94%, transparent);
+    background: color-mix(
+      in srgb,
+      var(--surface-card-strong, var(--surface-strong)) 94%,
+      transparent
+    );
     min-width: 0;
     box-shadow: var(--shadow-sm);
   }
 
   .detail-section-main {
-    background: color-mix(in srgb, var(--surface-card-strong, var(--surface-strong)) 92%, var(--primary) 8%);
+    background: color-mix(
+      in srgb,
+      var(--surface-card-strong, var(--surface-strong)) 92%,
+      var(--primary) 8%
+    );
   }
 
   .detail-section-comparables {
@@ -420,7 +460,11 @@
     min-height: 2.6rem;
     border-radius: 999px;
     border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
-    background: color-mix(in srgb, var(--surface-card-strong, var(--surface-muted)) 94%, transparent);
+    background: color-mix(
+      in srgb,
+      var(--surface-card-strong, var(--surface-muted)) 94%,
+      transparent
+    );
     color: var(--text-muted);
     font-weight: 700;
   }
@@ -483,8 +527,16 @@
     padding: 1.15rem 1.35rem;
     border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, var(--content-border-strong) 28%);
     background:
-      radial-gradient(circle at top left, color-mix(in srgb, var(--primary) 16%, transparent), transparent 46%),
-      linear-gradient(180deg, color-mix(in srgb, var(--primary-overlay) 72%, transparent), transparent 42%),
+      radial-gradient(
+        circle at top left,
+        color-mix(in srgb, var(--primary) 16%, transparent),
+        transparent 46%
+      ),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--primary-overlay) 72%, transparent),
+        transparent 42%
+      ),
       linear-gradient(
         180deg,
         color-mix(in srgb, var(--surface-card-strong) 96%, var(--primary) 4%),
@@ -557,5 +609,3 @@
     }
   }
 </style>
-
-

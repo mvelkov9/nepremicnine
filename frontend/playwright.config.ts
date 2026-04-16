@@ -1,5 +1,8 @@
 import { defineConfig, devices } from '@playwright/test'
 
+const baseURL = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:5173'
+const useManagedWebServer = process.env.PLAYWRIGHT_WEB_SERVER !== '0'
+
 export default defineConfig({
   testDir: './src/tests/e2e',
   fullyParallel: true,
@@ -8,7 +11,7 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   reporter: 'html',
   use: {
-    baseURL: 'http://localhost:5173',
+    baseURL,
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
   },
@@ -18,9 +21,11 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
     },
   ],
-  webServer: {
-    command: 'pnpm dev',
-    port: 5173,
-    reuseExistingServer: !process.env.CI,
-  },
+  webServer: useManagedWebServer
+    ? {
+        command: 'pnpm dev',
+        port: 5173,
+        reuseExistingServer: !process.env.CI,
+      }
+    : undefined,
 })

@@ -18,7 +18,10 @@
 
   const { t } = useI18n()
 
-  function updateField<K extends keyof PrepareEnrichmentState>(key: K, value: PrepareEnrichmentState[K]) {
+  function updateField<K extends keyof PrepareEnrichmentState>(
+    key: K,
+    value: PrepareEnrichmentState[K],
+  ) {
     emit('update:modelValue', {
       ...props.modelValue,
       [key]: value,
@@ -77,7 +80,11 @@
     border-radius: var(--radius-md);
     border: 1px solid color-mix(in srgb, var(--border) 80%, var(--content-border-strong) 20%);
     background:
-      linear-gradient(180deg, color-mix(in srgb, var(--surface-card-strong) 96%, transparent), transparent 120%),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface-card-strong) 96%, transparent),
+        transparent 120%
+      ),
       var(--surface-panel);
     box-shadow:
       inset 0 1px 0 var(--content-glow),

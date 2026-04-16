@@ -60,5 +60,8 @@ export interface PredictionReadinessItem {
 }
 
 export type PredictionRouteQuery = Partial<
-  Record<'naselje' | 'municipality' | 'property_type' | 'size_m2' | 'year_built' | 'floor' | 'price_eur', string | string[] | null | undefined>
+  Record<
+    'naselje' | 'municipality' | 'property_type' | 'size_m2' | 'year_built' | 'floor' | 'price_eur',
+    string | string[] | null | undefined
+  >
 >

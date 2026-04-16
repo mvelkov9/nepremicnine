@@ -12,6 +12,7 @@
     toLocationQuery,
     workspacePageTitleKeys,
   } from '../../constants/workbench'
+  import type { WatchlistItem } from '../../types/api'
   import { useAuthStore } from '../../stores/auth'
   import { useUiStore } from '../../stores/ui'
   import { useWorkbenchStore } from '../../stores/workbench'
@@ -42,6 +43,25 @@
   const query = ref('')
   const activeIndex = ref(0)
   const commandInput = ref()
+
+  function entityTypeLabel(entityType?: string | null) {
+    if (entityType === 'region') return t('nav.regions')
+    if (entityType === 'municipality') return t('nav.municipalities')
+    return entityType || t('common.noData')
+  }
+
+  function watchlistMeta(item: WatchlistItem) {
+    const region = typeof item.metadata?.region === 'string' ? item.metadata.region : ''
+    return region || entityTypeLabel(item.entity_type)
+  }
+
+  function watchlistRoute(item: WatchlistItem) {
+    const storedLink = typeof item.metadata?.link === 'string' ? item.metadata.link : ''
+    if (storedLink) return storedLink
+    return item.entity_type === 'region'
+      ? { path: '/regije', query: { tab: 'drilldown', region: item.entity_key } }
+      : { path: `/obcine/${item.entity_key}` }
+  }
 
   const allPaletteItems = computed<PaletteItem[]>(() => {
     const navItems: PaletteItem[] = [
@@ -75,14 +95,9 @@
     const watchlistItems: PaletteItem[] = workbench.watchlists.map((item) => ({
       id: `watch:${item.id}`,
       label: item.display_label,
-      meta: item.entity_type,
+      meta: watchlistMeta(item),
       section: 'watchlists',
-      action: () =>
-        router.push(
-          item.entity_type === 'region'
-            ? { path: '/regije', query: { tab: 'drilldown', region: item.entity_key } }
-            : { path: `/obcine/${item.entity_key}` },
-        ),
+      action: () => router.push(watchlistRoute(item)),
     }))
 
     const recentItems: PaletteItem[] = [
@@ -105,7 +120,7 @@
     const compareItems: PaletteItem[] = workbench.compareTray.map((item) => ({
       id: `compare:${item.id}`,
       label: item.label,
-      meta: item.region || item.entity_type,
+      meta: item.region || entityTypeLabel(item.entity_type),
       section: 'compare',
       action: () =>
         router.push(
@@ -307,16 +322,34 @@
   .command-results,
   .command-section {
     display: grid;
-    gap: 0.9rem;
+    gap: 0.95rem;
   }
 
   .command-input {
     width: 100%;
   }
 
+  .command-palette {
+    gap: 1rem;
+  }
+
+  .command-palette :deep(.p-inputtext) {
+    min-height: 3.2rem;
+    padding-inline: 1rem;
+    font-size: 0.98rem;
+    border-radius: var(--radius-md);
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface-card-strong) 95%, transparent),
+        transparent 120%
+      ),
+      var(--surface-panel);
+  }
+
   .command-hint {
-    margin: -0.15rem 0 0;
-    font-size: 0.8rem;
+    margin: -0.1rem 0 0;
+    font-size: 0.82rem;
   }
 
   .command-section__head {
@@ -331,7 +364,7 @@
     font-size: 0.9rem;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-    color: var(--text-muted);
+    color: var(--text-soft);
   }
 
   .command-item {
@@ -340,44 +373,51 @@
     justify-content: space-between;
     gap: 1rem;
     width: 100%;
-    padding: 0.85rem 1rem;
-    border-radius: 1rem;
-    border: 1px solid var(--border);
-    background: color-mix(
-      in srgb,
-      var(--surface-card-strong, var(--surface-soft)) 86%,
-      transparent
-    );
+    padding: 0.95rem 1rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid color-mix(in srgb, var(--border) 78%, var(--content-border-strong) 22%);
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface-card-strong) 94%, transparent),
+        transparent 120%
+      ),
+      var(--surface-subtle);
+    box-shadow: var(--shadow-sm);
     text-align: left;
     color: inherit;
     transition:
       border-color 140ms ease,
       transform 140ms ease,
-      background 140ms ease;
+      background 140ms ease,
+      box-shadow 140ms ease;
   }
 
   .command-item.active {
-    border-color: color-mix(in srgb, var(--primary) 45%, var(--border) 55%);
-    background: color-mix(
-      in srgb,
-      var(--primary) 8%,
-      var(--surface-card-strong, var(--surface-soft)) 92%
-    );
+    border-color: color-mix(in srgb, var(--primary) 42%, var(--border) 58%);
+    background:
+      linear-gradient(135deg, color-mix(in srgb, var(--primary) 14%, transparent), transparent 42%),
+      color-mix(in srgb, var(--surface-subtle) 84%, var(--primary) 16%);
     transform: translateY(-1px);
+    box-shadow: var(--accent-shadow);
   }
 
   .command-copy {
     display: grid;
-    gap: 0.18rem;
+    gap: 0.22rem;
     min-width: 0;
   }
 
   .command-item strong {
     display: block;
-    font-size: 0.94rem;
+    font-size: 0.96rem;
   }
 
   .command-item small {
     color: var(--text-muted);
+  }
+
+  :deep(.p-dialog .p-dialog-content .command-palette) {
+    padding-top: 0.15rem;
   }
 </style>

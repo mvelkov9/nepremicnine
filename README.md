@@ -1,4 +1,4 @@
-# Nepremičnine v0.14.0
+# Nepremičnine v0.15.0
 
 > Slovenian real estate valuation platform for buyers, sellers, investors, and companies — powered by machine learning on official ETN transaction data.
 
@@ -10,6 +10,7 @@
 - **Predict** residential property prices using per-type gradient boosting models trained on Slovenian ETN transaction data
 - **Visualize** municipality leaders, recent sales, regional statistics, and transaction dots on a market map with a persistent clickable low/mid/high legend, municipality filters, and a large centered detail modal
 - **Compare** model estimates with ranked comparable ETN transactions, municipality context, and external listing portals
+- **Prove** where the model beats GURS with a dedicated benchmark/proof workflow, shared-coverage methodology, segment winners, and admin drilldown to transaction-level evidence
 - **Analyze** listings against trained models to identify over-, under-, or market-aligned pricing
 - **Export** prediction history and analysis results to CSV
 - **Preserve canonical names** for municipalities and regions, including Slovenian šumniki, while still supporting normalized matching/slugs
@@ -19,6 +20,7 @@
 - **Cache analytics in-process** so dashboard and map routes stop rereading and renormalizing the prepared CSV on every request
 - **Personalize** user profiles with editable display names and optional avatars
 - **Monitor** platform usage with an admin stats dashboard
+- **Standardize** admin and explorer tables with server-side pagination, search, sorting, export, and route-synced state
 - **Secure** with rate limiting, token blacklist, security headers, and input validation
 - **Accessible** with dark mode, mobile responsive layout, WCAG AA contrast, and keyboard navigation
 
@@ -266,6 +268,8 @@ nepremicnine/
 | GET | `/api/model/runs` | admin | Completed model run history with metrics, duration, and source dataset |
 | DELETE | `/api/model/runs/clear` | admin | Clear training history |
 | GET | `/api/model/diagnostics` | token | Diagnostic metrics |
+| GET | `/api/model/benchmark/gurs-summary` | token | Shared-coverage benchmark summary for model vs GURS |
+| GET | `/api/model/benchmark/gurs-transactions` | admin | Transaction-level proof table with filters, sorting, and pagination |
 | **Analysis** | | | |
 | POST | `/api/analysis/score` | token | Score listings vs model |
 | GET | `/api/analysis/runs` | token | List analysis run history |
@@ -359,6 +363,7 @@ For this repo specifically:
 - [Phase 22: v0.11.0 Data Quality, Map UX, and PrimeVue Modernization](docs/MASTER.md#v0110)
 - [Phase 23: v0.12.0 Architecture Modernization](docs/PHASE_23_MODERNIZATION.md)
 - [Phase 24: v0.13.0 Full Frontend Redesign](docs/PHASE_24_REDESIGN.md)
+- [Phase 25: v0.15.0 Product UX Reset and Proof Workflow](docs/PHASE_25_PRODUCT_RESET.md)
 - [Deployment Guide](docs/DEPLOYMENT.md)
 
 ## License

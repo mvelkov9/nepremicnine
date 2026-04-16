@@ -121,3 +121,84 @@ class ModelInfoResponse(BaseModel):
     source_csv_path: str | None = None
     data_preparation: dict | None = None
     segment_diagnostics: dict | None = None
+
+
+class BenchmarkMetricSummary(BaseModel):
+    mae: float | None = None
+    rmse: float | None = None
+    r2: float | None = None
+    mape: float | None = None
+    median_ae: float | None = None
+
+
+class BenchmarkImprovementSummary(BaseModel):
+    mae: float | None = None
+    rmse: float | None = None
+    median_ae: float | None = None
+    mape: float | None = None
+    r2: float | None = None
+    avg_gain_eur: float | None = None
+    median_gain_eur: float | None = None
+
+
+class BenchmarkWinnerSummary(BaseModel):
+    model: int = 0
+    gurs: int = 0
+    tie: int = 0
+
+
+class BenchmarkSegmentSummary(BaseModel):
+    segment: str
+    count: int
+    model_win_rate: float
+    avg_gain_eur: float
+    median_gain_eur: float
+    model_mae: float | None = None
+    gurs_mae: float | None = None
+
+
+class BenchmarkSummaryResponse(BaseModel):
+    coverage_rows: int = 0
+    model_metrics: BenchmarkMetricSummary | None = None
+    gurs_metrics: BenchmarkMetricSummary | None = None
+    improvement_vs_gurs: BenchmarkImprovementSummary | None = None
+    winners: BenchmarkWinnerSummary = Field(default_factory=BenchmarkWinnerSummary)
+    top_regions: list[BenchmarkSegmentSummary] = Field(default_factory=list)
+    top_property_types: list[BenchmarkSegmentSummary] = Field(default_factory=list)
+    top_years: list[BenchmarkSegmentSummary] = Field(default_factory=list)
+    methodology: str = "shared_gurs_coverage_holdout"
+    status: str = "ready"
+    detail: str | None = None
+
+
+class BenchmarkProofRow(BaseModel):
+    id: str
+    municipality: str | None = None
+    slug: str | None = None
+    region: str | None = None
+    property_type: str | None = None
+    vrsta_kupoprodajnega_posla: str | None = None
+    transaction_year: int | None = None
+    year_built: int | None = None
+    size_m2: float | None = None
+    price_eur: float
+    model_price_eur: float
+    gurs_price_eur: float
+    model_abs_error: float
+    gurs_abs_error: float
+    improvement_eur: float
+    improvement_pct: float
+    winner: str
+    source_label: str | None = None
+    ev_benchmark_source: str | None = None
+
+
+class BenchmarkProofResponse(BaseModel):
+    items: list[BenchmarkProofRow]
+    total: int
+    page: int
+    page_size: int
+    pages: int
+    filters: dict
+    sort: str
+    order: str

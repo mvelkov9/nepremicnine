@@ -174,6 +174,7 @@ def main() -> None:
             "enable_ev": True,
             "enable_kn": True,
             "enable_gji": True,
+            "enable_dtm": True,
             "enable_emv": True,
             "variant_label": args.variant_label,
         },

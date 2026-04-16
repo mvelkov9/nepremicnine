@@ -7,32 +7,83 @@
   import InputNumber from 'primevue/inputnumber'
   import InputText from 'primevue/inputtext'
   import Select from 'primevue/select'
+  import Tab from 'primevue/tab'
+  import TabList from 'primevue/tablist'
   import TabPanel from 'primevue/tabpanel'
-  import TabView from 'primevue/tabview'
+  import TabPanels from 'primevue/tabpanels'
+  import Tabs from 'primevue/tabs'
   import Tag from 'primevue/tag'
   import { useI18n } from 'vue-i18n'
   import EmptyState from '../components/EmptyState.vue'
+  import FilterBar from '../components/FilterBar.vue'
+  import FilterField from '../components/FilterField.vue'
   import LoadingSpinner from '../components/LoadingSpinner.vue'
   import MetricCard from '../components/MetricCard.vue'
   import PageHeader from '../components/PageHeader.vue'
+  import SectionPanel from '../components/SectionPanel.vue'
   import FeatureImportanceChart from '../components/charts/FeatureImportanceChart.vue'
   import PriceDistributionChart from '../components/charts/PriceDistributionChart.vue'
   import PropertyTypePieChart from '../components/charts/PropertyTypePieChart.vue'
   import TrendLineChart from '../components/charts/TrendLineChart.vue'
   import SavedWorkspaceMenu from '../components/workbench/SavedWorkspaceMenu.vue'
   import TableWorkbenchToolbar from '../components/workbench/TableWorkbenchToolbar.vue'
+  import MarketSectionCard from '../features/market/MarketSectionCard.vue'
+  import MarketStateFrame from '../features/market/MarketStateFrame.vue'
   import { toLocationQuery } from '../constants/workbench'
   import { useExport } from '../composables/useExport'
+  import { useFilterOptions } from '../composables/useFilterOptions'
   import { useViewerQueryState } from '../composables/useViewerQueryState'
   import api from '../composables/useApi'
+  import { useReferenceDataStore } from '../stores/referenceData'
   import { useStatsStore } from '../stores/stats'
   import { useWorkbenchStore } from '../stores/workbench'
+  import type {
+    MunicipalityExplorerItem,
+    PriceDistribution,
+    PropertyTypeMix,
+    RegionExplorerItem,
+    TableViewState,
+    TransactionRecord,
+    TrendPoint,
+  } from '../types/api'
   import { getApiErrorMessage } from '../utils/apiError'
+  import { useFormat } from '../composables/useFormat'
   import { formatCurrency, formatNumber } from '../utils/format'
-  import { getPropertyTypeLabel } from '../utils/propertyType'
+
+  interface MarketHomeHeadline {
+    total_records?: number
+    earliest_year?: string | number
+    latest_year?: string | number
+    median_price?: number
+    avg_price_per_m2?: number
+  }
+
+  interface MarketAnalysisData {
+    headline?: MarketHomeHeadline
+    market_coverage?: { present?: number; official_total?: number }
+    property_type_mix?: PropertyTypeMix[]
+    year_coverage?: unknown[]
+  }
+
+  interface MarketTablePage<T> {
+    items: T[]
+    total: number
+    page: number
+    page_size: number
+  }
+
+  interface MarketPageEvent {
+    page: number
+    rows: number
+  }
+
+  const MARKET_TRANSACTION_SORTS = ['recent', 'price_eur', 'price_per_m2', 'size_m2', 'year']
+  const MARKET_RANKING_SORTS = ['count', 'median_price_per_m2', 'municipality']
 
   const { t } = useI18n()
+  const { formatType } = useFormat()
   const stats = useStatsStore()
+  const referenceData = useReferenceDataStore()
   const workbench = useWorkbenchStore()
   const { exportToCSV } = useExport()
   const viewerQuery = useViewerQueryState({
@@ -42,75 +93,143 @@
     municipality: '',
     year: '',
     search: '',
+    transaction_sort: 'recent',
+    transaction_order: 'desc',
+    ranking_sort: 'count',
+    ranking_order: 'desc',
+    distribution_bins: '20',
   })
 
-  const loading = ref(true)
-  const pageError = ref('')
-  const allMunicipalities = ref<Array<{ municipality: string; region?: string }>>([])
-  const trendData = ref<any[]>([])
-  const distributionData = ref<any>(null)
-  const transactions = ref<any>({ items: [], total: 0, page: 1, page_size: 12 })
-  const largestMarkets = ref<any>({ items: [], total: 0, page: 1, page_size: 8 })
-  const priceLeaders = ref<any>({ items: [], total: 0, page: 1, page_size: 8 })
-  const regions = ref<any>({ items: [], total: 0, page: 1, page_size: 6 })
-  const distributionBins = ref(20)
-  const transactionSort = ref('recent')
-  const transactionOrder = ref('desc')
-  const rankingSort = ref('count')
-  const rankingOrder = ref('desc')
+  const initialized = ref(false)
+  const bootstrapLoading = ref(true)
+  const bootstrapError = ref('')
+  const marketLoading = ref(false)
+  const marketError = ref('')
+  const trendLoading = ref(false)
+  const trendError = ref('')
+  const distributionLoading = ref(false)
+  const distributionError = ref('')
+  const transactionsLoading = ref(false)
+  const transactionsError = ref('')
+  const regionsLoading = ref(false)
+  const regionsError = ref('')
+  const largestMarketsLoading = ref(false)
+  const largestMarketsError = ref('')
+  const priceLeadersLoading = ref(false)
+  const priceLeadersError = ref('')
+  const featureImportanceLoading = ref(false)
+  const featureImportanceError = ref('')
 
-  const tabIndexMap: Record<string, number> = {
-    overview: 0,
-    transactions: 1,
-    rankings: 2,
-    distribution: 3,
-  }
-  const tabNames = ['overview', 'transactions', 'rankings', 'distribution']
-  const activeTab = computed({
-    get: () => tabIndexMap[viewerQuery.state.tab] ?? 0,
-    set: (index: number) => viewerQuery.patchState({ tab: tabNames[index] || 'overview' }),
+  let marketRequestVersion = 0
+  let trendRequestVersion = 0
+  let distributionRequestVersion = 0
+  let transactionsRequestVersion = 0
+  let regionsRequestVersion = 0
+  let largestMarketsRequestVersion = 0
+  let priceLeadersRequestVersion = 0
+  let featureImportanceRequestVersion = 0
+
+  const transactions = ref<MarketTablePage<TransactionRecord>>({
+    items: [],
+    total: 0,
+    page: 1,
+    page_size: 12,
+  })
+  const largestMarkets = ref<MarketTablePage<MunicipalityExplorerItem>>({
+    items: [],
+    total: 0,
+    page: 1,
+    page_size: 8,
+  })
+  const priceLeaders = ref<MarketTablePage<MunicipalityExplorerItem>>({
+    items: [],
+    total: 0,
+    page: 1,
+    page_size: 8,
+  })
+  const regions = ref<MarketTablePage<RegionExplorerItem>>({
+    items: [],
+    total: 0,
+    page: 1,
+    page_size: 6,
   })
 
-  const marketHome = computed<any>(
+  const marketHome = computed<MarketAnalysisData>(
     () =>
-      stats.marketHome || {
+      (stats.marketHome as MarketAnalysisData | null) || {
         headline: {},
         property_type_mix: [],
         year_coverage: [],
       },
   )
+  const trendData = computed<TrendPoint[]>(() => (stats.trend as TrendPoint[]) || [])
+  const distributionData = computed<PriceDistribution | null>(
+    () => (stats.priceDistribution as PriceDistribution | null) || null,
+  )
 
-  const propertyTypeOptions = computed(() => [
-    { label: t('market.allPropertyTypes'), value: '' },
-    ...(marketHome.value.property_type_mix || []).map((item: any) => ({
-      label: getPropertyTypeLabel(item.property_type, t),
-      value: item.property_type,
-    })),
-  ])
+  const selectedRegionRef = computed(() => viewerQuery.state.region || '')
+  const { propertyTypeOptions, regionOptions, municipalityOptions, yearOptions } = useFilterOptions(
+    {
+      region: selectedRegionRef,
+    },
+  )
 
-  const regionOptions = computed(() => {
-    const regions = [...new Set(allMunicipalities.value.map((item) => item.region).filter(Boolean))]
-    return [{ label: t('municipalities.allRegions'), value: '' }].concat(
-      regions.sort().map((region) => ({ label: region as string, value: region as string })),
-    )
+  const activeTab = computed({
+    get: () =>
+      ['overview', 'transactions', 'rankings', 'distribution'].includes(viewerQuery.state.tab)
+        ? viewerQuery.state.tab
+        : 'overview',
+    set: (tab: string) => viewerQuery.patchState({ tab: tab || 'overview' }),
   })
 
-  const municipalityOptions = computed(() => {
-    const items = viewerQuery.state.region
-      ? allMunicipalities.value.filter((item) => item.region === viewerQuery.state.region)
-      : allMunicipalities.value
-    return [{ label: t('map.allMunicipalities'), value: '' }].concat(
-      items.map((item) => ({ label: item.municipality, value: item.municipality })),
-    )
+  const transactionSort = computed({
+    get: () =>
+      MARKET_TRANSACTION_SORTS.includes(viewerQuery.state.transaction_sort)
+        ? viewerQuery.state.transaction_sort
+        : 'recent',
+    set: (value: string) => {
+      void viewerQuery.patchState({ transaction_sort: value })
+    },
   })
 
-  const yearOptions = computed(() => [
-    { label: t('map.allYears'), value: '' },
-    ...((marketHome.value.year_coverage || []) as any[]).map((item) => ({
-      label: String(item.year),
-      value: String(item.year),
-    })),
-  ])
+  const transactionOrder = computed({
+    get: () => (viewerQuery.state.transaction_order === 'asc' ? 'asc' : 'desc'),
+    set: (value: string) => {
+      void viewerQuery.patchState({ transaction_order: value })
+    },
+  })
+
+  const rankingSort = computed({
+    get: () =>
+      MARKET_RANKING_SORTS.includes(viewerQuery.state.ranking_sort)
+        ? viewerQuery.state.ranking_sort
+        : 'count',
+    set: (value: string) => {
+      void viewerQuery.patchState({ ranking_sort: value })
+    },
+  })
+
+  const rankingOrder = computed({
+    get: () => (viewerQuery.state.ranking_order === 'asc' ? 'asc' : 'desc'),
+    set: (value: string) => {
+      void viewerQuery.patchState({ ranking_order: value })
+    },
+  })
+
+  const distributionBins = computed({
+    get: () => {
+      const parsed = Number(viewerQuery.state.distribution_bins)
+      if (!Number.isFinite(parsed)) return 20
+      return Math.min(50, Math.max(5, Math.round(parsed / 5) * 5))
+    },
+    set: (value: number | null) => {
+      const numeric = Number(value ?? 20)
+      const normalized = Number.isFinite(numeric)
+        ? Math.min(50, Math.max(5, Math.round(numeric / 5) * 5))
+        : 20
+      void viewerQuery.patchState({ distribution_bins: String(normalized) })
+    },
+  })
 
   const summaryCards = computed(() => [
     {
@@ -151,16 +270,23 @@
   const activeFilterLabels = computed(
     () =>
       [
-        viewerQuery.state.property_type
-          ? getPropertyTypeLabel(viewerQuery.state.property_type, t)
-          : '',
+        viewerQuery.state.property_type ? formatType(viewerQuery.state.property_type) : '',
         viewerQuery.state.region,
         viewerQuery.state.municipality,
         viewerQuery.state.year,
         viewerQuery.state.search,
       ].filter(Boolean) as string[],
   )
-  const activeFilterCountValue = computed(() => viewerQuery.activeFilterCount.value)
+  const activeFilterCountValue = computed(
+    () =>
+      [
+        viewerQuery.state.property_type,
+        viewerQuery.state.region,
+        viewerQuery.state.municipality,
+        viewerQuery.state.year,
+        viewerQuery.state.search,
+      ].filter(Boolean).length,
+  )
   const activeFilterTagSeverity = computed(() =>
     activeFilterCountValue.value > 0 ? 'contrast' : 'secondary',
   )
@@ -169,6 +295,24 @@
       ? t('dashboard.activeFilterCount', { count: activeFilterCountValue.value })
       : t('dashboard.noActiveFilters'),
   )
+
+  const workspaceState = computed<TableViewState>(() => ({
+    page: 'market',
+    filters: {
+      property_type: viewerQuery.state.property_type || '',
+      region: viewerQuery.state.region || '',
+      municipality: viewerQuery.state.municipality || '',
+      year: viewerQuery.state.year || '',
+      search: viewerQuery.state.search || '',
+      transaction_sort: transactionSort.value,
+      transaction_order: transactionOrder.value,
+      ranking_sort: rankingSort.value,
+      ranking_order: rankingOrder.value,
+      distribution_bins: String(distributionBins.value),
+    },
+    tab: viewerQuery.state.tab,
+    sort: transactionSort.value,
+  }))
 
   function filters() {
     return {
@@ -180,35 +324,222 @@
     }
   }
 
-  function routeQuery(extra: Record<string, string> = {}) {
-    return toLocationQuery({ ...filters(), ...extra })
+  function queryState() {
+    return {
+      ...filters(),
+      tab: viewerQuery.state.tab || 'overview',
+      transaction_sort: transactionSort.value,
+      transaction_order: transactionOrder.value,
+      ranking_sort: rankingSort.value,
+      ranking_order: rankingOrder.value,
+      distribution_bins: String(distributionBins.value),
+    }
   }
 
-  async function loadReferences() {
+  function routeQuery(extra: Record<string, string> = {}) {
+    return toLocationQuery({ ...queryState(), ...extra })
+  }
+
+  function normalizeQueryState() {
+    const patch: Record<string, string> = {}
+
+    if (
+      viewerQuery.state.property_type &&
+      !referenceData.propertyTypes.includes(viewerQuery.state.property_type)
+    ) {
+      patch.property_type = ''
+    }
+
+    if (viewerQuery.state.region && !referenceData.regions.includes(viewerQuery.state.region)) {
+      patch.region = ''
+    }
+
+    if (
+      viewerQuery.state.municipality &&
+      !referenceData.municipalities.some(
+        (item) =>
+          item.municipality === viewerQuery.state.municipality &&
+          (!viewerQuery.state.region || item.region === viewerQuery.state.region),
+      )
+    ) {
+      patch.municipality = ''
+    }
+
+    if (viewerQuery.state.year && !referenceData.years.includes(viewerQuery.state.year)) {
+      patch.year = ''
+    }
+
+    if (!MARKET_TRANSACTION_SORTS.includes(viewerQuery.state.transaction_sort)) {
+      patch.transaction_sort = 'recent'
+    }
+
+    if (!['asc', 'desc'].includes(viewerQuery.state.transaction_order)) {
+      patch.transaction_order = 'desc'
+    }
+
+    if (!MARKET_RANKING_SORTS.includes(viewerQuery.state.ranking_sort)) {
+      patch.ranking_sort = 'count'
+    }
+
+    if (!['asc', 'desc'].includes(viewerQuery.state.ranking_order)) {
+      patch.ranking_order = 'desc'
+    }
+
+    const bins = Number(viewerQuery.state.distribution_bins)
+    const normalizedBins = Number.isFinite(bins)
+      ? Math.min(50, Math.max(5, Math.round(bins / 5) * 5))
+      : 20
+    if (String(normalizedBins) !== viewerQuery.state.distribution_bins) {
+      patch.distribution_bins = String(normalizedBins)
+    }
+
+    if (Object.keys(patch).length) {
+      void viewerQuery.patchState(patch)
+      return true
+    }
+
+    return false
+  }
+
+  function resetTablePages() {
+    transactions.value.page = 1
+    largestMarkets.value.page = 1
+    priceLeaders.value.page = 1
+    regions.value.page = 1
+  }
+
+  async function loadMarketHome() {
+    const requestVersion = ++marketRequestVersion
+    marketLoading.value = true
+    marketError.value = ''
     try {
-      const { data } = await api.get('/api/regions/municipalities')
-      allMunicipalities.value = data || []
-    } catch {
-      allMunicipalities.value = []
+      await stats.fetchMarketHome(filters())
+    } catch (error) {
+      if (requestVersion !== marketRequestVersion) return
+      marketError.value = getApiErrorMessage(error, t)
+    } finally {
+      if (requestVersion === marketRequestVersion) {
+        marketLoading.value = false
+      }
+    }
+  }
+
+  async function loadTrend() {
+    const requestVersion = ++trendRequestVersion
+    trendLoading.value = true
+    trendError.value = ''
+    try {
+      await stats.fetchTrend({
+        property_type: viewerQuery.state.property_type || undefined,
+        region: viewerQuery.state.region || undefined,
+        municipality: viewerQuery.state.municipality || undefined,
+      })
+    } catch (error) {
+      if (requestVersion !== trendRequestVersion) return
+      trendError.value = getApiErrorMessage(error, t)
+    } finally {
+      if (requestVersion === trendRequestVersion) {
+        trendLoading.value = false
+      }
+    }
+  }
+
+  async function loadDistribution() {
+    const requestVersion = ++distributionRequestVersion
+    distributionLoading.value = true
+    distributionError.value = ''
+    try {
+      await stats.fetchPriceDistribution({
+        property_type: viewerQuery.state.property_type || undefined,
+        region: viewerQuery.state.region || undefined,
+        municipality: viewerQuery.state.municipality || undefined,
+        year: viewerQuery.state.year || undefined,
+        bins: distributionBins.value,
+      })
+    } catch (error) {
+      if (requestVersion !== distributionRequestVersion) return
+      distributionError.value = getApiErrorMessage(error, t)
+    } finally {
+      if (requestVersion === distributionRequestVersion) {
+        distributionLoading.value = false
+      }
+    }
+  }
+
+  async function loadFeatureImportance() {
+    const requestVersion = ++featureImportanceRequestVersion
+    featureImportanceLoading.value = true
+    featureImportanceError.value = ''
+    try {
+      await stats.fetchFeatureImportance()
+    } catch (error) {
+      if (requestVersion !== featureImportanceRequestVersion) return
+      featureImportanceError.value = getApiErrorMessage(error, t)
+    } finally {
+      if (requestVersion === featureImportanceRequestVersion) {
+        featureImportanceLoading.value = false
+      }
     }
   }
 
   async function loadTransactions() {
-    const { data } = await api.get('/api/stats/transactions', {
-      params: {
-        ...filters(),
-        page: transactions.value.page,
-        page_size: transactions.value.page_size,
-        sort: transactionSort.value,
-        order: transactionOrder.value,
-      },
-    })
-    transactions.value = data
+    const requestVersion = ++transactionsRequestVersion
+    transactionsLoading.value = true
+    transactionsError.value = ''
+    try {
+      const { data } = await api.get('/api/stats/transactions', {
+        params: {
+          ...filters(),
+          page: transactions.value.page,
+          page_size: transactions.value.page_size,
+          sort: transactionSort.value,
+          order: transactionOrder.value,
+        },
+      })
+      if (requestVersion !== transactionsRequestVersion) return
+      transactions.value = data || transactions.value
+    } catch (error) {
+      if (requestVersion !== transactionsRequestVersion) return
+      transactionsError.value = getApiErrorMessage(error, t)
+    } finally {
+      if (requestVersion === transactionsRequestVersion) {
+        transactionsLoading.value = false
+      }
+    }
   }
 
-  async function loadRankings() {
-    const [largestRes, leadersRes, regionRes] = await Promise.all([
-      api.get('/api/stats/municipalities', {
+  async function loadRegions() {
+    const requestVersion = ++regionsRequestVersion
+    regionsLoading.value = true
+    regionsError.value = ''
+    try {
+      const { data } = await api.get('/api/stats/regions-explorer', {
+        params: {
+          ...filters(),
+          page: regions.value.page,
+          page_size: regions.value.page_size,
+          sort: 'count',
+          order: 'desc',
+        },
+      })
+      if (requestVersion !== regionsRequestVersion) return
+      regions.value = data || regions.value
+    } catch (error) {
+      if (requestVersion !== regionsRequestVersion) return
+      regionsError.value = getApiErrorMessage(error, t)
+    } finally {
+      if (requestVersion === regionsRequestVersion) {
+        regionsLoading.value = false
+      }
+    }
+  }
+
+  async function loadLargestMarkets() {
+    const requestVersion = ++largestMarketsRequestVersion
+    largestMarketsLoading.value = true
+    largestMarketsError.value = ''
+    try {
+      const { data } = await api.get('/api/stats/municipalities', {
         params: {
           ...filters(),
           page: largestMarkets.value.page,
@@ -216,8 +547,25 @@
           sort: rankingSort.value,
           order: rankingOrder.value,
         },
-      }),
-      api.get('/api/stats/municipalities', {
+      })
+      if (requestVersion !== largestMarketsRequestVersion) return
+      largestMarkets.value = data || largestMarkets.value
+    } catch (error) {
+      if (requestVersion !== largestMarketsRequestVersion) return
+      largestMarketsError.value = getApiErrorMessage(error, t)
+    } finally {
+      if (requestVersion === largestMarketsRequestVersion) {
+        largestMarketsLoading.value = false
+      }
+    }
+  }
+
+  async function loadPriceLeaders() {
+    const requestVersion = ++priceLeadersRequestVersion
+    priceLeadersLoading.value = true
+    priceLeadersError.value = ''
+    try {
+      const { data } = await api.get('/api/stats/municipalities', {
         params: {
           ...filters(),
           page: priceLeaders.value.page,
@@ -225,55 +573,27 @@
           sort: 'median_price_per_m2',
           order: 'desc',
         },
-      }),
-      api.get('/api/stats/regions-explorer', {
-        params: { ...filters(), page: 1, page_size: 8, sort: 'count', order: 'desc' },
-      }),
-    ])
-    largestMarkets.value = largestRes.data
-    priceLeaders.value = leadersRes.data
-    regions.value = regionRes.data
+      })
+      if (requestVersion !== priceLeadersRequestVersion) return
+      priceLeaders.value = data || priceLeaders.value
+    } catch (error) {
+      if (requestVersion !== priceLeadersRequestVersion) return
+      priceLeadersError.value = getApiErrorMessage(error, t)
+    } finally {
+      if (requestVersion === priceLeadersRequestVersion) {
+        priceLeadersLoading.value = false
+      }
+    }
   }
 
-  async function loadMarket() {
-    loading.value = true
-    pageError.value = ''
-    try {
-      await Promise.all([
-        stats.fetchMarketHome(filters()),
-        stats.fetchFeatureImportance(),
-        api
-          .get('/api/stats/trend', {
-            params: {
-              property_type: viewerQuery.state.property_type || undefined,
-              region: viewerQuery.state.region || undefined,
-              municipality: viewerQuery.state.municipality || undefined,
-            },
-          })
-          .then(({ data }) => {
-            trendData.value = data || []
-          }),
-        api
-          .get('/api/stats/price-distribution', {
-            params: {
-              property_type: viewerQuery.state.property_type || undefined,
-              region: viewerQuery.state.region || undefined,
-              municipality: viewerQuery.state.municipality || undefined,
-              year: viewerQuery.state.year || undefined,
-              bins: distributionBins.value,
-            },
-          })
-          .then(({ data }) => {
-            distributionData.value = data
-          }),
-        loadTransactions(),
-        loadRankings(),
-      ])
-    } catch (error) {
-      pageError.value = getApiErrorMessage(error, t)
-    } finally {
-      loading.value = false
-    }
+  function refreshFilterDependentData() {
+    void loadMarketHome()
+    void loadTrend()
+    void loadDistribution()
+    void loadTransactions()
+    void loadRegions()
+    void loadLargestMarkets()
+    void loadPriceLeaders()
   }
 
   function clearFilters() {
@@ -286,7 +606,7 @@
     })
   }
 
-  async function addMunicipalityToWatchlist(item: any) {
+  async function addMunicipalityToWatchlist(item: MunicipalityExplorerItem) {
     await workbench.addWatchlistItem({
       entity_type: 'municipality',
       entity_key: item.slug,
@@ -295,7 +615,7 @@
     })
   }
 
-  function addMunicipalityToCompare(item: any) {
+  function addMunicipalityToCompare(item: MunicipalityExplorerItem) {
     workbench.addCompareItem({
       id: `municipality:${item.slug}`,
       entity_type: 'municipality',
@@ -310,34 +630,42 @@
     exportToCSV(transactions.value.items || [], 'market-transactions.csv')
   }
 
-  function onTransactionsPage(event: any) {
+  function onTransactionsPage(event: MarketPageEvent) {
     transactions.value.page = event.page + 1
     transactions.value.page_size = event.rows
     void loadTransactions()
   }
 
-  function onLargestPage(event: any) {
+  function onLargestPage(event: MarketPageEvent) {
     largestMarkets.value.page = event.page + 1
     largestMarkets.value.page_size = event.rows
-    void loadRankings()
+    void loadLargestMarkets()
   }
 
-  function onLeadersPage(event: any) {
+  function onLeadersPage(event: MarketPageEvent) {
     priceLeaders.value.page = event.page + 1
     priceLeaders.value.page_size = event.rows
-    void loadRankings()
+    void loadPriceLeaders()
   }
 
-  watch(
-    () => viewerQuery.state.region,
-    (region) => {
-      if (!region) return
-      const valid = allMunicipalities.value.some(
-        (item) => item.region === region && item.municipality === viewerQuery.state.municipality,
-      )
-      if (!valid) viewerQuery.patchState({ municipality: '' })
-    },
-  )
+  async function initializePage() {
+    bootstrapLoading.value = true
+    bootstrapError.value = ''
+    try {
+      await referenceData.ensureLoaded()
+      normalizeQueryState()
+      initialized.value = true
+    } catch (error) {
+      bootstrapError.value = getApiErrorMessage(error, t)
+    } finally {
+      bootstrapLoading.value = false
+    }
+
+    if (!bootstrapError.value) {
+      refreshFilterDependentData()
+      void loadFeatureImportance()
+    }
+  }
 
   watch(
     () => [
@@ -346,65 +674,87 @@
       viewerQuery.state.municipality,
       viewerQuery.state.year,
       viewerQuery.state.search,
-      distributionBins.value,
-      transactionSort.value,
-      transactionOrder.value,
-      rankingSort.value,
-      rankingOrder.value,
     ],
     () => {
-      transactions.value.page = 1
-      largestMarkets.value.page = 1
-      priceLeaders.value.page = 1
-      void loadMarket()
+      if (!initialized.value) return
+      if (normalizeQueryState()) return
+      resetTablePages()
+      refreshFilterDependentData()
     },
   )
 
-  onMounted(async () => {
-    await loadReferences()
-    await loadMarket()
+  watch(
+    () => [transactionSort.value, transactionOrder.value],
+    () => {
+      if (!initialized.value) return
+      transactions.value.page = 1
+      void loadTransactions()
+    },
+  )
+
+  watch(
+    () => [rankingSort.value, rankingOrder.value],
+    () => {
+      if (!initialized.value) return
+      largestMarkets.value.page = 1
+      void loadLargestMarkets()
+    },
+  )
+
+  watch(
+    () => distributionBins.value,
+    () => {
+      if (!initialized.value) return
+      void loadDistribution()
+    },
+  )
+
+  onMounted(() => {
+    void initializePage()
   })
 </script>
 
 <template>
   <div class="market-page">
-    <section class="hero-shell">
-      <PageHeader
-        :eyebrow="t('market.consumerKicker')"
-        :title="t('market.consumerTitle')"
-        :description="t('market.consumerBody')"
-      >
-        <template #actions>
-          <SavedWorkspaceMenu
-            page="market"
-            :state="{
-              page: 'market',
-              filters: filters(),
-              tab: viewerQuery.state.tab,
-              sort: transactionSort,
-            }"
-          />
-          <RouterLink
+    <section class="market-hero">
+      <div class="market-hero__copy">
+        <PageHeader
+          :eyebrow="t('market.consumerKicker')"
+          :title="t('market.consumerTitle')"
+          :description="t('market.consumerBody')"
+        >
+          <template #actions>
+            <SavedWorkspaceMenu page="market" :state="workspaceState" />
+          </template>
+        </PageHeader>
+
+        <div class="market-hero__actions">
+          <Button
+            :as="RouterLink"
             :to="{ path: '/zemljevid', query: routeQuery({ view: 'transactions' }) }"
-            class="hero-link"
-          >
-            <Button severity="secondary" outlined icon="pi pi-map" :label="t('nav.map')" />
-          </RouterLink>
-          <RouterLink
+            class="hero-link hero-link--primary"
+            severity="contrast"
+            icon="pi pi-map"
+            :label="t('nav.map')"
+          />
+          <Button
+            :as="RouterLink"
             :to="{ path: '/obcine', query: routeQuery({ tab: 'table' }) }"
             class="hero-link"
-          >
-            <Button
-              severity="secondary"
-              outlined
-              icon="pi pi-building"
-              :label="t('nav.municipalities')"
-            />
-          </RouterLink>
-        </template>
-      </PageHeader>
+            severity="secondary"
+            outlined
+            icon="pi pi-building"
+            :label="t('nav.municipalities')"
+          />
+        </div>
 
-      <div class="hero-summary">
+        <div class="market-hero__status">
+          <Tag :severity="activeFilterTagSeverity" :value="activeFilterTagLabel" />
+          <span>{{ t('dashboard.marketLens') }}</span>
+        </div>
+      </div>
+
+      <div class="market-hero__metrics">
         <MetricCard
           v-for="card in summaryCards"
           :key="card.label"
@@ -416,50 +766,15 @@
       </div>
     </section>
 
-    <section class="panel filter-panel">
-      <div class="filter-grid">
-        <label class="field-inline">
-          <span>{{ t('market.selectPropertyType') }}</span>
-          <Select
-            v-model="viewerQuery.state.property_type"
-            :options="propertyTypeOptions"
-            option-label="label"
-            option-value="value"
-          />
-        </label>
-        <label class="field-inline">
-          <span>{{ t('municipalities.filterByRegion') }}</span>
-          <Select
-            v-model="viewerQuery.state.region"
-            :options="regionOptions"
-            option-label="label"
-            option-value="value"
-          />
-        </label>
-        <label class="field-inline">
-          <span>{{ t('dashboard.municipality') }}</span>
-          <Select
-            v-model="viewerQuery.state.municipality"
-            :options="municipalityOptions"
-            option-label="label"
-            option-value="value"
-          />
-        </label>
-        <label class="field-inline">
-          <span>{{ t('map.year') }}</span>
-          <Select
-            v-model="viewerQuery.state.year"
-            :options="yearOptions"
-            option-label="label"
-            option-value="value"
-          />
-        </label>
-        <label class="field-inline search-field">
-          <span>{{ t('common.search') }}</span>
-          <InputText v-model="viewerQuery.state.search" :placeholder="t('common.search')" />
-        </label>
-        <div class="filter-actions">
-          <Tag :value="activeFilterTagLabel" :severity="activeFilterTagSeverity" />
+    <SectionPanel
+      class="market-filters"
+      :eyebrow="t('dashboard.activeFilters')"
+      :title="t('dashboard.marketLens')"
+      compact
+    >
+      <template #actions>
+        <div class="market-filters__actions">
+          <Tag :severity="activeFilterTagSeverity" :value="activeFilterTagLabel" />
           <Button
             severity="secondary"
             outlined
@@ -468,558 +783,846 @@
             @click="clearFilters"
           />
         </div>
+      </template>
+
+      <FilterBar :columns="4">
+        <FilterField :label="t('market.selectPropertyType')">
+          <Select
+            v-model="viewerQuery.state.property_type"
+            :options="propertyTypeOptions"
+            option-label="label"
+            option-value="value"
+          />
+        </FilterField>
+        <FilterField :label="t('municipalities.filterByRegion')">
+          <Select
+            v-model="viewerQuery.state.region"
+            :options="regionOptions"
+            option-label="label"
+            option-value="value"
+          />
+        </FilterField>
+        <FilterField :label="t('dashboard.municipality')">
+          <Select
+            v-model="viewerQuery.state.municipality"
+            :options="municipalityOptions"
+            option-label="label"
+            option-value="value"
+          />
+        </FilterField>
+        <FilterField :label="t('map.year')">
+          <Select
+            v-model="viewerQuery.state.year"
+            :options="yearOptions"
+            option-label="label"
+            option-value="value"
+          />
+        </FilterField>
+        <FilterField class="market-filters__search" :label="t('common.search')" :span="2">
+          <InputText v-model="viewerQuery.state.search" :placeholder="t('common.search')" />
+        </FilterField>
+      </FilterBar>
+    </SectionPanel>
+
+    <LoadingSpinner v-if="bootstrapLoading" :label="t('common.loading')" />
+    <div v-else-if="bootstrapError" class="state-card state-card-stack" role="alert">
+      <EmptyState :message="bootstrapError" icon="pi pi-exclamation-triangle" />
+      <div class="state-card-actions">
+        <Button
+          size="small"
+          severity="secondary"
+          outlined
+          icon="pi pi-refresh"
+          :label="t('common.retry')"
+          @click="initializePage"
+        />
       </div>
-    </section>
+    </div>
 
-    <LoadingSpinner v-if="loading" :label="t('common.loading')" />
-    <p v-else-if="pageError" class="state-card error-text">{{ pageError }}</p>
-
-    <TabView v-else v-model:active-index="activeTab" class="market-tabs">
-      <TabPanel value="0" :header="t('common.overview')">
-        <section class="tab-content">
-          <div class="grid-two">
-            <section class="panel">
-              <div class="panel-head">
-                <div>
-                  <p class="eyebrow subtle">{{ t('market.tabTrends') }}</p>
-                  <h2>{{ t('market.trendSubtitle') }}</h2>
-                </div>
-              </div>
-              <TrendLineChart v-if="trendData.length" :data="trendData" />
-              <EmptyState v-else :message="t('common.noData')" />
-            </section>
-
-            <section class="panel">
-              <div class="panel-head">
-                <div>
-                  <p class="eyebrow subtle">{{ t('dashboard.regionSnapshot') }}</p>
-                  <h2>{{ t('dashboard.regionTableTitle') }}</h2>
-                </div>
-              </div>
-              <div v-if="regions.items?.length" class="ranking-list">
-                <RouterLink
-                  v-for="region in regions.items.slice(0, 5)"
-                  :key="region.region"
-                  :to="{
-                    path: '/regije',
-                    query: routeQuery({ tab: 'drilldown', region: region.region }),
-                  }"
-                  class="ranking-row"
+    <Tabs v-else v-model:value="activeTab" class="market-tabs">
+      <TabList>
+        <Tab value="overview">{{ t('common.overview') }}</Tab>
+        <Tab value="transactions">{{ t('market.tabTransactions') }}</Tab>
+        <Tab value="rankings">{{ t('market.tabRankings') }}</Tab>
+        <Tab value="distribution">{{ t('market.tabDistribution') }}</Tab>
+      </TabList>
+      <TabPanels>
+        <TabPanel value="overview">
+          <section class="market-tab-content">
+            <div class="market-grid market-grid--overview">
+              <MarketSectionCard
+                featured
+                :eyebrow="t('market.tabTrends')"
+                :title="t('market.trendSubtitle')"
+                :description="t('market.consumerBody')"
+              >
+                <MarketStateFrame
+                  :loading="trendLoading"
+                  :error="trendError"
+                  :has-data="trendData.length > 0"
                 >
-                  <div>
-                    <strong>{{ region.region }}</strong>
-                    <p class="muted">
-                      {{ formatNumber(region.count) }} {{ t('dashboard.transactions') }}
-                    </p>
+                  <template #actions>
+                    <Button
+                      size="small"
+                      severity="secondary"
+                      outlined
+                      icon="pi pi-refresh"
+                      :label="t('common.retry')"
+                      @click="loadTrend"
+                    />
+                  </template>
+                  <TrendLineChart :data="trendData" />
+                </MarketStateFrame>
+              </MarketSectionCard>
+
+              <MarketSectionCard
+                :eyebrow="t('dashboard.regionSnapshot')"
+                :title="t('dashboard.regionTableTitle')"
+                :description="t('dashboard.marketCoverageLabel')"
+                compact
+              >
+                <MarketStateFrame
+                  :loading="regionsLoading"
+                  :error="regionsError"
+                  :has-data="(regions.items || []).length > 0"
+                >
+                  <template #actions>
+                    <Button
+                      size="small"
+                      severity="secondary"
+                      outlined
+                      icon="pi pi-refresh"
+                      :label="t('common.retry')"
+                      @click="loadRegions"
+                    />
+                  </template>
+                  <div class="market-rank-list">
+                    <RouterLink
+                      v-for="(region, index) in regions.items.slice(0, 5)"
+                      :key="region.region"
+                      :to="{
+                        path: '/regije',
+                        query: routeQuery({ tab: 'drilldown', region: region.region }),
+                      }"
+                      class="market-rank-row"
+                    >
+                      <span class="market-rank-index">#{{ index + 1 }}</span>
+                      <div class="market-rank-copy">
+                        <strong>{{ region.region }}</strong>
+                        <p class="muted">
+                          {{ formatNumber(region.count) }} {{ t('dashboard.transactions') }}
+                        </p>
+                      </div>
+                      <Tag
+                        severity="success"
+                        :value="`${formatCurrency(region.median_price_per_m2)} / m²`"
+                      />
+                    </RouterLink>
                   </div>
-                  <Tag
-                    severity="success"
-                    :value="`${formatCurrency(region.median_price_per_m2)}/m²`"
+                </MarketStateFrame>
+              </MarketSectionCard>
+            </div>
+
+            <div class="market-grid market-grid--secondary">
+              <MarketSectionCard
+                :eyebrow="t('dashboard.largestMarkets')"
+                :title="t('market.largestMarketsTitle')"
+                compact
+              >
+                <MarketStateFrame
+                  :loading="largestMarketsLoading"
+                  :error="largestMarketsError"
+                  :has-data="(largestMarkets.items || []).length > 0"
+                >
+                  <template #actions>
+                    <Button
+                      size="small"
+                      severity="secondary"
+                      outlined
+                      icon="pi pi-refresh"
+                      :label="t('common.retry')"
+                      @click="loadLargestMarkets"
+                    />
+                  </template>
+                  <div class="market-rank-list">
+                    <RouterLink
+                      v-for="(item, index) in largestMarkets.items.slice(0, 5)"
+                      :key="item.slug"
+                      :to="`/obcine/${item.slug}`"
+                      class="market-rank-row"
+                    >
+                      <span class="market-rank-index">#{{ index + 1 }}</span>
+                      <div class="market-rank-copy">
+                        <strong>{{ item.municipality }}</strong>
+                        <p class="muted">{{ item.region || '-' }}</p>
+                      </div>
+                      <Tag severity="contrast" :value="formatNumber(item.count)" />
+                    </RouterLink>
+                  </div>
+                </MarketStateFrame>
+              </MarketSectionCard>
+
+              <MarketSectionCard
+                featured
+                :eyebrow="t('dashboard.priceLeaders')"
+                :title="t('market.priceLeadersTitle')"
+                compact
+              >
+                <MarketStateFrame
+                  :loading="priceLeadersLoading"
+                  :error="priceLeadersError"
+                  :has-data="(priceLeaders.items || []).length > 0"
+                >
+                  <template #actions>
+                    <Button
+                      size="small"
+                      severity="secondary"
+                      outlined
+                      icon="pi pi-refresh"
+                      :label="t('common.retry')"
+                      @click="loadPriceLeaders"
+                    />
+                  </template>
+                  <div class="market-rank-list">
+                    <RouterLink
+                      v-for="(item, index) in priceLeaders.items.slice(0, 5)"
+                      :key="item.slug"
+                      :to="`/obcine/${item.slug}`"
+                      class="market-rank-row"
+                    >
+                      <span class="market-rank-index">#{{ index + 1 }}</span>
+                      <div class="market-rank-copy">
+                        <strong>{{ item.municipality }}</strong>
+                        <p class="muted">{{ item.region || '-' }}</p>
+                      </div>
+                      <Tag
+                        severity="success"
+                        :value="`${formatCurrency(item.median_price_per_m2)} / m²`"
+                      />
+                    </RouterLink>
+                  </div>
+                </MarketStateFrame>
+              </MarketSectionCard>
+            </div>
+
+            <MarketSectionCard
+              featured
+              :eyebrow="t('market.featureImportance')"
+              :title="t('market.featureImportanceDesc')"
+              :description="t('market.consumerKicker')"
+            >
+              <MarketStateFrame
+                :loading="featureImportanceLoading"
+                :error="featureImportanceError"
+                :has-data="(stats.featureImportance || []).length > 0"
+              >
+                <template #actions>
+                  <Button
+                    size="small"
+                    severity="secondary"
+                    outlined
+                    icon="pi pi-refresh"
+                    :label="t('common.retry')"
+                    @click="loadFeatureImportance"
                   />
-                </RouterLink>
-              </div>
-              <EmptyState v-else :message="t('common.noData')" />
-            </section>
-          </div>
+                </template>
+                <FeatureImportanceChart :features="stats.featureImportance" :limit="15" />
+              </MarketStateFrame>
+            </MarketSectionCard>
+          </section>
+        </TabPanel>
 
-          <div class="grid-two">
-            <section class="panel">
-              <div class="panel-head">
-                <div>
-                  <p class="eyebrow subtle">{{ t('dashboard.largestMarkets') }}</p>
-                  <h2>{{ t('market.largestMarketsTitle') }}</h2>
-                </div>
-              </div>
-              <div v-if="largestMarkets.items?.length" class="ranking-list">
-                <RouterLink
-                  v-for="item in largestMarkets.items.slice(0, 5)"
-                  :key="item.slug"
-                  :to="`/obcine/${item.slug}`"
-                  class="ranking-row"
-                >
-                  <div>
-                    <strong>{{ item.municipality }}</strong>
-                    <p class="muted">{{ item.region || '-' }}</p>
-                  </div>
-                  <Tag severity="contrast" :value="formatNumber(item.count)" />
-                </RouterLink>
-              </div>
-              <EmptyState v-else :message="t('common.noData')" />
-            </section>
+        <TabPanel value="transactions">
+          <section class="market-tab-content">
+            <TableWorkbenchToolbar
+              page="market"
+              :state="workspaceState"
+              :search-value="viewerQuery.state.search"
+              :active-filters="activeFilterLabels"
+              @update:search-value="viewerQuery.state.search = $event"
+              @export="exportTransactions"
+              @clear="clearFilters"
+            >
+              <template #actions>
+                <Select
+                  v-model="transactionSort"
+                  :options="transactionSortOptions"
+                  option-label="label"
+                  option-value="value"
+                />
+                <Button
+                  severity="secondary"
+                  outlined
+                  :icon="
+                    transactionOrder === 'desc' ? 'pi pi-sort-amount-down' : 'pi pi-sort-amount-up'
+                  "
+                  :label="
+                    transactionOrder === 'desc'
+                      ? t('market.sortDescending')
+                      : t('market.sortAscending')
+                  "
+                  @click="transactionOrder = transactionOrder === 'desc' ? 'asc' : 'desc'"
+                />
+              </template>
+            </TableWorkbenchToolbar>
 
-            <section class="panel">
-              <div class="panel-head">
-                <div>
-                  <p class="eyebrow subtle">{{ t('dashboard.priceLeaders') }}</p>
-                  <h2>{{ t('market.priceLeadersTitle') }}</h2>
-                </div>
-              </div>
-              <div v-if="priceLeaders.items?.length" class="ranking-list">
-                <RouterLink
-                  v-for="item in priceLeaders.items.slice(0, 5)"
-                  :key="item.slug"
-                  :to="`/obcine/${item.slug}`"
-                  class="ranking-row"
-                >
-                  <div>
-                    <strong>{{ item.municipality }}</strong>
-                    <p class="muted">{{ item.region || '-' }}</p>
-                  </div>
-                  <Tag
-                    severity="success"
-                    :value="`${formatCurrency(item.median_price_per_m2)}/m²`"
+            <MarketSectionCard
+              featured
+              :eyebrow="t('market.tabTransactions')"
+              :title="t('dashboard.latestTransactions')"
+              :description="t('market.consumerBody')"
+            >
+              <MarketStateFrame
+                :loading="transactionsLoading"
+                :error="transactionsError"
+                :has-data="(transactions.items || []).length > 0"
+              >
+                <template #actions>
+                  <Button
+                    size="small"
+                    severity="secondary"
+                    outlined
+                    icon="pi pi-refresh"
+                    :label="t('common.retry')"
+                    @click="loadTransactions"
                   />
-                </RouterLink>
-              </div>
-              <EmptyState v-else :message="t('common.noData')" />
-            </section>
-          </div>
-        </section>
-      </TabPanel>
+                </template>
+                <DataTable
+                  :value="transactions.items"
+                  lazy
+                  paginator
+                  :rows="transactions.page_size"
+                  :first="(transactions.page - 1) * transactions.page_size"
+                  :total-records="transactions.total"
+                  size="small"
+                  striped-rows
+                  responsive-layout="scroll"
+                  table-style="min-width: 100%"
+                  @page="onTransactionsPage"
+                >
+                  <Column field="municipality" :header="t('dashboard.municipality')">
+                    <template #body="{ data }">
+                      <RouterLink :to="`/obcine/${data.slug}`" class="table-link">
+                        {{ data.municipality }}
+                      </RouterLink>
+                    </template>
+                  </Column>
+                  <Column field="region" :header="t('map.region')" />
+                  <Column field="property_type" :header="t('predict.propertyType')">
+                    <template #body="{ data }">{{ formatType(data.property_type) }}</template>
+                  </Column>
+                  <Column field="size_m2" :header="t('predict.size')">
+                    <template #body="{ data }">
+                      {{ formatNumber(data.size_m2, { maximumFractionDigits: 1 }) }} m²
+                    </template>
+                  </Column>
+                  <Column field="price_eur" :header="t('dashboard.medianPrice')">
+                    <template #body="{ data }">{{ formatCurrency(data.price_eur) }}</template>
+                  </Column>
+                  <Column field="price_per_m2" :header="t('dashboard.pricePerM2')">
+                    <template #body="{ data }">{{ formatCurrency(data.price_per_m2) }}</template>
+                  </Column>
+                  <Column field="year" :header="t('map.year')">
+                    <template #body="{ data }">{{ data.year || '-' }}</template>
+                  </Column>
+                  <Column :header="t('common.actions')">
+                    <template #body="{ data }">
+                      <div class="row-actions">
+                        <Button
+                          size="small"
+                          severity="secondary"
+                          text
+                          icon="pi pi-bookmark"
+                          :aria-label="t('workbench.watch')"
+                          @click="addMunicipalityToWatchlist(data)"
+                        />
+                        <Button
+                          size="small"
+                          severity="secondary"
+                          text
+                          icon="pi pi-plus-circle"
+                          :aria-label="t('workbench.compare')"
+                          @click="addMunicipalityToCompare(data)"
+                        />
+                        <Button
+                          :as="RouterLink"
+                          :to="{
+                            path: '/zemljevid',
+                            query: routeQuery({
+                              municipality: data.municipality,
+                              view: 'transactions',
+                            }),
+                          }"
+                          size="small"
+                          severity="secondary"
+                          text
+                          icon="pi pi-map"
+                          :aria-label="t('nav.map')"
+                          class="table-link"
+                        />
+                      </div>
+                    </template>
+                  </Column>
+                </DataTable>
+              </MarketStateFrame>
+            </MarketSectionCard>
+          </section>
+        </TabPanel>
 
-      <TabPanel value="1" :header="t('market.tabTransactions')">
-        <section class="tab-content">
-          <TableWorkbenchToolbar
-            page="market"
-            :state="{
-              page: 'market',
-              filters: filters(),
-              tab: 'transactions',
-              sort: transactionSort,
-            }"
-            :search-value="viewerQuery.state.search"
-            :active-filters="activeFilterLabels"
-            @update:search-value="viewerQuery.state.search = $event"
-            @export="exportTransactions"
-            @clear="clearFilters"
-          >
-            <template #actions>
+        <TabPanel value="rankings">
+          <section class="market-tab-content">
+            <div class="market-toolbar market-toolbar--compact">
               <Select
-                v-model="transactionSort"
-                :options="transactionSortOptions"
+                v-model="rankingSort"
+                :options="rankingSortOptions"
                 option-label="label"
                 option-value="value"
               />
               <Button
                 severity="secondary"
                 outlined
-                :icon="
-                  transactionOrder === 'desc' ? 'pi pi-sort-amount-down' : 'pi pi-sort-amount-up'
-                "
+                :icon="rankingOrder === 'desc' ? 'pi pi-sort-amount-down' : 'pi pi-sort-amount-up'"
                 :label="
-                  transactionOrder === 'desc'
-                    ? t('market.sortDescending')
-                    : t('market.sortAscending')
+                  rankingOrder === 'desc' ? t('market.sortDescending') : t('market.sortAscending')
                 "
-                @click="transactionOrder = transactionOrder === 'desc' ? 'asc' : 'desc'"
+                @click="rankingOrder = rankingOrder === 'desc' ? 'asc' : 'desc'"
               />
-            </template>
-          </TableWorkbenchToolbar>
-
-          <div class="panel">
-            <DataTable
-              :value="transactions.items"
-              lazy
-              paginator
-              :rows="transactions.page_size"
-              :first="(transactions.page - 1) * transactions.page_size"
-              :total-records="transactions.total"
-              size="small"
-              striped-rows
-              responsive-layout="scroll"
-              table-style="min-width: 100%"
-              @page="onTransactionsPage"
-            >
-              <Column field="municipality" :header="t('dashboard.municipality')">
-                <template #body="{ data }">
-                  <RouterLink :to="`/obcine/${data.slug}`" class="table-link">
-                    {{ data.municipality }}
-                  </RouterLink>
-                </template>
-              </Column>
-              <Column field="region" :header="t('map.region')" />
-              <Column field="property_type" :header="t('predict.propertyType')">
-                <template #body="{ data }">
-                  {{ getPropertyTypeLabel(data.property_type, t) }}
-                </template>
-              </Column>
-              <Column field="size_m2" :header="t('predict.size')">
-                <template #body="{ data }">
-                  {{ formatNumber(data.size_m2, { maximumFractionDigits: 1 }) }} m²
-                </template>
-              </Column>
-              <Column field="price_eur" :header="t('dashboard.medianPrice')">
-                <template #body="{ data }">{{ formatCurrency(data.price_eur) }}</template>
-              </Column>
-              <Column field="price_per_m2" header="€/m²">
-                <template #body="{ data }">{{ formatCurrency(data.price_per_m2) }}</template>
-              </Column>
-              <Column field="year" :header="t('map.year')">
-                <template #body="{ data }">{{ data.year || '-' }}</template>
-              </Column>
-              <Column :header="t('common.actions')">
-                <template #body="{ data }">
-                  <div class="row-actions">
-                    <Button
-                      size="small"
-                      severity="secondary"
-                      text
-                      icon="pi pi-bookmark"
-                      @click="addMunicipalityToWatchlist(data)"
-                    />
-                    <Button
-                      size="small"
-                      severity="secondary"
-                      text
-                      icon="pi pi-plus-circle"
-                      @click="addMunicipalityToCompare(data)"
-                    />
-                    <RouterLink
-                      :to="{
-                        path: '/zemljevid',
-                        query: routeQuery({
-                          municipality: data.municipality,
-                          view: 'transactions',
-                        }),
-                      }"
-                      class="table-link"
-                    >
-                      <Button size="small" severity="secondary" text icon="pi pi-map" />
-                    </RouterLink>
-                  </div>
-                </template>
-              </Column>
-            </DataTable>
-          </div>
-        </section>
-      </TabPanel>
-
-      <TabPanel value="2" :header="t('market.tabRankings')">
-        <section class="tab-content">
-          <div class="toolbar">
-            <Select
-              v-model="rankingSort"
-              :options="rankingSortOptions"
-              option-label="label"
-              option-value="value"
-            />
-            <Button
-              severity="secondary"
-              outlined
-              :icon="rankingOrder === 'desc' ? 'pi pi-sort-amount-down' : 'pi pi-sort-amount-up'"
-              :label="
-                rankingOrder === 'desc' ? t('market.sortDescending') : t('market.sortAscending')
-              "
-              @click="rankingOrder = rankingOrder === 'desc' ? 'asc' : 'desc'"
-            />
-          </div>
-
-          <div class="grid-two">
-            <section class="panel">
-              <div class="panel-head">
-                <div>
-                  <p class="eyebrow subtle">{{ t('dashboard.largestMarkets') }}</p>
-                  <h2>{{ t('market.largestMarketsTitle') }}</h2>
-                </div>
-              </div>
-              <DataTable
-                :value="largestMarkets.items"
-                lazy
-                paginator
-                :rows="largestMarkets.page_size"
-                :first="(largestMarkets.page - 1) * largestMarkets.page_size"
-                :total-records="largestMarkets.total"
-                size="small"
-                striped-rows
-                responsive-layout="scroll"
-                table-style="min-width: 100%"
-                @page="onLargestPage"
-              >
-                <Column field="municipality" :header="t('dashboard.municipality')">
-                  <template #body="{ data }">
-                    <RouterLink :to="`/obcine/${data.slug}`" class="table-link">
-                      {{ data.municipality }}
-                    </RouterLink>
-                  </template>
-                </Column>
-                <Column field="region" :header="t('map.region')" />
-                <Column field="count" :header="t('dashboard.transactions')">
-                  <template #body="{ data }">{{ formatNumber(data.count) }}</template>
-                </Column>
-                <Column field="median_price_per_m2" header="€/m²">
-                  <template #body="{ data }">
-                    {{ formatCurrency(data.median_price_per_m2) }}
-                  </template>
-                </Column>
-                <Column :header="t('common.actions')">
-                  <template #body="{ data }">
-                    <div class="row-actions">
-                      <Button
-                        size="small"
-                        severity="secondary"
-                        text
-                        icon="pi pi-bookmark"
-                        @click="addMunicipalityToWatchlist(data)"
-                      />
-                      <Button
-                        size="small"
-                        severity="secondary"
-                        text
-                        icon="pi pi-plus-circle"
-                        @click="addMunicipalityToCompare(data)"
-                      />
-                    </div>
-                  </template>
-                </Column>
-              </DataTable>
-            </section>
-
-            <section class="panel">
-              <div class="panel-head">
-                <div>
-                  <p class="eyebrow subtle">{{ t('dashboard.priceLeaders') }}</p>
-                  <h2>{{ t('market.priceLeadersTitle') }}</h2>
-                </div>
-              </div>
-              <DataTable
-                :value="priceLeaders.items"
-                lazy
-                paginator
-                :rows="priceLeaders.page_size"
-                :first="(priceLeaders.page - 1) * priceLeaders.page_size"
-                :total-records="priceLeaders.total"
-                size="small"
-                striped-rows
-                responsive-layout="scroll"
-                table-style="min-width: 100%"
-                @page="onLeadersPage"
-              >
-                <Column field="municipality" :header="t('dashboard.municipality')">
-                  <template #body="{ data }">
-                    <RouterLink :to="`/obcine/${data.slug}`" class="table-link">
-                      {{ data.municipality }}
-                    </RouterLink>
-                  </template>
-                </Column>
-                <Column field="region" :header="t('map.region')" />
-                <Column field="median_price_per_m2" header="€/m²">
-                  <template #body="{ data }">
-                    {{ formatCurrency(data.median_price_per_m2) }}
-                  </template>
-                </Column>
-                <Column field="count" :header="t('dashboard.transactions')">
-                  <template #body="{ data }">{{ formatNumber(data.count) }}</template>
-                </Column>
-                <Column :header="t('common.actions')">
-                  <template #body="{ data }">
-                    <div class="row-actions">
-                      <Button
-                        size="small"
-                        severity="secondary"
-                        text
-                        icon="pi pi-bookmark"
-                        @click="addMunicipalityToWatchlist(data)"
-                      />
-                      <Button
-                        size="small"
-                        severity="secondary"
-                        text
-                        icon="pi pi-plus-circle"
-                        @click="addMunicipalityToCompare(data)"
-                      />
-                    </div>
-                  </template>
-                </Column>
-              </DataTable>
-            </section>
-          </div>
-
-          <section class="panel">
-            <div class="panel-head">
-              <div>
-                <p class="eyebrow subtle">{{ t('market.featureImportance') }}</p>
-                <h2>{{ t('market.featureImportanceDesc') }}</h2>
-              </div>
             </div>
-            <FeatureImportanceChart
-              v-if="stats.featureImportance?.length"
-              :features="stats.featureImportance"
-              :limit="15"
-            />
-            <EmptyState v-else :message="t('common.noData')" />
+
+            <div class="market-grid market-grid--overview">
+              <MarketSectionCard
+                :eyebrow="t('dashboard.largestMarkets')"
+                :title="t('market.largestMarketsTitle')"
+                compact
+              >
+                <MarketStateFrame
+                  :loading="largestMarketsLoading"
+                  :error="largestMarketsError"
+                  :has-data="(largestMarkets.items || []).length > 0"
+                >
+                  <template #actions>
+                    <Button
+                      size="small"
+                      severity="secondary"
+                      outlined
+                      icon="pi pi-refresh"
+                      :label="t('common.retry')"
+                      @click="loadLargestMarkets"
+                    />
+                  </template>
+                  <DataTable
+                    :value="largestMarkets.items"
+                    lazy
+                    paginator
+                    :rows="largestMarkets.page_size"
+                    :first="(largestMarkets.page - 1) * largestMarkets.page_size"
+                    :total-records="largestMarkets.total"
+                    size="small"
+                    striped-rows
+                    responsive-layout="scroll"
+                    table-style="min-width: 100%"
+                    @page="onLargestPage"
+                  >
+                    <Column field="municipality" :header="t('dashboard.municipality')">
+                      <template #body="{ data }">
+                        <RouterLink :to="`/obcine/${data.slug}`" class="table-link">
+                          {{ data.municipality }}
+                        </RouterLink>
+                      </template>
+                    </Column>
+                    <Column field="region" :header="t('map.region')" />
+                    <Column field="count" :header="t('dashboard.transactions')">
+                      <template #body="{ data }">{{ formatNumber(data.count) }}</template>
+                    </Column>
+                    <Column field="median_price_per_m2" :header="t('dashboard.pricePerM2')">
+                      <template #body="{ data }">
+                        {{ formatCurrency(data.median_price_per_m2) }}
+                      </template>
+                    </Column>
+                    <Column :header="t('common.actions')">
+                      <template #body="{ data }">
+                        <div class="row-actions">
+                          <Button
+                            size="small"
+                            severity="secondary"
+                            text
+                            icon="pi pi-bookmark"
+                            :aria-label="t('workbench.watch')"
+                            @click="addMunicipalityToWatchlist(data)"
+                          />
+                          <Button
+                            size="small"
+                            severity="secondary"
+                            text
+                            icon="pi pi-plus-circle"
+                            :aria-label="t('workbench.compare')"
+                            @click="addMunicipalityToCompare(data)"
+                          />
+                        </div>
+                      </template>
+                    </Column>
+                  </DataTable>
+                </MarketStateFrame>
+              </MarketSectionCard>
+
+              <MarketSectionCard
+                featured
+                :eyebrow="t('dashboard.priceLeaders')"
+                :title="t('market.priceLeadersTitle')"
+                compact
+              >
+                <MarketStateFrame
+                  :loading="priceLeadersLoading"
+                  :error="priceLeadersError"
+                  :has-data="(priceLeaders.items || []).length > 0"
+                >
+                  <template #actions>
+                    <Button
+                      size="small"
+                      severity="secondary"
+                      outlined
+                      icon="pi pi-refresh"
+                      :label="t('common.retry')"
+                      @click="loadPriceLeaders"
+                    />
+                  </template>
+                  <DataTable
+                    :value="priceLeaders.items"
+                    lazy
+                    paginator
+                    :rows="priceLeaders.page_size"
+                    :first="(priceLeaders.page - 1) * priceLeaders.page_size"
+                    :total-records="priceLeaders.total"
+                    size="small"
+                    striped-rows
+                    responsive-layout="scroll"
+                    table-style="min-width: 100%"
+                    @page="onLeadersPage"
+                  >
+                    <Column field="municipality" :header="t('dashboard.municipality')">
+                      <template #body="{ data }">
+                        <RouterLink :to="`/obcine/${data.slug}`" class="table-link">
+                          {{ data.municipality }}
+                        </RouterLink>
+                      </template>
+                    </Column>
+                    <Column field="region" :header="t('map.region')" />
+                    <Column field="median_price_per_m2" :header="t('dashboard.pricePerM2')">
+                      <template #body="{ data }">
+                        {{ formatCurrency(data.median_price_per_m2) }}
+                      </template>
+                    </Column>
+                    <Column field="count" :header="t('dashboard.transactions')">
+                      <template #body="{ data }">{{ formatNumber(data.count) }}</template>
+                    </Column>
+                    <Column :header="t('common.actions')">
+                      <template #body="{ data }">
+                        <div class="row-actions">
+                          <Button
+                            size="small"
+                            severity="secondary"
+                            text
+                            icon="pi pi-bookmark"
+                            :aria-label="t('workbench.watch')"
+                            @click="addMunicipalityToWatchlist(data)"
+                          />
+                          <Button
+                            size="small"
+                            severity="secondary"
+                            text
+                            icon="pi pi-plus-circle"
+                            :aria-label="t('workbench.compare')"
+                            @click="addMunicipalityToCompare(data)"
+                          />
+                        </div>
+                      </template>
+                    </Column>
+                  </DataTable>
+                </MarketStateFrame>
+              </MarketSectionCard>
+            </div>
           </section>
-        </section>
-      </TabPanel>
+        </TabPanel>
 
-      <TabPanel value="3" :header="t('market.tabDistribution')">
-        <section class="tab-content">
-          <div class="toolbar">
-            <InputNumber v-model="distributionBins" :min="5" :max="50" :step="5" />
-          </div>
-          <div class="grid-two">
-            <section class="panel">
-              <div class="panel-head">
-                <div>
-                  <p class="eyebrow subtle">{{ t('market.distributionTitle') }}</p>
-                  <h2>{{ t('market.distributionSubtitle') }}</h2>
-                </div>
-              </div>
-              <PriceDistributionChart
-                v-if="distributionData?.bins?.length"
-                :bins="distributionData.bins"
-                :counts="distributionData.counts"
-                :bin-labels="distributionData.bin_labels"
-              />
-              <EmptyState v-else :message="t('common.noData')" />
-            </section>
+        <TabPanel value="distribution">
+          <section class="market-tab-content">
+            <div class="market-toolbar market-toolbar--compact">
+              <InputNumber v-model="distributionBins" :min="5" :max="50" :step="5" />
+            </div>
 
-            <section class="panel">
-              <div class="panel-head">
-                <div>
-                  <p class="eyebrow subtle">{{ t('market.propertyMixTitle') }}</p>
-                  <h2>{{ t('market.propertyMixSubtitle') }}</h2>
-                </div>
-              </div>
-              <PropertyTypePieChart
-                v-if="marketHome.property_type_mix?.length"
-                :items="marketHome.property_type_mix"
-              />
-              <EmptyState v-else :message="t('common.noData')" />
-            </section>
-          </div>
-        </section>
-      </TabPanel>
-    </TabView>
+            <div class="market-grid market-grid--overview">
+              <MarketSectionCard
+                featured
+                :eyebrow="t('market.distributionTitle')"
+                :title="t('market.distributionSubtitle')"
+              >
+                <MarketStateFrame
+                  :loading="distributionLoading"
+                  :error="distributionError"
+                  :has-data="Boolean(distributionData?.bins?.length)"
+                >
+                  <template #actions>
+                    <Button
+                      size="small"
+                      severity="secondary"
+                      outlined
+                      icon="pi pi-refresh"
+                      :label="t('common.retry')"
+                      @click="loadDistribution"
+                    />
+                  </template>
+                  <PriceDistributionChart
+                    v-if="distributionData"
+                    :bins="distributionData.bins"
+                    :counts="distributionData.counts"
+                    :bin-labels="distributionData.bin_labels"
+                  />
+                </MarketStateFrame>
+              </MarketSectionCard>
+
+              <MarketSectionCard
+                :eyebrow="t('market.propertyMixTitle')"
+                :title="t('market.propertyMixSubtitle')"
+                compact
+              >
+                <MarketStateFrame
+                  :loading="marketLoading"
+                  :error="marketError"
+                  :has-data="(marketHome.property_type_mix || []).length > 0"
+                >
+                  <template #actions>
+                    <Button
+                      size="small"
+                      severity="secondary"
+                      outlined
+                      icon="pi pi-refresh"
+                      :label="t('common.retry')"
+                      @click="loadMarketHome"
+                    />
+                  </template>
+                  <PropertyTypePieChart :items="marketHome.property_type_mix || []" />
+                </MarketStateFrame>
+              </MarketSectionCard>
+            </div>
+          </section>
+        </TabPanel>
+      </TabPanels>
+    </Tabs>
   </div>
 </template>
 
 <style scoped>
   .market-page,
-  .tab-content,
-  .hero-summary,
-  .filter-grid,
-  .grid-two {
+  .market-tab-content,
+  .market-grid,
+  .market-rank-list {
     display: grid;
     gap: 1rem;
   }
+
   .market-page {
-    gap: 1.2rem;
+    gap: var(--space-section);
   }
-  .hero-shell,
-  .panel,
-  .state-card {
-    border: 1px solid var(--border);
-    border-radius: 1.6rem;
-  }
-  .hero-shell,
-  .panel {
+
+  .market-hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(340px, 0.8fr);
+    gap: 1rem;
+    padding: clamp(1.1rem, 2vw, 1.55rem);
+    border: 1px solid color-mix(in srgb, var(--border) 58%, var(--primary) 42%);
+    border-radius: calc(var(--radius-lg) + 0.45rem);
     background:
-      linear-gradient(180deg, var(--surface-soft-subtle), var(--surface-soft)), var(--surface-soft);
-    box-shadow: var(--shadow-sm);
-    padding: 1.25rem;
-  }
-  .hero-shell {
-    background:
+      radial-gradient(
+        circle at top right,
+        color-mix(in srgb, var(--primary) 16%, transparent),
+        transparent 28%
+      ),
+      radial-gradient(
+        circle at bottom left,
+        color-mix(in srgb, var(--primary) 10%, transparent),
+        transparent 26%
+      ),
       linear-gradient(
         180deg,
-        color-mix(in srgb, var(--primary-overlay) 76%, transparent),
-        var(--surface-soft)
-      ),
-      var(--surface-soft);
+        color-mix(in srgb, var(--surface-hero) 88%, var(--primary) 12%),
+        var(--surface-panel)
+      );
+    box-shadow: 0 18px 42px color-mix(in srgb, var(--shadow-color) 10%, transparent);
   }
-  .hero-summary {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    margin-top: 1rem;
-  }
-  .filter-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    align-items: end;
-  }
-  .grid-two {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .field-inline {
+
+  .market-hero__copy {
     display: grid;
-    gap: 0.35rem;
+    gap: 1rem;
+    align-content: start;
   }
-  .field-inline span {
-    font-size: 0.82rem;
-    color: var(--text-muted);
-    font-weight: 700;
-  }
-  .search-field {
-    grid-column: span 2;
-  }
-  .filter-actions,
-  .toolbar,
-  .panel-head,
+
+  .market-hero__actions,
+  .market-hero__status,
+  .market-filters__actions,
+  .market-toolbar,
   .row-actions {
     display: flex;
-    gap: 0.8rem;
     flex-wrap: wrap;
+    gap: 0.75rem;
+    align-items: center;
   }
-  .filter-actions {
-    align-items: end;
+
+  .market-hero__status {
+    padding: 0.85rem 1rem;
+    border: 1px solid color-mix(in srgb, var(--border) 64%, var(--primary) 36%);
+    border-radius: var(--radius-md);
+    background: color-mix(in srgb, var(--surface-card) 90%, var(--primary) 10%);
+    box-shadow: inset 0 1px 0 var(--glass-highlight);
+  }
+
+  .market-hero__status span {
+    color: var(--text-muted);
+    font-size: 0.86rem;
+    font-weight: 700;
+  }
+
+  .market-hero__metrics {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+    gap: 0.85rem;
+    align-self: stretch;
+  }
+
+  .market-filters__actions {
     justify-content: flex-end;
   }
-  .panel-head {
-    align-items: flex-start;
-    justify-content: space-between;
-    margin-bottom: 0.85rem;
+
+  .market-filters__search {
+    grid-column: span 2;
   }
-  .panel h2 {
-    margin: 0;
-    font-family: var(--font-display);
-    font-size: clamp(1.12rem, 1.8vw, 1.48rem);
-    line-height: 1.08;
-  }
-  .eyebrow.subtle {
-    color: var(--text-soft);
-  }
-  .ranking-list {
+
+  .market-tabs {
     display: grid;
-    gap: 0.75rem;
+    gap: var(--space-grid);
   }
-  .ranking-row,
-  .hero-link,
+
+  .market-tabs :deep(.p-tablist) {
+    padding: 0.35rem;
+    border: 1px solid color-mix(in srgb, var(--border) 68%, var(--primary) 14%);
+    border-radius: var(--radius-lg);
+    background: color-mix(in srgb, var(--surface-strong) 92%, var(--primary-overlay) 8%);
+    box-shadow: 0 10px 22px color-mix(in srgb, var(--shadow-color) 8%, transparent);
+    overflow-x: auto;
+  }
+
+  .market-tabs :deep(.p-tabpanels) {
+    padding-top: 0.15rem;
+  }
+
+  .market-grid--overview,
+  .market-grid--secondary {
+    grid-template-columns: 1fr;
+  }
+
+  .market-rank-row,
   .table-link {
     text-decoration: none;
     color: inherit;
   }
-  .ranking-row {
+
+  .market-rank-row {
     display: grid;
-    grid-template-columns: 1fr auto;
-    gap: 0.8rem;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
-    padding: 0.9rem 1rem;
+    gap: 0.8rem;
+    padding: 0.85rem 0.95rem;
     border: 1px solid color-mix(in srgb, var(--border) 68%, var(--primary) 32%);
-    border-radius: 1.15rem;
-    background: color-mix(in srgb, var(--surface-strong) 88%, var(--overlay-strong) 12%);
+    border-radius: var(--radius-sm);
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface-strong) 96%, var(--primary-overlay) 4%),
+      color-mix(in srgb, var(--surface-subtle) 92%, var(--overlay-strong) 8%)
+    );
     transition:
       transform 0.16s ease,
       border-color 0.16s ease,
       box-shadow 0.16s ease;
   }
-  .ranking-row:hover {
+
+  .market-rank-row:hover {
     transform: translateY(-1px);
     border-color: color-mix(in srgb, var(--primary) 34%, transparent);
-    box-shadow: 0 16px 28px color-mix(in srgb, var(--shadow-color) 12%, transparent);
+    box-shadow: 0 16px 28px color-mix(in srgb, var(--shadow-color) 14%, transparent);
   }
-  .state-card {
-    padding: 1.1rem 1.2rem;
+
+  .market-rank-index {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: var(--radius-xs);
+    background: color-mix(in srgb, var(--primary) 12%, transparent);
+    color: var(--primary);
+    font-weight: 800;
   }
-  @media (max-width: 1080px) {
-    .filter-grid,
-    .grid-two {
+
+  .market-rank-copy strong {
+    display: block;
+    font-size: 0.95rem;
+  }
+
+  .market-rank-copy p {
+    margin: 0.2rem 0 0;
+  }
+
+  .hero-link--primary {
+    box-shadow: 0 18px 30px color-mix(in srgb, var(--primary) 20%, transparent);
+  }
+
+  .table-link {
+    font-weight: 700;
+  }
+
+  @media (max-width: 1180px) {
+    .market-hero,
+    .market-grid--overview,
+    .market-grid--secondary {
       grid-template-columns: 1fr;
     }
-    .search-field {
+  }
+
+  @media (max-width: 1080px) {
+    .market-filters__search {
       grid-column: span 1;
     }
   }
+
   @media (max-width: 720px) {
-    .hero-summary {
+    .market-hero {
+      padding: 0.9rem;
+    }
+
+    .market-hero__metrics {
       grid-template-columns: 1fr;
+    }
+
+    .market-filters__actions,
+    .market-toolbar {
+      justify-content: flex-start;
+      width: 100%;
+    }
+
+    .market-hero__actions :deep(.p-button),
+    .market-filters__actions :deep(.p-button),
+    .market-toolbar :deep(.p-button),
+    .market-toolbar :deep(.p-select),
+    .market-toolbar :deep(.p-inputnumber) {
+      width: 100%;
+    }
+
+    .market-rank-row {
+      grid-template-columns: auto minmax(0, 1fr);
+    }
+
+    .market-rank-row :deep(.p-tag) {
+      grid-column: 1 / -1;
+      justify-self: start;
     }
   }
 </style>

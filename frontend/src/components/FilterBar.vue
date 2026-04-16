@@ -21,7 +21,11 @@
     border-radius: var(--radius-md);
     border: 1px solid color-mix(in srgb, var(--border) 72%, var(--primary) 28%);
     background:
-      linear-gradient(180deg, color-mix(in srgb, var(--surface-card-strong) 98%, transparent), transparent 120%),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface-card-strong) 98%, transparent),
+        transparent 120%
+      ),
       var(--surface-panel);
     box-shadow:
       inset 0 1px 0 var(--content-glow),

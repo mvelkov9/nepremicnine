@@ -103,21 +103,26 @@
   .hero-metrics,
   .hero-nav {
     display: grid;
-    gap: 1rem;
+    gap: 0.9rem;
   }
 
   .admin-workspace-hero {
-    padding: 1.2rem;
-    border: 1px solid var(--border);
-    border-radius: 1.75rem;
+    padding: 1.25rem;
+    border: 1px solid color-mix(in srgb, var(--primary-border) 36%, var(--border) 64%);
+    border-radius: var(--radius-lg);
     background:
-      linear-gradient(
-        140deg,
-        color-mix(in srgb, var(--surface-strong) 78%, var(--primary) 22%),
-        color-mix(in srgb, var(--surface-soft) 86%, transparent)
+      radial-gradient(
+        circle at top right,
+        color-mix(in srgb, var(--primary) 18%, transparent),
+        transparent 30%
       ),
-      var(--surface-soft);
-    box-shadow: var(--shadow-sm);
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface-card-strong) 95%, transparent),
+        transparent 120%
+      ),
+      var(--surface-hero, var(--surface-soft));
+    box-shadow: var(--hero-shadow);
   }
 
   .hero-shell {
@@ -129,20 +134,22 @@
 
   .hero-copy {
     display: grid;
-    gap: 0.55rem;
-    max-width: 68ch;
+    gap: 0.45rem;
+    max-width: 62ch;
   }
 
   .hero-copy h1 {
     margin: 0;
     font-family: var(--font-display);
-    font-size: clamp(1.7rem, 3vw, 2.5rem);
-    line-height: 1.02;
+    font-size: clamp(1.6rem, 2.75vw, 2.3rem);
+    line-height: 0.98;
   }
 
   .hero-copy p {
     margin: 0;
-    color: var(--text-muted);
+    color: var(--text-soft);
+    font-size: 0.98rem;
+    line-height: 1.55;
   }
 
   .hero-eyebrow-row {
@@ -155,7 +162,7 @@
   .eyebrow {
     display: inline-flex;
     color: var(--primary-strong);
-    font-size: 0.76rem;
+    font-size: var(--text-xs);
     font-weight: 800;
     letter-spacing: 0.16em;
     text-transform: uppercase;
@@ -164,7 +171,7 @@
   .hero-actions {
     display: flex;
     align-items: center;
-    gap: 0.65rem;
+    gap: 0.5rem;
     flex-wrap: wrap;
   }
 
@@ -175,39 +182,46 @@
   .metric-pill {
     display: grid;
     gap: 0.28rem;
-    padding: 0.95rem 1rem;
-    border-radius: 1.15rem;
+    padding: 0.85rem 0.95rem;
+    border-radius: var(--radius-sm);
     border: 1px solid color-mix(in srgb, var(--border) 72%, var(--primary) 28%);
-    background: color-mix(in srgb, var(--surface-strong) 88%, white 12%);
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface-card-strong) 98%, transparent),
+        transparent 120%
+      ),
+      var(--surface-subtle);
+    box-shadow: var(--shadow-sm);
   }
 
   .metric-pill span,
   .metric-pill small {
-    color: var(--text-soft);
+    color: var(--text-muted);
   }
 
   .metric-pill span {
-    font-size: 0.76rem;
+    font-size: var(--text-xs);
     font-weight: 800;
     letter-spacing: 0.12em;
     text-transform: uppercase;
   }
 
   .metric-pill strong {
-    font-size: 1.2rem;
+    font-size: 1.1rem;
     line-height: 1.1;
   }
 
   .metric-pill small {
-    font-size: 0.82rem;
+    font-size: var(--text-sm);
   }
 
   .metric-pill.tone-success {
-    background: color-mix(in srgb, var(--surface-strong) 80%, var(--success) 20%);
+    background: color-mix(in srgb, var(--surface-subtle) 88%, var(--success) 12%);
   }
 
   .metric-pill.tone-warning {
-    background: color-mix(in srgb, var(--surface-strong) 84%, var(--warning) 16%);
+    background: color-mix(in srgb, var(--surface-subtle) 88%, var(--warning) 12%);
   }
 
   .hero-nav {
@@ -219,10 +233,16 @@
     grid-template-columns: auto 1fr auto;
     gap: 0.8rem;
     align-items: start;
-    padding: 0.9rem 1rem;
-    border-radius: 1.2rem;
-    border: 1px solid color-mix(in srgb, var(--border) 68%, var(--primary) 32%);
-    background: color-mix(in srgb, var(--surface-soft) 90%, white 10%);
+    padding: 0.85rem 0.95rem;
+    border-radius: var(--radius-md);
+    border: 1px solid color-mix(in srgb, var(--border) 72%, var(--primary) 28%);
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface-card-strong) 94%, transparent),
+        transparent 120%
+      ),
+      var(--surface-subtle);
     text-decoration: none;
     color: inherit;
     transition:
@@ -234,17 +254,19 @@
   .hero-nav-card:hover {
     transform: translateY(-1px);
     border-color: color-mix(in srgb, var(--primary) 42%, transparent);
-    box-shadow: 0 16px 28px color-mix(in srgb, var(--shadow-color) 12%, transparent);
+    box-shadow: var(--accent-shadow);
   }
 
   .hero-nav-card.active {
-    background: color-mix(in srgb, var(--surface-strong) 78%, var(--primary) 22%);
+    background:
+      linear-gradient(135deg, color-mix(in srgb, var(--primary) 14%, transparent), transparent 40%),
+      color-mix(in srgb, var(--surface-subtle) 84%, var(--primary) 16%);
     border-color: color-mix(in srgb, var(--primary) 56%, transparent);
   }
 
   .hero-nav-icon {
-    width: 2.3rem;
-    height: 2.3rem;
+    width: 2rem;
+    height: 2rem;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -263,7 +285,7 @@
   }
 
   .hero-nav-copy small {
-    color: var(--text-muted);
+    color: var(--text-soft);
     line-height: 1.35;
   }
 

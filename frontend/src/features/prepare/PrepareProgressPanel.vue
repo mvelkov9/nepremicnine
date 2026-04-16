@@ -60,7 +60,12 @@
 
     <div class="prepare-timeline-shell">
       <div class="prepare-timeline">
-        <div v-for="step in timeline" :key="step.key" class="prepare-timeline-step" :class="`prepare-timeline-step--${step.state}`">
+        <div
+          v-for="step in timeline"
+          :key="step.key"
+          class="prepare-timeline-step"
+          :class="`prepare-timeline-step--${step.state}`"
+        >
           <span class="prepare-timeline-dot" />
           <div class="prepare-timeline-copy">
             <div class="prepare-timeline-label-row">
@@ -88,7 +93,14 @@
     <div v-if="error" class="state-card state-card-stack" role="alert">
       <EmptyState icon="pi pi-exclamation-triangle" :message="error" />
       <div class="state-card-actions">
-        <Button size="small" severity="secondary" outlined icon="pi pi-refresh" :label="t('common.retry')" @click="emit('retry')" />
+        <Button
+          size="small"
+          severity="secondary"
+          outlined
+          icon="pi pi-refresh"
+          :label="t('common.retry')"
+          @click="emit('retry')"
+        />
       </div>
     </div>
   </section>
@@ -102,7 +114,11 @@
     border-radius: var(--radius-md);
     border: 1px solid color-mix(in srgb, var(--border) 78%, var(--content-border-strong) 22%);
     background:
-      linear-gradient(180deg, color-mix(in srgb, var(--surface-card-strong) 96%, transparent), transparent 120%),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface-card-strong) 96%, transparent),
+        transparent 120%
+      ),
       var(--surface-panel);
     box-shadow:
       inset 0 1px 0 var(--content-glow),
@@ -161,7 +177,11 @@
     border-radius: var(--radius-sm);
     border: 1px solid color-mix(in srgb, var(--border) 82%, var(--content-border-strong) 18%);
     background:
-      linear-gradient(180deg, color-mix(in srgb, var(--surface-card-strong) 96%, transparent), transparent 120%),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface-card-strong) 96%, transparent),
+        transparent 120%
+      ),
       color-mix(in srgb, var(--surface-muted) 76%, var(--surface));
   }
 
