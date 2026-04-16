@@ -6,7 +6,7 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 
 | Item | Value |
 |------|-------|
-| **Version** | 0.14.0 |
+| **Version** | 0.16.0 |
 | **Repo** | [github.com/mvelkov9/nepremicnine](https://github.com/mvelkov9/nepremicnine) |
 | **Backend** | FastAPI + Python 3.13 + PostgreSQL 17 + SQLAlchemy 2.x async |
 | **Frontend** | Vue 3 Composition API + TypeScript + Pinia + VueUse + pnpm 9, Vite 8 |
@@ -38,8 +38,40 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 | Phase 22 | Data quality, map UX, and PrimeVue modernization: canonical municipality coverage, direct portal links, centered map modal, cached analytics, admin quality summary | ✅ Complete | working tree |
 | [Phase 23](PHASE_23_MODERNIZATION.md) | Architecture modernization: TypeScript, VueUse, Vitest, Playwright E2E, DB optimization, API security hardening, performance benchmarking, accessibility audit, CI/CD overhaul, Prometheus monitoring | ✅ Complete | working tree |
 | [Phase 24](PHASE_24_REDESIGN.md) | Full frontend redesign: PrimeVue component migration, layout decomposition, dark mode fixes, CSS cleanup | ✅ Complete | working tree |
+| [Phase 25](PHASE_25_PRODUCT_RESET.md) | Product UX reset: benchmark proof workflow, server-side admin/data tables, workspace cleanup, shared reference caching | ✅ Complete | working tree |
+| Phase 26 | ML v6–v9 training iterations: GPU training, ev_benchmark removal, per-type feature correlation audit, sub-segmentation infrastructure, v9 model deployment | ✅ Complete | working tree |
 
 ## Changelog
+
+### v0.16.0
+
+- **ML: Model v9 — correlation-based feature audit + sub-segmentation**: Comprehensive v8→v9 training iteration using GPU (71 min, 1 GPU, 158 976 rows)
+- **ML: Feature restoration**: v8 pruned features using CatBoost importance alone, which conflated redundancy with lack of signal. v9 re-added all features with Spearman |r| ≥ 0.15 against log(€/m²). Biggest miss was parcela where ALL `gji_*_nearby_100m` had r = 0.44–0.66 but were excluded. Net gains: industrijski +3.5 R² pts, poslovni_prostor +1.6 R² pts.
+- **ML: Sub-segmentation infrastructure**: Extended `_market_subtype_key_from_values` and `_build_market_subtype_series` to support garaza (by `vrsta_dela_stavbe` → aboveground/underground, ~50/50 split, 117pp spread) and hisa (by `ev_id_konstrukcija` → brick/concrete/wood/mixed/prefab, 81pp spread). Added both to `TYPE_SPECIALIST_MODEL_PRIORS` with `enable_subtype_family: True`. Finding: sub-models were not selected over parent per-type models because CatBoost already captures these splits via the feature itself — splitting data only hurts via sample size.
+- **ML: New features**: Added `gji_zeleznice_nearby_100m` (r = 0.12–0.24, stronger than 1000m variant) and `ev_id_konstrukcija` (r = +0.165 on stanovanje) to `NUMERIC_FEATURES`.
+- **ML: Analysis tooling**: Added `backend/scripts/full_correlation_analysis.py` (Spearman audit against all 129 CSV cols), `check_subsegment_viability.py` (fill rates, bucket counts, price spreads), `analyze_v7_feature_importance.py` (CatBoost gain extraction), `run_optimized_train.py` (GPU training launcher).
+- **ML: v9 results** (routed, 2020–2026, GPU):
+  | Type | v8 R² | v9 R² | Δ R² | v8 MAPE | v9 MAPE |
+  |------|-------|-------|------|---------|---------|
+  | stanovanje | 0.753 | 0.753 | 0.000 | 24.2% | 24.3% |
+  | hisa | 0.743 | 0.747 | +0.004 | 34.8% | 34.9% |
+  | poslovni_prostor | 0.694 | 0.710 | **+0.016** | 35.9% | 35.5% |
+  | parcela | 0.699 | 0.698 | -0.001 | 46.1% | 45.8% |
+  | garaza | 0.569 | 0.561 | -0.007 | 39.5% | 40.3% |
+  | kmetijsko | 0.520 | 0.514 | -0.006 | 50.3% | 50.7% |
+  | industrijski | 0.564 | 0.599 | **+0.035** | 52.7% | 52.8% |
+  | turisticni | 0.618 | 0.617 | 0.000 | 36.1% | 36.1% |
+  | gostinstvo | 0.539 | 0.541 | +0.002 | 40.5% | 40.6% |
+- **Version**: 0.15.0 → 0.16.0
+
+### v0.15.0
+
+- **Proof workflow**: Added dedicated viewer and admin benchmark routes (`/dokaz`, `/admin/dokaz`) backed by new GURS comparison endpoints so the app can show where the model beats GURS on shared holdout coverage, by how much, and on which transactions
+- **Server-side tables**: Standardized benchmark transactions, admin users, and the dataset library around route-synced server pagination, sorting, search, export, and filter state
+- **Performance**: Added shared reference-data caching across key viewer pages, stale-request cancellation for stats explorers, and removed wasteful full-list fetches from admin summary screens
+- **Frontend modernization**: Replaced remaining legacy `TabView` usage in the main explorer pages with PrimeVue `Tabs`, improved global tabs/table/focus styling, and refreshed the login/product shell
+- **Navigation cleanup**: Demoted `Ukazi`, `Pladenj`, and `Aktivnosti` into a cleaner workspace entry while making the new proof workflow discoverable from dashboard, diagnostics, and admin navigation
+- **Version**: 0.14.0 -> 0.15.0
 
 ### v0.14.0
 

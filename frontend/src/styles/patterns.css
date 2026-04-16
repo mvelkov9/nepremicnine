@@ -1,0 +1,550 @@
+/* ----------------------------------------------------------------
+   Typography Patterns
+   ---------------------------------------------------------------- */
+
+.eyebrow,
+.hero-kicker,
+.showcase-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+  font-size: 0.72rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--primary);
+  font-weight: 800;
+}
+
+.eyebrow.subtle {
+  color: var(--text-muted);
+}
+
+.panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.05rem;
+}
+
+.panel-head.compact {
+  align-items: center;
+}
+
+.panel-head h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.04rem, 1.6vw, 1.32rem);
+  line-height: 1.08;
+  text-wrap: balance;
+}
+
+.field-inline {
+  display: grid;
+  gap: 0.42rem;
+  align-content: start;
+}
+
+.field-inline span {
+  font-size: var(--text-sm);
+  color: var(--text-soft);
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.page-subtitle {
+  margin: 0.55rem 0 0;
+  max-width: 44rem;
+  color: var(--text-muted);
+  font-size: 0.92rem;
+}
+
+.page-title,
+.card h2 {
+  margin: 0 0 1rem;
+  font-size: 1.18rem;
+  line-height: 1.1;
+}
+
+.card-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+/* ----------------------------------------------------------------
+   Cards, Panels, Heroes
+   ---------------------------------------------------------------- */
+
+.card,
+.hero-panel,
+.spotlight-card,
+.action-tile,
+.selected-source-card,
+.source-option,
+.mini-status-card {
+  background: var(--surface-panel);
+  border: 1px solid color-mix(in srgb, var(--border) 82%, var(--content-border-strong) 18%);
+  box-shadow: var(--shadow-sm);
+}
+
+.card {
+  border-radius: var(--radius-md);
+  padding: 1.25rem;
+  box-shadow:
+    inset 0 1px 0 var(--content-glow),
+    var(--shadow-sm);
+}
+
+.panel,
+.state-card {
+  border: 1px solid color-mix(in srgb, var(--border) 74%, var(--content-border-strong) 26%);
+  border-radius: var(--radius-md);
+}
+
+.panel {
+  padding: 1.4rem;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-card-strong) 98%, transparent), transparent 120%),
+    var(--surface-panel);
+  box-shadow:
+    inset 0 1px 0 var(--content-glow),
+    var(--shadow-sm);
+}
+
+.state-card {
+  padding: var(--space-panel-sm) 1.2rem;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--primary-overlay) 18%, transparent), transparent 45%),
+    color-mix(in srgb, var(--surface-panel) 92%, var(--primary) 8%);
+  box-shadow:
+    inset 0 1px 0 var(--content-glow),
+    var(--shadow-sm);
+}
+
+.hero-shell,
+.filter-shell {
+  border: 1px solid color-mix(in srgb, var(--primary-border) 38%, var(--border) 62%);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem;
+  background:
+    radial-gradient(circle at top right, color-mix(in srgb, var(--primary-overlay) 78%, transparent), transparent 32%),
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-card-strong) 96%, transparent), transparent 130%),
+    var(--surface-hero);
+  box-shadow: var(--hero-shadow);
+}
+
+.hero-panel {
+  border-radius: var(--radius-lg);
+  padding: 1.3rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
+  gap: 1.15rem;
+  margin-bottom: 1rem;
+}
+
+.hero-copy h2,
+.training-hero-copy h2 {
+  margin: 0.45rem 0 0.65rem;
+  font-family: var(--font-display);
+  font-size: clamp(1.34rem, 2.2vw, 1.72rem);
+  line-height: 1.06;
+  letter-spacing: -0.04em;
+}
+
+.hero-copy p,
+.training-hero-copy p {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 0.98rem;
+}
+
+.hero-actions-grid,
+.spotlight-grid {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.hero-actions-grid {
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+}
+
+.action-tile,
+.spotlight-card,
+.mini-status-card,
+.selected-source-card,
+.source-option {
+  border-radius: var(--radius-sm);
+  padding: 0.95rem 1rem;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-card-strong) 96%, transparent), transparent 120%),
+    var(--surface-subtle);
+  box-shadow:
+    inset 0 1px 0 var(--content-glow),
+    0 10px 22px color-mix(in srgb, var(--shadow-color) 10%, transparent);
+}
+
+.filter-shell {
+  backdrop-filter: blur(10px);
+}
+
+.action-tile {
+  text-decoration: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  color: inherit;
+}
+
+.action-tile.compact {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.action-tile strong,
+.spotlight-card strong,
+.mini-status-card strong,
+.selected-source-card strong,
+.source-option strong {
+  font-size: 1rem;
+}
+
+.action-tile p,
+.spotlight-card p,
+.mini-status-card p,
+.selected-source-card p,
+.source-option p {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 0.9rem;
+}
+
+.spotlight-grid {
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  margin-bottom: 1rem;
+}
+
+.spotlight-grid.compact {
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+}
+
+/* ----------------------------------------------------------------
+   Flex Layouts
+   ---------------------------------------------------------------- */
+
+.filter-card {
+  margin-bottom: 1rem;
+}
+
+.filter-card-head,
+.section-head,
+.profile-header,
+.profile-preview,
+.modal-actions,
+.training-hero,
+.training-hero-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.training-hero {
+  margin-bottom: 1.3rem;
+  align-items: stretch;
+}
+
+.training-hero-copy {
+  flex: 1.15;
+}
+
+.training-hero-status {
+  flex: 1;
+  align-items: stretch;
+}
+
+.mini-status-card {
+  flex: 1;
+}
+
+.mini-status-card.ready {
+  border-color: color-mix(in srgb, var(--success) 26%, transparent);
+  box-shadow: 0 20px 40px color-mix(in srgb, var(--success) 14%, transparent);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+}
+
+/* ----------------------------------------------------------------
+   KPI & Charts
+   ---------------------------------------------------------------- */
+
+.kpi-grid {
+  display: grid;
+  gap: 0.9rem;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+}
+
+.kpi-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.95rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--border) 74%, var(--content-border-strong) 26%);
+  background: var(--surface-subtle);
+}
+
+.kpi-label {
+  color: var(--text-soft);
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 800;
+}
+
+.kpi-value {
+  font-size: clamp(1rem, 1.8vw, 1.32rem);
+  font-weight: 900;
+  letter-spacing: -0.04em;
+}
+
+.kpi-skeleton-grid {
+  display: grid;
+  gap: 0.9rem;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  margin-bottom: 1rem;
+}
+
+.charts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.1rem;
+}
+
+/* ----------------------------------------------------------------
+   Filters & Toolbars
+   ---------------------------------------------------------------- */
+
+.filter-grid {
+  display: grid;
+  gap: var(--space-grid);
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  align-items: end;
+}
+
+.filter-grid.cols-3 {
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+}
+
+.search-field {
+  width: min(100%, 22rem);
+}
+
+.filter-actions {
+  display: flex;
+  align-items: end;
+  justify-content: flex-end;
+  gap: 0.8rem;
+}
+
+.toolbar,
+.panel-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+}
+
+.panel-toolbar {
+  justify-content: space-between;
+}
+
+.toolbar-select {
+  min-width: 10rem;
+}
+
+.rows-select {
+  min-width: 5rem;
+  max-width: 6rem;
+}
+
+.row-actions {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+/* ----------------------------------------------------------------
+   Forms
+   ---------------------------------------------------------------- */
+
+.grid,
+.form-grid {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.grid-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.form-label,
+.field label {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+/* ----------------------------------------------------------------
+   Source Cards
+   ---------------------------------------------------------------- */
+
+.selected-source-card,
+.source-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.source-stack {
+  display: grid;
+  gap: 0.85rem;
+  margin-top: 1rem;
+}
+
+.source-option {
+  cursor: pointer;
+}
+
+.source-option.active {
+  border-color: color-mix(in srgb, var(--primary) 28%, transparent);
+  box-shadow: 0 20px 42px color-mix(in srgb, var(--primary) 12%, transparent);
+}
+
+.source-option input {
+  width: auto;
+  margin: 0;
+}
+
+.empty-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+/* ----------------------------------------------------------------
+   Icons
+   ---------------------------------------------------------------- */
+
+.market-icon,
+.tile-icon {
+  width: 2.2rem;
+  height: 2.2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.85rem;
+  background: var(--glass-highlight);
+  color: currentColor;
+}
+
+.tile-icon {
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  color: var(--primary);
+}
+
+.tile-icon.subtle {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.8rem;
+}
+
+/* ----------------------------------------------------------------
+   Login Page
+   ---------------------------------------------------------------- */
+
+.login-page {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(360px, 0.85fr);
+  padding: 1.5rem;
+  gap: 1rem;
+}
+
+
+/* ----------------------------------------------------------------
+   Glass Morphism — Panels & Cards
+   ---------------------------------------------------------------- */
+
+#app .card,
+#app .hero-shell,
+#app .filter-shell,
+#app .panel,
+#app .state-card,
+#app .map-hero,
+#app .filters-panel,
+#app .map-panel,
+#app .rail-panel,
+#app .detail-section,
+#app .detail-actions-panel,
+#app .municipality-hero,
+#app .result-card,
+#app .admin-hero,
+#app .admin-card,
+#app .selected-source-card,
+#app .source-option,
+#app .mini-status-card {
+  border-color: color-mix(in srgb, var(--border) 74%, var(--content-border-strong) 26%);
+}
+
+#app .field-error {
+  display: inline-block;
+  margin-top: 0.08rem;
+}
+
+/* ----------------------------------------------------------------
+   Story Block – reusable glass panel used in prediction, comparables, etc.
+   ---------------------------------------------------------------- */
+
+.story-block {
+  display: grid;
+  gap: 1rem;
+  padding: var(--space-panel-sm, 1rem) 1.05rem;
+  border: 1px solid color-mix(in srgb, var(--border) 74%, var(--primary) 26%);
+  border-radius: var(--radius-md);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-card-strong) 92%, transparent), transparent 120%),
+    var(--surface-subtle);
+  box-shadow: var(--shadow-sm);
+}
+
+.story-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.story-head h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  text-wrap: balance;
+}

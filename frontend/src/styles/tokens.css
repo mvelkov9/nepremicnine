@@ -1,0 +1,439 @@
+/* ----------------------------------------------------------------
+   Design Tokens - Light
+   ---------------------------------------------------------------- */
+
+:root {
+  color-scheme: light;
+
+  /* Background */
+  --bg: #e7edf5;
+  --bg-accent:
+    radial-gradient(circle at top left, rgb(43 100 219 / 12%), transparent 34%),
+    radial-gradient(circle at top right, rgb(10 145 148 / 9%), transparent 22%),
+    linear-gradient(180deg, #f8fbff 0%, #edf3f9 48%, #e3eaf3 100%);
+
+  /* Surfaces */
+  --surface: rgb(255 255 255 / 98%);
+  --surface-strong: #ffffff;
+  --surface-muted: #d8e1ec;
+  --surface-soft: #f1f6fb;
+  --surface-soft-strong: #fbfdff;
+  --surface-soft-muted: #e3ecf6;
+  --surface-soft-subtle: #dfe8f3;
+  --surface-elevated: rgb(255 255 255 / 96%);
+  --surface-dark: #0f172a;
+  --surface-dark-muted: rgb(148 163 184 / 18%);
+  --surface-card: rgb(255 255 255 / 96%);
+  --surface-card-strong: #ffffff;
+  --surface-panel-strong: linear-gradient(
+    180deg,
+    color-mix(in srgb, #ffffff 97%, var(--primary) 3%),
+    color-mix(in srgb, #f2f7fd 94%, var(--secondary) 6%)
+  );
+  --surface-hero: linear-gradient(
+    180deg,
+    color-mix(in srgb, #ffffff 96%, var(--primary) 4%),
+    color-mix(in srgb, #eef5fc 89%, var(--secondary) 11%)
+  );
+  --surface-panel: linear-gradient(
+    180deg,
+    color-mix(in srgb, #ffffff 100%, transparent),
+    color-mix(in srgb, #eff4fb 93%, var(--primary) 7%)
+  );
+  --surface-subtle: color-mix(in srgb, var(--surface-card-strong) 88%, var(--surface-muted) 12%);
+  --surface-panel-muted: linear-gradient(
+    180deg,
+    color-mix(in srgb, #fbfdff 93%, var(--primary) 7%),
+    color-mix(in srgb, #e8f1f8 88%, var(--secondary) 12%)
+  );
+  --surface-panel-dark: linear-gradient(180deg, #0f1727 0%, #132338 54%, #193758 100%);
+  --surface-dark-alt: #23527d;
+
+  /* Text */
+  --text: #102033;
+  --text-muted: #31465d;
+  --text-soft: #52677f;
+  --text-on-dark: #edf4ff;
+  --text-on-dark-soft: rgb(234 241 250 / 92%);
+  --text-on-dark-muted: rgb(208 219 236 / 80%);
+  --link: #1b5bd6;
+  --link-hover: #1347af;
+
+  /* Borders */
+  --border: rgb(15 23 42 / 14%);
+  --border-strong: rgb(15 23 42 / 22%);
+  --content-border-strong: rgb(255 255 255 / 82%);
+  --primary-border: color-mix(in srgb, var(--primary) 66%, white 8%);
+
+  /* Brand colors */
+  --primary: #2265e5;
+  --primary-strong: #174bb5;
+  --primary-contrast: #f8fbff;
+  --secondary: #0d9391;
+  --danger: #c93e58;
+  --success: #1e7a51;
+  --warning: #ac7120;
+
+  /* Component surfaces */
+  --control-bg: color-mix(in srgb, var(--surface-card-strong) 95%, var(--primary) 5%);
+  --control-bg-hover: color-mix(in srgb, var(--surface-card-strong) 88%, var(--primary) 12%);
+  --control-bg-active: color-mix(in srgb, var(--surface-card-strong) 82%, var(--primary) 18%);
+  --control-border: color-mix(in srgb, var(--border) 70%, var(--primary) 30%);
+  --control-border-hover: color-mix(in srgb, var(--primary) 50%, var(--border) 50%);
+  --control-text: var(--text);
+  --control-text-muted: color-mix(in srgb, var(--text-soft) 88%, var(--text) 12%);
+  --control-placeholder: color-mix(in srgb, var(--text-soft) 90%, white 10%);
+  --control-selected-bg: color-mix(in srgb, var(--primary) 22%, var(--surface-card-strong) 78%);
+  --control-selected-bg-hover: color-mix(in srgb, var(--primary) 28%, var(--surface-card-strong) 72%);
+  --control-selected-border: color-mix(in srgb, var(--primary) 58%, transparent);
+  --control-selected-text: var(--text);
+  --option-hover-bg: color-mix(in srgb, var(--surface-card-strong) 82%, var(--primary) 18%);
+  --option-selected-bg: color-mix(in srgb, var(--primary) 24%, var(--surface-card-strong) 76%);
+  --option-selected-text: var(--text);
+  --button-primary-bg: linear-gradient(180deg, #2f72f0 0%, var(--primary-strong) 100%);
+  --button-primary-bg-hover: linear-gradient(180deg, #3c7df2 0%, #1c56ca 100%);
+  --button-primary-border: color-mix(in srgb, var(--primary) 78%, transparent);
+  --button-primary-text: var(--primary-contrast);
+  --button-primary-shadow: 0 16px 32px color-mix(in srgb, var(--primary) 24%, transparent);
+  --button-secondary-bg: color-mix(in srgb, var(--surface-card-strong) 90%, var(--primary) 10%);
+  --button-secondary-bg-hover: color-mix(in srgb, var(--surface-card-strong) 82%, var(--primary) 18%);
+  --button-secondary-border: color-mix(in srgb, var(--border) 58%, var(--primary) 42%);
+  --button-secondary-text: var(--text);
+  --button-text-hover-bg: color-mix(in srgb, var(--primary) 16%, transparent);
+  --selectbutton-bg: color-mix(in srgb, var(--surface-card-strong) 90%, var(--primary) 10%);
+  --selectbutton-bg-hover: color-mix(in srgb, var(--surface-card-strong) 82%, var(--primary) 18%);
+  --selectbutton-bg-checked: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--primary) 28%, var(--surface-card-strong)),
+    color-mix(in srgb, var(--secondary) 14%, var(--surface-card-strong))
+  );
+  --selectbutton-border: color-mix(in srgb, var(--border) 56%, var(--primary) 44%);
+  --selectbutton-border-checked: color-mix(in srgb, var(--primary) 60%, transparent);
+
+  /* Overlays & glass */
+  --overlay-soft: rgb(255 255 255 / 54%);
+  --overlay-strong: rgb(255 255 255 / 72%);
+  --glass-highlight: rgb(255 255 255 / 36%);
+  --content-glow: rgb(255 255 255 / 62%);
+  --backdrop-scrim: rgb(7 14 28 / 56%);
+  --primary-overlay: rgb(36 87 214 / 14%);
+  --success-overlay: rgb(31 122 70 / 14%);
+  --warning-overlay: rgb(183 121 31 / 15%);
+
+  /* Glow & ambient */
+  --accent-glow-start: rgb(45 108 223 / 16%);
+  --accent-glow-end: rgb(20 142 144 / 12%);
+  --shell-ambient-start: rgb(45 108 223 / 15%);
+  --shell-ambient-end: rgb(20 142 144 / 12%);
+
+  /* Shadows */
+  --shadow-color: rgb(15 23 42);
+  --shadow-sm: 0 14px 30px rgb(15 23 42 / 12%);
+  --shadow-lg: 0 26px 60px rgb(15 23 42 / 16%);
+  --accent-shadow: 0 18px 36px rgb(34 101 229 / 18%);
+  --hero-shadow: 0 26px 54px rgb(15 23 42 / 18%);
+  --focus-ring: 0 0 0 4px color-mix(in srgb, var(--primary) 22%, transparent);
+
+  /* Radii */
+  --radius-xs: 14px;
+  --radius-sm: 18px;
+  --radius-md: 24px;
+  --radius-lg: 34px;
+
+  /* Spacing */
+  --space-panel: 1.35rem;
+  --space-panel-sm: 1rem;
+  --space-section: 1.25rem;
+  --space-grid: 1rem;
+  --space-xs: 0.4rem;
+
+  /* Type scale - small text */
+  --text-xs: 0.72rem;
+  --text-sm: 0.8rem;
+  --text-meta: 0.86rem;
+
+  /* Layout */
+  --sidebar-width: 260px;
+
+  /* Typography */
+  --font-body:
+    'Segoe UI Variable Text', 'Segoe UI Variable', 'Segoe UI', 'Aptos', -apple-system,
+    BlinkMacSystemFont, 'Helvetica Neue', Arial, system-ui, sans-serif;
+  --font-display:
+    'Segoe UI Variable Display', 'Segoe UI Variable', 'Segoe UI', 'Aptos', -apple-system,
+    BlinkMacSystemFont, 'Helvetica Neue', Arial, system-ui, sans-serif;
+  --font-mono:
+    'SFMono-Regular', 'SF Mono', Consolas, 'Liberation Mono', Menlo, Monaco, 'Courier New',
+    monospace;
+
+  /* Table */
+  --table-head-bg: color-mix(in srgb, #edf3fc 82%, var(--primary) 18%);
+  --table-row-hover: color-mix(in srgb, var(--surface-card-strong) 76%, var(--primary) 24%);
+
+  /* Charts */
+  --chart-1: var(--primary);
+  --chart-2: var(--secondary);
+  --chart-3: var(--success);
+  --chart-4: var(--warning);
+  --chart-5: var(--danger);
+  --chart-6: #6e62d8;
+  --chart-7: #c46d3f;
+  --chart-8: #64748b;
+
+  /* Map */
+  --map-marker-stroke: #20354d;
+
+  /* Shell chrome */
+  --shell-chrome-bg: linear-gradient(180deg, rgb(10 18 31 / 98%) 0%, rgb(14 25 43 / 99%) 100%);
+  --shell-chrome-border: rgb(255 255 255 / 10%);
+  --shell-text: #f4f8ff;
+  --shell-text-soft: rgb(227 236 248 / 86%);
+  --shell-text-muted: rgb(191 204 224 / 74%);
+  --shell-icon-color: #b1cbff;
+  --shell-panel-bg: rgb(255 255 255 / 10%);
+  --shell-panel-border: rgb(255 255 255 / 12%);
+  --shell-control-bg: rgb(255 255 255 / 11%);
+  --shell-control-border: rgb(255 255 255 / 16%);
+  --shell-highlight-soft: rgb(255 255 255 / 6%);
+  --shell-highlight: rgb(255 255 255 / 8%);
+  --shell-highlight-strong: rgb(255 255 255 / 12%);
+  --shell-depth-shadow: rgb(0 0 0 / 16%);
+  --shell-depth-shadow-strong: rgb(0 0 0 / 24%);
+  --shell-active-bg: linear-gradient(135deg, rgb(45 108 223 / 22%), rgb(20 142 144 / 14%));
+  --shell-active-border: rgb(152 190 255 / 38%);
+  --shell-brand-start: #4a82f5;
+  --shell-brand-end: #2257c9;
+  --shell-brand-contrast: #f6fbff;
+  --shell-divider: rgb(255 255 255 / 12%);
+  --shell-topbar-shadow: 0 20px 40px rgb(3 7 18 / 22%);
+
+  /* Authenticated app shell */
+  --app-shell-ambient-start: rgb(45 108 223 / 16%);
+  --app-shell-ambient-end: rgb(20 142 144 / 12%);
+  --app-shell-bg: linear-gradient(180deg, rgb(244 248 252 / 98%) 0%, rgb(232 239 247 / 100%) 100%);
+  --app-shell-border: rgb(148 163 184 / 22%);
+  --app-shell-text: #102033;
+  --app-shell-text-soft: rgb(46 63 82 / 86%);
+  --app-shell-text-muted: rgb(71 90 112 / 76%);
+  --app-shell-icon-color: color-mix(in srgb, var(--primary) 78%, #35527d 22%);
+  --app-shell-panel-bg: rgb(255 255 255 / 82%);
+  --app-shell-panel-border: rgb(148 163 184 / 20%);
+  --app-shell-control-bg: color-mix(in srgb, #ffffff 72%, var(--primary) 28%);
+  --app-shell-control-border: rgb(148 163 184 / 28%);
+  --app-shell-highlight-soft: rgb(255 255 255 / 78%);
+  --app-shell-highlight: rgb(255 255 255 / 92%);
+  --app-shell-highlight-strong: #ffffff;
+  --app-shell-depth-shadow: rgb(15 23 42 / 12%);
+  --app-shell-depth-shadow-strong: rgb(15 23 42 / 18%);
+  --app-shell-active-bg: linear-gradient(135deg, rgb(45 108 223 / 20%), rgb(20 142 144 / 14%));
+  --app-shell-active-border: color-mix(in srgb, var(--primary) 42%, rgb(148 163 184 / 22%));
+  --app-shell-brand-start: #3f78e8;
+  --app-shell-brand-end: #1c5ccc;
+  --app-shell-brand-contrast: #f7fbff;
+  --app-shell-divider: rgb(148 163 184 / 22%);
+  --app-shell-topbar-shadow: 0 18px 34px rgb(15 23 42 / 14%);
+}
+
+/* ----------------------------------------------------------------
+   Design Tokens - Dark
+   ---------------------------------------------------------------- */
+
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  /* Background */
+  --bg: #08111c;
+  --bg-accent:
+    radial-gradient(circle at top left, rgb(104 151 255 / 16%), transparent 34%),
+    radial-gradient(circle at top right, rgb(87 201 196 / 10%), transparent 24%),
+    linear-gradient(180deg, #08111b 0%, #0b1421 48%, #101a29 100%);
+
+  /* Surfaces */
+  --surface: rgb(9 17 28 / 94%);
+  --surface-strong: #0f1826;
+  --surface-muted: rgb(148 163 184 / 10%);
+  --surface-soft: #0d1724;
+  --surface-soft-strong: #111d2c;
+  --surface-soft-muted: rgb(148 163 184 / 10%);
+  --surface-soft-subtle: rgb(148 163 184 / 15%);
+  --surface-elevated: rgb(14 24 38 / 90%);
+  --surface-dark: #060c15;
+  --surface-dark-muted: rgb(148 163 184 / 14%);
+  --surface-card: rgb(12 21 33 / 93%);
+  --surface-card-strong: rgb(15 25 39 / 97%);
+  --surface-panel-strong: linear-gradient(
+    180deg,
+    color-mix(in srgb, #111c2b 96%, var(--primary) 4%),
+    color-mix(in srgb, #0d1826 95%, var(--secondary) 5%)
+  );
+  --surface-hero: linear-gradient(
+    180deg,
+    color-mix(in srgb, #111b2a 95%, var(--primary) 5%),
+    color-mix(in srgb, #0d1825 94%, var(--secondary) 6%)
+  );
+  --surface-panel: linear-gradient(
+    180deg,
+    color-mix(in srgb, #101a28 95%, transparent),
+    color-mix(in srgb, #0a1522 88%, var(--primary) 12%)
+  );
+  --surface-subtle: color-mix(in srgb, var(--surface-card-strong) 84%, var(--surface-soft-subtle) 16%);
+  --surface-panel-muted: linear-gradient(
+    180deg,
+    color-mix(in srgb, #122031 90%, var(--primary) 10%),
+    color-mix(in srgb, #0d1826 86%, var(--secondary) 14%)
+  );
+  --surface-panel-dark: linear-gradient(180deg, #081220 0%, #0d1b2f 58%, #143351 100%);
+  --surface-dark-alt: #295070;
+
+  /* Text */
+  --text: #eef4fb;
+  --text-muted: #d2ddea;
+  --text-soft: #a8b8cb;
+  --text-on-dark: #eef5ff;
+  --text-on-dark-soft: rgb(231 238 248 / 92%);
+  --text-on-dark-muted: rgb(201 213 231 / 82%);
+  --link: #9abdff;
+  --link-hover: #c4d8ff;
+
+  /* Borders */
+  --border: rgb(148 163 184 / 24%);
+  --border-strong: rgb(148 163 184 / 34%);
+  --content-border-strong: rgb(255 255 255 / 16%);
+  --primary-border: color-mix(in srgb, var(--primary) 58%, transparent);
+
+  /* Brand colors */
+  --primary: #80abff;
+  --primary-strong: #5f8fff;
+  --primary-contrast: #f7fbff;
+  --secondary: #57c9c4;
+  --danger: #ff919b;
+  --success: #5dce96;
+  --warning: #f1c56b;
+
+  /* Component surfaces */
+  --control-bg: color-mix(in srgb, #101a28 90%, var(--primary) 10%);
+  --control-bg-hover: color-mix(in srgb, #132033 82%, var(--primary) 18%);
+  --control-bg-active: color-mix(in srgb, #16263a 76%, var(--primary) 24%);
+  --control-border: color-mix(in srgb, var(--border) 68%, var(--primary) 32%);
+  --control-border-hover: color-mix(in srgb, var(--primary) 50%, var(--border) 50%);
+  --control-text: var(--text);
+  --control-text-muted: var(--text-soft);
+  --control-placeholder: color-mix(in srgb, var(--text-soft) 84%, white 16%);
+  --control-selected-bg: color-mix(in srgb, var(--primary) 28%, var(--surface-card-strong) 72%);
+  --control-selected-bg-hover: color-mix(in srgb, var(--primary) 34%, var(--surface-card-strong) 66%);
+  --control-selected-border: color-mix(in srgb, var(--primary) 62%, transparent);
+  --control-selected-text: #f7fbff;
+  --option-hover-bg: color-mix(in srgb, var(--surface-card-strong) 74%, var(--primary) 26%);
+  --option-selected-bg: color-mix(in srgb, var(--primary) 34%, var(--surface-card-strong) 66%);
+  --option-selected-text: #f8fbff;
+  --button-primary-bg: linear-gradient(180deg, #70a0ff 0%, #4678ea 100%);
+  --button-primary-bg-hover: linear-gradient(180deg, #82adff 0%, #5685ef 100%);
+  --button-primary-border: color-mix(in srgb, var(--primary) 64%, transparent);
+  --button-primary-text: #f7fbff;
+  --button-primary-shadow: 0 18px 34px rgb(8 15 31 / 36%);
+  --button-secondary-bg: color-mix(in srgb, var(--surface-card-strong) 86%, var(--primary) 14%);
+  --button-secondary-bg-hover: color-mix(in srgb, var(--surface-card-strong) 78%, var(--primary) 22%);
+  --button-secondary-border: color-mix(in srgb, var(--border) 56%, var(--primary) 44%);
+  --button-secondary-text: var(--text);
+  --button-text-hover-bg: color-mix(in srgb, var(--primary) 22%, transparent);
+  --selectbutton-bg: color-mix(in srgb, var(--surface-card-strong) 88%, var(--primary) 12%);
+  --selectbutton-bg-hover: color-mix(in srgb, var(--surface-card-strong) 78%, var(--primary) 22%);
+  --selectbutton-bg-checked: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--primary) 38%, var(--surface-card-strong)),
+    color-mix(in srgb, var(--secondary) 20%, var(--surface-card-strong))
+  );
+  --selectbutton-border: color-mix(in srgb, var(--border) 56%, var(--primary) 44%);
+  --selectbutton-border-checked: color-mix(in srgb, var(--primary) 64%, transparent);
+
+  /* Overlays & glass */
+  --overlay-soft: rgb(255 255 255 / 14%);
+  --overlay-strong: rgb(255 255 255 / 22%);
+  --glass-highlight: rgb(255 255 255 / 16%);
+  --content-glow: rgb(255 255 255 / 12%);
+  --backdrop-scrim: rgb(3 7 18 / 72%);
+  --primary-overlay: rgb(122 162 255 / 14%);
+  --success-overlay: rgb(86 199 141 / 14%);
+  --warning-overlay: rgb(242 191 99 / 16%);
+
+  /* Glow & ambient */
+  --accent-glow-start: rgb(104 151 255 / 14%);
+  --accent-glow-end: rgb(87 201 196 / 10%);
+  --shell-ambient-start: rgb(104 151 255 / 12%);
+  --shell-ambient-end: rgb(87 201 196 / 10%);
+
+  /* Shadows */
+  --shadow-color: rgb(0 0 0);
+  --shadow-sm: 0 18px 34px rgb(0 0 0 / 28%);
+  --shadow-lg: 0 32px 68px rgb(0 0 0 / 36%);
+  --accent-shadow: 0 20px 40px rgb(0 0 0 / 30%);
+  --hero-shadow: 0 30px 60px rgb(0 0 0 / 36%);
+  --focus-ring: 0 0 0 4px color-mix(in srgb, var(--primary) 26%, transparent);
+
+  /* Table */
+  --table-head-bg: color-mix(in srgb, #132237 80%, var(--primary) 20%);
+  --table-row-hover: color-mix(in srgb, var(--surface-card-strong) 72%, var(--primary) 28%);
+
+  /* Charts */
+  --chart-1: var(--primary);
+  --chart-2: var(--secondary);
+  --chart-3: var(--success);
+  --chart-4: var(--warning);
+  --chart-5: var(--danger);
+  --chart-6: #9b8cff;
+  --chart-7: #f39a68;
+  --chart-8: #94a3b8;
+
+  /* Map */
+  --map-marker-stroke: #d7e2f2;
+
+  /* Shell chrome */
+  --shell-chrome-bg: linear-gradient(180deg, rgb(5 10 18 / 98%) 0%, rgb(8 17 31 / 99%) 100%);
+  --shell-chrome-border: rgb(255 255 255 / 9%);
+  --shell-text: #f3f8ff;
+  --shell-text-soft: rgb(226 235 246 / 86%);
+  --shell-text-muted: rgb(193 206 224 / 76%);
+  --shell-icon-color: #bad0ff;
+  --shell-panel-bg: rgb(255 255 255 / 10%);
+  --shell-panel-border: rgb(255 255 255 / 12%);
+  --shell-control-bg: rgb(255 255 255 / 12%);
+  --shell-control-border: rgb(255 255 255 / 16%);
+  --shell-highlight-soft: rgb(255 255 255 / 5%);
+  --shell-highlight: rgb(255 255 255 / 7%);
+  --shell-highlight-strong: rgb(255 255 255 / 10%);
+  --shell-depth-shadow: rgb(0 0 0 / 18%);
+  --shell-depth-shadow-strong: rgb(0 0 0 / 28%);
+  --shell-active-bg: linear-gradient(135deg, rgb(104 151 255 / 24%), rgb(87 201 196 / 15%));
+  --shell-active-border: rgb(148 184 255 / 42%);
+  --shell-brand-start: #91b6ff;
+  --shell-brand-end: #6091ff;
+  --shell-brand-contrast: #f5fbff;
+  --shell-divider: rgb(255 255 255 / 10%);
+  --shell-topbar-shadow: 0 22px 46px rgb(0 0 0 / 34%);
+
+  /* Authenticated app shell */
+  --app-shell-ambient-start: rgb(104 151 255 / 12%);
+  --app-shell-ambient-end: rgb(87 201 196 / 10%);
+  --app-shell-bg: linear-gradient(180deg, rgb(5 10 18 / 98%) 0%, rgb(8 17 31 / 99%) 100%);
+  --app-shell-border: rgb(255 255 255 / 9%);
+  --app-shell-text: #f3f8ff;
+  --app-shell-text-soft: rgb(226 235 246 / 86%);
+  --app-shell-text-muted: rgb(193 206 224 / 76%);
+  --app-shell-icon-color: #bad0ff;
+  --app-shell-panel-bg: rgb(255 255 255 / 8%);
+  --app-shell-panel-border: rgb(255 255 255 / 12%);
+  --app-shell-control-bg: rgb(255 255 255 / 10%);
+  --app-shell-control-border: rgb(255 255 255 / 14%);
+  --app-shell-highlight-soft: rgb(255 255 255 / 3%);
+  --app-shell-highlight: rgb(255 255 255 / 5%);
+  --app-shell-highlight-strong: rgb(255 255 255 / 7%);
+  --app-shell-depth-shadow: rgb(0 0 0 / 18%);
+  --app-shell-depth-shadow-strong: rgb(0 0 0 / 28%);
+  --app-shell-active-bg: linear-gradient(135deg, rgb(104 151 255 / 24%), rgb(87 201 196 / 15%));
+  --app-shell-active-border: rgb(148 184 255 / 42%);
+  --app-shell-brand-start: #91b6ff;
+  --app-shell-brand-end: #6091ff;
+  --app-shell-brand-contrast: #f5fbff;
+  --app-shell-divider: rgb(255 255 255 / 10%);
+  --app-shell-topbar-shadow: 0 22px 46px rgb(0 0 0 / 34%);
+}

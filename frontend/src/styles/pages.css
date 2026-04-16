@@ -1,0 +1,270 @@
+/* ----------------------------------------------------------------
+   Page-Specific Overrides
+   ---------------------------------------------------------------- */
+
+#app .dashboard-page,
+#app .market-page,
+#app .regions-page,
+#app .municipalities-page,
+#app .analysis-page,
+#app .prediction-page,
+#app .municipality-page,
+#app .map-page,
+#app .prepare-page,
+#app .model-page,
+#app .data-page,
+#app .diagnostics-page,
+#app .admin-home,
+#app .admin-view {
+  gap: var(--space-section);
+}
+
+#app .dashboard-page .hero-shell,
+#app .market-page .hero-shell,
+#app .regions-page .hero-shell,
+#app .municipalities-page .hero-shell,
+#app .analysis-page .hero-shell,
+#app .municipality-page .municipality-hero,
+#app .map-page .map-hero,
+#app .admin-home .admin-hero,
+#app .admin-view .admin-workspace-hero {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--border) 64%, var(--primary) 36%);
+  background: var(--surface-hero);
+  box-shadow: var(--hero-shadow);
+}
+
+#app .dashboard-page .filter-shell,
+#app .market-page .filter-shell,
+#app .regions-page .filter-shell,
+#app .municipalities-page .filter-shell,
+#app .analysis-page .panel,
+#app .data-page .card,
+#app .prepare-page .card,
+#app .map-page .card,
+#app .diagnostics-page .card,
+#app .municipality-page .panel,
+#app .admin-view .admin-users-panel {
+  background: var(--surface-panel);
+  box-shadow:
+    inset 0 1px 0 var(--content-glow),
+    var(--shadow-sm);
+}
+
+#app .dashboard-page .leader-row,
+#app .dashboard-page .mix-row,
+#app .market-page .leader-row,
+#app .market-page .mix-row,
+#app .regions-page .leader-row,
+#app .regions-page .drilldown-row,
+#app .municipalities-page .compare-card,
+#app .municipality-page .related-card,
+#app .map-page .comparable-card,
+#app .map-page .detail-actions-panel,
+#app .map-page .detail-section,
+#app .prepare-page .inner-card,
+#app .prediction-page .municipality-chip,
+#app .prediction-page .toggle-chip,
+#app .prediction-page .comparable-card,
+#app .prediction-page .history-card,
+#app .analysis-page .focus-chip {
+  background: var(--surface-panel-muted);
+  border-color: color-mix(in srgb, var(--border) 76%, var(--primary) 24%);
+}
+
+#app .dashboard-page .leader-row,
+#app .market-page .leader-row,
+#app .regions-page .leader-row,
+#app .municipalities-page .compare-card,
+#app .municipality-page .related-card,
+#app .prediction-page .toggle-chip,
+#app .analysis-page .focus-chip,
+#app .admin-home .admin-card {
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease,
+    border-color 160ms ease;
+}
+
+#app .dashboard-page .leader-row:hover,
+#app .market-page .leader-row:hover,
+#app .regions-page .leader-row:hover,
+#app .municipalities-page .compare-card:hover,
+#app .municipality-page .related-card:hover,
+#app .prediction-page .toggle-chip:hover,
+#app .analysis-page .focus-chip:hover,
+#app .admin-home .admin-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 18px 36px color-mix(in srgb, var(--primary) 10%, transparent);
+}
+
+#app .dashboard-page .metric-grid,
+#app .market-page .metric-grid,
+#app .regions-page .metric-grid,
+#app .municipalities-page .metric-grid,
+#app .diagnostics-page .metric-grid,
+#app .admin-home .hero-metrics,
+#app .admin-view .hero-metrics {
+  gap: 1rem;
+}
+
+#app .dashboard-page .metric-card,
+#app .market-page .metric-card,
+#app .regions-page .metric-card,
+#app .municipalities-page .metric-card,
+#app .diagnostics-page .metric-card {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-card-strong) 98%, transparent), transparent 120%),
+    var(--surface-panel);
+}
+
+#app .municipalities-page .card-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(15.5rem, 1fr));
+}
+
+#app .municipalities-page .municipality-card {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-card-strong) 96%, var(--primary) 4%), transparent),
+    var(--surface-panel);
+  border: 1px solid color-mix(in srgb, var(--border) 78%, var(--primary) 22%);
+  box-shadow: var(--shadow-sm);
+}
+
+#app .municipalities-page .municipality-card:hover,
+#app .municipalities-page .municipality-card:focus-visible {
+  transform: translateY(-3px);
+  border-color: color-mix(in srgb, var(--primary) 30%, var(--border) 70%);
+  box-shadow: var(--accent-shadow);
+}
+
+#app .municipalities-page .municipality-card .card-stats div {
+  background: color-mix(in srgb, var(--surface-card-strong) 92%, var(--primary) 8%);
+  border-color: color-mix(in srgb, var(--border) 76%, var(--primary) 24%);
+}
+
+#app .profile-dialog-actions {
+  gap: 0.75rem;
+}
+
+#app .profile-dialog-actions .p-button {
+  min-width: 7rem;
+}
+
+#app .prediction-page .panel {
+  background: var(--surface-panel-strong);
+}
+
+#app .prediction-page .estimate-card {
+  background:
+    radial-gradient(
+      circle at top right,
+      color-mix(in srgb, var(--primary) 16%, transparent),
+      transparent 26%
+    ),
+    linear-gradient(180deg, var(--surface-panel-dark), var(--surface-dark-alt));
+  box-shadow: 0 22px 46px rgb(5 10 22 / 24%);
+}
+
+#app .prediction-page .context-card {
+  background:
+    linear-gradient(135deg, var(--primary-overlay), transparent),
+    color-mix(in srgb, var(--surface-card-strong) 90%, var(--primary) 10%);
+}
+
+#app .prediction-page .submit-btn {
+  box-shadow: 0 14px 28px color-mix(in srgb, var(--primary) 14%, transparent);
+}
+
+#app .prediction-page .story-block {
+  border-top-color: color-mix(in srgb, var(--border) 70%, var(--primary) 30%);
+}
+
+#app .analysis-page .result-card {
+  background: var(--surface-panel-muted);
+}
+
+#app .municipality-page .metric-card.accent {
+  box-shadow: 0 20px 40px rgb(5 10 22 / 20%);
+}
+
+#app .map-page .map-container {
+  border: 1px solid color-mix(in srgb, var(--border) 68%, var(--primary) 32%);
+  box-shadow: inset 0 1px 0 var(--content-glow);
+}
+
+#app .data-page .admin-upload,
+#app .prepare-page .result-card {
+  box-shadow: var(--shadow-sm);
+}
+
+#app .prepare-page .result-card {
+  border-left: 1px solid color-mix(in srgb, var(--success) 28%, transparent);
+}
+
+#app .admin-home .admin-grid,
+#app .admin-view .hero-metrics {
+  gap: 1rem;
+}
+
+#app .admin-home .admin-card-link {
+  width: fit-content;
+}
+
+#app .admin-view .panel-toolbar {
+  padding-bottom: 0.2rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, var(--primary) 28%);
+}
+
+#app .admin-view .search-field {
+  width: min(100%, 22rem);
+}
+
+#app .admin-view .row-actions .p-button {
+  justify-content: center;
+}
+
+/* ----------------------------------------------------------------
+   Responsive - Page-Specific
+   ---------------------------------------------------------------- */
+
+@media (max-width: 1200px) {
+  #app .dashboard-page .hero-shell,
+  #app .market-page .hero-shell,
+  #app .regions-page .hero-shell,
+  #app .municipalities-page .hero-shell,
+  #app .admin-home .admin-hero,
+  #app .admin-view .admin-workspace-hero {
+    padding: clamp(1.05rem, 2vw, 1.35rem);
+  }
+}
+
+@media (max-width: 980px) {
+  #app .admin-view .panel-toolbar {
+    align-items: stretch;
+  }
+
+  #app .dashboard-page .metric-grid,
+  #app .market-page .metric-grid,
+  #app .regions-page .metric-grid,
+  #app .municipalities-page .metric-grid,
+  #app .diagnostics-page .metric-grid,
+  #app .admin-home .hero-metrics,
+  #app .admin-view .hero-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  #app .dashboard-page .metric-grid,
+  #app .market-page .metric-grid,
+  #app .regions-page .metric-grid,
+  #app .municipalities-page .metric-grid,
+  #app .diagnostics-page .metric-grid,
+  #app .admin-home .hero-metrics,
+  #app .admin-view .hero-metrics {
+    grid-template-columns: 1fr;
+  }
+}

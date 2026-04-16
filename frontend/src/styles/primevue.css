@@ -1,0 +1,754 @@
+/* ----------------------------------------------------------------
+   PrimeVue — Foundational Overrides
+   ---------------------------------------------------------------- */
+
+.p-component {
+  font-family: var(--font-body);
+}
+
+.p-button {
+  border-radius: 1rem;
+  font-weight: 750;
+  box-shadow: none;
+  border: 1px solid transparent;
+  letter-spacing: 0.01em;
+  transition:
+    transform 140ms ease,
+    background 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.p-button:not(.p-button-text):not(.p-button-link) {
+  min-height: 2.85rem;
+  padding-inline: 1.05rem;
+}
+
+.p-button:hover {
+  transform: translateY(-1px);
+}
+
+.p-button.p-button-text,
+.p-button.p-button-link {
+  color: var(--primary-strong);
+}
+
+.p-inputtext,
+.p-inputnumber-input,
+.p-autocomplete-input,
+.p-select,
+.p-textarea {
+  background: var(--control-bg);
+  color: var(--control-text);
+  border-radius: 1rem;
+  min-height: 2.85rem;
+  border: 1px solid var(--control-border);
+  box-shadow:
+    inset 0 1px 0 var(--content-glow),
+    0 1px 0 color-mix(in srgb, var(--surface-card-strong) 94%, transparent);
+}
+
+.p-inputtext,
+.p-inputnumber-input,
+.p-password-input,
+.p-select-label,
+.p-select-dropdown,
+.p-autocomplete-input,
+.p-textarea,
+.p-checkbox-box,
+.p-progressbar,
+.p-datatable-table-container,
+.p-drawer {
+  border-color: var(--control-border);
+}
+
+.p-select-label,
+.p-select-dropdown,
+.p-password-input,
+.p-select-option,
+.p-autocomplete-option {
+  color: var(--control-text);
+}
+
+.p-inputtext::placeholder,
+.p-inputnumber-input::placeholder,
+.p-autocomplete-input::placeholder,
+.p-textarea::placeholder {
+  color: var(--control-placeholder);
+}
+
+.p-select,
+.p-autocomplete,
+.p-inputnumber {
+  width: 100%;
+}
+
+.p-select-option,
+.p-autocomplete-option {
+  color: var(--control-text);
+}
+
+.p-select-overlay,
+.p-autocomplete-overlay,
+.p-drawer {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-card-strong) 96%, transparent), transparent 120%),
+    var(--surface-card-strong);
+  color: var(--control-text);
+  border: 1px solid var(--control-border);
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: blur(14px);
+}
+
+.p-checkbox-box {
+  background: var(--control-bg);
+}
+
+.p-checkbox-checked .p-checkbox-box {
+  background: var(--primary);
+}
+
+.p-dialog {
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  border: 1px solid var(--control-border);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-card-strong) 96%, transparent), transparent 120%),
+    var(--surface-strong);
+  box-shadow: var(--shadow-lg);
+}
+
+.p-dialog .p-dialog-header,
+.p-dialog .p-dialog-content {
+  background: var(--surface-strong);
+  color: var(--text);
+}
+
+.p-dialog .p-dialog-header {
+  border-bottom: 1px solid var(--control-border);
+}
+
+.p-datatable {
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 1px solid var(--control-border);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-card-strong) 94%, transparent), transparent 120%),
+    var(--surface-card-strong);
+}
+
+.p-datatable .p-datatable-header,
+.p-datatable .p-datatable-footer,
+.p-datatable .p-paginator {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-card-strong) 94%, transparent), transparent 120%),
+    var(--surface-soft);
+  color: var(--text);
+  border-color: var(--control-border);
+}
+
+.p-datatable .p-datatable-thead > tr > th {
+  background: var(--surface-soft);
+  color: var(--control-text-muted);
+  border-color: var(--control-border);
+  padding: 0.86rem 0.92rem;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.p-datatable .p-datatable-tbody > tr {
+  background: transparent;
+  color: var(--text);
+}
+
+.p-datatable .p-datatable-tbody > tr > td {
+  background: transparent;
+  color: var(--text);
+  border-color: var(--control-border);
+  padding: 0.94rem 0.92rem;
+  vertical-align: top;
+  transition:
+    background 140ms ease,
+    color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.p-datatable.p-datatable-sm .p-datatable-thead > tr > th {
+  padding: 0.72rem 0.82rem;
+  font-size: 0.74rem;
+}
+
+.p-datatable.p-datatable-sm .p-datatable-tbody > tr > td {
+  padding: 0.76rem 0.82rem;
+}
+
+.p-datatable .p-datatable-tbody > tr.p-highlight > td,
+.p-datatable .p-datatable-tbody > tr.p-datatable-row-selected > td,
+.p-datatable .p-datatable-tbody > tr[aria-selected='true'] > td {
+  background: color-mix(in srgb, var(--primary) 14%, var(--surface-card-strong) 86%);
+  color: var(--text);
+}
+
+.p-datatable .p-datatable-tbody > tr:focus-within > td {
+  background: color-mix(in srgb, var(--primary) 10%, var(--surface-card-strong) 90%);
+}
+
+.p-tag {
+  border-radius: 999px;
+  font-weight: 700;
+}
+
+.p-toggleswitch {
+  flex-shrink: 0;
+}
+
+.p-toggleswitch .p-toggleswitch-slider {
+  background: var(--control-bg);
+  border: 1px solid var(--control-border);
+}
+
+.p-toggleswitch.p-toggleswitch-checked .p-toggleswitch-slider {
+  background: color-mix(in srgb, var(--primary) 70%, var(--surface-strong) 12%);
+}
+
+.p-togglebutton {
+  border-radius: 0.95rem;
+  border: 1px solid var(--selectbutton-border);
+  background: var(--selectbutton-bg);
+  color: var(--control-text-muted);
+  box-shadow: inset 0 1px 0 var(--content-glow);
+  transition:
+    border-color 140ms ease,
+    background 140ms ease,
+    color 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms ease;
+}
+
+.p-togglebutton:not(:disabled):hover {
+  transform: translateY(-1px);
+  border-color: var(--control-border-hover);
+  background: var(--selectbutton-bg-hover);
+  box-shadow: 0 14px 28px color-mix(in srgb, var(--primary) 10%, transparent);
+}
+
+.p-togglebutton .p-togglebutton-content {
+  gap: 0.4rem;
+  padding-inline: 0.1rem;
+}
+
+.p-togglebutton .p-togglebutton-label {
+  color: inherit;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.p-togglebutton.p-togglebutton-checked {
+  background: var(--selectbutton-bg-checked);
+  border-color: var(--selectbutton-border-checked);
+  color: var(--control-selected-text);
+  box-shadow:
+    inset 0 1px 0 var(--glass-highlight),
+    0 14px 28px color-mix(in srgb, var(--primary) 12%, transparent);
+}
+
+.p-togglebutton.p-invalid {
+  border-color: color-mix(in srgb, var(--danger) 50%, transparent);
+}
+
+.p-tooltip .p-tooltip-text {
+  border-radius: var(--radius-xs);
+  border: 1px solid color-mix(in srgb, var(--border-strong) 74%, var(--content-border-strong) 26%);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface-elevated) 94%, var(--surface-card) 6%),
+      color-mix(in srgb, var(--surface-elevated) 88%, var(--surface) 12%)
+    );
+  color: var(--text);
+  box-shadow:
+    inset 0 1px 0 var(--glass-highlight),
+    var(--shadow-sm);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.p-tooltip .p-tooltip-arrow {
+  display: none;
+}
+
+.p-progressbar {
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.p-progressbar-value {
+  background: linear-gradient(135deg, var(--secondary), var(--primary));
+}
+
+/* ----------------------------------------------------------------
+   PrimeVue — Design Refresh Overrides
+   ---------------------------------------------------------------- */
+
+#app .p-button {
+  border-width: 1px;
+  border-style: solid;
+}
+
+#app
+  .p-button:not(.p-button-text):not(.p-button-link):not(.p-button-secondary):not(
+    .p-button-outlined
+  ):not(.p-button-danger):not(.p-button-contrast) {
+  border-color: var(--button-primary-border);
+  background: var(--button-primary-bg);
+  color: var(--button-primary-text);
+  box-shadow: var(--button-primary-shadow);
+}
+
+#app .p-button:not(:disabled):hover {
+  transform: translateY(-1px);
+}
+
+#app .p-button:not(:disabled):active {
+  transform: translateY(0);
+}
+
+#app .p-button.p-button-secondary,
+#app .p-button.p-button-outlined {
+  background: var(--button-secondary-bg);
+  border-color: var(--button-secondary-border);
+  color: var(--button-secondary-text);
+  box-shadow:
+    inset 0 1px 0 var(--content-glow),
+    0 10px 22px color-mix(in srgb, var(--shadow-color) 10%, transparent);
+}
+
+#app .p-button.p-button-danger {
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--danger) 18%, transparent);
+}
+
+#app .p-button.p-button-contrast {
+  background: linear-gradient(
+    180deg,
+    var(--surface-panel-dark),
+    color-mix(in srgb, var(--surface-panel-dark) 88%, var(--primary) 12%)
+  );
+  border-color: color-mix(in srgb, var(--primary) 28%, transparent);
+  color: var(--primary-contrast);
+  box-shadow: 0 10px 20px color-mix(in srgb, var(--shadow-color) 18%, transparent);
+}
+
+#app .p-button.p-button-secondary:hover,
+#app .p-button.p-button-outlined:hover {
+  background: var(--button-secondary-bg-hover);
+  border-color: var(--control-border-hover);
+}
+
+#app .p-button.p-button-text,
+#app .p-button.p-button-link {
+  color: color-mix(in srgb, var(--primary) 72%, var(--text) 28%);
+}
+
+#app .p-button.p-button-text:hover,
+#app .p-button.p-button-link:hover {
+  background: var(--button-text-hover-bg);
+}
+
+#app .p-button.p-button-secondary.p-button-text,
+#app .p-button.p-button-secondary.p-button-link {
+  color: var(--text-muted);
+}
+
+#app .p-button.p-button-text,
+#app .p-button.p-button-link,
+#app .p-button.p-button-secondary.p-button-text,
+#app .p-button.p-button-secondary.p-button-link {
+  font-weight: 700;
+}
+
+#app .p-button.p-button-secondary.p-button-text:hover,
+#app .p-button.p-button-secondary.p-button-link:hover {
+  color: var(--text);
+}
+
+#app .p-inputtext,
+#app .p-inputnumber-input,
+#app .p-select,
+#app .p-autocomplete-input,
+#app .p-textarea,
+#app .p-password-input {
+  background: var(--control-bg);
+  color: var(--control-text);
+  box-shadow:
+    inset 0 1px 0 var(--content-glow),
+    0 1px 0 color-mix(in srgb, var(--surface-card-strong) 94%, transparent);
+}
+
+#app .p-inputtext,
+#app .p-inputnumber-input,
+#app .p-password-input,
+#app .p-textarea,
+#app .p-select {
+  border-color: var(--control-border);
+}
+
+#app .p-inputtext.p-variant-filled,
+#app .p-inputnumber-input.p-variant-filled,
+#app .p-autocomplete-input.p-variant-filled,
+#app .p-textarea.p-variant-filled,
+#app .p-select.p-variant-filled,
+#app .p-password-input.p-variant-filled {
+  background: var(--control-bg-active);
+}
+
+#app .p-inputtext:enabled:hover,
+#app .p-inputnumber-input:enabled:hover,
+#app .p-password-input:enabled:hover,
+#app .p-textarea:enabled:hover,
+#app .p-select:hover {
+  background: var(--control-bg-hover);
+  border-color: var(--control-border-hover);
+}
+
+#app .p-inputtext:enabled:focus,
+#app .p-inputnumber-input:enabled:focus,
+#app .p-textarea:enabled:focus,
+#app .p-password-input:enabled:focus,
+#app .p-select.p-focus,
+#app .p-autocomplete.p-focus .p-inputtext {
+  background: var(--control-bg-active);
+  border-color: var(--control-selected-border);
+  box-shadow:
+    inset 0 1px 0 var(--content-glow),
+    var(--focus-ring);
+}
+
+#app .p-select-overlay .p-select-option,
+#app .p-autocomplete-overlay .p-autocomplete-option {
+  color: var(--control-text);
+}
+
+.p-select-overlay .p-select-option,
+.p-autocomplete-overlay .p-autocomplete-option {
+  color: var(--control-text);
+}
+
+#app .p-select-overlay .p-select-option:hover,
+#app .p-select-overlay .p-select-option.p-select-option-selected,
+#app .p-autocomplete-overlay .p-autocomplete-option:hover,
+#app .p-autocomplete-overlay .p-autocomplete-option.p-autocomplete-option-selected {
+  background: var(--option-hover-bg);
+  color: var(--option-selected-text);
+}
+
+.p-select-overlay .p-select-option:hover,
+.p-select-overlay .p-select-option.p-select-option-selected,
+.p-autocomplete-overlay .p-autocomplete-option:hover,
+.p-autocomplete-overlay .p-autocomplete-option.p-autocomplete-option-selected {
+  background: var(--option-hover-bg);
+  color: var(--option-selected-text);
+}
+
+#app .p-select-overlay .p-select-option.p-select-option-selected,
+#app .p-autocomplete-overlay .p-autocomplete-option.p-autocomplete-option-selected {
+  background: var(--option-selected-bg);
+  font-weight: 700;
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--primary) 72%, transparent);
+}
+
+.p-select-overlay .p-select-option.p-select-option-selected,
+.p-autocomplete-overlay .p-autocomplete-option.p-autocomplete-option-selected {
+  background: var(--option-selected-bg);
+  font-weight: 700;
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--primary) 72%, transparent);
+}
+
+#app .p-password,
+#app .p-password-input {
+  width: 100%;
+}
+
+#app .p-datatable {
+  background: transparent;
+}
+
+#app .p-datatable .p-datatable-header,
+#app .p-datatable .p-datatable-footer,
+#app .p-datatable .p-paginator {
+  background: color-mix(in srgb, var(--surface-card-strong) 92%, transparent);
+  border-color: color-mix(in srgb, var(--border) 76%, var(--content-border-strong) 24%);
+}
+
+#app .p-datatable .p-datatable-thead > tr > th {
+  background: var(--table-head-bg);
+}
+
+#app .p-datatable .p-datatable-tbody > tr > td {
+  transition: background 140ms ease;
+}
+
+#app .p-datatable .p-datatable-tbody > tr:hover > td {
+  background: var(--table-row-hover);
+}
+
+#app .p-paginator .p-paginator-page,
+#app .p-paginator .p-paginator-next,
+#app .p-paginator .p-paginator-prev,
+#app .p-paginator .p-paginator-first,
+#app .p-paginator .p-paginator-last {
+  border-radius: 0.85rem;
+  color: var(--text-soft);
+}
+
+#app .p-paginator .p-paginator-page.p-paginator-page-selected {
+  background: var(--selectbutton-bg-checked);
+  color: var(--control-selected-text);
+}
+
+#app .p-card {
+  border: 1px solid color-mix(in srgb, var(--border) 74%, var(--content-border-strong) 26%);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-card-strong) 95%, transparent), transparent 120%),
+    var(--surface-panel);
+  box-shadow: var(--shadow-sm);
+}
+
+#app .p-card .p-card-body {
+  padding: 1.2rem;
+}
+
+#app .p-card .p-card-title {
+  font-family: var(--font-display);
+  font-size: 1.22rem;
+  line-height: 1.05;
+}
+
+#app .p-message {
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--border) 72%, var(--content-border-strong) 28%);
+  background: color-mix(in srgb, var(--surface-card-strong) 94%, transparent);
+  box-shadow: var(--shadow-sm);
+}
+
+#app .p-message.p-message-error {
+  background: color-mix(in srgb, var(--danger) 10%, var(--surface-card-strong));
+  border-color: color-mix(in srgb, var(--danger) 24%, transparent);
+  color: var(--text);
+}
+
+#app .p-dialog-mask,
+#app .p-confirmdialog-mask {
+  backdrop-filter: blur(14px);
+  background: color-mix(in srgb, var(--backdrop-scrim) 92%, #020617 8%);
+}
+
+.p-dialog-mask,
+.p-confirmdialog-mask {
+  backdrop-filter: blur(14px);
+  background: color-mix(in srgb, var(--backdrop-scrim) 92%, #020617 8%);
+}
+
+#app .p-dialog .p-dialog-header-actions .p-button {
+  background: var(--button-secondary-bg);
+  border-color: var(--button-secondary-border);
+  color: var(--button-secondary-text);
+}
+
+.p-dialog .p-dialog-header-actions .p-button {
+  background: var(--button-secondary-bg);
+  border-color: var(--button-secondary-border);
+  color: var(--button-secondary-text);
+}
+
+#app .p-dialog .p-dialog-header-actions .p-button:hover {
+  background: var(--button-secondary-bg-hover);
+  border-color: var(--control-border-hover);
+}
+
+.p-dialog .p-dialog-header-actions .p-button:hover {
+  background: var(--button-secondary-bg-hover);
+  border-color: var(--control-border-hover);
+}
+
+#app .p-dialog .p-dialog-content,
+#app .p-dialog .p-dialog-footer {
+  background: color-mix(in srgb, var(--surface-card-strong) 92%, transparent);
+}
+
+.p-dialog .p-dialog-content,
+.p-dialog .p-dialog-footer {
+  background: color-mix(in srgb, var(--surface-card-strong) 92%, transparent);
+}
+
+#app .p-dialog .p-dialog-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}
+
+.p-dialog .p-dialog-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}
+
+#app .p-dialog .p-dialog-footer .p-button {
+  min-width: 6.5rem;
+}
+
+.p-dialog .p-dialog-footer .p-button {
+  min-width: 6.5rem;
+}
+
+#app .p-toast .p-toast-message {
+  border-radius: var(--radius-md);
+  border: 1px solid color-mix(in srgb, var(--border) 72%, var(--content-border-strong) 28%);
+  background: var(--surface-card-strong);
+  box-shadow: var(--shadow-sm);
+}
+
+.p-toast .p-toast-message {
+  border-radius: var(--radius-md);
+  border: 1px solid color-mix(in srgb, var(--border) 72%, var(--content-border-strong) 28%);
+  background: var(--surface-card-strong);
+  box-shadow: var(--shadow-sm);
+}
+
+#app .p-tag {
+  border: 1px solid color-mix(in srgb, var(--control-border) 68%, var(--primary) 32%);
+  background: color-mix(in srgb, var(--surface-soft-strong) 88%, var(--primary) 12%);
+  color: var(--text);
+  box-shadow: inset 0 1px 0 var(--content-glow);
+}
+
+#app .p-tag.p-tag-success {
+  border-color: color-mix(in srgb, var(--success) 24%, transparent);
+  background: color-mix(in srgb, var(--surface-card-strong) 90%, var(--success) 10%);
+  color: color-mix(in srgb, var(--success) 72%, var(--text) 28%);
+}
+
+#app .p-tag.p-tag-warn {
+  border-color: color-mix(in srgb, var(--warning) 24%, transparent);
+  background: color-mix(in srgb, var(--surface-card-strong) 90%, var(--warning) 10%);
+  color: color-mix(in srgb, var(--warning) 78%, var(--text) 22%);
+}
+
+#app .p-tag.p-tag-danger {
+  border-color: color-mix(in srgb, var(--danger) 24%, transparent);
+  background: color-mix(in srgb, var(--surface-card-strong) 90%, var(--danger) 10%);
+  color: color-mix(in srgb, var(--danger) 78%, var(--text) 22%);
+}
+
+#app .p-tag.p-tag-contrast {
+  border-color: color-mix(in srgb, var(--secondary) 28%, transparent);
+  background: var(--surface-panel-dark);
+  color: var(--primary-contrast);
+}
+
+#app .p-selectbutton .p-togglebutton {
+  background: var(--selectbutton-bg);
+  border-color: var(--selectbutton-border);
+  color: var(--control-text-muted);
+  box-shadow: inset 0 1px 0 var(--content-glow);
+}
+
+#app .p-selectbutton .p-togglebutton.p-togglebutton-checked {
+  background: var(--selectbutton-bg-checked);
+  border-color: var(--selectbutton-border-checked);
+  color: var(--control-selected-text);
+  box-shadow:
+    inset 0 1px 0 var(--glass-highlight),
+    0 14px 28px color-mix(in srgb, var(--primary) 12%, transparent);
+}
+
+#app .p-selectbutton .p-togglebutton .p-togglebutton-label,
+#app .p-selectbutton .p-togglebutton.p-togglebutton-checked .p-togglebutton-label {
+  color: inherit;
+}
+
+#app .p-tabs {
+  background: transparent;
+}
+
+#app .p-tabs .p-tablist {
+  width: fit-content;
+  max-width: 100%;
+  padding: 0.28rem;
+  border: 1px solid color-mix(in srgb, var(--control-border) 82%, var(--content-border-strong) 18%);
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-card-strong) 92%, transparent), transparent 120%),
+    color-mix(in srgb, var(--surface-soft-strong) 90%, transparent);
+  box-shadow: inset 0 1px 0 var(--content-glow);
+}
+
+#app .p-tabs .p-tab {
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  font-weight: 700;
+  min-height: 2.5rem;
+}
+
+#app .p-tabs .p-tab-active {
+  border-color: var(--control-border-hover);
+  background: color-mix(in srgb, var(--surface-soft-strong) 76%, var(--primary) 24%);
+  color: var(--text);
+}
+
+#app .p-tabs .p-tabpanels {
+  background: transparent;
+  color: var(--text);
+  padding-inline: 0;
+}
+
+.p-tabs .p-tabpanels,
+.p-tabs .p-tabpanel {
+  background: transparent;
+  color: var(--text);
+}
+
+#app .p-tabs .p-tablist-active-bar {
+  display: none;
+}
+
+#app .p-skeleton {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--surface-soft-strong) 88%, transparent),
+    color-mix(in srgb, var(--surface-soft-strong) 72%, var(--primary) 28%),
+    color-mix(in srgb, var(--surface-soft-strong) 88%, transparent)
+  );
+}
+
+#app .p-button:focus-visible,
+#app .p-togglebutton:focus-visible,
+#app .p-inputtext:focus-visible,
+#app .p-inputnumber-input:focus-visible,
+#app .p-autocomplete-input:focus-visible,
+#app .p-textarea:focus-visible,
+#app .p-select:focus-visible {
+  outline: none;
+  box-shadow:
+    inset 0 1px 0 var(--content-glow),
+    var(--focus-ring);
+}
+
+.p-fileupload-advanced,
+.p-fileupload-basic,
+.p-fileupload-header,
+.p-fileupload-content,
+.p-fileupload-file {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-card-strong) 96%, transparent), transparent 120%),
+    var(--surface-panel);
+  color: var(--text);
+  border-color: var(--control-border);
+}

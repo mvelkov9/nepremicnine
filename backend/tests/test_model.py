@@ -487,7 +487,9 @@ def test_sparse_residential_floor_strengthens_with_multiple_local_anchors():
         "stanovanje",
     )
 
-    assert floor == pytest.approx(0.8 * np.median([3800.0, 3850.0, 3750.0, 2900.0, 3025.0, 3050.0]) * 72)
+    # floor_factor=1.0: has_fine_location from payload but normalized_row lacks ime_ko/naselje
+    # => missing_micro_location=True => stanovanje gets max(0.88, 1.0)=1.0 boost
+    assert floor == pytest.approx(1.0 * np.median([3800.0, 3850.0, 3750.0, 2900.0, 3025.0, 3050.0]) * 72)
 
 
 def test_full_share_market_filter_drops_partial_sales():
@@ -519,7 +521,7 @@ def test_compute_per_type_blend_weight_searches_for_best_mape():
     global_pred = np.array([120.0, 220.0, 320.0, 420.0, 520.0] * 10)
     per_type_pred = np.array([90.0, 190.0, 290.0, 390.0, 490.0] * 10)
 
-    weight, metrics = ms._compute_per_type_blend_weight(y_true, global_pred, per_type_pred, len(y_true))
+    weight, metrics = ms._compute_per_type_blend_weight("stanovanje", y_true, global_pred, per_type_pred, len(y_true))
 
     assert 0.0 < weight < 1.0
     assert metrics["mape"] < ms._compute_metrics(y_true, global_pred)["mape"]
@@ -653,9 +655,9 @@ def test_predict_combined_routed_batches_predictions_by_property_type():
         }
     )
 
-    global_pipeline = FakePipeline(100.0)
-    stanovanje_pipeline = FakePipeline(200.0)
-    hisa_pipeline = FakePipeline(300.0)
+    global_pipeline = FakePipeline(1.0)
+    stanovanje_pipeline = FakePipeline(2.0)
+    hisa_pipeline = FakePipeline(3.0)
 
     predicted = ms._predict_combined_routed(
         X_test,
@@ -667,7 +669,7 @@ def test_predict_combined_routed_batches_predictions_by_property_type():
         target_transform="raw",
     )
 
-    assert predicted.tolist() == [200.0, 300.0, 200.0, 100.0]
+    assert predicted.tolist() == [2.0, 3.0, 2.0, 1.0]
     assert global_pipeline.calls == [4]
     assert stanovanje_pipeline.calls == [2]
     assert hisa_pipeline.calls == [1]
@@ -751,18 +753,21 @@ def test_compute_per_type_blend_weight_can_choose_global_per_type_or_blend():
     y_true = np.array([100.0, 110.0, 120.0, 130.0] * 20)
 
     global_best_weight, _ = ms._compute_per_type_blend_weight(
+        "stanovanje",
         y_true,
         global_pred=y_true.copy(),
         per_type_pred=np.full_like(y_true, 50.0),
         n_test=len(y_true),
     )
     per_type_best_weight, _ = ms._compute_per_type_blend_weight(
+        "stanovanje",
         y_true,
         global_pred=np.full_like(y_true, 50.0),
         per_type_pred=y_true.copy(),
         n_test=len(y_true),
     )
     blend_best_weight, _ = ms._compute_per_type_blend_weight(
+        "stanovanje",
         y_true,
         global_pred=np.full_like(y_true, 80.0),
         per_type_pred=np.full_like(y_true, 160.0),
