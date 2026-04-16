@@ -1,6 +1,7 @@
 """Tiny sanity test: fit a CatBoost per-type model on parcela data only,
 with a few iterations, to verify the per-type path is not broken before
 kicking off a multi-hour full training run."""
+
 from __future__ import annotations
 
 import os
@@ -77,8 +78,10 @@ hp = _adaptive_hyperparams(len(X_tr))
 # Shrink for smoke test
 hp["iterations"] = 200
 hp["od_wait"] = 50
-print(f"HP: loss={hp.get('loss_function')}, task_type={hp.get('task_type')}, "
-      f"iterations={hp['iterations']}, depth={hp.get('depth')}, lr={hp.get('learning_rate')}")
+print(
+    f"HP: loss={hp.get('loss_function')}, task_type={hp.get('task_type')}, "
+    f"iterations={hp['iterations']}, depth={hp.get('depth')}, lr={hp.get('learning_rate')}"
+)
 
 model = CatBoostModel(
     numeric_features=num_features,

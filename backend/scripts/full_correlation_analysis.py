@@ -3,6 +3,7 @@
 For each property type, compute Spearman correlation between EVERY column
 and log(price/m²). Identify unused high-signal features.
 """
+
 from __future__ import annotations
 
 import json
@@ -29,8 +30,15 @@ SALE_TYPE_COL = "vrsta_kupoprodajnega_posla"
 TYPE_COL = "property_type"
 
 TYPES = [
-    "stanovanje", "hisa", "parcela", "kmetijsko", "garaza",
-    "poslovni_prostor", "industrijski", "turisticni", "gostinstvo",
+    "stanovanje",
+    "hisa",
+    "parcela",
+    "kmetijsko",
+    "garaza",
+    "poslovni_prostor",
+    "industrijski",
+    "turisticni",
+    "gostinstvo",
 ]
 
 
@@ -85,12 +93,14 @@ def main() -> int:
                 continue
             if spearman is None or not np.isfinite(spearman):
                 continue
-            results.append({
-                "col": col,
-                "corr": float(spearman),
-                "abs_corr": float(abs(spearman)),
-                "fill_rate": float(n_valid / n),
-            })
+            results.append(
+                {
+                    "col": col,
+                    "corr": float(spearman),
+                    "abs_corr": float(abs(spearman)),
+                    "fill_rate": float(n_valid / n),
+                }
+            )
 
         results.sort(key=lambda x: -x["abs_corr"])
 

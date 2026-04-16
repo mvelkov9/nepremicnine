@@ -1,4 +1,5 @@
 """Quick debug of CatBoost importance format."""
+
 from __future__ import annotations
 
 import sys
@@ -32,9 +33,11 @@ print(f"First 5 values: {imp[:5]}")
 print(f"Value types: {[type(v).__name__ for v in imp[:3]]}")
 
 # Try to get feature names
-print(f"\nmodel.feature_names_: {getattr(model, 'feature_names_', 'N/A')[:10] if hasattr(model, 'feature_names_') else 'missing'}")
+print(
+    f"\nmodel.feature_names_: {getattr(model, 'feature_names_', 'N/A')[:10] if hasattr(model, 'feature_names_') else 'missing'}"
+)
 
 # Numeric + cat
 numeric = stan.get("numeric_features") or []
 cat = stan.get("categorical_features") or []
-print(f"\nnumeric: {len(numeric)}, cat: {len(cat)}, total={len(numeric)+len(cat)}, imp={len(imp)}")
+print(f"\nnumeric: {len(numeric)}, cat: {len(cat)}, total={len(numeric) + len(cat)}, imp={len(imp)}")

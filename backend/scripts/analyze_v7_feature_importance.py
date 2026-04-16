@@ -1,4 +1,5 @@
 """Extract per-type feature importance from v7 artifact and identify drag features."""
+
 from __future__ import annotations
 
 import json
@@ -11,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 ARTIFACT = ROOT / "data" / "models" / "price_model_optimized_v7.joblib"
+
 
 def main() -> int:
     print(f"Loading artifact: {ARTIFACT}")
@@ -84,7 +86,9 @@ def main() -> int:
 
     print("\n=== SUMMARY ===")
     for prop_type, r in report["per_type"].items():
-        print(f"\n[{prop_type}] n_features={r['n_features']} drag(imp<0.05)={r['zero_count']} needed_for_95pct={r.get('cumulative_95pct_cutoff')}")
+        print(
+            f"\n[{prop_type}] n_features={r['n_features']} drag(imp<0.05)={r['zero_count']} needed_for_95pct={r.get('cumulative_95pct_cutoff')}"
+        )
         print("  top 5:", [(n, f"{p:.1f}%") for n, _, p in r["top_15"][:5]])
 
     return 0

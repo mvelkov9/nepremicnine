@@ -1,4 +1,5 @@
 """Check fill rates and value distributions for candidate sub-segmentation keys."""
+
 from __future__ import annotations
 
 import sys
@@ -13,12 +14,20 @@ sys.path.insert(0, str(ROOT))
 CSV = ROOT / "data" / "raw" / "train_2020_2026.csv"
 
 CANDIDATES = {
-    "stanovanje": ["lega_v_stavbi", "ev_id_tip_stavbe", "ev_id_dr_dst", "ev_id_lega", "vrsta_dela_stavbe", "ev_id_konstrukcija", "floor"],
-    "hisa":       ["ev_id_tip_stavbe", "ev_id_dr_dst", "vrsta_dela_stavbe", "ev_id_konstrukcija", "ev_id_lega"],
-    "garaza":     ["vrsta_dela_stavbe", "lega_v_stavbi", "ev_id_lega", "ev_id_dr_dst", "ev_id_tip_stavbe"],
+    "stanovanje": [
+        "lega_v_stavbi",
+        "ev_id_tip_stavbe",
+        "ev_id_dr_dst",
+        "ev_id_lega",
+        "vrsta_dela_stavbe",
+        "ev_id_konstrukcija",
+        "floor",
+    ],
+    "hisa": ["ev_id_tip_stavbe", "ev_id_dr_dst", "vrsta_dela_stavbe", "ev_id_konstrukcija", "ev_id_lega"],
+    "garaza": ["vrsta_dela_stavbe", "lega_v_stavbi", "ev_id_lega", "ev_id_dr_dst", "ev_id_tip_stavbe"],
     "poslovni_prostor": ["vrsta_dela_stavbe", "ev_id_dr_dst", "lega_v_stavbi", "ev_id_tip_stavbe"],
     "industrijski": ["vrsta_dela_stavbe", "ev_id_dr_dst", "ev_id_tip_stavbe"],
-    "turisticni":   ["vrsta_dela_stavbe", "ev_id_dr_dst", "ev_id_tip_stavbe"],
+    "turisticni": ["vrsta_dela_stavbe", "ev_id_dr_dst", "ev_id_tip_stavbe"],
 }
 
 print(f"Loading {CSV}")
@@ -60,7 +69,9 @@ for ptype, cols in CANDIDATES.items():
         ratio = max(medians.values()) / min(medians.values()) if medians and min(medians.values()) > 0 else 0.0
         spread_pct = (max(medians.values()) - min(medians.values())) * 100 if medians else 0
 
-        print(f"  {col:25s} fill={n_valid/n:.2f} viable_buckets(n>=200)={len(viable)} viable_cov={viable_coverage}/{n} ({viable_coverage/n*100:.0f}%)")
+        print(
+            f"  {col:25s} fill={n_valid / n:.2f} viable_buckets(n>=200)={len(viable)} viable_cov={viable_coverage}/{n} ({viable_coverage / n * 100:.0f}%)"
+        )
         print(f"    top values: {dict(top5.head(5))}")
         if medians:
             print(f"    log_ppm2 medians: {medians}  spread={spread_pct:.0f}pp")

@@ -1,4 +1,5 @@
 """Launch optimized training with explicit logging for diagnostics."""
+
 from __future__ import annotations
 
 import io
