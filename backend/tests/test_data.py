@@ -9,7 +9,6 @@ import pandas as pd
 import pytest
 from httpx import AsyncClient
 
-from app.api.data import DATA_DIR
 from app.schemas.dataset import TrainingDatasetResponse
 from app.services.data_processing_service import prepare_training_csv_from_etn_kpp_bulk
 from app.tasks.training_worker import PREPARE_ACTIVE_KEY, PREPARE_JOB_PREFIX
@@ -217,7 +216,7 @@ async def test_etn_bulk_limit(client: AsyncClient, admin_token: str):
 
 @pytest.mark.asyncio
 async def test_prepare_etn_bulk_resolves_relative_paths(
-    client: AsyncClient, admin_token: str, monkeypatch: pytest.MonkeyPatch
+    client: AsyncClient, admin_token: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ):
     token = admin_token
 
@@ -244,7 +243,9 @@ async def test_prepare_etn_bulk_resolves_relative_paths(
     )
     monkeypatch.setattr("app.api.data.TRAIN_CSV", "/tmp/train.csv")
 
-    uploads_dir = Path(DATA_DIR) / "uploads"
+    fake_data_dir = Path(tmp_path) / "data"
+    monkeypatch.setattr("app.api.data.DATA_DIR", str(fake_data_dir))
+    uploads_dir = fake_data_dir / "uploads"
     posli = uploads_dir / "posli.csv"
     deli = uploads_dir / "deli.csv"
     posli.parent.mkdir(parents=True, exist_ok=True)
@@ -391,10 +392,12 @@ def test_prepare_etn_bulk_emits_progress_updates(monkeypatch: pytest.MonkeyPatch
 
 @pytest.mark.asyncio
 async def test_prepare_etn_bulk_start_and_status_use_async_job_flow(
-    client: AsyncClient, admin_token: str, monkeypatch: pytest.MonkeyPatch
+    client: AsyncClient, admin_token: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ):
     token = admin_token
-    uploads_dir = Path(DATA_DIR) / "uploads"
+    fake_data_dir = Path(tmp_path) / "data"
+    monkeypatch.setattr("app.api.data.DATA_DIR", str(fake_data_dir))
+    uploads_dir = fake_data_dir / "uploads"
     posli = uploads_dir / "posli.csv"
     deli = uploads_dir / "deli.csv"
     posli.parent.mkdir(parents=True, exist_ok=True)
@@ -453,7 +456,7 @@ async def test_prepare_etn_bulk_start_and_status_use_async_job_flow(
                 "result": {
                     "rows": 3,
                     "columns": ["price_eur"],
-                    "output_csv_path": str((Path(DATA_DIR) / "raw" / "train.csv").resolve()),
+                    "output_csv_path": str((fake_data_dir / "raw" / "train.csv").resolve()),
                 },
             }
         ),
