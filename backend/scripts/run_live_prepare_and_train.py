@@ -12,9 +12,9 @@ def _build_pairs(upload_dir: Path, start_year: int, end_year: int) -> list[dict[
     pairs: list[dict[str, str]] = []
     for year in range(start_year, end_year + 1):
         year_s = str(year)
-        posli = next(upload_dir.glob(f"*ETN_SLO_{year_s}_KPP_KPP_POSLI_*.csv"))
-        deli = next(upload_dir.glob(f"*ETN_SLO_{year_s}_KPP_KPP_DELISTAVB_*.csv"))
-        zem = next(upload_dir.glob(f"*ETN_SLO_{year_s}_KPP_KPP_ZEMLJISCA_*.csv"))
+        posli = next(upload_dir.glob(f"**/*ETN_SLO_{year_s}_KPP_KPP_POSLI_*.csv"))
+        deli = next(upload_dir.glob(f"**/*ETN_SLO_{year_s}_KPP_KPP_DELISTAVB_*.csv"))
+        zem = next(upload_dir.glob(f"**/*ETN_SLO_{year_s}_KPP_KPP_ZEMLJISCA_*.csv"))
         pairs.append(
             {
                 "posli_csv_path": str(posli),
