@@ -1,4 +1,4 @@
-# Nepremičnine v0.15.0
+# Nepremičnine v0.17.0
 
 > Slovenian real estate valuation platform for buyers, sellers, investors, and companies — powered by machine learning on official ETN transaction data.
 

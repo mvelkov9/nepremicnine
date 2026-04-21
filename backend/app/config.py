@@ -14,7 +14,7 @@ class Settings(BaseSettings):
 
     # App
     app_env: str = "development"
-    app_version: str = "0.15.0"
+    app_version: str = "0.17.0"
     max_upload_size_mb: int = 10240
     upload_disk_reserve_mb: int = 2048
     sql_echo: bool = False

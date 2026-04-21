@@ -6,7 +6,8 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 
 | Item | Value |
 |------|-------|
-| **Version** | 0.16.0 |
+| **Version** | 0.17.0 |
+| **Docs Snapshot** | `origin/main` @ `ed8f315` (2026-04-21) |
 | **Repo** | [github.com/mvelkov9/nepremicnine](https://github.com/mvelkov9/nepremicnine) |
 | **Backend** | FastAPI + Python 3.13 + PostgreSQL 17 + SQLAlchemy 2.x async |
 | **Frontend** | Vue 3 Composition API + TypeScript + Pinia + VueUse + pnpm 9, Vite 8 |
@@ -35,13 +36,22 @@ Complete rebuild of the Slovenian real estate price prediction application — f
 | [Phase 19](PHASE_8_14_PLAN.md#phase-19--dashboard-property-type-parity-v0815) | Dashboard property-type parity and analytical lens controls | ✅ Complete | `fb4a786` |
 | [Phase 20](PHASE_8_14_PLAN.md#phase-20--diagnostics-focus--locale-formatting-v0816) | Diagnostics focus workflow and locale-aware formatting polish | ✅ Complete | `4c58881` |
 | Phase 21 | Market UX and training reliability reset: structured progress, map legend/drawer, PrimeVue admin/viewer polish | ✅ Complete | `22c90cf` |
-| Phase 22 | Data quality, map UX, and PrimeVue modernization: canonical municipality coverage, direct portal links, centered map modal, cached analytics, admin quality summary | ✅ Complete | working tree |
-| [Phase 23](PHASE_23_MODERNIZATION.md) | Architecture modernization: TypeScript, VueUse, Vitest, Playwright E2E, DB optimization, API security hardening, performance benchmarking, accessibility audit, CI/CD overhaul, Prometheus monitoring | ✅ Complete | working tree |
-| [Phase 24](PHASE_24_REDESIGN.md) | Full frontend redesign: PrimeVue component migration, layout decomposition, dark mode fixes, CSS cleanup | ✅ Complete | working tree |
-| [Phase 25](PHASE_25_PRODUCT_RESET.md) | Product UX reset: benchmark proof workflow, server-side admin/data tables, workspace cleanup, shared reference caching | ✅ Complete | working tree |
-| Phase 26 | ML v6–v9 training iterations: GPU training, ev_benchmark removal, per-type feature correlation audit, sub-segmentation infrastructure, v9 model deployment | ✅ Complete | working tree |
+| Phase 22 | Data quality, map UX, and PrimeVue modernization: canonical municipality coverage, direct portal links, centered map modal, cached analytics, admin quality summary | ✅ Complete | `fef30bf` |
+| [Phase 23](PHASE_23_MODERNIZATION.md) | Architecture modernization: TypeScript, VueUse, Vitest, Playwright E2E, DB optimization, API security hardening, performance benchmarking, accessibility audit, CI/CD overhaul, Prometheus monitoring | ✅ Complete | `03653ce` |
+| [Phase 24](PHASE_24_REDESIGN.md) | Full frontend redesign: PrimeVue component migration, layout decomposition, dark mode fixes, CSS cleanup | ✅ Complete | `4331d4d` |
+| [Phase 25](PHASE_25_PRODUCT_RESET.md) | Product UX reset: benchmark proof workflow, server-side admin/data tables, workspace cleanup, shared reference caching | ✅ Complete | `2ac6905` |
+| Phase 26 | ML v6–v9 training iterations: GPU training, ev_benchmark removal, per-type feature correlation audit, sub-segmentation infrastructure, v9 model deployment | ✅ Complete | `70c6f6f` |
+| Phase 27 | Production default stabilization and docs refresh: v15 launcher alignment, RMSE guardrails, model audit notes, final frontend formatting cleanup | ✅ Complete | `ed8f315` |
 
 ## Changelog
+
+### v0.17.0
+
+- **ML: Production defaults stabilized**: The v15 production launcher now documents stricter market-validity thresholds, stronger recency weighting, tighter municipality-level outlier filtering, preserved large-type GPU overrides, and a higher Lossguide leaf budget while keeping the production loss on stable `RMSE`
+- **Docs and regression coverage**: Added `backend/data/models/v15_production_notes.md`, refreshed `current_production_audit.md`, `optimized_v1_results.md`, `optimized_v3_results.md`, and `kmetijsko_focus/.../comparison_vs_production.md`, added `backend/tests/test_model_production_defaults.py`, and renamed the launcher to `backend/scripts/run_v15_production_train.py`
+- **Frontend cleanup**: Synced final formatting-only cleanup on generated component typings plus the Benchmark, Diagnostics, and Model views after rebasing onto the latest `main`
+- **TypeScript 6 compatibility**: Added `ignoreDeprecations: "6.0"` in `frontend/tsconfig.json` so `vue-tsc --noEmit` no longer fails on the `baseUrl` deprecation warning in CI
+- **Version**: 0.16.0 -> 0.17.0
 
 ### v0.16.0
 
