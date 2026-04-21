@@ -1318,14 +1318,14 @@
                           <template #body="{ data }">{{ formatMape(data.mape) }}</template>
                         </Column>
                         <Column field="delta_r2" :header="t('diag.deltaVsFullR2')" sortable>
-                          <template #body="{ data }">{{
-                            formatSignedNumber(data.delta_r2, 3)
-                          }}</template>
+                          <template #body="{ data }">
+                            {{ formatSignedNumber(data.delta_r2, 3) }}
+                          </template>
                         </Column>
                         <Column field="delta_mae" :header="t('diag.deltaVsFullMae')" sortable>
-                          <template #body="{ data }">{{
-                            formatSignedCurrency(data.delta_mae)
-                          }}</template>
+                          <template #body="{ data }">
+                            {{ formatSignedCurrency(data.delta_mae) }}
+                          </template>
                         </Column>
                         <Column :header="t('diag.variantRemovedFeatures')">
                           <template #body="{ data }">
@@ -1369,22 +1369,22 @@
                           <template #body="{ data }">{{ formatMetric(data.globalR2, 3) }}</template>
                         </Column>
                         <Column field="combinedR2" :header="t('diag.routedR2')" sortable>
-                          <template #body="{ data }">{{
-                            formatMetric(data.combinedR2, 3)
-                          }}</template>
+                          <template #body="{ data }">
+                            {{ formatMetric(data.combinedR2, 3) }}
+                          </template>
                         </Column>
                         <Column field="globalMae" :header="t('diag.globalMae')" sortable>
                           <template #body="{ data }">{{ formatCurrency(data.globalMae) }}</template>
                         </Column>
                         <Column field="combinedMae" :header="t('diag.routedMae')" sortable>
-                          <template #body="{ data }">{{
-                            formatCurrency(data.combinedMae)
-                          }}</template>
+                          <template #body="{ data }">
+                            {{ formatCurrency(data.combinedMae) }}
+                          </template>
                         </Column>
                         <Column field="perTypeCount" :header="t('diag.perTypeModels')" sortable>
-                          <template #body="{ data }">{{
-                            formatNumber(data.perTypeCount)
-                          }}</template>
+                          <template #body="{ data }">
+                            {{ formatNumber(data.perTypeCount) }}
+                          </template>
                         </Column>
                       </DataTable>
                     </div>
@@ -1602,9 +1602,9 @@
                         :header="t('diag.rowsDropped')"
                         sortable
                       >
-                        <template #body="{ data }">{{
-                          formatNumber(data.dropped_since_previous)
-                        }}</template>
+                        <template #body="{ data }">
+                          {{ formatNumber(data.dropped_since_previous) }}
+                        </template>
                       </Column>
                       <Column field="reports" :header="t('diag.yearsCovered')" sortable>
                         <template #body="{ data }">{{ formatNumber(data.reports) }}</template>
@@ -1731,56 +1731,56 @@
                         :header="t('diag.exactAddressMatches')"
                         sortable
                       >
-                        <template #body="{ data: row }">{{
-                          formatNumber(row.rnExactAddress)
-                        }}</template>
+                        <template #body="{ data: row }">
+                          {{ formatNumber(row.rnExactAddress) }}
+                        </template>
                       </Column>
                       <Column field="rnRegionId" :header="t('diag.regionIdsRecovered')" sortable>
-                        <template #body="{ data: row }">{{
-                          formatNumber(row.rnRegionId)
-                        }}</template>
+                        <template #body="{ data: row }">
+                          {{ formatNumber(row.rnRegionId) }}
+                        </template>
                       </Column>
                       <Column
                         field="evBuildingMatch"
                         :header="t('diag.evBuildingMatches')"
                         sortable
                       >
-                        <template #body="{ data: row }">{{
-                          formatNumber(row.evBuildingMatch)
-                        }}</template>
+                        <template #body="{ data: row }">
+                          {{ formatNumber(row.evBuildingMatch) }}
+                        </template>
                       </Column>
                       <Column field="evParcelMatch" :header="t('diag.evParcelMatches')" sortable>
-                        <template #body="{ data: row }">{{
-                          formatNumber(row.evParcelMatch)
-                        }}</template>
+                        <template #body="{ data: row }">
+                          {{ formatNumber(row.evParcelMatch) }}
+                        </template>
                       </Column>
                       <Column field="knPolygonMatch" :header="t('diag.knPolygonMatches')" sortable>
-                        <template #body="{ data: row }">{{
-                          formatNumber(row.knPolygonMatch)
-                        }}</template>
+                        <template #body="{ data: row }">
+                          {{ formatNumber(row.knPolygonMatch) }}
+                        </template>
                       </Column>
                       <Column
                         field="gjiVodovodNearby"
                         :header="t('diag.gjiVodovodMatches')"
                         sortable
                       >
-                        <template #body="{ data: row }">{{
-                          formatNumber(row.gjiVodovodNearby)
-                        }}</template>
+                        <template #body="{ data: row }">
+                          {{ formatNumber(row.gjiVodovodNearby) }}
+                        </template>
                       </Column>
                       <Column
                         field="gjiKanalizacijaNearby"
                         :header="t('diag.gjiKanalizacijaMatches')"
                         sortable
                       >
-                        <template #body="{ data: row }">{{
-                          formatNumber(row.gjiKanalizacijaNearby)
-                        }}</template>
+                        <template #body="{ data: row }">
+                          {{ formatNumber(row.gjiKanalizacijaNearby) }}
+                        </template>
                       </Column>
                       <Column field="emvZoneMatch" :header="t('diag.emvZoneMatches')" sortable>
-                        <template #body="{ data: row }">{{
-                          formatNumber(row.emvZoneMatch)
-                        }}</template>
+                        <template #body="{ data: row }">
+                          {{ formatNumber(row.emvZoneMatch) }}
+                        </template>
                       </Column>
                       <Column :header="t('diag.enrichmentSources')">
                         <template #body="{ data: row }">

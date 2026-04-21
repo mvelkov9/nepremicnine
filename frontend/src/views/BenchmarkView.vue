@@ -766,27 +766,27 @@
                     </Column>
 
                     <Column field="model_price_eur" :header="t('benchmark.modelPrice')" sortable>
-                      <template #body="{ data }">{{
-                        formatCurrency(data.model_price_eur)
-                      }}</template>
+                      <template #body="{ data }">
+                        {{ formatCurrency(data.model_price_eur) }}
+                      </template>
                     </Column>
 
                     <Column field="gurs_price_eur" :header="t('benchmark.gursPrice')" sortable>
-                      <template #body="{ data }">{{
-                        formatCurrency(data.gurs_price_eur)
-                      }}</template>
+                      <template #body="{ data }">
+                        {{ formatCurrency(data.gurs_price_eur) }}
+                      </template>
                     </Column>
 
                     <Column field="model_abs_error" :header="t('benchmark.modelError')" sortable>
-                      <template #body="{ data }">{{
-                        formatCurrency(data.model_abs_error)
-                      }}</template>
+                      <template #body="{ data }">
+                        {{ formatCurrency(data.model_abs_error) }}
+                      </template>
                     </Column>
 
                     <Column field="gurs_abs_error" :header="t('benchmark.gursError')" sortable>
-                      <template #body="{ data }">{{
-                        formatCurrency(data.gurs_abs_error)
-                      }}</template>
+                      <template #body="{ data }">
+                        {{ formatCurrency(data.gurs_abs_error) }}
+                      </template>
                     </Column>
 
                     <Column field="improvement_eur" :header="t('benchmark.improvement')" sortable>

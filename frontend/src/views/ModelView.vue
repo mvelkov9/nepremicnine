@@ -729,18 +729,18 @@
                   </template>
                 </Column>
                 <Column field="chosen_feature_variant" :header="t('diag.featureVariant')" sortable>
-                  <template #body="{ data }">{{
-                    humanizeToken(data.chosen_feature_variant)
-                  }}</template>
+                  <template #body="{ data }">
+                    {{ humanizeToken(data.chosen_feature_variant) }}
+                  </template>
                 </Column>
                 <Column
                   field="chosen_target_transform"
                   :header="t('diag.targetTransform')"
                   sortable
                 >
-                  <template #body="{ data }">{{
-                    humanizeToken(data.chosen_target_transform)
-                  }}</template>
+                  <template #body="{ data }">
+                    {{ humanizeToken(data.chosen_target_transform) }}
+                  </template>
                 </Column>
                 <Column field="training_policy" :header="t('diag.trainingPolicy')" sortable>
                   <template #body="{ data }">{{ humanizeToken(data.training_policy) }}</template>
