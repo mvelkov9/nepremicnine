@@ -7,6 +7,11 @@
   import Column from 'primevue/column'
   import DataTable from 'primevue/datatable'
   import Dialog from 'primevue/dialog'
+  import Tab from 'primevue/tab'
+  import TabList from 'primevue/tablist'
+  import TabPanel from 'primevue/tabpanel'
+  import TabPanels from 'primevue/tabpanels'
+  import Tabs from 'primevue/tabs'
   import EmptyState from '../components/EmptyState.vue'
   import PageHeader from '../components/PageHeader.vue'
   import SavedWorkspaceMenu from '../components/workbench/SavedWorkspaceMenu.vue'
@@ -63,6 +68,7 @@
   const error = ref('')
   const rescanning = ref(false)
   const selectedPrepareRunId = ref('')
+  const dataTab = ref(auth.isAdmin ? 'upload' : 'library')
 
   const qualitySummary = computed(() => dataStore.qualitySummary as QualitySummary | null)
   const uploadCapacity = computed(() => dataStore.uploadCapacity as UploadCapacitySummary | null)
@@ -260,9 +266,11 @@
 
   async function initializePage() {
     error.value = ''
-    await Promise.all([loadDataView(), workbench.fetchPrepareRuns()])
-    if (workbench.prepareRuns.length && !selectedPrepareRunId.value) {
-      await loadPrepareRunDetail(workbench.prepareRuns[0].id)
+    const results = await Promise.allSettled([loadDataView(), workbench.fetchPrepareRuns()])
+
+    const dataViewResult = results[0]
+    if (dataViewResult.status === 'rejected') {
+      throw dataViewResult.reason
     }
   }
 
@@ -278,6 +286,28 @@
     selectedPrepareRunId.value = jobId
     await workbench.fetchPrepareRunDetail(jobId)
   }
+
+  watch(
+    () => workbench.prepareRuns,
+    (runs) => {
+      if (!runs.length) return
+
+      const resolvedRunId = runs.some((item) => item.id === selectedPrepareRunId.value)
+        ? selectedPrepareRunId.value
+        : runs[0].id
+
+      if (!resolvedRunId) return
+
+      if (selectedPrepareRunId.value !== resolvedRunId) {
+        selectedPrepareRunId.value = resolvedRunId
+      }
+
+      if (selectedPrepareRun.value?.id !== resolvedRunId) {
+        void loadPrepareRunDetail(resolvedRunId)
+      }
+    },
+    { immediate: true },
+  )
 
   function formatFileSize(bytes: number) {
     if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
@@ -612,6 +642,7 @@
           page="data"
           :state="{
             page: 'data',
+            tab: dataTab,
             filters: {
               search: datasetTable.state.search,
               page: datasetTable.state.page,
@@ -624,93 +655,165 @@
       </template>
     </AdminWorkspaceHero>
 
-    <section v-if="auth.isAdmin" class="data-admin-grid">
-      <DataUploadWorkspace
-        :eyebrow="t('data.upload')"
-        :title="t('data.uploadTitle')"
-        :description="t('data.uploadHint')"
-        :selected-files="selectedFiles"
-        :upload-items="uploadItems"
-        :upload-result="uploadResult"
-        :uploading="dataStore.uploading"
-        :reset-token="uploadResetToken"
-        :max-upload-label="maxUploadLabel"
-        :server-free-label="serverFreeLabel"
-        :recommended-upload-label="recommendedUploadLabel"
-        :reserve-label="reserveLabel"
-        :capacity-tone="capacityTone"
-        :capacity-message="capacityMessage"
-        :upload-progress="dataStore.uploadProgress || 0"
-        :upload-progress-label="uploadProgressLabel"
-        @select="handleFileSelect"
-        @clear="clearSelectedFiles"
-        @start="startUpload"
-        @remove="removeSelectedFile"
-      />
-
-      <aside class="data-side-stack">
-        <AdminRunDetailPanel
-          :eyebrow="t('nav.prepare')"
-          :title="t('workbench.recentPrepareRuns')"
-          :description="t('workbench.prepareRunDetailHint')"
-          run-type="prepare"
-          :runs="workbench.prepareRuns.slice(0, 8)"
-          :selected-run="selectedPrepareRun"
-          @select="loadPrepareRunDetail"
-        />
-
-        <section class="quality-grid">
-          <article class="card quality-card">
-            <PageHeader
-              compact
-              :eyebrow="t('data.qualitySummary')"
-              :title="t('data.unresolvedMunicipalities')"
-              :description="t('data.unresolvedHint')"
+    <Tabs v-if="auth.isAdmin" v-model:value="dataTab" class="data-tabs">
+      <TabList>
+        <Tab value="upload">{{ t('data.upload') }}</Tab>
+        <Tab value="quality">{{ t('data.qualitySummary') }}</Tab>
+        <Tab value="library">{{ t('common.overview') }}</Tab>
+      </TabList>
+      <TabPanels>
+        <TabPanel value="upload">
+          <section class="data-admin-grid data-tab-content">
+            <DataUploadWorkspace
+              :eyebrow="t('data.upload')"
+              :title="t('data.uploadTitle')"
+              :description="t('data.uploadHint')"
+              :selected-files="selectedFiles"
+              :upload-items="uploadItems"
+              :upload-result="uploadResult"
+              :uploading="dataStore.uploading"
+              :reset-token="uploadResetToken"
+              :max-upload-label="maxUploadLabel"
+              :server-free-label="serverFreeLabel"
+              :recommended-upload-label="recommendedUploadLabel"
+              :reserve-label="reserveLabel"
+              :capacity-tone="capacityTone"
+              :capacity-message="capacityMessage"
+              :upload-progress="dataStore.uploadProgress || 0"
+              :upload-progress-label="uploadProgressLabel"
+              @select="handleFileSelect"
+              @clear="clearSelectedFiles"
+              @start="startUpload"
+              @remove="removeSelectedFile"
             />
 
-            <DataTable
-              :value="qualitySummary?.unresolved_labels || []"
-              paginator
-              :rows="10"
-              size="small"
-              striped-rows
-              responsive-layout="scroll"
-            >
-              <Column field="label" :header="t('dashboard.municipality')" sortable />
-              <Column field="count" :header="t('dashboard.transactions')" sortable />
-            </DataTable>
-          </article>
+            <aside class="data-side-stack">
+              <AdminRunDetailPanel
+                :eyebrow="t('nav.prepare')"
+                :title="t('workbench.recentPrepareRuns')"
+                :description="t('workbench.prepareRunDetailHint')"
+                run-type="prepare"
+                :runs="workbench.prepareRuns.slice(0, 8)"
+                :selected-run-id="selectedPrepareRunId"
+                :selected-run="selectedPrepareRun"
+                :loading="workbench.prepareRunDetailLoading"
+                :error="workbench.prepareRunDetailError || workbench.prepareRunsError"
+                @select="loadPrepareRunDetail"
+              />
+            </aside>
+          </section>
+        </TabPanel>
 
-          <article class="card quality-card">
-            <PageHeader
-              compact
-              :eyebrow="t('data.qualitySummary')"
-              :title="t('data.aliasCollisions')"
-              :description="t('data.aliasHint')"
-            />
+        <TabPanel value="quality">
+          <section class="quality-grid quality-grid--split data-tab-content">
+            <article class="card quality-card">
+              <PageHeader
+                compact
+                :eyebrow="t('data.qualitySummary')"
+                :title="t('data.unresolvedMunicipalities')"
+                :description="t('data.unresolvedHint')"
+              />
 
-            <DataTable
-              :value="qualitySummary?.alias_collisions || []"
-              paginator
-              :rows="10"
-              size="small"
-              striped-rows
-              responsive-layout="scroll"
-            >
-              <Column field="canonical" :header="t('data.canonicalLabel')" sortable />
-              <Column field="variant_count" :header="t('data.variantCount')" sortable />
-              <Column :header="t('data.variants')">
-                <template #body="{ data }">
-                  {{ data.variants?.join(', ') || '-' }}
-                </template>
-              </Column>
-            </DataTable>
-          </article>
-        </section>
-      </aside>
-    </section>
+              <DataTable
+                :value="qualitySummary?.unresolved_labels || []"
+                paginator
+                :rows="10"
+                size="small"
+                striped-rows
+                responsive-layout="scroll"
+              >
+                <Column field="label" :header="t('dashboard.municipality')" sortable />
+                <Column field="count" :header="t('dashboard.transactions')" sortable />
+              </DataTable>
+            </article>
+
+            <article class="card quality-card">
+              <PageHeader
+                compact
+                :eyebrow="t('data.qualitySummary')"
+                :title="t('data.aliasCollisions')"
+                :description="t('data.aliasHint')"
+              />
+
+              <DataTable
+                :value="qualitySummary?.alias_collisions || []"
+                paginator
+                :rows="10"
+                size="small"
+                striped-rows
+                responsive-layout="scroll"
+              >
+                <Column field="canonical" :header="t('data.canonicalLabel')" sortable />
+                <Column field="variant_count" :header="t('data.variantCount')" sortable />
+                <Column :header="t('data.variants')">
+                  <template #body="{ data }">
+                    {{ data.variants?.join(', ') || '-' }}
+                  </template>
+                </Column>
+              </DataTable>
+            </article>
+          </section>
+        </TabPanel>
+
+        <TabPanel value="library">
+          <DataDatasetLibrary
+            class="dataset-library-card data-tab-content"
+            :page="'data'"
+            :state="{
+              page: 'data',
+              tab: dataTab,
+              filters: {
+                search: datasetTable.state.search,
+                page: datasetTable.state.page,
+                page_size: datasetTable.state.page_size,
+                sort: datasetTable.state.sort,
+                order: datasetTable.state.order,
+              },
+            }"
+            :search-value="datasetSearchInput"
+            :datasets="datasets"
+            :loading="dataStore.loading"
+            :first="datasetFirst"
+            :rows="datasetRows"
+            :total-records="datasetTotalRecords"
+            :sort-field="datasetTable.sort.value"
+            :sort-order="datasetTable.order.value"
+            :active-filters="datasetFilterLabels"
+            :format-date="formatDate"
+            :can-delete="auth.isAdmin"
+            @update:search-value="datasetSearchInput = $event"
+            @export="exportDatasets"
+            @clear="clearDatasetFilters"
+            @page="handleDatasetPage"
+            @sort="handleDatasetSort"
+            @preview="showPreview"
+            @delete="handleDelete"
+          >
+            <template #toolbar-actions>
+              <Button
+                severity="secondary"
+                outlined
+                icon="pi pi-refresh"
+                :label="t('data.rescanUploads')"
+                :loading="rescanning"
+                @click="handleRescan"
+              />
+              <Button
+                v-if="datasets.length"
+                severity="danger"
+                outlined
+                icon="pi pi-trash"
+                :label="t('data.deleteCurrentPage')"
+                @click="handleDeleteAll"
+              />
+            </template>
+          </DataDatasetLibrary>
+        </TabPanel>
+      </TabPanels>
+    </Tabs>
 
     <DataDatasetLibrary
+      v-else
       class="dataset-library-card"
       :page="'data'"
       :state="{
@@ -733,35 +836,14 @@
       :sort-order="datasetTable.order.value"
       :active-filters="datasetFilterLabels"
       :format-date="formatDate"
-      :can-delete="auth.isAdmin"
+      :can-delete="false"
       @update:search-value="datasetSearchInput = $event"
       @export="exportDatasets"
       @clear="clearDatasetFilters"
       @page="handleDatasetPage"
       @sort="handleDatasetSort"
       @preview="showPreview"
-      @delete="handleDelete"
-    >
-      <template #toolbar-actions>
-        <Button
-          v-if="auth.isAdmin"
-          severity="secondary"
-          outlined
-          icon="pi pi-refresh"
-          :label="t('data.rescanUploads')"
-          :loading="rescanning"
-          @click="handleRescan"
-        />
-        <Button
-          v-if="auth.isAdmin && datasets.length"
-          severity="danger"
-          outlined
-          icon="pi pi-trash"
-          :label="t('data.deleteCurrentPage')"
-          @click="handleDeleteAll"
-        />
-      </template>
-    </DataDatasetLibrary>
+    />
 
     <div v-if="error" class="state-card state-card-stack" role="alert">
       <EmptyState icon="pi pi-exclamation-triangle" :message="error" />
@@ -816,8 +898,33 @@
     gap: var(--space-section);
   }
 
+  .data-page {
+    --page-accent: var(--accent);
+    --page-accent-2: var(--secondary);
+  }
+
+  .data-tabs,
+  .data-tab-content {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .data-tabs :deep(.p-tablist) {
+    padding: 0.35rem;
+    border: 1px solid color-mix(in srgb, var(--border) 68%, var(--primary) 20%);
+    border-radius: var(--radius-lg);
+    background: color-mix(in srgb, var(--surface-strong) 92%, var(--primary-overlay) 8%);
+    box-shadow: 0 10px 22px color-mix(in srgb, var(--shadow-color) 8%, transparent);
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+
+  .data-tabs :deep(.p-tabpanels) {
+    padding-top: 0.15rem;
+  }
+
   .data-admin-grid {
-    grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.88fr);
+    grid-template-columns: 1fr;
     align-items: start;
   }
 
@@ -825,6 +932,10 @@
   .quality-grid,
   .state-card-stack {
     gap: 1rem;
+  }
+
+  .quality-grid--split {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .quality-card {
@@ -836,7 +947,12 @@
     background:
       radial-gradient(
         circle at top right,
-        color-mix(in srgb, var(--primary) 10%, transparent),
+        color-mix(in srgb, var(--page-accent) 14%, transparent),
+        transparent 30%
+      ),
+      radial-gradient(
+        circle at 12% -20%,
+        color-mix(in srgb, var(--page-accent-2) 10%, transparent),
         transparent 28%
       ),
       linear-gradient(
@@ -862,7 +978,7 @@
       var(--surface-panel-muted, var(--surface-soft)) 92%,
       transparent
     );
-    border: 1px solid color-mix(in srgb, var(--border) 72%, var(--primary) 28%);
+    border: 1px solid color-mix(in srgb, var(--border) 62%, var(--page-accent) 38%);
   }
 
   .state-card-actions {
@@ -873,7 +989,7 @@
   }
 
   @media (max-width: 1100px) {
-    .data-admin-grid {
+    .quality-grid--split {
       grid-template-columns: 1fr;
     }
   }

@@ -20,7 +20,7 @@
     position: relative;
     display: grid;
     align-content: start;
-    gap: 0.35rem;
+    gap: 0.38rem;
     min-height: 7rem;
     padding: 1rem;
     border-radius: var(--radius-md);
@@ -36,6 +36,10 @@
       inset 0 1px 0 var(--content-glow),
       var(--shadow-sm);
     overflow: hidden;
+    transition:
+      border-color 170ms ease,
+      box-shadow 170ms ease,
+      transform 170ms ease;
   }
 
   .metric-card::before {
@@ -45,6 +49,27 @@
     width: 0.22rem;
     background: linear-gradient(180deg, var(--primary), var(--secondary));
     opacity: 0.9;
+  }
+
+  .metric-card::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: radial-gradient(
+      circle at top right,
+      color-mix(in srgb, var(--primary) 10%, transparent),
+      transparent 34%
+    );
+    opacity: 0.75;
+  }
+
+  .metric-card:hover {
+    transform: translateY(-2px);
+    border-color: color-mix(in srgb, var(--border) 66%, var(--primary) 34%);
+    box-shadow:
+      inset 0 1px 0 var(--content-glow),
+      0 18px 34px color-mix(in srgb, var(--shadow-color) 12%, transparent);
   }
 
   .metric-card-label {
@@ -78,10 +103,36 @@
       color-mix(in srgb, var(--surface-panel, var(--surface-strong)) 90%, var(--success) 10%);
   }
 
+  .metric-card.tone-success::before {
+    background: linear-gradient(
+      180deg,
+      var(--success),
+      color-mix(in srgb, var(--success) 62%, var(--secondary) 38%)
+    );
+  }
+
   .metric-card.tone-warning {
     border-color: color-mix(in srgb, var(--warning) 28%, var(--border) 72%);
     background:
       linear-gradient(180deg, color-mix(in srgb, var(--warning) 12%, transparent), transparent 35%),
       color-mix(in srgb, var(--surface-panel, var(--surface-strong)) 90%, var(--warning) 10%);
+  }
+
+  .metric-card.tone-warning::before {
+    background: linear-gradient(
+      180deg,
+      var(--warning),
+      color-mix(in srgb, var(--warning) 64%, var(--danger) 36%)
+    );
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .metric-card {
+      transition: none;
+    }
+
+    .metric-card:hover {
+      transform: none;
+    }
   }
 </style>

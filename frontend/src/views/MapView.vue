@@ -116,6 +116,7 @@
   const loading = ref(false)
   const detailLoading = ref(false)
   const error = ref('')
+  const detailError = ref('')
   const mapMetaReason = ref<string | null>(null)
   const mapLegend = ref<MapLegendPayload | null>(null)
   const selectedType = ref('')
@@ -124,6 +125,7 @@
   const selectedMunicipality = ref('')
   const selectedPriceBand = ref('')
   const viewMode = ref<'transactions' | 'overview'>('transactions')
+  const mapTab = ref<'workspace' | 'regions'>('workspace')
   const mapZoom = ref(8)
 
   const municipalities = ref<MapMunicipalityRecord[]>([])
@@ -137,7 +139,9 @@
   let syncingRoute = false
   let writingRoute = false
   let activeMapRequestController: AbortController | null = null
+  let activeDetailRequestController: AbortController | null = null
   let mapRequestToken = 0
+  let detailRequestToken = 0
   const validPriceBands = new Set(['low', 'mid', 'high'])
 
   function semanticColor(name: string, fallback: string) {
@@ -173,6 +177,15 @@
       ? transactions.value.length
       : municipalities.value.reduce((sum, item) => sum + item.count, 0),
   )
+  const visibleMunicipalityCount = computed(() => {
+    if (viewMode.value === 'overview') return municipalities.value.length
+
+    return new Set(
+      transactions.value
+        .map((item) => item.municipality)
+        .filter((value): value is string => typeof value === 'string' && value.trim().length > 0),
+    ).size
+  })
 
   const avgPrice = computed(() => {
     const values =
@@ -594,14 +607,22 @@
       return
     }
 
+    detailRequestToken += 1
+    const requestToken = detailRequestToken
+    activeDetailRequestController?.abort()
+    activeDetailRequestController = null
     selectedRecord.value = item
     detailMode.value = mode
     detailVisible.value = true
+    detailError.value = ''
+    detailLoading.value = false
     detailComparables.value = []
     focusMapItem(item)
 
     if (mode === 'transaction' && item?.municipality && item?.property_type && item?.size_m2) {
       detailLoading.value = true
+      const controller = new AbortController()
+      activeDetailRequestController = controller
       try {
         const { data } = await api.get('/api/stats/comparables', {
           params: {
@@ -612,12 +633,23 @@
             price_eur: item.price_eur || undefined,
             limit: 4,
           },
+          signal: controller.signal,
         })
+
+        if (requestToken !== detailRequestToken || controller.signal.aborted) return
+
         detailComparables.value = data.items || []
-      } catch {
+      } catch (err) {
+        if (requestToken !== detailRequestToken || controller.signal.aborted) return
         detailComparables.value = []
+        detailError.value = getApiErrorMessage(err, t)
       } finally {
-        detailLoading.value = false
+        if (activeDetailRequestController === controller) {
+          activeDetailRequestController = null
+        }
+        if (requestToken === detailRequestToken) {
+          detailLoading.value = false
+        }
       }
     }
   }
@@ -676,6 +708,45 @@
     }
   }
 
+  function resetDetailState() {
+    detailRequestToken += 1
+    activeDetailRequestController?.abort()
+    activeDetailRequestController = null
+    detailVisible.value = false
+    detailLoading.value = false
+    detailError.value = ''
+    selectedRecord.value = null
+    detailComparables.value = []
+  }
+
+  watch(detailVisible, (visible, previous) => {
+    if (!visible && previous) {
+      detailRequestToken += 1
+      activeDetailRequestController?.abort()
+      activeDetailRequestController = null
+      detailLoading.value = false
+      detailError.value = ''
+      detailComparables.value = []
+    }
+  })
+
+  function clearMapResults(mode: 'transactions' | 'overview' | 'all' = 'all') {
+    if (mode === 'all' || mode === 'transactions') {
+      transactions.value = []
+    }
+    if (mode === 'all' || mode === 'overview') {
+      municipalities.value = []
+    }
+    if (mode === 'all') {
+      regionStats.value = []
+    }
+
+    mapLegend.value = null
+    mapMetaReason.value = null
+    markersLayer?.clearLayers()
+    resetDetailState()
+  }
+
   async function fetchTransactions(signal?: AbortSignal) {
     const params: MapFilterParams = {}
     if (selectedType.value) params.property_type = selectedType.value
@@ -705,12 +776,12 @@
   }
 
   async function loadReferenceData() {
-    const [regionsRes] = await Promise.all([
+    const [regionsRes] = await Promise.allSettled([
       api.get('/api/stats/regions'),
       referenceData.ensureLoaded(),
     ])
 
-    regionStats.value = regionsRes.data || []
+    regionStats.value = regionsRes.status === 'fulfilled' ? regionsRes.value.data || [] : []
 
     if (!selectedYear.value && defaultYear.value) {
       selectedYear.value = String(defaultYear.value)
@@ -732,6 +803,7 @@
       initialized.value = true
       await fetchData()
     } catch (err) {
+      clearMapResults('all')
       error.value = getApiErrorMessage(err, t)
     }
   }
@@ -759,6 +831,7 @@
       renderMarkers()
     } catch (err) {
       if (controller.signal.aborted || isCancelledRequest(err)) return
+      clearMapResults(viewMode.value)
       error.value = getApiErrorMessage(err, t)
     } finally {
       if (activeMapRequestController === controller) activeMapRequestController = null
@@ -974,7 +1047,7 @@
         <template #actions>
           <SavedWorkspaceMenu
             page="map"
-            :state="{ page: 'map', filters: viewerRouteQuery({ view: viewMode }) }"
+            :state="{ page: 'map', tab: mapTab, filters: viewerRouteQuery({ view: viewMode }) }"
           />
           <Button
             icon="pi pi-chart-line"
@@ -989,7 +1062,7 @@
       <div class="metric-band">
         <MetricCard :label="t('map.totalTransactions')" :value="fmt(totalCount)" />
         <MetricCard :label="t('map.avgPrice')" :value="fmtCurrency(avgPrice)" />
-        <MetricCard :label="t('map.municipalities')" :value="fmt(municipalities.length)" />
+        <MetricCard :label="t('map.municipalities')" :value="fmt(visibleMunicipalityCount)" />
         <MetricCard :label="t('map.regions')" :value="fmt(referenceData.regions.length)" />
       </div>
 
@@ -1005,113 +1078,134 @@
       </div>
     </section>
 
-    <section class="map-workbench">
-      <article class="card map-panel">
-        <div class="map-panel-header">
-          <div>
-            <span class="eyebrow">{{
-              viewMode === 'transactions' ? t('map.transactionView') : t('map.overviewMode')
-            }}</span>
-            <h3>
-              {{ viewMode === 'transactions' ? t('map.activityFeed') : t('map.topMunicipalities') }}
-            </h3>
-            <p>{{ viewMode === 'transactions' ? t('map.drawerHint') : t('map.overviewHint') }}</p>
-          </div>
-          <Tag
-            :severity="selectedFilterCount > 0 ? 'contrast' : 'secondary'"
-            :value="selectedFilterTag"
-          />
-        </div>
-
-        <div class="map-shell">
-          <div
-            ref="mapContainer"
-            class="map-container"
-            role="region"
-            :aria-label="t('map.title')"
-          ></div>
-          <div v-if="loading || error || mapStateMessage" class="map-overlay">
-            <div v-if="loading" class="card state-card state-card-overlay" aria-busy="true">
-              <LoadingSpinner :label="t('map.loading')" />
-            </div>
-            <div
-              v-else-if="error"
-              class="card state-card state-card-overlay state-card-stack"
-              role="alert"
-            >
-              <EmptyState icon="pi pi-exclamation-triangle" :message="error" />
-              <div class="state-card-actions">
-                <Button
-                  size="small"
-                  severity="secondary"
-                  outlined
-                  icon="pi pi-refresh"
-                  :label="t('common.retry')"
-                  @click="initializePage"
+    <Tabs v-model:value="mapTab" class="map-tabs">
+      <TabList>
+        <Tab value="workspace">{{ t('common.overview') }}</Tab>
+        <Tab value="regions">{{ t('map.regionSnapshot') }}</Tab>
+      </TabList>
+      <TabPanels>
+        <TabPanel value="workspace">
+          <section class="map-workbench map-tab-content">
+            <article class="card map-panel">
+              <div class="map-panel-header">
+                <div>
+                  <span class="eyebrow">{{
+                    viewMode === 'transactions' ? t('map.transactionView') : t('map.overviewMode')
+                  }}</span>
+                  <h3>
+                    {{
+                      viewMode === 'transactions'
+                        ? t('map.activityFeed')
+                        : t('map.topMunicipalities')
+                    }}
+                  </h3>
+                  <p>
+                    {{ viewMode === 'transactions' ? t('map.drawerHint') : t('map.overviewHint') }}
+                  </p>
+                </div>
+                <Tag
+                  :severity="selectedFilterCount > 0 ? 'contrast' : 'secondary'"
+                  :value="selectedFilterTag"
                 />
               </div>
-            </div>
-            <div v-else-if="mapStateMessage" class="card state-card state-card-overlay">
-              <EmptyState icon="pi pi-info-circle" :message="mapStateMessage" />
-            </div>
-          </div>
-        </div>
-      </article>
 
-      <MapWorkspaceRail
-        v-model:view-mode="viewMode"
-        v-model:selected-type="selectedType"
-        v-model:selected-region="selectedRegion"
-        v-model:selected-year="selectedYear"
-        v-model:selected-municipality="selectedMunicipality"
-        v-model:selected-price-band="selectedPriceBand"
-        :selected-filter-count="selectedFilterCount"
-        :selected-filter-tag="selectedFilterTag"
-        :property-type-options="propertyTypeOptions"
-        :region-options="regionOptions"
-        :year-options="yearOptions"
-        :municipality-options="municipalityOptions"
-        :band-options="bandOptions"
-        :hero-action-can-use="heroActionState.canUse"
-        :hero-action-reason="heroActionState.reason"
-        @clear-filters="clearFilters"
-        @open-market="openMarketExplorer"
-        @open-analysis="openHeroAnalysis"
-      />
-    </section>
+              <div class="map-shell">
+                <div
+                  ref="mapContainer"
+                  class="map-container"
+                  role="region"
+                  :aria-label="t('map.title')"
+                ></div>
+                <div v-if="loading || error || mapStateMessage" class="map-overlay">
+                  <div v-if="loading" class="card state-card state-card-overlay" aria-busy="true">
+                    <LoadingSpinner :label="t('map.loading')" />
+                  </div>
+                  <div
+                    v-else-if="error"
+                    class="card state-card state-card-overlay state-card-stack"
+                    role="alert"
+                  >
+                    <EmptyState icon="pi pi-exclamation-triangle" :message="error" />
+                    <div class="state-card-actions">
+                      <Button
+                        size="small"
+                        severity="secondary"
+                        outlined
+                        icon="pi pi-refresh"
+                        :label="t('common.retry')"
+                        @click="initializePage"
+                      />
+                    </div>
+                  </div>
+                  <div v-else-if="mapStateMessage" class="card state-card state-card-overlay">
+                    <EmptyState icon="pi pi-info-circle" :message="mapStateMessage" />
+                  </div>
+                </div>
+              </div>
+            </article>
 
-    <SectionPanel :eyebrow="t('map.regionStats')" :title="t('map.regionSnapshot')" compact>
-      <p class="section-note">{{ t('map.regionSnapshotHint') }}</p>
-      <DataTable
-        :value="regionStats"
-        paginator
-        :rows="8"
-        size="small"
-        striped-rows
-        responsive-layout="scroll"
-        table-style="min-width: 100%"
-      >
-        <Column field="region" :header="t('map.region')" sortable />
-        <Column field="count" :header="t('map.count')" sortable>
-          <template #body="{ data }">{{ fmt(data.count) }}</template>
-        </Column>
-        <Column field="avg_price" :header="t('map.avgPrice')" sortable>
-          <template #body="{ data }">{{ fmtCurrency(data.avg_price) }}</template>
-        </Column>
-        <Column field="median_price" :header="t('map.medianPrice')" sortable>
-          <template #body="{ data }">{{ fmtCurrency(data.median_price) }}</template>
-        </Column>
-        <Column field="avg_price_per_m2" header="€/m²" sortable>
-          <template #body="{ data }">{{ fmtCurrency(data.avg_price_per_m2) }}</template>
-        </Column>
-      </DataTable>
-    </SectionPanel>
+            <MapWorkspaceRail
+              v-model:view-mode="viewMode"
+              v-model:selected-type="selectedType"
+              v-model:selected-region="selectedRegion"
+              v-model:selected-year="selectedYear"
+              v-model:selected-municipality="selectedMunicipality"
+              v-model:selected-price-band="selectedPriceBand"
+              :selected-filter-count="selectedFilterCount"
+              :selected-filter-tag="selectedFilterTag"
+              :property-type-options="propertyTypeOptions"
+              :region-options="regionOptions"
+              :year-options="yearOptions"
+              :municipality-options="municipalityOptions"
+              :band-options="bandOptions"
+              :hero-action-can-use="heroActionState.canUse"
+              :hero-action-reason="heroActionState.reason"
+              @clear-filters="clearFilters"
+              @open-market="openMarketExplorer"
+              @open-analysis="openHeroAnalysis"
+            />
+          </section>
+        </TabPanel>
+
+        <TabPanel value="regions">
+          <section class="map-tab-content">
+            <SectionPanel :eyebrow="t('map.regionStats')" :title="t('map.regionSnapshot')" compact>
+              <p class="section-note">{{ t('map.regionSnapshotHint') }}</p>
+              <DataTable
+                :value="regionStats"
+                paginator
+                :rows="8"
+                size="small"
+                striped-rows
+                responsive-layout="scroll"
+                table-style="min-width: 100%"
+              >
+                <Column field="region" :header="t('map.region')" sortable />
+                <Column field="count" :header="t('map.count')" sortable>
+                  <template #body="{ data }">{{ fmt(data.count) }}</template>
+                </Column>
+                <Column field="avg_price" :header="t('map.avgPrice')" sortable>
+                  <template #body="{ data }">{{ fmtCurrency(data.avg_price) }}</template>
+                </Column>
+                <Column field="median_price" :header="t('map.medianPrice')" sortable>
+                  <template #body="{ data }">{{ fmtCurrency(data.median_price) }}</template>
+                </Column>
+                <Column field="avg_price_per_m2" header="€/m²" sortable>
+                  <template #body="{ data }">{{ fmtCurrency(data.avg_price_per_m2) }}</template>
+                </Column>
+              </DataTable>
+            </SectionPanel>
+          </section>
+        </TabPanel>
+      </TabPanels>
+    </Tabs>
 
     <MapDetailDialog
       v-model:visible="detailVisible"
       :record="selectedRecord"
       :detail-mode="detailMode"
       :detail-loading="detailLoading"
+      :detail-error="detailError"
       :comparables="detailComparables"
       :default-year="defaultYear"
       :comparison-url="comparisonUrl"
@@ -1136,8 +1230,29 @@
     gap: 1rem;
   }
 
+  .map-tabs,
+  .map-tab-content {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .map-tabs :deep(.p-tablist) {
+    padding: 0.35rem;
+    border: 1px solid color-mix(in srgb, var(--border) 68%, var(--primary) 18%);
+    border-radius: var(--radius-lg);
+    background: color-mix(in srgb, var(--surface-strong) 92%, var(--primary-overlay) 8%);
+    box-shadow: 0 10px 22px color-mix(in srgb, var(--shadow-color) 8%, transparent);
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+
+  .map-tabs :deep(.p-tabpanels) {
+    padding-top: 0.15rem;
+  }
+
   .map-page {
     gap: var(--space-section);
+    animation: map-in 420ms cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   .map-hero,
@@ -1148,6 +1263,18 @@
     border-radius: var(--radius-lg);
     border: 1px solid color-mix(in srgb, var(--border) 72%, var(--content-border-strong) 28%);
     box-shadow: var(--accent-shadow, var(--shadow-sm));
+    transition:
+      border-color 170ms ease,
+      box-shadow 170ms ease,
+      transform 170ms ease;
+  }
+
+  .map-hero:hover,
+  .map-panel:hover,
+  .state-card:hover {
+    border-color: color-mix(in srgb, var(--border) 58%, var(--primary) 42%);
+    box-shadow: 0 20px 42px color-mix(in srgb, var(--shadow-color) 14%, transparent);
+    transform: translateY(-1px);
   }
 
   .map-hero,
@@ -1182,6 +1309,11 @@
     grid-template-columns: minmax(0, 1.9fr) minmax(320px, 0.82fr);
     gap: 1rem;
     align-items: start;
+  }
+
+  .map-workbench :deep(.map-workspace-rail) {
+    position: sticky;
+    top: 5.75rem;
   }
 
   .map-panel {
@@ -1244,6 +1376,17 @@
     font-size: var(--text-sm);
     font-weight: 700;
     box-shadow: inset 0 1px 0 var(--glass-highlight);
+    transition:
+      border-color 140ms ease,
+      transform 140ms ease,
+      box-shadow 140ms ease;
+  }
+
+  .active-filter-chip:hover {
+    transform: translateY(-1px);
+    box-shadow:
+      inset 0 1px 0 var(--glass-highlight),
+      0 10px 20px color-mix(in srgb, var(--shadow-color) 10%, transparent);
   }
 
   .active-filter-chip.tone-low {
@@ -1304,9 +1447,25 @@
     justify-content: center;
   }
 
+  @keyframes map-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
   @media (max-width: 1220px) {
     .map-workbench {
       grid-template-columns: 1fr;
+    }
+
+    .map-workbench :deep(.map-workspace-rail) {
+      position: static;
     }
   }
 
@@ -1325,6 +1484,26 @@
     .map-shell,
     .map-container {
       min-height: 440px;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .map-page {
+      animation: none;
+    }
+
+    .map-hero,
+    .map-panel,
+    .state-card,
+    .active-filter-chip {
+      transition: none;
+    }
+
+    .map-hero:hover,
+    .map-panel:hover,
+    .state-card:hover,
+    .active-filter-chip:hover {
+      transform: none;
     }
   }
 </style>

@@ -3,6 +3,7 @@
   import { RouterLink } from 'vue-router'
   import Button from 'primevue/button'
   import Tag from 'primevue/tag'
+  import Timeline from 'primevue/timeline'
   import { useI18n } from 'vue-i18n'
   import EmptyState from '../EmptyState.vue'
   import LoadingSpinner from '../LoadingSpinner.vue'
@@ -38,6 +39,13 @@
 
   function itemActionLabel(item: ActivityFeedItem) {
     return item.link ? t('common.open') : t('workbench.read')
+  }
+
+  function timelineMarkerClass(category?: string | null) {
+    if (category === 'train') return 'tone-train'
+    if (category === 'data') return 'tone-data'
+    if (category === 'security') return 'tone-security'
+    return 'tone-default'
   }
 </script>
 
@@ -104,30 +112,33 @@
         </div>
       </component>
 
-      <div v-if="secondaryItems.length" class="secondary-activity-grid">
-        <component
-          :is="itemLink(item) ? RouterLink : 'article'"
-          v-for="item in secondaryItems"
-          :key="item.id"
-          :to="itemLink(item) || undefined"
-          class="secondary-activity"
-          :class="{ 'secondary-activity--link': Boolean(itemLink(item)) }"
-        >
-          <div class="secondary-activity-head">
-            <Tag
-              :severity="activityCategorySeverity(item.category)"
-              :value="activityCategoryLabel(item.category, t)"
-            />
-            <small>{{ formatDateTime(item.created_at) }}</small>
-          </div>
-          <strong>{{ item.title }}</strong>
-          <p>{{ activitySummary(item, t) }}</p>
-          <span v-if="itemLink(item)" class="secondary-activity-action">
-            <span>{{ itemActionLabel(item) }}</span>
-            <i class="pi pi-arrow-right" aria-hidden="true"></i>
-          </span>
-        </component>
-      </div>
+      <Timeline v-if="secondaryItems.length" :value="secondaryItems" class="activity-timeline">
+        <template #marker="{ item }">
+          <span class="timeline-marker" :class="timelineMarkerClass(item.category)"></span>
+        </template>
+        <template #content="{ item }">
+          <component
+            :is="itemLink(item) ? RouterLink : 'article'"
+            :to="itemLink(item) || undefined"
+            class="secondary-activity secondary-activity--timeline"
+            :class="{ 'secondary-activity--link': Boolean(itemLink(item)) }"
+          >
+            <div class="secondary-activity-head">
+              <Tag
+                :severity="activityCategorySeverity(item.category)"
+                :value="activityCategoryLabel(item.category, t)"
+              />
+              <small>{{ formatDateTime(item.created_at) }}</small>
+            </div>
+            <strong>{{ item.title }}</strong>
+            <p>{{ activitySummary(item, t) }}</p>
+            <span v-if="itemLink(item)" class="secondary-activity-action">
+              <span>{{ itemActionLabel(item) }}</span>
+              <i class="pi pi-arrow-right" aria-hidden="true"></i>
+            </span>
+          </component>
+        </template>
+      </Timeline>
     </template>
 
     <EmptyState v-else icon="pi pi-compass" :message="t('workbench.noActivity')" />
@@ -296,12 +307,62 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .activity-timeline {
+    width: 100%;
+  }
+
+  .activity-timeline :deep(.p-timeline-event-opposite) {
+    display: none;
+  }
+
+  .activity-timeline :deep(.p-timeline-event-content) {
+    min-width: 0;
+  }
+
+  .activity-timeline :deep(.p-timeline-event-separator) {
+    margin-inline: 0.25rem 0.95rem;
+  }
+
+  .activity-timeline :deep(.p-timeline-event-connector) {
+    background: color-mix(in srgb, var(--border) 68%, var(--primary) 32%);
+  }
+
+  .timeline-marker {
+    display: inline-flex;
+    width: 0.9rem;
+    height: 0.9rem;
+    border-radius: 999px;
+    border: 2px solid color-mix(in srgb, var(--surface-card-strong) 78%, var(--primary) 22%);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 14%, transparent);
+    background: var(--primary);
+  }
+
+  .timeline-marker.tone-train {
+    background: color-mix(in srgb, var(--success) 76%, var(--primary) 24%);
+  }
+
+  .timeline-marker.tone-data {
+    background: color-mix(in srgb, var(--secondary) 82%, var(--primary) 18%);
+  }
+
+  .timeline-marker.tone-security {
+    background: color-mix(in srgb, var(--danger) 76%, var(--primary) 24%);
+  }
+
+  .timeline-marker.tone-default {
+    background: var(--primary);
+  }
+
   .secondary-activity {
     display: grid;
     align-content: start;
     gap: 0.45rem;
     padding: 0.95rem 1rem;
     border-radius: var(--radius-sm);
+  }
+
+  .secondary-activity--timeline {
+    width: 100%;
   }
 
   .secondary-activity-head {
@@ -326,13 +387,13 @@
   }
 
   @media (max-width: 740px) {
-    .secondary-activity-grid {
-      grid-template-columns: 1fr;
-    }
-
     .featured-activity-meta,
     .secondary-activity-head {
       align-items: flex-start;
+    }
+
+    .activity-timeline :deep(.p-timeline-event-separator) {
+      margin-inline: 0.2rem 0.7rem;
     }
   }
 </style>

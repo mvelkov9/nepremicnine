@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 import { useLocalStorage } from '@vueuse/core'
 import api from '../composables/useApi'
 import { describeRoute } from '../constants/workbench'
+import { i18n } from '../i18n'
 import type {
   ActivityFeedItem,
   AdminRunDetail,
@@ -13,6 +14,7 @@ import type {
   WatchlistFeedItem,
   WatchlistItem,
 } from '../types/api'
+import { getApiErrorMessage } from '../utils/apiError'
 
 interface RecentRouteItem {
   label: string
@@ -34,14 +36,20 @@ export const useWorkbenchStore = defineStore('workbench', () => {
   const watchlists = ref<WatchlistItem[]>([])
   const watchlistFeed = ref<WatchlistFeedItem[]>([])
   const activityFeed = ref<ActivityFeedItem[]>([])
+  const activityFeedError = ref('')
   const unreadCount = ref(0)
   const adminActivity = ref<ActivityFeedItem[]>([])
   const prepareRuns = ref<AdminRunSummary[]>([])
   const trainingRuns = ref<AdminRunSummary[]>([])
   const selectedPrepareRun = ref<AdminRunDetail | null>(null)
   const selectedTrainingRun = ref<AdminRunDetail | null>(null)
+  const prepareRunsError = ref('')
+  const trainingRunsError = ref('')
   const prepareRunDetailLoading = ref(false)
   const trainingRunDetailLoading = ref(false)
+  const prepareRunDetailError = ref('')
+  const trainingRunDetailError = ref('')
+  let activityFeedVersion = 0
   let prepareRunDetailVersion = 0
   let trainingRunDetailVersion = 0
 
@@ -126,9 +134,22 @@ export const useWorkbenchStore = defineStore('workbench', () => {
   }
 
   async function fetchActivityFeed() {
-    const { data } = await api.get<ActivityFeedItem[]>('/api/activity/feed')
-    activityFeed.value = data || []
-    return data
+    const requestVersion = ++activityFeedVersion
+    activityFeedError.value = ''
+    try {
+      const { data } = await api.get<ActivityFeedItem[]>('/api/activity/feed')
+      if (requestVersion === activityFeedVersion) {
+        activityFeed.value = data || []
+        activityFeedError.value = ''
+      }
+      return data
+    } catch (error) {
+      if (requestVersion === activityFeedVersion) {
+        activityFeed.value = []
+        activityFeedError.value = getApiErrorMessage(error, i18n.global.t)
+      }
+      throw error
+    }
   }
 
   async function fetchUnreadCount() {
@@ -155,27 +176,50 @@ export const useWorkbenchStore = defineStore('workbench', () => {
   }
 
   async function fetchPrepareRuns() {
-    const { data } = await api.get<AdminRunSummary[]>('/api/admin/prepare-runs')
-    prepareRuns.value = data || []
-    return data
+    prepareRunsError.value = ''
+    try {
+      const { data } = await api.get<AdminRunSummary[]>('/api/admin/prepare-runs')
+      prepareRuns.value = data || []
+      return data
+    } catch (error) {
+      prepareRuns.value = []
+      selectedPrepareRun.value = null
+      prepareRunsError.value = getApiErrorMessage(error, i18n.global.t)
+      throw error
+    }
   }
 
   async function fetchTrainingRuns() {
-    const { data } = await api.get<AdminRunSummary[]>('/api/admin/training-runs')
-    trainingRuns.value = data || []
-    return data
+    trainingRunsError.value = ''
+    try {
+      const { data } = await api.get<AdminRunSummary[]>('/api/admin/training-runs')
+      trainingRuns.value = data || []
+      return data
+    } catch (error) {
+      trainingRuns.value = []
+      selectedTrainingRun.value = null
+      trainingRunsError.value = getApiErrorMessage(error, i18n.global.t)
+      throw error
+    }
   }
 
   async function fetchPrepareRunDetail(jobId: string) {
     const requestVersion = ++prepareRunDetailVersion
     prepareRunDetailLoading.value = true
+    prepareRunDetailError.value = ''
     selectedPrepareRun.value = null
     try {
       const { data } = await api.get<AdminRunDetail>(`/api/admin/prepare-runs/${jobId}`)
       if (requestVersion === prepareRunDetailVersion) {
         selectedPrepareRun.value = data
+        prepareRunDetailError.value = ''
       }
       return data
+    } catch (error) {
+      if (requestVersion === prepareRunDetailVersion) {
+        prepareRunDetailError.value = getApiErrorMessage(error, i18n.global.t)
+      }
+      return null
     } finally {
       if (requestVersion === prepareRunDetailVersion) {
         prepareRunDetailLoading.value = false
@@ -186,13 +230,20 @@ export const useWorkbenchStore = defineStore('workbench', () => {
   async function fetchTrainingRunDetail(jobId: string) {
     const requestVersion = ++trainingRunDetailVersion
     trainingRunDetailLoading.value = true
+    trainingRunDetailError.value = ''
     selectedTrainingRun.value = null
     try {
       const { data } = await api.get<AdminRunDetail>(`/api/admin/training-runs/${jobId}`)
       if (requestVersion === trainingRunDetailVersion) {
         selectedTrainingRun.value = data
+        trainingRunDetailError.value = ''
       }
       return data
+    } catch (error) {
+      if (requestVersion === trainingRunDetailVersion) {
+        trainingRunDetailError.value = getApiErrorMessage(error, i18n.global.t)
+      }
+      return null
     } finally {
       if (requestVersion === trainingRunDetailVersion) {
         trainingRunDetailLoading.value = false
@@ -229,14 +280,19 @@ export const useWorkbenchStore = defineStore('workbench', () => {
     watchlists,
     watchlistFeed,
     activityFeed,
+    activityFeedError,
     unreadCount,
     adminActivity,
     prepareRuns,
     trainingRuns,
     selectedPrepareRun,
     selectedTrainingRun,
+    prepareRunsError,
+    trainingRunsError,
     prepareRunDetailLoading,
     trainingRunDetailLoading,
+    prepareRunDetailError,
+    trainingRunDetailError,
     compareTray,
     recentRoutes,
     recentMunicipalities,

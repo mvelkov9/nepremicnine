@@ -2,6 +2,7 @@
   import { computed, nextTick, ref, watch } from 'vue'
   import { useRouter } from 'vue-router'
   import { useI18n } from 'vue-i18n'
+  import Button from 'primevue/button'
   import Dialog from 'primevue/dialog'
   import InputText from 'primevue/inputtext'
   import Tag from 'primevue/tag'
@@ -16,6 +17,7 @@
   import { useAuthStore } from '../../stores/auth'
   import { useUiStore } from '../../stores/ui'
   import { useWorkbenchStore } from '../../stores/workbench'
+  import { getApiErrorMessage } from '../../utils/apiError'
 
   interface PaletteItem {
     id: string
@@ -43,6 +45,19 @@
   const query = ref('')
   const activeIndex = ref(0)
   const commandInput = ref()
+  const catalogLoading = ref(false)
+  const workspaceCatalogError = ref('')
+  const watchlistCatalogError = ref('')
+
+  const paletteWorkspaces = computed(() =>
+    workspaceCatalogError.value ? [] : workbench.workspaces,
+  )
+
+  const paletteWatchlists = computed(() =>
+    watchlistCatalogError.value ? [] : workbench.watchlists,
+  )
+
+  const catalogError = computed(() => workspaceCatalogError.value || watchlistCatalogError.value)
 
   function entityTypeLabel(entityType?: string | null) {
     if (entityType === 'region') return t('nav.regions')
@@ -75,7 +90,7 @@
       action: () => router.push(item.to),
     }))
 
-    const workspaceItems: PaletteItem[] = [...workbench.workspaces]
+    const workspaceItems: PaletteItem[] = [...paletteWorkspaces.value]
       .sort((left, right) => Number(right.pinned) - Number(left.pinned))
       .map((item) => ({
         id: `workspace:${item.id}`,
@@ -92,7 +107,7 @@
           ),
       }))
 
-    const watchlistItems: PaletteItem[] = workbench.watchlists.map((item) => ({
+    const watchlistItems: PaletteItem[] = paletteWatchlists.value.map((item) => ({
       id: `watch:${item.id}`,
       label: item.display_label,
       meta: watchlistMeta(item),
@@ -195,6 +210,27 @@
 
   const flatPaletteItems = computed(() => paletteSections.value.flatMap((section) => section.items))
 
+  async function refreshPaletteCatalog() {
+    catalogLoading.value = true
+    workspaceCatalogError.value = ''
+    watchlistCatalogError.value = ''
+
+    const [workspacesResult, watchlistsResult] = await Promise.allSettled([
+      workbench.fetchWorkspaces(),
+      workbench.fetchWatchlists(),
+    ])
+
+    if (workspacesResult.status === 'rejected') {
+      workspaceCatalogError.value = getApiErrorMessage(workspacesResult.reason, t)
+    }
+
+    if (watchlistsResult.status === 'rejected') {
+      watchlistCatalogError.value = getApiErrorMessage(watchlistsResult.reason, t)
+    }
+
+    catalogLoading.value = false
+  }
+
   watch(
     () => ui.commandPaletteOpen,
     async (open) => {
@@ -204,7 +240,7 @@
         return
       }
 
-      await Promise.allSettled([workbench.fetchWorkspaces(), workbench.fetchWatchlists()])
+      await refreshPaletteCatalog()
       await nextTick()
       commandInput.value?.$el?.querySelector?.('input')?.focus?.()
     },
@@ -285,6 +321,20 @@
 
       <p class="command-hint muted">{{ t('workbench.commandNavigationHint') }}</p>
 
+      <div v-if="catalogError" class="command-note" role="status">
+        <span>{{ catalogError }}</span>
+        <Button
+          size="small"
+          severity="secondary"
+          outlined
+          icon="pi pi-refresh"
+          :label="t('common.retry')"
+          :loading="catalogLoading"
+          :disabled="catalogLoading"
+          @click="refreshPaletteCatalog"
+        />
+      </div>
+
       <div v-if="paletteSections.length" class="command-results">
         <section v-for="section in paletteSections" :key="section.key" class="command-section">
           <div class="command-section__head">
@@ -323,6 +373,19 @@
   .command-section {
     display: grid;
     gap: 0.95rem;
+  }
+
+  .command-note {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.75rem 0.9rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid color-mix(in srgb, var(--danger) 24%, var(--border) 76%);
+    background: color-mix(in srgb, var(--danger) 8%, var(--surface-subtle) 92%);
+    color: var(--text-soft);
+    flex-wrap: wrap;
   }
 
   .command-input {
@@ -419,5 +482,11 @@
 
   :deep(.p-dialog .p-dialog-content .command-palette) {
     padding-top: 0.15rem;
+  }
+
+  @media (max-width: 620px) {
+    .command-note :deep(.p-button) {
+      width: 100%;
+    }
   }
 </style>

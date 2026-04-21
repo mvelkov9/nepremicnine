@@ -1,5 +1,5 @@
 <script setup lang="ts">
-  import { ref, watch } from 'vue'
+  import { onBeforeUnmount, ref, watch } from 'vue'
   import { useI18n } from 'vue-i18n'
   import AutoComplete from 'primevue/autocomplete'
   import Button from 'primevue/button'
@@ -110,6 +110,8 @@
   const naseljeOptions = ref<NaseljeOption[]>([])
   const showAdvancedLocation = ref(false)
   const formErrors = ref<{ size_m2?: string | null; location?: string | null }>({})
+  let activeNaseljeController: AbortController | null = null
+  let naseljeRequestToken = 0
 
   const { formatType } = useFormat()
 
@@ -136,7 +138,12 @@
   }
 
   async function searchNaselja(event: { query: string }) {
+    const requestToken = ++naseljeRequestToken
     const query = String(event.query || '').trim()
+    activeNaseljeController?.abort()
+    const controller = new AbortController()
+    activeNaseljeController = controller
+
     try {
       const { data } = await api.get<NaseljeApiItem[]>('/api/stats/naselja', {
         params: {
@@ -144,15 +151,24 @@
           municipality: form.value.municipality || undefined,
           limit: 12,
         },
+        signal: controller.signal,
       })
+
+      if (requestToken !== naseljeRequestToken || controller.signal.aborted) return
+
       naseljeOptions.value = (data || []).map((item) => ({
         ...item,
         label: `${item.naselje} (${item.municipality})`,
       }))
       naseljeSuggestions.value = naseljeOptions.value.map((item) => item.label)
     } catch {
+      if (requestToken !== naseljeRequestToken || controller.signal.aborted) return
       naseljeOptions.value = []
       naseljeSuggestions.value = []
+    } finally {
+      if (activeNaseljeController === controller) {
+        activeNaseljeController = null
+      }
     }
   }
 
@@ -205,6 +221,21 @@
       }
     },
   )
+
+  watch(
+    () => form.value.municipality,
+    () => {
+      naseljeRequestToken += 1
+      activeNaseljeController?.abort()
+      activeNaseljeController = null
+      naseljeOptions.value = []
+      naseljeSuggestions.value = []
+    },
+  )
+
+  onBeforeUnmount(() => {
+    activeNaseljeController?.abort()
+  })
 
   defineExpose({ formErrors })
 </script>
@@ -508,7 +539,7 @@
 
   .section-intro {
     display: flex;
-    align-items: end;
+    align-items: start;
     justify-content: space-between;
     gap: 1rem;
   }
@@ -547,13 +578,14 @@
 
   .form-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 0.95rem;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 1rem;
   }
 
   .field {
     display: grid;
     gap: 0.38rem;
+    min-width: 0;
   }
 
   .field span {
@@ -562,6 +594,36 @@
     color: var(--text-muted);
     letter-spacing: 0.06em;
     text-transform: uppercase;
+  }
+
+  .field :deep(.p-autocomplete),
+  .field :deep(.p-inputnumber),
+  .field :deep(.p-select),
+  .field :deep(.p-inputtext),
+  .field :deep(textarea) {
+    width: 100%;
+  }
+
+  .field :deep(.p-autocomplete),
+  .field :deep(.p-inputnumber),
+  .field :deep(.p-select) {
+    min-height: 3.15rem;
+  }
+
+  .field :deep(.p-inputtext),
+  .field :deep(.p-autocomplete-input),
+  .field :deep(.p-inputnumber-input),
+  .field :deep(.p-select-label) {
+    min-height: 3.15rem;
+    font-size: 1rem;
+  }
+
+  .field :deep(.p-select-label) {
+    padding-block: 0.82rem;
+  }
+
+  .field :deep(textarea) {
+    min-height: 8rem;
   }
 
   .municipality-chip {
@@ -631,6 +693,7 @@
   .form-actions {
     display: flex;
     justify-content: flex-start;
+    margin-top: 0.15rem;
   }
 
   .submit-btn {

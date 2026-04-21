@@ -49,6 +49,8 @@
     },
   ])
 
+  const hasSelection = computed(() => Boolean(props.compareA || props.compareB || props.compareC))
+
   function updateCompareField(field: CompareField, value: string) {
     if (field === 'compareA') emit('update:compare-a', value)
     if (field === 'compareB') emit('update:compare-b', value)
@@ -91,7 +93,7 @@
       </label>
     </div>
 
-    <div v-if="error" class="state-card state-card-stack" role="alert">
+    <div v-if="error && !rows.length" class="state-card state-card-stack" role="alert">
       <EmptyState icon="pi pi-exclamation-triangle" :message="error" />
     </div>
 
@@ -100,6 +102,10 @@
     </p>
 
     <div v-else-if="rows.length" class="compare-cards" :aria-busy="loading">
+      <div v-if="error" class="compare-note" role="status">
+        <strong>{{ t('common.warning') }}</strong>
+        <span>{{ error }}</span>
+      </div>
       <article v-for="item in rows" :key="item.slug" class="compare-card">
         <div class="compare-head">
           <div class="compare-heading">
@@ -132,7 +138,10 @@
       </article>
     </div>
 
-    <EmptyState v-else :message="t('municipalities.comparePrompt')" />
+    <EmptyState
+      v-else
+      :message="hasSelection ? t('common.noData') : t('municipalities.comparePrompt')"
+    />
   </SectionPanel>
 </template>
 
@@ -182,6 +191,24 @@
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
     gap: 1rem;
+  }
+
+  .compare-note {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.8rem 0.95rem;
+    border-radius: calc(var(--radius-sm) + 0.1rem);
+    border: 1px solid color-mix(in srgb, var(--warning) 38%, var(--border) 62%);
+    background: color-mix(in srgb, var(--surface-card-strong) 92%, var(--warning) 8%);
+    color: var(--text-muted);
+  }
+
+  .compare-note strong {
+    color: var(--text);
+    font-size: var(--text-sm);
+    letter-spacing: -0.01em;
   }
 
   .compare-card {
@@ -277,6 +304,11 @@
   }
 
   @media (max-width: 720px) {
+    .compare-note {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+
     .compare-head {
       flex-direction: column;
     }

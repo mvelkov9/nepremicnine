@@ -177,7 +177,7 @@
       </div>
     </div>
 
-    <div class="table-shell">
+    <div v-else class="table-shell">
       <DataTable
         :value="users"
         :loading="loading"

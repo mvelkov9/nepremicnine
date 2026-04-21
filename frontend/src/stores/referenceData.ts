@@ -25,6 +25,7 @@ export const useReferenceDataStore = defineStore('referenceData', () => {
   const years = ref<string[]>([])
   const loaded = ref(false)
   const loading = ref(false)
+  const error = ref<string | null>(null)
   const lastLoadedAt = ref<string | null>(null)
   let pendingLoad: Promise<void> | null = null
 
@@ -37,22 +38,52 @@ export const useReferenceDataStore = defineStore('referenceData', () => {
     if (pendingLoad && !force) return pendingLoad
 
     pendingLoad = (async () => {
+      const wasLoaded = loaded.value
       loading.value = true
+      error.value = null
       try {
-        const [municipalityRes, marketRes, trendRes] = await Promise.all([
+        const [municipalityRes, marketRes, trendRes] = await Promise.allSettled([
           api.get('/api/regions/municipalities'),
           api.get('/api/stats/market-home'),
           api.get('/api/stats/trend'),
         ])
-        municipalities.value = municipalityRes.data || []
-        propertyTypes.value = (marketRes.data?.property_type_mix || [])
-          .map((item: { property_type: string }) => String(item.property_type || '').trim())
-          .filter((value) => SUPPORTED_PROPERTY_TYPES.has(value))
-        years.value = (trendRes.data || []).map((item: { year: string | number }) =>
-          String(item.year),
+
+        if (municipalityRes.status === 'fulfilled') {
+          municipalities.value = municipalityRes.value.data || []
+        }
+
+        if (marketRes.status === 'fulfilled') {
+          propertyTypes.value = (marketRes.value.data?.property_type_mix || [])
+            .map((item: { property_type: string }) => String(item.property_type || '').trim())
+            .filter((value) => SUPPORTED_PROPERTY_TYPES.has(value))
+        }
+
+        if (trendRes.status === 'fulfilled') {
+          years.value = (trendRes.value.data || []).map((item: { year: string | number }) =>
+            String(item.year),
+          )
+        }
+
+        const allSucceeded = [municipalityRes, marketRes, trendRes].every(
+          (result) => result.status === 'fulfilled',
         )
-        loaded.value = true
-        lastLoadedAt.value = new Date().toISOString()
+
+        loaded.value = allSucceeded || wasLoaded
+
+        if (allSucceeded) {
+          lastLoadedAt.value = new Date().toISOString()
+          return
+        }
+
+        const failedSections = [
+          municipalityRes.status === 'rejected' ? 'municipalities' : null,
+          marketRes.status === 'rejected' ? 'market' : null,
+          trendRes.status === 'rejected' ? 'trend' : null,
+        ].filter((value): value is string => Boolean(value))
+
+        if (failedSections.length) {
+          error.value = `Reference data unavailable: ${failedSections.join(', ')}`
+        }
       } finally {
         loading.value = false
         pendingLoad = null
@@ -69,6 +100,7 @@ export const useReferenceDataStore = defineStore('referenceData', () => {
     regions,
     loaded,
     loading,
+    error,
     lastLoadedAt,
     ensureLoaded,
   }

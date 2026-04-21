@@ -2,7 +2,8 @@
   import { computed } from 'vue'
   import { useI18n } from 'vue-i18n'
   import Button from 'primevue/button'
-  import Dialog from 'primevue/dialog'
+  import Drawer from 'primevue/drawer'
+  import Skeleton from 'primevue/skeleton'
   import Tag from 'primevue/tag'
   import ComparableCard from '../ComparableCard.vue'
   import EmptyState from '../EmptyState.vue'
@@ -65,6 +66,7 @@
     record: MapDetailRecord | null
     detailMode: 'transaction' | 'overview'
     detailLoading: boolean
+    detailError: string
     comparables: TransactionRecord[]
     defaultYear: string | number | null
     comparisonUrl: string
@@ -137,14 +139,12 @@
 </script>
 
 <template>
-  <Dialog
+  <Drawer
     v-model:visible="visible"
-    modal
-    maximizable
-    class="map-detail-dialog"
+    class="map-detail-drawer"
+    position="right"
     :header="dialogTitle"
-    :style="{ width: 'min(98vw, 1280px)' }"
-    :breakpoints="{ '1280px': '96vw', '768px': '100vw' }"
+    :style="{ width: 'min(96vw, 1120px)' }"
   >
     <div v-if="props.record" class="detail-dialog">
       <div class="detail-summary">
@@ -263,7 +263,17 @@
 
         <section class="detail-section detail-section-comparables" :aria-busy="props.detailLoading">
           <h3>{{ t('predict.comparablesTitle') }}</h3>
-          <LoadingSpinner v-if="props.detailLoading" :label="t('common.loading')" />
+          <div v-if="props.detailLoading" class="comparables-skeleton" aria-hidden="true">
+            <article v-for="idx in 3" :key="idx" class="comparables-skeleton-item">
+              <Skeleton width="36%" height="0.88rem" />
+              <Skeleton width="64%" height="1rem" />
+              <div class="comparables-skeleton-metrics">
+                <Skeleton width="32%" height="0.9rem" />
+                <Skeleton width="32%" height="0.9rem" />
+                <Skeleton width="32%" height="0.9rem" />
+              </div>
+            </article>
+          </div>
           <div v-else-if="props.comparables.length" class="comparables-list">
             <ComparableCard
               v-for="item in props.comparables"
@@ -271,6 +281,11 @@
               :item="item"
             />
           </div>
+          <EmptyState
+            v-else-if="props.detailError && props.detailMode === 'transaction'"
+            icon="pi pi-exclamation-triangle"
+            :message="props.detailError"
+          />
           <EmptyState
             v-else
             icon="pi pi-info-circle"
@@ -337,7 +352,7 @@
         />
       </section>
     </div>
-  </Dialog>
+  </Drawer>
 </template>
 
 <style scoped>
@@ -485,6 +500,25 @@
     min-width: 0;
   }
 
+  .comparables-skeleton,
+  .comparables-skeleton-item,
+  .comparables-skeleton-metrics {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .comparables-skeleton-item {
+    padding: 0.85rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid color-mix(in srgb, var(--border) 74%, var(--primary) 26%);
+    background: color-mix(in srgb, var(--surface-card-strong) 94%, transparent);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .comparables-skeleton-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .detail-actions-panel {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -522,7 +556,11 @@
     display: block;
   }
 
-  .map-detail-dialog :deep(.p-dialog-header) {
+  .map-detail-drawer :deep(.p-drawer) {
+    max-width: 1120px;
+  }
+
+  .map-detail-drawer :deep(.p-drawer-header) {
     align-items: flex-start;
     padding: 1.15rem 1.35rem;
     border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, var(--content-border-strong) 28%);
@@ -546,12 +584,12 @@
     box-shadow: inset 0 1px 0 var(--content-glow);
   }
 
-  .map-detail-dialog :deep(.p-dialog-title),
-  .map-detail-dialog :deep(.p-dialog-header-icon) {
+  .map-detail-drawer :deep(.p-drawer-title),
+  .map-detail-drawer :deep(.p-drawer-close-button) {
     color: inherit;
   }
 
-  .map-detail-dialog :deep(.p-dialog-header-actions .p-button) {
+  .map-detail-drawer :deep(.p-drawer-header-actions .p-button) {
     background: color-mix(in srgb, var(--surface-elevated) 92%, var(--primary) 8%);
     border-color: color-mix(in srgb, var(--control-border) 72%, var(--primary) 28%);
     color: var(--text);
@@ -560,20 +598,20 @@
       0 8px 18px color-mix(in srgb, var(--shadow-color) 10%, transparent);
   }
 
-  .map-detail-dialog :deep(.p-dialog-header-actions .p-button:hover) {
+  .map-detail-drawer :deep(.p-drawer-header-actions .p-button:hover) {
     background: color-mix(in srgb, var(--surface-elevated) 78%, var(--primary) 22%);
     border-color: color-mix(in srgb, var(--control-border-hover) 68%, var(--primary) 32%);
     transform: translateY(-1px);
   }
 
-  .map-detail-dialog :deep(.p-dialog-header-actions .p-button:focus-visible) {
+  .map-detail-drawer :deep(.p-drawer-header-actions .p-button:focus-visible) {
     outline: none;
     box-shadow:
       inset 0 1px 0 var(--content-glow),
       0 0 0 4px color-mix(in srgb, var(--primary) 22%, transparent);
   }
 
-  .map-detail-dialog :deep(.p-dialog-content) {
+  .map-detail-drawer :deep(.p-drawer-content) {
     padding: 1.25rem 1.35rem 1.35rem;
     background: color-mix(in srgb, var(--surface-card-strong) 94%, transparent);
   }
@@ -604,8 +642,17 @@
       grid-column: auto;
     }
 
-    .map-detail-dialog :deep(.p-dialog-content) {
+    .comparables-skeleton-metrics {
+      grid-template-columns: 1fr;
+    }
+
+    .map-detail-drawer :deep(.p-drawer-content) {
       padding: 1rem;
+    }
+
+    .map-detail-drawer :deep(.p-drawer) {
+      width: 100vw !important;
+      max-width: 100vw;
     }
   }
 </style>

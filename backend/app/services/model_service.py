@@ -453,10 +453,15 @@ _ENABLE_PREDICTION_SPATIAL_ENRICHMENT = _env_bool("ENABLE_PREDICTION_SPATIAL_ENR
 _PREDICTION_ENRICHMENT_TIMEOUT_SEC = max(0.0, _env_float("PREDICTION_ENRICHMENT_TIMEOUT_SEC", 12.0))
 
 MARKET_VALIDITY_RULES: dict[str, dict[str, Any]] = {
+    "stanovanje": {"min_price_eur": 8000.0, "min_ppm2": 500.0},
+    "hisa": {"min_price_eur": 15000.0, "min_ppm2": 250.0},
     "parcela": {"min_price_eur": 2500.0, "min_ppm2": 0.45},
     "kmetijsko": {"min_price_eur": 5000.0, "min_ppm2": 70.0, "drop_unknown_municipality": True},
-    "hisa": {"min_price_eur": 15000.0, "min_ppm2": 120.0},
     "garaza": {"min_price_eur": 6000.0, "min_ppm2": 300.0},
+    "poslovni_prostor": {"min_price_eur": 10000.0, "min_ppm2": 250.0},
+    "industrijski": {"min_price_eur": 8000.0, "min_ppm2": 100.0},
+    "turisticni": {"min_price_eur": 10000.0, "min_ppm2": 200.0},
+    "gostinstvo": {"min_price_eur": 10000.0, "min_ppm2": 200.0},
 }
 
 _model_cache: dict | None = None
@@ -1085,8 +1090,8 @@ TYPE_EXCLUDE_FEATURES: dict[str, dict[str, set[str]]] = {
 
 # ── Per-type hyperparameter overrides (from optimization experiments) ──
 TYPE_HP_OVERRIDES: dict[str, dict] = {
-    # Note: MAE/Quantile loss crashes CatBoost GPU on this environment (CUDA 700).
-    # All models use RMSE (set in _adaptive_hyperparams). Stacking compensates.
+    # RMSE loss (set in _adaptive_hyperparams). MAE/Quantile crashes on GPU (CUDA 700).
+    # Huber tested in research runs and degraded R²; keep it out of production defaults.
     # Small types: stronger regularisation to prevent overfitting on thin data.
     "gostinstvo": {"iterations": 1500, "depth": 5, "l2_leaf_reg": 12.0, "od_wait": 250, "random_strength": 4.0},
     "industrijski": {"iterations": 1800, "depth": 6, "l2_leaf_reg": 8.0, "od_wait": 200, "random_strength": 3.0},
@@ -1095,10 +1100,31 @@ TYPE_HP_OVERRIDES: dict[str, dict] = {
     "poslovni_prostor": {"iterations": 2500, "depth": 7, "l2_leaf_reg": 3.0, "learning_rate": 0.05},
     "kmetijsko": {"iterations": 3000, "depth": 8, "l2_leaf_reg": 5.0, "od_wait": 180, "learning_rate": 0.04},
     "garaza": {"iterations": 3000, "depth": 7, "l2_leaf_reg": 5.0, "od_wait": 200, "random_strength": 2.0},
-    # Large types: more iterations + lower LR = better generalisation
-    "stanovanje": {"iterations": 5000, "depth": 8, "l2_leaf_reg": 2.0, "learning_rate": 0.03},
-    "hisa": {"iterations": 5000, "depth": 8, "l2_leaf_reg": 2.5, "learning_rate": 0.03},
-    "parcela": {"iterations": 5000, "depth": 9, "l2_leaf_reg": 2.0, "learning_rate": 0.03},
+    # Large types: push hard — max iterations, low LR, deep trees, full GPU
+    "stanovanje": {
+        "iterations": 8000,
+        "depth": 8,
+        "l2_leaf_reg": 1.5,
+        "learning_rate": 0.02,
+        "od_wait": 300,
+        "max_ctr_complexity": 2,
+    },
+    "hisa": {
+        "iterations": 8000,
+        "depth": 8,
+        "l2_leaf_reg": 2.0,
+        "learning_rate": 0.02,
+        "od_wait": 300,
+        "max_ctr_complexity": 2,
+    },
+    "parcela": {
+        "iterations": 8000,
+        "depth": 9,
+        "l2_leaf_reg": 1.5,
+        "learning_rate": 0.02,
+        "od_wait": 300,
+        "max_ctr_complexity": 2,
+    },
 }
 
 TYPE_TRAINING_PRIORS: dict[str, dict[str, Any]] = {
@@ -2453,6 +2479,12 @@ def _build_model(
     if hp_overrides:
         hp.update(hp_overrides)
     hp = _apply_gpu_param_adjustments(hp)
+    # Re-apply hp_overrides for keys that GPU adjustments may have clobbered
+    if hp_overrides:
+        for key in ("iterations", "learning_rate", "depth", "od_wait"):
+            if key in hp_overrides:
+                hp[key] = hp_overrides[key]
+    explicit_ctr = (hp_overrides or {}).get("max_ctr_complexity")
     if hp.get("task_type") == "GPU":
         is_large_fit = n_samples >= 120_000
         has_many_categories = len(categorical_feats) >= 9
@@ -2462,14 +2494,15 @@ def _build_model(
             hp["one_hot_max_size"] = min(int(hp.get("one_hot_max_size", 2) or 2), 2)
             hp["iterations"] = min(int(hp.get("iterations", 2000) or 2000), 1200)
         if is_large_fit or has_many_categories:
-            hp["max_ctr_complexity"] = 1
+            if explicit_ctr is None:
+                hp["max_ctr_complexity"] = 1
             hp["gpu_cat_features_storage"] = "CpuPinnedMemory"
         if is_large_fit and hp.get("depth", 8) > 6:
             hp["depth"] = 6
     # Lossguide (leaf-wise like LightGBM) is faster and often better on GPU for large datasets
     if use_lossguide and hp.get("task_type") == "GPU":
         hp["grow_policy"] = "Lossguide"
-        hp["max_leaves"] = 64
+        hp["max_leaves"] = 128
     return CatBoostModel(numeric_feats, categorical_feats, hp)
 
 
@@ -3563,13 +3596,15 @@ def _apply_recent_training_window(df: pd.DataFrame) -> tuple[pd.DataFrame, dict[
 
 
 def _extract_year_series(frame: pd.DataFrame) -> tuple[pd.Series, str | None]:
-    year_values = pd.to_numeric(frame.get("transaction_year"), errors="coerce")
-    if year_values.notna().any():
-        return year_values.astype("float64"), "transaction_year"
+    if "transaction_year" in frame.columns:
+        year_values = pd.to_numeric(frame["transaction_year"], errors="coerce")
+        if year_values.notna().any():
+            return year_values.astype("float64"), "transaction_year"
 
-    fallback_years = pd.to_numeric(frame.get("source_label"), errors="coerce")
-    if fallback_years.notna().any():
-        return fallback_years.astype("float64"), "source_label"
+    if "source_label" in frame.columns:
+        fallback_years = pd.to_numeric(frame["source_label"], errors="coerce")
+        if fallback_years.notna().any():
+            return fallback_years.astype("float64"), "source_label"
 
     return pd.Series(np.nan, index=frame.index, dtype="float64"), None
 
@@ -3658,14 +3693,26 @@ def _build_time_holdout_split(
 
 
 def _build_recency_sample_weights(frame: pd.DataFrame) -> np.ndarray:
+    """Exponential recency weighting: recent years get 4x the weight of oldest.
+
+    Uses exponential decay so the model strongly favours recent price levels,
+    which is critical in a market with 50-70% appreciation over 6 years.
+    """
     years, _year_source = _extract_year_series(frame)
     if not years.notna().any():
         return np.ones(len(frame), dtype=float)
 
     latest_year = float(years.max())
-    age = latest_year - years
-    ramp = ((6.0 - age).clip(lower=0.0, upper=6.0) / 6.0).fillna(0.0)
-    return (1.0 + ramp).to_numpy(dtype=float)
+    age = (latest_year - years).clip(lower=0.0).fillna(6.0)
+    # Exponential decay: weight = base^(-age * decay_rate)
+    # At age=0 -> 1.0, at age=6 -> ~0.25, giving 4:1 ratio
+    decay_rate = 0.23  # ln(4)/6 ≈ 0.23
+    weights = np.exp(-decay_rate * age.to_numpy(dtype=float))
+    # Scale so min weight = 1.0, max = 4.0
+    w_min = weights.min()
+    w_max = weights.max()
+    weights = 1.0 + 3.0 * (weights - w_min) / (w_max - w_min) if w_max > w_min else np.ones(len(frame), dtype=float)
+    return weights
 
 
 def _restrict_training_years(
@@ -4357,12 +4404,7 @@ def train_from_csv(
     start = time.time()
     artifact_metadata = dict(artifact_metadata or {})
     resolved_model_path = os.path.abspath(model_output_path or _default_model_path())
-    enable_market_validity_filter = bool(
-        artifact_metadata.get(
-            "enable_market_validity_filter",
-            artifact_metadata.get("research_mode", False) or _ENABLE_MARKET_VALIDITY_FILTER,
-        )
-    )
+    enable_market_validity_filter = bool(artifact_metadata.get("enable_market_validity_filter", True))
 
     def emit_status(stage: str, progress: int, **extra):
         if status_callback:
@@ -4471,6 +4513,24 @@ def train_from_csv(
             keep_mask_p2 = ~clip_mask
             if keep_mask_p2.sum() >= 100:
                 df = df[keep_mask_p2 | ~type_mask]
+        # Pass 3: per (type, municipality) z-score pass — remove transactions
+        # where log(ppm2) is >2.0 std from the local group mean (min group size 20).
+        # Tightened from z>2.5/min=30 to z>2.0/min=20 to catch more local outliers
+        # (e.g. Kranj stanovanje €538/m2 among €2800 medians).
+        if "municipality_normalized" in df.columns:
+            n_before_muni = len(df)
+            keep_muni = pd.Series(True, index=df.index)
+            for (_ptype, _muni), grp in df.groupby(["property_type", "municipality_normalized"]):
+                if len(grp) < 20:
+                    continue
+                lp = grp["_log_ppm2_tmp"]
+                mu, sigma = lp.mean(), lp.std()
+                if sigma < 0.01:
+                    continue
+                z = ((lp - mu) / sigma).abs()
+                keep_muni.loc[grp.index[z > 2.0]] = False
+            df = df[keep_muni]
+            logger.info("Per-municipality outlier pass: %d -> %d rows", n_before_muni, len(df))
         df = df.drop(columns=["_log_ppm2_tmp"])
         logger.info("Global outlier removal: %d -> %d rows", n_before_global_outlier, len(df))
 
@@ -4931,7 +4991,7 @@ def train_from_csv(
                 len(pt_cat),
             )
             pt_hp_overrides = TYPE_HP_OVERRIDES.get(ptype)
-            _LARGE_TYPES = {"stanovanje", "hisa", "parcela"}
+            _LOSSGUIDE_TYPES = {"stanovanje", "hisa", "parcela"}
             type_training_prior = TYPE_TRAINING_PRIORS.get(ptype, {})
             type_search_prior = TYPE_SEARCH_PRIORS.get(ptype, {})
             policy_candidates = [
@@ -4989,7 +5049,7 @@ def train_from_csv(
                 pt_cat,
                 len(Xt),
                 hp_overrides=unique_hp_candidate_overrides[0],
-                use_lossguide=ptype in _LARGE_TYPES,
+                use_lossguide=ptype in _LOSSGUIDE_TYPES,
             )
             emit_status(
                 "per_type_models",
@@ -5022,7 +5082,7 @@ def train_from_csv(
                                 variant_cat,
                                 len(X_policy),
                                 hp_overrides=hp_override,
-                                use_lossguide=ptype in _LARGE_TYPES,
+                                use_lossguide=ptype in _LOSSGUIDE_TYPES,
                             )
                             policy_result = _train_single_model(
                                 policy_model,
@@ -5104,7 +5164,7 @@ def train_from_csv(
                 always_numeric=always_num,
                 always_categorical=always_cat,
                 default_target_transform=chosen_target_transform,
-                use_lossguide=ptype in _LARGE_TYPES,
+                use_lossguide=ptype in _LOSSGUIDE_TYPES,
                 training_progress=training_progress,
             )
             if specialist_fallback is not None:
@@ -5397,7 +5457,7 @@ def train_from_csv(
             continue
         # Lightweight global model for this variant (reduced iterations)
         base_hp = _adaptive_hyperparams(len(X_train))
-        v_hp = {"iterations": max(100, base_hp["iterations"] // 4), "od_wait": 15}
+        v_hp = {"iterations": max(100, base_hp["iterations"] // 4), "od_wait": 50}
         v_model = _build_model(v_num, v_cat, len(X_train), hp_overrides=v_hp)
         v_result = _train_single_model(
             v_model,
@@ -6572,12 +6632,7 @@ def _prepare_benchmark_frames_from_csv(
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, np.ndarray, np.ndarray]:
     """Rebuild the deterministic train/test frames used for benchmark proof rows."""
     artifact_metadata = dict(artifact.get("artifact_metadata") or {})
-    enable_market_validity_filter = bool(
-        artifact_metadata.get(
-            "enable_market_validity_filter",
-            artifact_metadata.get("research_mode", False) or _ENABLE_MARKET_VALIDITY_FILTER,
-        )
-    )
+    enable_market_validity_filter = bool(artifact_metadata.get("enable_market_validity_filter", True))
 
     df = read_csv_flexible(csv_path)
     df = enrich_training_df(df)

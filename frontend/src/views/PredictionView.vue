@@ -4,6 +4,11 @@
   import { useLocalStorage } from '@vueuse/core'
   import { useI18n } from 'vue-i18n'
   import Button from 'primevue/button'
+  import Tab from 'primevue/tab'
+  import TabList from 'primevue/tablist'
+  import TabPanel from 'primevue/tabpanel'
+  import TabPanels from 'primevue/tabpanels'
+  import Tabs from 'primevue/tabs'
   import api from '../composables/useApi'
   import EmptyState from '../components/EmptyState.vue'
   import LoadingSpinner from '../components/LoadingSpinner.vue'
@@ -69,6 +74,11 @@
   const loading = ref(false)
   const contextLoading = ref(false)
   const error = ref('')
+  const municipalityContextError = ref('')
+  const comparablesError = ref('')
+  const predictionTab = ref('intelligence')
+  let contextRequestToken = 0
+  let lastContextSignature = ''
 
   const municipalityContext = computed(() => stats.municipalityDetail)
   const comparables = computed(() => stats.comparables)
@@ -181,16 +191,36 @@
   }
 
   async function loadContext(estimatedPrice: number | null = null) {
+    const requestToken = ++contextRequestToken
     const municipality = form.value.municipality
+    municipalityContextError.value = ''
+    comparablesError.value = ''
+
     if (!municipality || !form.value.property_type || !effectiveSize.value) {
+      lastContextSignature = ''
       stats.resetComparables()
       stats.resetMunicipalityDetail()
+      contextLoading.value = false
       return
+    }
+
+    const contextSignature = JSON.stringify({
+      municipality: municipalitySlug(municipality),
+      naselje: form.value.naselje || '',
+      property_type: form.value.property_type,
+      size_m2: effectiveSize.value,
+      year_built: form.value.year_built || null,
+      price_eur: estimatedPrice || null,
+    })
+
+    if (contextSignature !== lastContextSignature) {
+      stats.resetComparables()
+      stats.resetMunicipalityDetail()
     }
 
     contextLoading.value = true
     try {
-      await Promise.all([
+      const [municipalityResult, comparablesResult] = await Promise.allSettled([
         stats.fetchMunicipalityDetail(municipalitySlug(municipality)),
         stats.fetchComparables({
           municipality,
@@ -202,11 +232,23 @@
           limit: 8,
         }),
       ])
-    } catch {
-      stats.resetComparables()
-      stats.resetMunicipalityDetail()
+
+      if (requestToken !== contextRequestToken) return
+      lastContextSignature = contextSignature
+
+      if (municipalityResult.status === 'rejected') {
+        stats.resetMunicipalityDetail()
+        municipalityContextError.value = getApiErrorMessage(municipalityResult.reason, t)
+      }
+
+      if (comparablesResult.status === 'rejected') {
+        stats.resetComparables()
+        comparablesError.value = getApiErrorMessage(comparablesResult.reason, t)
+      }
     } finally {
-      contextLoading.value = false
+      if (requestToken === contextRequestToken) {
+        contextLoading.value = false
+      }
     }
   }
 
@@ -393,7 +435,7 @@
       ...storedDraft.value,
     }
     applyRouteQuery(route.query as PredictionRouteQuery)
-    await Promise.all([
+    await Promise.allSettled([
       fetchHistory(),
       referenceData.ensureLoaded(),
       stats.fetchFeatureImportance(),
@@ -418,6 +460,7 @@
               page="prediction"
               :state="{
                 page: 'prediction',
+                tab: predictionTab,
                 filters: { ...form, predicted_price_eur: result?.predicted_price_eur || undefined },
               }"
             />
@@ -463,7 +506,7 @@
       </article>
 
       <article class="panel story-panel">
-        <div v-if="loading || contextLoading" class="inline-loading" aria-busy="true">
+        <div v-if="(loading || contextLoading) && !result" class="inline-loading" aria-busy="true">
           <LoadingSpinner :label="t('common.loading')" />
         </div>
 
@@ -524,14 +567,8 @@
                 </div>
               </article>
             </div>
-          </section>
 
-          <section class="story-block readiness-block">
-            <div class="story-head">
-              <h3>{{ t('predict.previewReadinessTitle') }}</h3>
-            </div>
-            <p class="muted preview-copy">{{ t('predict.previewReadinessBody') }}</p>
-            <div class="readiness-list">
+            <div class="readiness-list preview-readiness-list">
               <article
                 v-for="item in predictionReadiness"
                 :key="item.key"
@@ -574,63 +611,113 @@
           </div>
         </section>
 
+        <section
+          v-else-if="result && contextLoading && !municipalityContextError"
+          class="story-block context-card context-card-loading"
+          aria-busy="true"
+        >
+          <LoadingSpinner :label="t('common.loading')" />
+        </section>
+
+        <section
+          v-else-if="result && municipalityContextError"
+          class="story-block context-alert"
+          role="status"
+        >
+          <div class="context-alert-copy">
+            <p class="eyebrow subtle">{{ t('predict.marketContext') }}</p>
+            <strong>{{ t('common.warning') }}</strong>
+            <p>{{ municipalityContextError }}</p>
+          </div>
+          <Button
+            size="small"
+            severity="secondary"
+            outlined
+            icon="pi pi-refresh"
+            :label="t('common.retry')"
+            @click="loadContext(result.predicted_price_eur)"
+          />
+        </section>
+
         <PredictionComparables
           v-if="result"
           :items="comparableRows"
           :count-label="comparablesCountLabel"
+          :loading="contextLoading && !comparableRows.length && !comparablesError"
+          :error="comparablesError"
           @reuse="reuseComparable"
+          @refresh="loadContext(result.predicted_price_eur)"
         />
       </article>
     </section>
 
-    <section class="prediction-secondary-grid">
-      <article v-if="stats.featureImportance?.length" class="panel secondary-panel">
-        <div class="story-head">
-          <h3>{{ t('market.featureImportance') }}</h3>
-          <RouterLink
-            :to="{
-              path: '/trg',
-              query: {
-                tab: 'rankings',
-                municipality: currentMunicipality || undefined,
-                property_type: form.property_type || undefined,
-              },
-            }"
-            class="story-link"
-          >
-            <Button severity="secondary" text :label="t('market.viewAll')" />
-          </RouterLink>
-        </div>
-        <p class="muted feature-desc">{{ t('market.featureImportanceDesc') }}</p>
-        <FeatureImportanceChart :features="stats.featureImportance" :limit="7" />
-      </article>
+    <Tabs v-model:value="predictionTab" class="prediction-tabs">
+      <TabList>
+        <Tab value="intelligence">{{ t('market.featureImportance') }}</Tab>
+        <Tab value="history">{{ t('predict.history') }}</Tab>
+      </TabList>
+      <TabPanels>
+        <TabPanel value="intelligence">
+          <section class="prediction-tab-content">
+            <article class="panel secondary-panel">
+              <div class="story-head">
+                <h3>{{ t('market.featureImportance') }}</h3>
+                <RouterLink
+                  :to="{
+                    path: '/trg',
+                    query: {
+                      tab: 'rankings',
+                      municipality: currentMunicipality || undefined,
+                      property_type: form.property_type || undefined,
+                    },
+                  }"
+                  class="story-link"
+                >
+                  <Button severity="secondary" text :label="t('market.viewAll')" />
+                </RouterLink>
+              </div>
+              <p class="muted feature-desc">{{ t('market.featureImportanceDesc') }}</p>
+              <FeatureImportanceChart
+                v-if="stats.featureImportance?.length"
+                :features="stats.featureImportance"
+                :limit="12"
+              />
+              <EmptyState v-else icon="pi pi-chart-bar" :message="t('common.noData')" />
+            </article>
+          </section>
+        </TabPanel>
 
-      <article class="panel secondary-panel">
-        <div class="story-head">
-          <h3>{{ t('predict.history') }}</h3>
-          <Button
-            severity="secondary"
-            text
-            :label="t('predict.exportHistory')"
-            @click="exportHistoryRows"
-          />
-        </div>
+        <TabPanel value="history">
+          <section class="prediction-tab-content">
+            <article class="panel secondary-panel">
+              <div class="story-head">
+                <h3>{{ t('predict.history') }}</h3>
+                <Button
+                  severity="secondary"
+                  text
+                  :label="t('predict.exportHistory')"
+                  @click="exportHistoryRows"
+                />
+              </div>
 
-        <div v-if="history.length" class="history-list">
-          <article v-for="item in history" :key="item.id" class="history-card">
-            <div>
-              <strong>{{ item.payload?.municipality || '-' }}</strong>
-              <small>{{ formatDateTime(item.created_at) }}</small>
-            </div>
-            <div class="history-metric">
-              <strong>{{ fmtCurrency(item.predicted_price_eur) }}</strong>
-              <small>{{ formatType(item.payload?.property_type) || '-' }}</small>
-            </div>
-          </article>
-        </div>
-        <EmptyState v-else icon="pi pi-inbox" :message="t('predict.noHistory')" />
-      </article>
-    </section>
+              <div v-if="history.length" class="history-list">
+                <article v-for="item in history" :key="item.id" class="history-card">
+                  <div>
+                    <strong>{{ item.payload?.municipality || '-' }}</strong>
+                    <small>{{ formatDateTime(item.created_at) }}</small>
+                  </div>
+                  <div class="history-metric">
+                    <strong>{{ fmtCurrency(item.predicted_price_eur) }}</strong>
+                    <small>{{ formatType(item.payload?.property_type) || '-' }}</small>
+                  </div>
+                </article>
+              </div>
+              <EmptyState v-else icon="pi pi-inbox" :message="t('predict.noHistory')" />
+            </article>
+          </section>
+        </TabPanel>
+      </TabPanels>
+    </Tabs>
   </div>
 </template>
 
@@ -638,6 +725,27 @@
   .prediction-page {
     display: grid;
     gap: var(--space-section);
+    animation: prediction-in 430ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .prediction-tabs,
+  .prediction-tab-content {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .prediction-tabs :deep(.p-tablist) {
+    padding: 0.35rem;
+    border: 1px solid color-mix(in srgb, var(--border) 68%, var(--primary) 18%);
+    border-radius: var(--radius-lg);
+    background: color-mix(in srgb, var(--surface-strong) 92%, var(--primary-overlay) 8%);
+    box-shadow: 0 10px 22px color-mix(in srgb, var(--shadow-color) 8%, transparent);
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+
+  .prediction-tabs :deep(.p-tabpanels) {
+    padding-top: 0.15rem;
   }
 
   .prediction-secondary-grid {
@@ -648,14 +756,25 @@
 
   .prediction-shell {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(23rem, 0.92fr);
+    grid-template-columns: minmax(0, 1.16fr) minmax(22rem, 0.84fr);
     gap: var(--space-section);
+    align-items: start;
   }
 
   .panel {
     border-radius: var(--radius-lg);
     border: 1px solid color-mix(in srgb, var(--border) 72%, var(--content-border-strong) 28%);
     box-shadow: var(--accent-shadow, var(--shadow-sm));
+    transition:
+      border-color 170ms ease,
+      box-shadow 170ms ease,
+      transform 170ms ease;
+  }
+
+  .panel:hover {
+    transform: translateY(-1px);
+    border-color: color-mix(in srgb, var(--border) 60%, var(--primary) 40%);
+    box-shadow: 0 22px 42px color-mix(in srgb, var(--shadow-color) 14%, transparent);
   }
 
   .input-panel,
@@ -663,6 +782,15 @@
   .secondary-panel {
     padding: 1.35rem;
     background: var(--surface-panel);
+  }
+
+  .story-panel {
+    position: sticky;
+    top: 5.75rem;
+  }
+
+  .secondary-panel {
+    position: static;
   }
 
   .input-brief {
@@ -770,6 +898,10 @@
     gap: 0.8rem;
   }
 
+  .preview-readiness-list {
+    margin-top: 0.1rem;
+  }
+
   .preview-signal-grid {
     grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
   }
@@ -861,6 +993,42 @@
     box-shadow: var(--shadow-sm);
   }
 
+  .context-card-loading,
+  .context-alert {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .context-alert {
+    padding: 1rem;
+    border-radius: var(--radius-md);
+    border: 1px solid color-mix(in srgb, var(--warning) 42%, var(--border) 58%);
+    background: color-mix(
+      in srgb,
+      var(--surface-card-strong, var(--surface-strong)) 92%,
+      var(--warning) 8%
+    );
+    box-shadow: var(--shadow-sm);
+  }
+
+  .context-alert-copy {
+    display: grid;
+    gap: 0.25rem;
+  }
+
+  .context-alert-copy strong {
+    font-size: 0.95rem;
+    letter-spacing: -0.01em;
+  }
+
+  .context-alert-copy p {
+    margin: 0;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+
   .context-metrics {
     grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
   }
@@ -896,6 +1064,16 @@
       transparent
     );
     box-shadow: var(--shadow-sm);
+    transition:
+      border-color 140ms ease,
+      box-shadow 140ms ease,
+      transform 140ms ease;
+  }
+
+  .history-card:hover {
+    border-color: color-mix(in srgb, var(--border) 64%, var(--primary) 36%);
+    box-shadow: 0 14px 28px color-mix(in srgb, var(--shadow-color) 12%, transparent);
+    transform: translateY(-1px);
   }
 
   .history-metric {
@@ -906,10 +1084,27 @@
     text-decoration: none;
   }
 
+  @keyframes prediction-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
   @media (max-width: 1120px) {
     .prediction-shell,
     .prediction-secondary-grid {
       grid-template-columns: 1fr;
+    }
+
+    .story-panel,
+    .secondary-panel {
+      position: static;
     }
   }
 
@@ -925,6 +1120,30 @@
 
     .history-metric {
       text-align: left;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .prediction-page {
+      animation: none;
+    }
+
+    .panel,
+    .history-card {
+      transition: none;
+    }
+
+    .panel:hover,
+    .history-card:hover {
+      transform: none;
+    }
+  }
+
+  @media (max-width: 720px) {
+    .context-card-loading,
+    .context-alert {
+      flex-direction: column;
+      align-items: flex-start;
     }
   }
 </style>

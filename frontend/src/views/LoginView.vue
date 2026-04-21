@@ -223,12 +223,14 @@
     isolation: isolate;
     overflow: clip;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(23rem, 31rem);
+    grid-template-columns: minmax(0, 1.1fr) minmax(23rem, 30.5rem);
     align-items: stretch;
-    gap: clamp(1rem, 2vw, 1.4rem);
-    max-width: 70rem;
+    gap: clamp(1rem, 2vw, 1.55rem);
+    min-height: 100dvh;
+    max-width: 74rem;
     margin: 0 auto;
-    padding: clamp(1.25rem, 4vw, 3rem) 1rem;
+    padding: clamp(1rem, 2.7vw, 2.7rem) clamp(0.85rem, 1.5vw, 1.2rem);
+    animation: auth-page-in 560ms cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   #guest-main-content.auth-page::before,
@@ -237,26 +239,47 @@
     position: absolute;
     inset: auto;
     z-index: -1;
-    border-radius: 999px;
-    filter: blur(56px);
     opacity: 0.85;
     pointer-events: none;
   }
 
   #guest-main-content.auth-page::before {
-    top: -5rem;
-    right: -3rem;
-    width: 18rem;
-    height: 18rem;
-    background: color-mix(in srgb, var(--primary) 14%, transparent);
+    inset: -16% -6% auto;
+    height: 46%;
+    border-radius: 0 0 42% 42%;
+    background:
+      radial-gradient(
+        circle at 14% 16%,
+        color-mix(in srgb, var(--secondary) 24%, transparent),
+        transparent 30%
+      ),
+      radial-gradient(
+        circle at 86% 18%,
+        color-mix(in srgb, var(--primary) 30%, transparent),
+        transparent 38%
+      ),
+      linear-gradient(180deg, color-mix(in srgb, var(--primary) 12%, transparent), transparent 82%);
+    filter: blur(52px);
   }
 
   #guest-main-content.auth-page::after {
-    bottom: -5rem;
-    left: -3rem;
-    width: 18rem;
-    height: 18rem;
-    background: color-mix(in srgb, var(--secondary) 12%, transparent);
+    inset: auto -14% -28% -14%;
+    height: 38%;
+    border-radius: 999px;
+    background:
+      repeating-linear-gradient(
+        120deg,
+        color-mix(in srgb, var(--primary) 7%, transparent) 0,
+        color-mix(in srgb, var(--primary) 7%, transparent) 2px,
+        transparent 2px,
+        transparent 18px
+      ),
+      radial-gradient(
+        circle,
+        color-mix(in srgb, var(--secondary) 18%, transparent),
+        transparent 60%
+      );
+    filter: blur(16px);
   }
 
   #guest-main-content.auth-page .auth-page__showcase,
@@ -265,30 +288,58 @@
     width: 100%;
   }
 
+  #guest-main-content.auth-page .auth-page__showcase {
+    animation: auth-column-in 620ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
   #guest-main-content.auth-page .auth-page__panel {
-    max-width: 31rem;
+    position: relative;
+    max-width: 30.5rem;
     justify-self: end;
     align-self: stretch;
     background:
       linear-gradient(
-        180deg,
+        170deg,
         color-mix(in srgb, var(--surface-card-strong) 97%, transparent),
-        transparent 130%
+        color-mix(in srgb, var(--surface-soft) 90%, var(--secondary) 10%)
       ),
       var(--surface-panel);
+    border: 1px solid color-mix(in srgb, var(--primary) 18%, var(--border) 82%);
+    border-radius: clamp(1.15rem, 2.2vw, 1.6rem);
     box-shadow:
       inset 0 1px 0 var(--content-glow),
-      var(--shadow-lg);
+      0 28px 58px color-mix(in srgb, var(--shadow-color) 18%, transparent);
+    backdrop-filter: blur(8px);
+    animation: auth-column-in 760ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation-delay: 60ms;
+  }
+
+  #guest-main-content.auth-page .auth-page__panel::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    border-radius: inherit;
+    background:
+      linear-gradient(150deg, color-mix(in srgb, white 24%, transparent), transparent 35%),
+      radial-gradient(
+        circle at 100% 0%,
+        color-mix(in srgb, var(--primary) 9%, transparent),
+        transparent 45%
+      );
   }
 
   #guest-main-content.auth-page .auth-page__panel :deep(.panel-head) {
+    position: relative;
+    z-index: 1;
     align-items: center;
-    gap: 0.9rem;
+    gap: 0.85rem;
   }
 
   #guest-main-content.auth-page .auth-page__panel :deep(.panel-head h2) {
-    font-size: clamp(1.35rem, 2.6vw, 1.7rem);
-    line-height: 1.02;
+    font-size: clamp(1.4rem, 2.3vw, 1.72rem);
+    line-height: 1.03;
+    letter-spacing: -0.02em;
   }
 
   #guest-main-content.auth-page .auth-page__panel :deep(.panel-head .p-selectbutton) {
@@ -297,7 +348,7 @@
     gap: 0.22rem;
     padding: 0.2rem;
     border-radius: 999px;
-    border: 1px solid color-mix(in srgb, var(--border) 74%, var(--content-border-strong) 26%);
+    border: 1px solid color-mix(in srgb, var(--border) 70%, var(--primary) 30%);
     background: color-mix(in srgb, var(--surface-card-strong) 94%, transparent);
   }
 
@@ -309,18 +360,22 @@
 
   #guest-main-content.auth-page .auth-page__panel :deep(.panel-head .p-togglebutton-label) {
     font-size: 0.72rem;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.1em;
   }
 
   #guest-main-content.auth-page .auth-panel-copy {
+    position: relative;
+    z-index: 1;
     margin: 0 0 0.15rem;
-    max-width: 30ch;
+    max-width: 34ch;
     color: var(--text-soft);
-    font-size: 0.88rem;
-    line-height: 1.52;
+    font-size: 0.9rem;
+    line-height: 1.56;
   }
 
   #guest-main-content.auth-page .auth-mode-switch {
+    position: relative;
+    z-index: 1;
     display: inline-grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0.25rem;
@@ -328,12 +383,12 @@
     max-width: 100%;
     margin-bottom: 0.6rem;
     padding: 0.24rem;
-    border: 1px solid color-mix(in srgb, var(--border) 70%, var(--content-border-strong) 30%);
+    border: 1px solid color-mix(in srgb, var(--border) 64%, var(--primary) 36%);
     border-radius: 999px;
     background:
       linear-gradient(
-        180deg,
-        color-mix(in srgb, var(--primary-overlay) 16%, transparent),
+        160deg,
+        color-mix(in srgb, var(--primary-overlay) 22%, transparent),
         transparent 45%
       ),
       color-mix(in srgb, var(--surface-card-strong) 92%, transparent);
@@ -345,7 +400,7 @@
   #guest-main-content.auth-page .auth-mode-switch__option {
     appearance: none;
     border: 0;
-    min-width: 7.5rem;
+    min-width: 7.8rem;
     min-height: 2.2rem;
     padding: 0.48rem 0.9rem;
     border-radius: 999px;
@@ -364,12 +419,12 @@
 
   #guest-main-content.auth-page .auth-mode-switch__option:hover {
     color: var(--text);
-    transform: translateY(-1px);
+    transform: translateY(-1px) scale(1.01);
   }
 
   #guest-main-content.auth-page .auth-mode-switch__option.is-active {
     background: linear-gradient(
-      135deg,
+      145deg,
       color-mix(in srgb, var(--primary) 18%, var(--surface-card-strong)),
       color-mix(in srgb, var(--secondary) 12%, var(--surface-card-strong))
     );
@@ -380,8 +435,10 @@
   }
 
   #guest-main-content.auth-page .auth-form {
+    position: relative;
+    z-index: 1;
     display: grid;
-    gap: 0.9rem;
+    gap: 0.95rem;
   }
 
   #guest-main-content.auth-page .auth-form :deep(.p-password),
@@ -391,21 +448,22 @@
 
   #guest-main-content.auth-page .auth-form :deep(.p-inputtext),
   #guest-main-content.auth-page .auth-form :deep(.p-password-input) {
-    min-height: 2.85rem;
-    padding-inline: 0.92rem;
-    border: 1px solid color-mix(in srgb, var(--border) 78%, var(--content-border-strong) 22%);
-    border-radius: 0.9rem;
+    min-height: 2.92rem;
+    padding-inline: 0.96rem;
+    border: 1px solid color-mix(in srgb, var(--border) 72%, var(--primary) 28%);
+    border-radius: 0.95rem;
     background: var(--surface-card-strong);
     box-shadow:
       inset 0 1px 0 var(--content-glow),
-      0 1px 0 color-mix(in srgb, var(--surface-card-strong) 94%, transparent);
+      0 1px 0 color-mix(in srgb, var(--surface-card-strong) 94%, transparent),
+      0 8px 20px color-mix(in srgb, var(--shadow-color) 6%, transparent);
   }
 
   #guest-main-content.auth-page .auth-form :deep(.p-inputtext:enabled:focus),
   #guest-main-content.auth-page .auth-form :deep(.p-password-input:enabled:focus) {
-    border-color: color-mix(in srgb, var(--primary) 46%, transparent);
+    border-color: color-mix(in srgb, var(--primary) 56%, transparent);
     box-shadow:
-      0 0 0 0.18rem color-mix(in srgb, var(--primary) 12%, transparent),
+      0 0 0 0.22rem color-mix(in srgb, var(--primary) 14%, transparent),
       inset 0 1px 0 var(--content-glow);
   }
 
@@ -417,8 +475,8 @@
   #guest-main-content.auth-page .field label {
     font-weight: 700;
     color: var(--text-soft);
-    font-size: 0.74rem;
-    letter-spacing: 0.06em;
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
   }
 
@@ -467,28 +525,38 @@
 
   #guest-main-content.auth-page .auth-submit {
     width: 100%;
-    min-height: 2.9rem;
-    margin-top: 0.2rem;
-    border-radius: 0.95rem;
+    min-height: 3rem;
+    margin-top: 0.24rem;
+    border-radius: 1rem;
     background: linear-gradient(
-      135deg,
+      145deg,
       color-mix(in srgb, var(--primary) 82%, white 18%),
       color-mix(in srgb, var(--secondary) 72%, var(--primary) 28%)
     );
     box-shadow:
       0 16px 30px color-mix(in srgb, rgb(2 6 23) 18%, transparent),
       inset 0 1px 0 color-mix(in srgb, white 24%, transparent);
+    transition:
+      transform 180ms ease,
+      filter 180ms ease,
+      box-shadow 180ms ease;
   }
 
   #guest-main-content.auth-page .auth-submit:hover {
-    transform: translateY(-1px);
-    filter: saturate(1.05);
+    transform: translateY(-2px);
+    filter: saturate(1.06);
+    box-shadow:
+      0 18px 34px color-mix(in srgb, rgb(2 6 23) 22%, transparent),
+      inset 0 1px 0 color-mix(in srgb, white 24%, transparent);
   }
 
   #guest-main-content.auth-page .auth-footer {
+    position: relative;
+    z-index: 1;
     margin: 0.9rem 0 0;
     color: var(--text-muted);
     font-size: 0.88rem;
+    line-height: 1.5;
   }
 
   #guest-main-content.auth-page .inline-switch-btn {
@@ -506,14 +574,58 @@
     padding-inline: 0.2rem;
   }
 
-  @media (max-width: 720px) {
+  @keyframes auth-page-in {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes auth-column-in {
+    from {
+      opacity: 0;
+      transform: translateY(16px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @media (max-width: 1080px) {
     #guest-main-content.auth-page {
-      max-width: 100%;
-      padding-inline: 0.8rem;
+      grid-template-columns: 1fr;
+      max-width: 40rem;
+      min-height: auto;
+      padding-block: 1rem 1.25rem;
     }
 
     #guest-main-content.auth-page .auth-page__panel {
+      justify-self: stretch;
       max-width: none;
+      order: 1;
+    }
+
+    #guest-main-content.auth-page .auth-page__showcase {
+      order: 2;
+    }
+  }
+
+  @media (max-width: 720px) {
+    #guest-main-content.auth-page {
+      max-width: 100%;
+      padding-inline: 0.75rem;
+      gap: 0.85rem;
+    }
+
+    #guest-main-content.auth-page .auth-page__panel :deep(.panel-head) {
+      align-items: flex-start;
     }
 
     #guest-main-content.auth-page .auth-mode-switch {
@@ -531,23 +643,13 @@
     }
   }
 
-  @media (min-width: 721px) and (max-width: 1120px) {
-    #guest-main-content.auth-page {
-      grid-template-columns: 1fr;
-      max-width: 36rem;
-    }
-
-    #guest-main-content.auth-page .auth-page__showcase {
-      display: none;
-    }
-
-    #guest-main-content.auth-page .auth-page__panel {
-      justify-self: stretch;
-      max-width: none;
-    }
-  }
-
   @media (prefers-reduced-motion: reduce) {
+    #guest-main-content.auth-page,
+    #guest-main-content.auth-page .auth-page__showcase,
+    #guest-main-content.auth-page .auth-page__panel {
+      animation: none;
+    }
+
     #guest-main-content.auth-page .auth-submit {
       transition: none;
     }

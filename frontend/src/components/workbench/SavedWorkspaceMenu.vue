@@ -6,9 +6,12 @@
   import Dialog from 'primevue/dialog'
   import InputText from 'primevue/inputtext'
   import ToggleSwitch from 'primevue/toggleswitch'
+  import EmptyState from '../EmptyState.vue'
+  import LoadingSpinner from '../LoadingSpinner.vue'
   import { buildWorkspaceRoute } from '../../constants/workbench'
   import { useWorkbenchStore } from '../../stores/workbench'
-  import type { TableViewState } from '../../types/api'
+  import type { SavedWorkspace, TableViewState } from '../../types/api'
+  import { getApiErrorMessage } from '../../utils/apiError'
   import { formatDateTime } from '../../utils/format'
 
   const props = defineProps<{
@@ -24,6 +27,12 @@
   const visible = ref(false)
   const workspaceName = ref('')
   const pinned = ref(false)
+  const listLoading = ref(false)
+  const loadError = ref('')
+  const actionError = ref('')
+  const saveLoading = ref(false)
+  const activeWorkspaceAction = ref<{ id: number; type: 'pin' | 'delete' } | null>(null)
+  let loadRequestVersion = 0
 
   const pageWorkspaces = computed(() =>
     workbench.workspaces
@@ -35,27 +44,65 @@
       }),
   )
 
+  const displayedWorkspaces = computed(() => (loadError.value ? [] : pageWorkspaces.value))
+  const actionsLocked = computed(() => saveLoading.value || Boolean(activeWorkspaceAction.value))
+
   watch(visible, async (nextVisible) => {
-    if (!nextVisible) return
-    await workbench.fetchWorkspaces(props.page)
+    if (!nextVisible) {
+      loadRequestVersion += 1
+      listLoading.value = false
+      loadError.value = ''
+      actionError.value = ''
+      workspaceName.value = ''
+      pinned.value = false
+      return
+    }
+    await loadPageWorkspaces()
   })
 
-  async function saveCurrentWorkspace() {
-    if (!workspaceName.value.trim()) return
-    await workbench.saveWorkspace({
-      name: workspaceName.value.trim(),
-      page: props.page,
-      filters: props.state.filters || {},
-      tab: props.state.tab || null,
-      sort: props.state.sort || null,
-      columns: props.state.columns || [],
-      pinned: pinned.value,
-    })
-    workspaceName.value = ''
-    pinned.value = false
+  async function loadPageWorkspaces() {
+    const requestVersion = ++loadRequestVersion
+    listLoading.value = true
+    loadError.value = ''
+    actionError.value = ''
+    try {
+      await workbench.fetchWorkspaces(props.page)
+    } catch (error) {
+      if (requestVersion === loadRequestVersion) {
+        loadError.value = getApiErrorMessage(error, t)
+      }
+    } finally {
+      if (requestVersion === loadRequestVersion) {
+        listLoading.value = false
+      }
+    }
   }
 
-  function openWorkspace(item: any) {
+  async function saveCurrentWorkspace() {
+    if (!workspaceName.value.trim() || saveLoading.value) return
+    saveLoading.value = true
+    actionError.value = ''
+    try {
+      await workbench.saveWorkspace({
+        name: workspaceName.value.trim(),
+        page: props.page,
+        filters: props.state.filters || {},
+        tab: props.state.tab || null,
+        sort: props.state.sort || null,
+        columns: props.state.columns || [],
+        pinned: pinned.value,
+      })
+      workspaceName.value = ''
+      pinned.value = false
+      loadError.value = ''
+    } catch (error) {
+      actionError.value = getApiErrorMessage(error, t)
+    } finally {
+      saveLoading.value = false
+    }
+  }
+
+  function openWorkspace(item: SavedWorkspace) {
     const query = {
       ...(item.filters || {}),
       ...(item.tab ? { tab: item.tab } : {}),
@@ -65,12 +112,38 @@
     visible.value = false
   }
 
-  async function togglePinned(item: any) {
-    await workbench.updateWorkspace(item.id, { pinned: !item.pinned })
+  function isWorkspaceAction(itemId: number, type: 'pin' | 'delete') {
+    return activeWorkspaceAction.value?.id === itemId && activeWorkspaceAction.value?.type === type
   }
 
-  async function removeWorkspace(item: any) {
-    await workbench.deleteWorkspace(item.id)
+  async function togglePinned(item: SavedWorkspace) {
+    activeWorkspaceAction.value = { id: item.id, type: 'pin' }
+    actionError.value = ''
+    try {
+      await workbench.updateWorkspace(item.id, { pinned: !item.pinned })
+      loadError.value = ''
+    } catch (error) {
+      actionError.value = getApiErrorMessage(error, t)
+    } finally {
+      if (isWorkspaceAction(item.id, 'pin')) {
+        activeWorkspaceAction.value = null
+      }
+    }
+  }
+
+  async function removeWorkspace(item: SavedWorkspace) {
+    activeWorkspaceAction.value = { id: item.id, type: 'delete' }
+    actionError.value = ''
+    try {
+      await workbench.deleteWorkspace(item.id)
+      loadError.value = ''
+    } catch (error) {
+      actionError.value = getApiErrorMessage(error, t)
+    } finally {
+      if (isWorkspaceAction(item.id, 'delete')) {
+        activeWorkspaceAction.value = null
+      }
+    }
   }
 </script>
 
@@ -98,11 +171,12 @@
               <InputText
                 v-model="workspaceName"
                 :placeholder="t('workbench.workspaceNamePlaceholder')"
+                :disabled="saveLoading"
               />
             </label>
 
             <label class="toggle-row">
-              <ToggleSwitch v-model="pinned" />
+              <ToggleSwitch v-model="pinned" :disabled="saveLoading" />
               <span>{{ t('workbench.pinToDashboard') }}</span>
             </label>
           </div>
@@ -110,49 +184,97 @@
           <Button
             icon="pi pi-plus"
             :label="t('workbench.saveCurrentView')"
-            :disabled="!workspaceName.trim()"
+            :loading="saveLoading"
+            :disabled="!workspaceName.trim() || actionsLocked"
             @click="saveCurrentWorkspace"
           />
+
+          <div v-if="actionError" class="workspace-note workspace-note--error" role="alert">
+            <i class="pi pi-exclamation-triangle" aria-hidden="true"></i>
+            <span>{{ actionError }}</span>
+          </div>
         </section>
 
         <section class="workspace-list">
-          <article v-for="item in pageWorkspaces" :key="item.id" class="workspace-card">
-            <div class="workspace-card-main">
-              <strong>{{ item.name }}</strong>
-              <small>{{ formatDateTime(item.updated_at) }}</small>
-            </div>
+          <div class="workspace-list-head">
+            <span>{{ t('workbench.savedViews') }}</span>
+            <Button
+              size="small"
+              severity="secondary"
+              outlined
+              icon="pi pi-refresh"
+              :label="t('common.refresh')"
+              :loading="listLoading"
+              :disabled="listLoading || actionsLocked"
+              @click="loadPageWorkspaces"
+            />
+          </div>
 
-            <div class="workspace-card-actions">
+          <LoadingSpinner
+            v-if="listLoading && !displayedWorkspaces.length"
+            :label="t('common.loading')"
+          />
+          <div v-else-if="loadError" class="state-card state-card-stack" role="alert">
+            <EmptyState icon="pi pi-exclamation-triangle" :message="loadError" />
+            <div class="state-card-actions">
               <Button
-                size="small"
+                icon="pi pi-refresh"
                 severity="secondary"
-                text
-                icon="pi pi-external-link"
-                :label="t('common.open')"
-                @click="openWorkspace(item)"
-              />
-              <Button
-                size="small"
-                severity="secondary"
-                text
-                :icon="item.pinned ? 'pi pi-star-fill' : 'pi pi-star'"
-                :label="item.pinned ? t('workbench.unpin') : t('workbench.pin')"
-                @click="togglePinned(item)"
-              />
-              <Button
-                size="small"
-                severity="danger"
-                text
-                icon="pi pi-trash"
-                :label="t('common.delete')"
-                @click="removeWorkspace(item)"
+                outlined
+                :label="t('common.retry')"
+                @click="loadPageWorkspaces"
               />
             </div>
-          </article>
+          </div>
+          <template v-else-if="displayedWorkspaces.length">
+            <article v-for="item in displayedWorkspaces" :key="item.id" class="workspace-card">
+              <div class="workspace-card-main">
+                <strong>{{ item.name }}</strong>
+                <small>{{ formatDateTime(item.updated_at) }}</small>
+              </div>
 
-          <p v-if="!pageWorkspaces.length" class="muted">
-            {{ t('workbench.noSavedViews') }}
-          </p>
+              <div class="workspace-card-actions">
+                <Button
+                  size="small"
+                  severity="secondary"
+                  text
+                  icon="pi pi-external-link"
+                  :label="t('common.open')"
+                  :disabled="actionsLocked || listLoading"
+                  @click="openWorkspace(item)"
+                />
+                <Button
+                  size="small"
+                  severity="secondary"
+                  text
+                  :icon="item.pinned ? 'pi pi-star-fill' : 'pi pi-star'"
+                  :label="item.pinned ? t('workbench.unpin') : t('workbench.pin')"
+                  :loading="isWorkspaceAction(item.id, 'pin')"
+                  :disabled="
+                    saveLoading ||
+                    listLoading ||
+                    Boolean(activeWorkspaceAction && !isWorkspaceAction(item.id, 'pin'))
+                  "
+                  @click="togglePinned(item)"
+                />
+                <Button
+                  size="small"
+                  severity="danger"
+                  text
+                  icon="pi pi-trash"
+                  :label="t('common.delete')"
+                  :loading="isWorkspaceAction(item.id, 'delete')"
+                  :disabled="
+                    saveLoading ||
+                    listLoading ||
+                    Boolean(activeWorkspaceAction && !isWorkspaceAction(item.id, 'delete'))
+                  "
+                  @click="removeWorkspace(item)"
+                />
+              </div>
+            </article>
+          </template>
+          <EmptyState v-else icon="pi pi-bookmark" :message="t('workbench.noSavedViews')" />
         </section>
       </div>
     </Dialog>
@@ -168,6 +290,22 @@
     gap: 1rem;
   }
 
+  .workspace-list-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .workspace-list-head span {
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
   .workspace-creator {
     padding: 1rem;
     border: 1px solid color-mix(in srgb, var(--border) 72%, var(--primary) 28%);
@@ -176,6 +314,22 @@
     box-shadow:
       inset 0 1px 0 var(--content-glow),
       var(--shadow-sm);
+  }
+
+  .workspace-note {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    padding: 0.8rem 0.9rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid color-mix(in srgb, var(--danger) 24%, var(--border) 76%);
+    background: color-mix(in srgb, var(--danger) 8%, var(--surface-subtle) 92%);
+    color: var(--text-soft);
+  }
+
+  .workspace-note i {
+    margin-top: 0.1rem;
+    color: var(--danger);
   }
 
   .workspace-card {
@@ -237,6 +391,16 @@
     gap: 0.65rem;
   }
 
+  .state-card-stack {
+    display: grid;
+    gap: 0.85rem;
+  }
+
+  .state-card-actions {
+    display: flex;
+    justify-content: flex-start;
+  }
+
   @media (max-width: 720px) {
     .workspace-card {
       flex-direction: column;
@@ -246,6 +410,10 @@
     .workspace-card-actions {
       display: grid;
       grid-template-columns: 1fr;
+    }
+
+    .workspace-list-head :deep(.p-button) {
+      width: 100%;
     }
   }
 </style>

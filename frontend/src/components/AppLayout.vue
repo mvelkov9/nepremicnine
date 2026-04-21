@@ -443,9 +443,9 @@
     margin: 0;
     color: var(--app-shell-text);
     font-family: var(--font-display);
-    font-size: clamp(1.24rem, 1.8vw, 1.64rem);
+    font-size: clamp(1.28rem, 1.9vw, 1.7rem);
     line-height: 1;
-    letter-spacing: -0.05em;
+    letter-spacing: -0.045em;
     text-wrap: balance;
   }
 
@@ -485,12 +485,12 @@
     position: relative;
     z-index: 1;
     flex: 1;
-    padding: 1.15rem 1.15rem 2rem;
+    padding: 1.25rem 1.25rem 2.2rem;
   }
 
   .workspace-stage {
     position: relative;
-    width: min(100%, 1440px);
+    width: min(100%, 1380px);
     margin: 0 auto;
     min-height: 100%;
   }
@@ -513,7 +513,7 @@
     position: relative;
     z-index: 1;
     display: grid;
-    gap: 1.45rem;
+    gap: 1.5rem;
   }
 
   .shell-footer-bar {
@@ -644,6 +644,7 @@
     align-items: center;
     gap: 0.75rem;
     padding-inline: 0.5rem 0.9rem;
+    color: var(--app-shell-text);
   }
 
   .profile-trigger.compact {
@@ -667,8 +668,9 @@
   }
 
   .profile-copy small {
-    color: var(--app-shell-text-soft);
+    color: color-mix(in srgb, var(--app-shell-text) 68%, var(--app-shell-text-soft) 32%);
     font-size: var(--text-xs);
+    font-weight: 600;
   }
 
   .avatar-frame {
@@ -701,6 +703,7 @@
     display: inline-flex;
     align-items: center;
     gap: 0.55rem;
+    color: var(--app-shell-text);
   }
 
   :deep(.shell-icon-button .p-button-label) {
@@ -810,6 +813,10 @@
     .shell-main,
     .shell-footer-inner {
       padding-inline: 1rem;
+    }
+
+    .shell-main {
+      padding-block: 1rem 1.6rem;
     }
 
     .page-description {

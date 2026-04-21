@@ -13,11 +13,11 @@
   border: 1px solid transparent;
   letter-spacing: 0.01em;
   transition:
-    transform 140ms ease,
-    background 140ms ease,
-    border-color 140ms ease,
-    color 140ms ease,
-    box-shadow 140ms ease;
+    transform var(--motion-quick) var(--ease-standard),
+    background var(--motion-quick) var(--ease-standard),
+    border-color var(--motion-quick) var(--ease-standard),
+    color var(--motion-quick) var(--ease-standard),
+    box-shadow var(--motion-standard) var(--ease-standard);
 }
 
 .p-button:not(.p-button-text):not(.p-button-link) {
@@ -173,11 +173,18 @@
   font-weight: 800;
   letter-spacing: 0.1em;
   text-transform: uppercase;
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 
 .p-datatable .p-datatable-tbody > tr {
   background: transparent;
   color: var(--text);
+}
+
+.p-datatable .p-datatable-tbody > tr:nth-child(even) > td {
+  background: color-mix(in srgb, var(--surface-card-strong) 92%, var(--primary-overlay) 8%);
 }
 
 .p-datatable .p-datatable-tbody > tr > td {
@@ -187,9 +194,9 @@
   padding: 0.94rem 0.92rem;
   vertical-align: top;
   transition:
-    background 140ms ease,
-    color 140ms ease,
-    box-shadow 140ms ease;
+    background var(--motion-quick) var(--ease-standard),
+    color var(--motion-quick) var(--ease-standard),
+    box-shadow var(--motion-standard) var(--ease-standard);
 }
 
 .p-datatable.p-datatable-sm .p-datatable-thead > tr > th {
@@ -237,11 +244,11 @@
   color: var(--control-text-muted);
   box-shadow: inset 0 1px 0 var(--content-glow);
   transition:
-    border-color 140ms ease,
-    background 140ms ease,
-    color 140ms ease,
-    box-shadow 140ms ease,
-    transform 140ms ease;
+    border-color var(--motion-quick) var(--ease-standard),
+    background var(--motion-quick) var(--ease-standard),
+    color var(--motion-quick) var(--ease-standard),
+    box-shadow var(--motion-standard) var(--ease-standard),
+    transform var(--motion-quick) var(--ease-standard);
 }
 
 .p-togglebutton:not(:disabled):hover {
@@ -510,6 +517,10 @@
   background: var(--table-row-hover);
 }
 
+#app .p-datatable .p-datatable-column-header-content {
+  gap: 0.45rem;
+}
+
 #app .p-paginator .p-paginator-page,
 #app .p-paginator .p-paginator-next,
 #app .p-paginator .p-paginator-prev,
@@ -698,7 +709,7 @@
 #app .p-tabs .p-tablist {
   width: fit-content;
   max-width: 100%;
-  padding: 0.28rem;
+  padding: 0.3rem;
   border: 1px solid color-mix(in srgb, var(--control-border) 82%, var(--content-border-strong) 18%);
   border-radius: 999px;
   background:
@@ -718,12 +729,23 @@
   color: var(--text-muted);
   font-weight: 700;
   min-height: 2.5rem;
+  transition:
+    background 140ms ease,
+    color 140ms ease,
+    border-color 140ms ease,
+    transform 140ms ease;
+}
+
+#app .p-tabs .p-tab:hover {
+  background: color-mix(in srgb, var(--surface-soft-strong) 80%, var(--primary) 20%);
+  color: var(--text);
 }
 
 #app .p-tabs .p-tab-active {
   border-color: var(--control-border-hover);
   background: color-mix(in srgb, var(--surface-soft-strong) 76%, var(--primary) 24%);
   color: var(--text);
+  box-shadow: 0 10px 20px color-mix(in srgb, var(--shadow-color) 10%, transparent);
 }
 
 #app .p-tabs .p-tabpanels {
@@ -778,4 +800,15 @@
     var(--surface-panel);
   color: var(--text);
   border-color: var(--control-border);
+}
+
+@media (max-width: 760px) {
+  #app .p-tabs .p-tablist {
+    width: 100%;
+    border-radius: var(--radius-sm);
+  }
+
+  #app .p-tabs .p-tab {
+    flex: 1 1 auto;
+  }
 }

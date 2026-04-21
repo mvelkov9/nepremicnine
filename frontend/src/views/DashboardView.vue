@@ -4,13 +4,18 @@
   import Button from 'primevue/button'
   import Column from 'primevue/column'
   import DataTable from 'primevue/datatable'
+  import Skeleton from 'primevue/skeleton'
   import Select from 'primevue/select'
+  import Tab from 'primevue/tab'
+  import TabList from 'primevue/tablist'
+  import TabPanel from 'primevue/tabpanel'
+  import TabPanels from 'primevue/tabpanels'
+  import Tabs from 'primevue/tabs'
   import Tag from 'primevue/tag'
   import { useI18n } from 'vue-i18n'
   import EmptyState from '../components/EmptyState.vue'
   import FilterBar from '../components/FilterBar.vue'
   import FilterField from '../components/FilterField.vue'
-  import LoadingSpinner from '../components/LoadingSpinner.vue'
   import MetricCard from '../components/MetricCard.vue'
   import PageHeader from '../components/PageHeader.vue'
   import SectionPanel from '../components/SectionPanel.vue'
@@ -47,6 +52,7 @@
   const workbench = useWorkbenchStore()
   const referenceData = useReferenceDataStore()
   const viewerQuery = useViewerQueryState({
+    tab: 'overview',
     property_type: '',
     region: '',
     municipality: '',
@@ -129,27 +135,44 @@
     to: RouteLocationRaw
   }
 
-  const marketHome = computed<DashboardMarketHome>(
-    () =>
-      (stats.marketHome as DashboardMarketHome | null) || {
-        headline: {},
-        market_coverage: {},
-        property_type_mix: [],
-        year_coverage: [],
-      },
+  interface DashboardHeroChip {
+    label: string
+    value: string
+    tone?: 'accent' | 'success'
+  }
+
+  function emptyMarketHome(): DashboardMarketHome {
+    return {
+      headline: {},
+      market_coverage: {},
+      property_type_mix: [],
+      year_coverage: [],
+    }
+  }
+
+  const marketHome = computed<DashboardMarketHome>(() =>
+    sectionErrors.marketHome
+      ? emptyMarketHome()
+      : (stats.marketHome as DashboardMarketHome | null) || emptyMarketHome(),
   )
 
   const propertyMix = computed<PropertyTypeMix[]>(() => marketHome.value.property_type_mix || [])
-  const latestSales = computed<TransactionRecord[]>(() => stats.transactionsExplorer?.items || [])
+  const latestSales = computed<TransactionRecord[]>(() =>
+    sectionErrors.transactions ? [] : stats.transactionsExplorer?.items || [],
+  )
   const topRegions = computed<RegionExplorerItem[]>(
-    () => stats.regionsExplorer?.items?.slice(0, 5) || [],
+    () => (sectionErrors.regions ? [] : stats.regionsExplorer?.items?.slice(0, 5)) || [],
   )
   const municipalitySpotlight = computed<MunicipalityExplorerItem | null>(
-    () => stats.municipalitiesExplorer?.items?.[0] || null,
+    () => (sectionErrors.municipalities ? null : stats.municipalitiesExplorer?.items?.[0]) || null,
   )
-  const trendData = computed(() => stats.trend || [])
-  const pinnedWorkspaces = computed(() => workbench.pinnedWorkspaces.slice(0, 4))
-  const watchlistFeed = computed(() => workbench.watchlistFeed.slice(0, 4))
+  const trendData = computed(() => (sectionErrors.trend ? [] : stats.trend) || [])
+  const pinnedWorkspaces = computed(() =>
+    workspacesError.value ? [] : workbench.pinnedWorkspaces.slice(0, 4),
+  )
+  const watchlistFeed = computed(() =>
+    watchlistError.value ? [] : workbench.watchlistFeed.slice(0, 4),
+  )
   const recentWorkflows = computed(() => workbench.recentRoutes.slice(0, 4))
   const dashboardQuickLinks = computed<DashboardQuickLink[]>(() => [
     {
@@ -211,6 +234,18 @@
       ? t('dashboard.activeFilterCount', { count: activeFilterCountValue.value })
       : t('dashboard.noActiveFilters'),
   )
+  const activeTab = computed({
+    get: () =>
+      ['overview', 'workspace', 'transactions'].includes(viewerQuery.state.tab)
+        ? viewerQuery.state.tab
+        : 'overview',
+    set: (tab: string) => viewerQuery.patchState({ tab: tab || 'overview' }),
+  })
+  const activeTabLabel = computed(() => {
+    if (activeTab.value === 'workspace') return t('workbench.resumeWork')
+    if (activeTab.value === 'transactions') return t('dashboard.latestTransactions')
+    return t('common.overview')
+  })
   const summaryCards = computed(() => [
     {
       label: t('dashboard.totalRecords'),
@@ -245,6 +280,43 @@
       tone: 'warning',
     },
   ])
+  const dashboardHeroChips = computed<DashboardHeroChip[]>(() => {
+    const chips: DashboardHeroChip[] = [
+      {
+        label: t('dashboard.marketLens'),
+        value: activeFilterTagLabel.value,
+        tone: activeFilterCountValue.value > 0 ? 'accent' : undefined,
+      },
+      {
+        label: t('nav.dashboard'),
+        value: activeTabLabel.value,
+      },
+    ]
+
+    if (marketHome.value.headline?.latest_year) {
+      chips.push({
+        label: t('dashboard.yearCoverage'),
+        value: String(marketHome.value.headline.latest_year),
+      })
+    }
+
+    if (topRegions.value[0]?.region) {
+      chips.push({
+        label: t('dashboard.regionSnapshot'),
+        value: topRegions.value[0].region,
+        tone: 'success',
+      })
+    }
+
+    if (municipalitySpotlight.value?.municipality) {
+      chips.push({
+        label: t('dashboard.municipalitySpotlight'),
+        value: municipalitySpotlight.value.municipality,
+      })
+    }
+
+    return chips
+  })
 
   function viewerParams() {
     return {
@@ -481,12 +553,27 @@
           :title="t('dashboard.consumerTitle')"
           :description="t('dashboard.consumerBody')"
         >
+          <template #meta>
+            <div class="context-chip-strip">
+              <span
+                v-for="chip in dashboardHeroChips"
+                :key="`${chip.label}-${chip.value}`"
+                class="context-chip"
+                :class="chip.tone ? `is-${chip.tone}` : ''"
+              >
+                <span>{{ chip.label }}</span>
+                <strong>{{ chip.value }}</strong>
+              </span>
+            </div>
+          </template>
+
           <template #actions>
             <div class="hero-actions">
               <SavedWorkspaceMenu
                 page="dashboard"
                 :state="{
                   page: 'dashboard',
+                  tab: activeTab,
                   filters: viewerParams(),
                 }"
               />
@@ -509,11 +596,6 @@
             </div>
           </template>
         </PageHeader>
-
-        <div class="hero-status">
-          <Tag :severity="activeFilterTagSeverity" :value="activeFilterTagLabel" />
-          <span>{{ t('dashboard.marketLens') }}</span>
-        </div>
       </div>
 
       <div class="hero-summary">
@@ -586,288 +668,410 @@
       </FilterBar>
     </SectionPanel>
 
-    <SectionPanel :eyebrow="t('common.explore')" :title="t('dashboard.quickActionsTitle')" compact>
-      <DashboardActionGrid :items="dashboardQuickLinks" />
-    </SectionPanel>
+    <Tabs v-model:value="activeTab" class="dashboard-tabs">
+      <TabList>
+        <Tab value="overview">{{ t('common.overview') }}</Tab>
+        <Tab value="workspace">{{ t('workbench.resumeWork') }}</Tab>
+        <Tab value="transactions">{{ t('dashboard.latestTransactions') }}</Tab>
+      </TabList>
+      <TabPanels>
+        <TabPanel value="overview">
+          <section class="dashboard-tab-content">
+            <SectionPanel
+              :eyebrow="t('common.explore')"
+              :title="t('dashboard.quickActionsTitle')"
+              compact
+            >
+              <DashboardActionGrid :items="dashboardQuickLinks" />
+            </SectionPanel>
 
-    <div class="dashboard-grid dashboard-grid--primary">
-      <SectionPanel
-        class="dashboard-chart-panel"
-        :eyebrow="t('dashboard.priceTrend')"
-        :title="t('market.trendTitle')"
-      >
-        <template #actions>
-          <Button
-            :as="RouterLink"
-            :to="{ path: '/trg', query: routeQuery({ tab: 'overview' }) }"
-            class="hero-link"
-            severity="secondary"
-            outlined
-            size="small"
-            :label="t('market.viewAll')"
-            icon="pi pi-arrow-right"
-            icon-pos="right"
-          />
-        </template>
+            <div class="dashboard-grid dashboard-grid--primary">
+              <SectionPanel
+                class="dashboard-chart-panel"
+                :eyebrow="t('dashboard.priceTrend')"
+                :title="t('market.trendTitle')"
+              >
+                <template #actions>
+                  <Button
+                    :as="RouterLink"
+                    :to="{ path: '/trg', query: routeQuery({ tab: 'overview' }) }"
+                    class="hero-link"
+                    severity="secondary"
+                    outlined
+                    size="small"
+                    :label="t('market.viewAll')"
+                    icon="pi pi-arrow-right"
+                    icon-pos="right"
+                  />
+                </template>
 
-        <LoadingSpinner
-          v-if="sectionLoading.trend && !trendData.length"
-          :label="t('common.loading')"
-        />
-        <div
-          v-else-if="sectionErrors.trend && !trendData.length"
-          class="state-card state-card-stack"
-          role="alert"
-        >
-          <EmptyState icon="pi pi-exclamation-triangle" :message="sectionErrors.trend" />
-          <div class="state-card-actions">
-            <Button
-              icon="pi pi-refresh"
-              severity="secondary"
-              outlined
-              :label="t('common.retry')"
-              @click="loadDashboard"
-            />
-          </div>
-        </div>
-        <TrendLineChart v-else-if="trendData.length" :data="trendData" compact />
-        <EmptyState v-else :message="t('common.noData')" />
-      </SectionPanel>
+                <div
+                  v-if="sectionLoading.trend && !trendData.length"
+                  class="section-skeleton"
+                  aria-busy="true"
+                >
+                  <Skeleton width="34%" height="0.95rem" />
+                  <Skeleton width="72%" height="0.95rem" />
+                  <Skeleton width="100%" height="16rem" border-radius="var(--radius-sm)" />
+                </div>
+                <div
+                  v-else-if="sectionErrors.trend && !trendData.length"
+                  class="state-card state-card-stack"
+                  role="alert"
+                >
+                  <EmptyState icon="pi pi-exclamation-triangle" :message="sectionErrors.trend" />
+                  <div class="state-card-actions">
+                    <Button
+                      icon="pi pi-refresh"
+                      severity="secondary"
+                      outlined
+                      :label="t('common.retry')"
+                      @click="loadDashboard"
+                    />
+                  </div>
+                </div>
+                <TrendLineChart v-else-if="trendData.length" :data="trendData" compact />
+                <EmptyState v-else :message="t('common.noData')" />
+              </SectionPanel>
 
-      <SectionPanel
-        class="dashboard-spotlight-panel municipality-spotlight"
-        :eyebrow="t('dashboard.municipalitySpotlight')"
-        :title="municipalitySpotlight?.municipality || t('common.noData')"
-      >
-        <template #actions>
-          <Tag severity="contrast" :value="t('dashboard.marketTableTitle')" />
-        </template>
+              <SectionPanel
+                class="dashboard-spotlight-panel municipality-spotlight"
+                :eyebrow="t('dashboard.municipalitySpotlight')"
+                :title="municipalitySpotlight?.municipality || t('common.noData')"
+              >
+                <template #actions>
+                  <Tag severity="contrast" :value="t('dashboard.marketTableTitle')" />
+                </template>
 
-        <LoadingSpinner
-          v-if="sectionLoading.municipalities && !municipalitySpotlight"
-          :label="t('common.loading')"
-        />
-        <div
-          v-else-if="sectionErrors.municipalities && !municipalitySpotlight"
-          class="state-card state-card-stack"
-          role="alert"
-        >
-          <EmptyState icon="pi pi-exclamation-triangle" :message="sectionErrors.municipalities" />
-          <div class="state-card-actions">
-            <Button
-              icon="pi pi-refresh"
-              severity="secondary"
-              outlined
-              :label="t('common.retry')"
-              @click="loadDashboard"
-            />
-          </div>
-        </div>
-        <template v-else-if="municipalitySpotlight">
-          <p class="spotlight-copy">{{ municipalitySpotlight.region || '-' }}</p>
-          <div class="spotlight-metrics">
-            <div>
-              <span>{{ t('dashboard.transactions') }}</span>
-              <strong>{{ formatNumber(municipalitySpotlight.count) }}</strong>
+                <div
+                  v-if="sectionLoading.municipalities && !municipalitySpotlight"
+                  class="section-skeleton"
+                  aria-busy="true"
+                >
+                  <Skeleton width="40%" height="1rem" />
+                  <Skeleton width="62%" height="0.95rem" />
+                  <div class="spotlight-skeleton-grid">
+                    <Skeleton width="100%" height="5.8rem" border-radius="var(--radius-sm)" />
+                    <Skeleton width="100%" height="5.8rem" border-radius="var(--radius-sm)" />
+                  </div>
+                  <Skeleton width="100%" height="2.6rem" border-radius="999px" />
+                </div>
+                <div
+                  v-else-if="sectionErrors.municipalities && !municipalitySpotlight"
+                  class="state-card state-card-stack"
+                  role="alert"
+                >
+                  <EmptyState
+                    icon="pi pi-exclamation-triangle"
+                    :message="sectionErrors.municipalities"
+                  />
+                  <div class="state-card-actions">
+                    <Button
+                      icon="pi pi-refresh"
+                      severity="secondary"
+                      outlined
+                      :label="t('common.retry')"
+                      @click="loadDashboard"
+                    />
+                  </div>
+                </div>
+                <template v-else-if="municipalitySpotlight">
+                  <p class="spotlight-copy">{{ municipalitySpotlight.region || '-' }}</p>
+                  <div class="spotlight-metrics">
+                    <div>
+                      <span>{{ t('dashboard.transactions') }}</span>
+                      <strong>{{ formatNumber(municipalitySpotlight.count) }}</strong>
+                    </div>
+                    <div>
+                      <span>{{ t('dashboard.pricePerM2') }}</span>
+                      <strong>{{
+                        formatCurrency(municipalitySpotlight.median_price_per_m2)
+                      }}</strong>
+                    </div>
+                  </div>
+                  <div class="spotlight-actions">
+                    <Button
+                      :as="RouterLink"
+                      :to="`/obcine/${municipalitySpotlight.slug}`"
+                      class="hero-link"
+                      severity="contrast"
+                      outlined
+                      icon="pi pi-building"
+                      :label="t('municipalities.viewDetail')"
+                    />
+                    <Button
+                      :as="RouterLink"
+                      :to="{
+                        path: '/trg',
+                        query: routeQuery({
+                          tab: 'transactions',
+                          municipality: municipalitySpotlight.municipality,
+                        }),
+                      }"
+                      class="hero-link"
+                      severity="secondary"
+                      outlined
+                      icon="pi pi-table"
+                      :label="t('market.tabTransactions')"
+                    />
+                    <Button
+                      severity="secondary"
+                      text
+                      icon="pi pi-bookmark"
+                      :label="t('workbench.watch')"
+                      @click="watchMunicipalitySpotlight"
+                    />
+                  </div>
+                </template>
+                <EmptyState v-else :message="t('common.noData')" />
+              </SectionPanel>
             </div>
-            <div>
-              <span>{{ t('dashboard.pricePerM2') }}</span>
-              <strong>{{ formatCurrency(municipalitySpotlight.median_price_per_m2) }}</strong>
+
+            <div class="dashboard-grid dashboard-grid--secondary">
+              <SectionPanel
+                class="dashboard-chart-panel"
+                :eyebrow="t('dashboard.propertyMix')"
+                :title="t('dashboard.propertyMixTitle')"
+              >
+                <template #actions>
+                  <Button
+                    :as="RouterLink"
+                    :to="{ path: '/trg', query: routeQuery({ tab: 'distribution' }) }"
+                    class="hero-link"
+                    severity="secondary"
+                    outlined
+                    size="small"
+                    :label="t('market.viewAll')"
+                    icon="pi pi-arrow-right"
+                    icon-pos="right"
+                  />
+                </template>
+
+                <div
+                  v-if="sectionLoading.marketHome && !propertyMix.length"
+                  class="section-skeleton"
+                  aria-busy="true"
+                >
+                  <Skeleton width="34%" height="0.95rem" />
+                  <Skeleton width="72%" height="0.95rem" />
+                  <Skeleton width="100%" height="16rem" border-radius="var(--radius-sm)" />
+                </div>
+                <div
+                  v-else-if="sectionErrors.marketHome && !propertyMix.length"
+                  class="state-card state-card-stack"
+                  role="alert"
+                >
+                  <EmptyState
+                    icon="pi pi-exclamation-triangle"
+                    :message="sectionErrors.marketHome"
+                  />
+                  <div class="state-card-actions">
+                    <Button
+                      icon="pi pi-refresh"
+                      severity="secondary"
+                      outlined
+                      :label="t('common.retry')"
+                      @click="loadDashboard"
+                    />
+                  </div>
+                </div>
+                <PropertyTypePieChart v-else-if="propertyMix.length" :items="propertyMix" />
+                <EmptyState v-else :message="t('common.noData')" />
+              </SectionPanel>
+
+              <SectionPanel
+                class="dashboard-table-panel"
+                :eyebrow="t('dashboard.regionSnapshot')"
+                :title="t('dashboard.regionTableTitle')"
+              >
+                <template #actions>
+                  <Button
+                    :as="RouterLink"
+                    :to="{ path: '/regije', query: routeQuery({ tab: 'table' }) }"
+                    class="hero-link"
+                    severity="secondary"
+                    outlined
+                    size="small"
+                    :label="t('market.viewAll')"
+                    icon="pi pi-arrow-right"
+                    icon-pos="right"
+                  />
+                </template>
+
+                <div
+                  v-if="sectionLoading.regions && !topRegions.length"
+                  class="section-skeleton"
+                  aria-busy="true"
+                >
+                  <Skeleton width="28%" height="0.95rem" />
+                  <Skeleton
+                    v-for="idx in 4"
+                    :key="idx"
+                    width="100%"
+                    height="4.2rem"
+                    border-radius="var(--radius-sm)"
+                  />
+                </div>
+                <div
+                  v-else-if="sectionErrors.regions && !topRegions.length"
+                  class="state-card state-card-stack"
+                  role="alert"
+                >
+                  <EmptyState icon="pi pi-exclamation-triangle" :message="sectionErrors.regions" />
+                  <div class="state-card-actions">
+                    <Button
+                      icon="pi pi-refresh"
+                      severity="secondary"
+                      outlined
+                      :label="t('common.retry')"
+                      @click="loadDashboard"
+                    />
+                  </div>
+                </div>
+                <div v-else-if="topRegions.length" class="region-ranking">
+                  <RouterLink
+                    v-for="(region, index) in topRegions"
+                    :key="region.region"
+                    :to="{
+                      path: '/regije',
+                      query: routeQuery({ tab: 'drilldown', region: region.region }),
+                    }"
+                    class="region-rank-row"
+                  >
+                    <span class="rank-badge">#{{ index + 1 }}</span>
+                    <div>
+                      <strong>{{ region.region }}</strong>
+                      <p class="muted">
+                        {{ formatNumber(region.count) }} {{ t('dashboard.transactions') }}
+                      </p>
+                    </div>
+                    <Tag
+                      severity="success"
+                      :value="`${formatCurrency(region.median_price_per_m2)}/m²`"
+                    />
+                  </RouterLink>
+                </div>
+                <EmptyState v-else :message="t('common.noData')" />
+              </SectionPanel>
             </div>
-          </div>
-          <div class="spotlight-actions">
-            <Button
-              :as="RouterLink"
-              :to="`/obcine/${municipalitySpotlight.slug}`"
-              class="hero-link"
-              severity="contrast"
-              outlined
-              icon="pi pi-building"
-              :label="t('municipalities.viewDetail')"
-            />
-            <Button
-              :as="RouterLink"
-              :to="{
-                path: '/trg',
-                query: routeQuery({
-                  tab: 'transactions',
-                  municipality: municipalitySpotlight.municipality,
-                }),
-              }"
-              class="hero-link"
-              severity="secondary"
-              outlined
-              icon="pi pi-table"
-              :label="t('market.tabTransactions')"
-            />
-            <Button
-              severity="secondary"
-              text
-              icon="pi pi-bookmark"
-              :label="t('workbench.watch')"
-              @click="watchMunicipalitySpotlight"
-            />
-          </div>
-        </template>
-        <EmptyState v-else :message="t('common.noData')" />
-      </SectionPanel>
-    </div>
+          </section>
+        </TabPanel>
 
-    <div class="dashboard-grid dashboard-grid--secondary">
-      <SectionPanel
-        class="dashboard-chart-panel"
-        :eyebrow="t('dashboard.propertyMix')"
-        :title="t('dashboard.propertyMixTitle')"
-      >
-        <template #actions>
-          <Button
-            :as="RouterLink"
-            :to="{ path: '/trg', query: routeQuery({ tab: 'distribution' }) }"
-            class="hero-link"
-            severity="secondary"
-            outlined
-            size="small"
-            :label="t('market.viewAll')"
-            icon="pi pi-arrow-right"
-            icon-pos="right"
-          />
-        </template>
-        <PropertyTypePieChart v-if="propertyMix.length" :items="propertyMix" />
-        <EmptyState v-else :message="t('common.noData')" />
-      </SectionPanel>
+        <TabPanel value="workspace">
+          <section class="dashboard-tab-content">
+            <SectionPanel
+              class="dashboard-workspace-panel"
+              :eyebrow="t('workbench.pinnedWorkspaces')"
+              :title="t('workbench.resumeWork')"
+            >
+              <DashboardWorkspaceHub
+                :pinned-workspaces="pinnedWorkspaceLinks"
+                :watchlist-feed="watchlistFeedLinks"
+                :recent-workflows="recentWorkflowLinks"
+                :workspaces-loading="workspacesLoading"
+                :workspaces-error="workspacesError"
+                :watchlist-loading="watchlistLoading"
+                :watchlist-error="watchlistError"
+                @retry-workspaces="loadWorkspaces"
+                @retry-watchlist="loadWatchlistFeed"
+              />
+            </SectionPanel>
+          </section>
+        </TabPanel>
 
-      <SectionPanel
-        class="dashboard-table-panel"
-        :eyebrow="t('dashboard.regionSnapshot')"
-        :title="t('dashboard.regionTableTitle')"
-      >
-        <template #actions>
-          <Button
-            :as="RouterLink"
-            :to="{ path: '/regije', query: routeQuery({ tab: 'table' }) }"
-            class="hero-link"
-            severity="secondary"
-            outlined
-            size="small"
-            :label="t('market.viewAll')"
-            icon="pi pi-arrow-right"
-            icon-pos="right"
-          />
-        </template>
+        <TabPanel value="transactions">
+          <section class="dashboard-tab-content">
+            <SectionPanel
+              :eyebrow="t('dashboard.recentSales')"
+              :title="t('dashboard.latestTransactions')"
+            >
+              <template #actions>
+                <Button
+                  :as="RouterLink"
+                  :to="{ path: '/trg', query: routeQuery({ tab: 'transactions' }) }"
+                  class="hero-link"
+                  severity="secondary"
+                  outlined
+                  size="small"
+                  :label="t('market.viewAll')"
+                  icon="pi pi-arrow-right"
+                  icon-pos="right"
+                />
+              </template>
 
-        <div v-if="topRegions.length" class="region-ranking">
-          <RouterLink
-            v-for="(region, index) in topRegions"
-            :key="region.region"
-            :to="{
-              path: '/regije',
-              query: routeQuery({ tab: 'drilldown', region: region.region }),
-            }"
-            class="region-rank-row"
-          >
-            <span class="rank-badge">#{{ index + 1 }}</span>
-            <div>
-              <strong>{{ region.region }}</strong>
-              <p class="muted">
-                {{ formatNumber(region.count) }} {{ t('dashboard.transactions') }}
-              </p>
-            </div>
-            <Tag severity="success" :value="`${formatCurrency(region.median_price_per_m2)}/m²`" />
-          </RouterLink>
-        </div>
-        <EmptyState v-else :message="t('common.noData')" />
-      </SectionPanel>
-    </div>
-
-    <SectionPanel
-      class="dashboard-workspace-panel"
-      :eyebrow="t('workbench.pinnedWorkspaces')"
-      :title="t('workbench.resumeWork')"
-    >
-      <DashboardWorkspaceHub
-        :pinned-workspaces="pinnedWorkspaceLinks"
-        :watchlist-feed="watchlistFeedLinks"
-        :recent-workflows="recentWorkflowLinks"
-        :workspaces-loading="workspacesLoading"
-        :workspaces-error="workspacesError"
-        :watchlist-loading="watchlistLoading"
-        :watchlist-error="watchlistError"
-        @retry-workspaces="loadWorkspaces"
-        @retry-watchlist="loadWatchlistFeed"
-      />
-    </SectionPanel>
-
-    <SectionPanel :eyebrow="t('dashboard.recentSales')" :title="t('dashboard.latestTransactions')">
-      <template #actions>
-        <Button
-          :as="RouterLink"
-          :to="{ path: '/trg', query: routeQuery({ tab: 'transactions' }) }"
-          class="hero-link"
-          severity="secondary"
-          outlined
-          size="small"
-          :label="t('market.viewAll')"
-          icon="pi pi-arrow-right"
-          icon-pos="right"
-        />
-      </template>
-
-      <LoadingSpinner
-        v-if="sectionLoading.transactions && !latestSales.length"
-        :label="t('common.loading')"
-      />
-      <div
-        v-else-if="sectionErrors.transactions && !latestSales.length"
-        class="state-card state-card-stack"
-        role="alert"
-      >
-        <EmptyState icon="pi pi-exclamation-triangle" :message="sectionErrors.transactions" />
-        <div class="state-card-actions">
-          <Button
-            icon="pi pi-refresh"
-            severity="secondary"
-            outlined
-            :label="t('common.retry')"
-            @click="loadDashboard"
-          />
-        </div>
-      </div>
-      <DataTable
-        v-else-if="latestSales.length"
-        :value="latestSales"
-        size="small"
-        striped-rows
-        responsive-layout="scroll"
-        table-style="min-width: 100%"
-      >
-        <Column field="municipality" :header="t('dashboard.municipality')">
-          <template #body="{ data }">
-            <RouterLink :to="`/obcine/${data.slug}`" class="table-link">
-              {{ data.municipality }}
-            </RouterLink>
-          </template>
-        </Column>
-        <Column field="region" :header="t('map.region')" />
-        <Column field="property_type" :header="t('predict.propertyType')">
-          <template #body="{ data }">{{ formatType(data.property_type) }}</template>
-        </Column>
-        <Column field="size_m2" :header="t('predict.size')">
-          <template #body="{ data }">
-            {{ formatNumber(data.size_m2, { maximumFractionDigits: 1 }) }} m²
-          </template>
-        </Column>
-        <Column field="price_eur" :header="t('dashboard.medianPrice')">
-          <template #body="{ data }">{{ formatCurrency(data.price_eur) }}</template>
-        </Column>
-        <Column field="price_per_m2" header="€/m²">
-          <template #body="{ data }">{{ formatCurrency(data.price_per_m2) }}</template>
-        </Column>
-        <Column field="year" :header="t('map.year')">
-          <template #body="{ data }">{{ data.year || '-' }}</template>
-        </Column>
-      </DataTable>
-      <EmptyState v-else :message="t('common.noData')" />
-    </SectionPanel>
+              <div
+                v-if="sectionLoading.transactions && !latestSales.length"
+                class="table-skeleton"
+                aria-busy="true"
+              >
+                <Skeleton width="100%" height="2.7rem" border-radius="var(--radius-sm)" />
+                <Skeleton
+                  v-for="idx in 6"
+                  :key="idx"
+                  width="100%"
+                  height="2.2rem"
+                  border-radius="var(--radius-xs)"
+                />
+              </div>
+              <div
+                v-else-if="sectionErrors.transactions && !latestSales.length"
+                class="state-card state-card-stack"
+                role="alert"
+              >
+                <EmptyState
+                  icon="pi pi-exclamation-triangle"
+                  :message="sectionErrors.transactions"
+                />
+                <div class="state-card-actions">
+                  <Button
+                    icon="pi pi-refresh"
+                    severity="secondary"
+                    outlined
+                    :label="t('common.retry')"
+                    @click="loadDashboard"
+                  />
+                </div>
+              </div>
+              <DataTable
+                v-else-if="latestSales.length"
+                :value="latestSales"
+                size="small"
+                striped-rows
+                responsive-layout="scroll"
+                table-style="min-width: 100%"
+              >
+                <Column field="municipality" :header="t('dashboard.municipality')">
+                  <template #body="{ data }">
+                    <RouterLink :to="`/obcine/${data.slug}`" class="table-link">
+                      {{ data.municipality }}
+                    </RouterLink>
+                  </template>
+                </Column>
+                <Column field="region" :header="t('map.region')" />
+                <Column field="property_type" :header="t('predict.propertyType')">
+                  <template #body="{ data }">{{ formatType(data.property_type) }}</template>
+                </Column>
+                <Column field="size_m2" :header="t('predict.size')">
+                  <template #body="{ data }">
+                    {{ formatNumber(data.size_m2, { maximumFractionDigits: 1 }) }} m²
+                  </template>
+                </Column>
+                <Column field="price_eur" :header="t('dashboard.medianPrice')">
+                  <template #body="{ data }">{{ formatCurrency(data.price_eur) }}</template>
+                </Column>
+                <Column field="price_per_m2" header="€/m²">
+                  <template #body="{ data }">{{ formatCurrency(data.price_per_m2) }}</template>
+                </Column>
+                <Column field="year" :header="t('map.year')">
+                  <template #body="{ data }">{{ data.year || '-' }}</template>
+                </Column>
+              </DataTable>
+              <EmptyState v-else :message="t('common.noData')" />
+            </SectionPanel>
+          </section>
+        </TabPanel>
+      </TabPanels>
+    </Tabs>
   </div>
 </template>
 
@@ -875,6 +1079,27 @@
   .dashboard-page {
     display: grid;
     gap: var(--space-section);
+    animation: dashboard-in 440ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .dashboard-tabs,
+  .dashboard-tab-content {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .dashboard-tabs :deep(.p-tablist) {
+    padding: 0.35rem;
+    border: 1px solid color-mix(in srgb, var(--border) 68%, var(--primary) 18%);
+    border-radius: var(--radius-lg);
+    background: color-mix(in srgb, var(--surface-strong) 92%, var(--primary-overlay) 8%);
+    box-shadow: 0 10px 22px color-mix(in srgb, var(--shadow-color) 8%, transparent);
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+
+  .dashboard-tabs :deep(.p-tabpanels) {
+    padding-top: 0.15rem;
   }
 
   .dashboard-hero {
@@ -903,6 +1128,16 @@
         var(--surface-panel)
       );
     box-shadow: var(--shadow-sm);
+    transition:
+      border-color 180ms ease,
+      box-shadow 180ms ease,
+      transform 180ms ease;
+  }
+
+  .dashboard-hero:hover {
+    transform: translateY(-1px);
+    border-color: color-mix(in srgb, var(--border) 54%, var(--primary) 46%);
+    box-shadow: 0 26px 52px color-mix(in srgb, var(--shadow-color) 14%, transparent);
   }
 
   .dashboard-hero::before,
@@ -956,31 +1191,19 @@
     flex: 1 1 11.5rem;
   }
 
-  .hero-status {
-    display: inline-flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.7rem;
-    padding: 0.85rem 0.95rem;
-    border: 1px solid color-mix(in srgb, var(--border) 62%, var(--primary) 38%);
-    border-radius: var(--radius-md);
-    background: color-mix(in srgb, var(--surface-card) 90%, var(--primary) 10%);
-    box-shadow: inset 0 1px 0 var(--glass-highlight);
-  }
-
-  .hero-status span {
-    color: var(--text-muted);
-    font-size: 0.86rem;
-    font-weight: 700;
-    letter-spacing: 0.01em;
-  }
-
   .hero-summary,
   .dashboard-grid,
   .workspace-hub,
-  .spotlight-metrics {
+  .spotlight-metrics,
+  .section-skeleton,
+  .table-skeleton,
+  .spotlight-skeleton-grid {
     display: grid;
     gap: 0.9rem;
+  }
+
+  .spotlight-skeleton-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .hero-summary {
@@ -998,6 +1221,10 @@
 
   .dashboard-grid--secondary {
     grid-template-columns: 1fr;
+  }
+
+  .dashboard-grid > * {
+    min-width: 0;
   }
 
   .state-card-stack {
@@ -1062,6 +1289,10 @@
     border: 0;
   }
 
+  .dashboard-workspace-panel :deep(.section-panel) {
+    border-radius: 0;
+  }
+
   .spotlight-copy {
     margin: 0;
     color: var(--text-muted);
@@ -1096,6 +1327,32 @@
   .spotlight-actions {
     display: grid;
     gap: 0.65rem;
+  }
+
+  @keyframes dashboard-in {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .dashboard-page {
+      animation: none;
+    }
+
+    .dashboard-hero {
+      transition: none;
+    }
+
+    .dashboard-hero:hover {
+      transform: none;
+    }
   }
 
   .region-ranking {
@@ -1199,8 +1456,8 @@
       grid-template-columns: 1fr;
     }
 
-    .hero-status {
-      width: 100%;
+    .spotlight-skeleton-grid {
+      grid-template-columns: 1fr;
     }
 
     .dashboard-hero :deep(.page-header-actions) {

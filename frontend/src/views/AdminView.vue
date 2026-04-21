@@ -35,6 +35,15 @@
 
   const pageSizeOptions = ['10', '25', '50', '100']
 
+  function emptyStats(): AdminStats {
+    return {
+      total_users: 0,
+      active_users: 0,
+      disabled_users: 0,
+      admin_users: 0,
+    }
+  }
+
   const { t } = useI18n()
   const confirm = useConfirm()
   const workbench = useWorkbenchStore()
@@ -48,12 +57,7 @@
   const searchInput = ref('')
   const actionMenu = ref()
   const selectedUserForActions = ref<User | null>(null)
-  const stats = ref<AdminStats>({
-    total_users: 0,
-    active_users: 0,
-    disabled_users: 0,
-    admin_users: 0,
-  })
+  const stats = ref<AdminStats>(emptyStats())
   const users = ref<AdminUsersResponse>({
     items: [],
     total: 0,
@@ -142,6 +146,19 @@
     return `${formatNumber(start)}-${formatNumber(end)} / ${formatNumber(total)}`
   })
 
+  function emptyUsersResponse(): AdminUsersResponse {
+    return {
+      items: [],
+      total: 0,
+      page: table.page.value,
+      page_size: table.pageSize.value,
+      pages: 0,
+      filters: {},
+      sort: table.sort.value,
+      order: table.order.value,
+    }
+  }
+
   const actionMenuItems = computed(() => {
     const user = selectedUserForActions.value
     if (!user) return []
@@ -215,6 +232,7 @@
       users.value = data
     } catch (requestError) {
       if (requestVersion !== fetchUsersVersion) return
+      users.value = emptyUsersResponse()
       error.value = getApiErrorMessage(requestError, t)
     } finally {
       if (requestVersion === fetchUsersVersion) {
@@ -229,6 +247,7 @@
       const { data } = await api.get<AdminStats>('/api/admin/stats')
       stats.value = data
     } catch (requestError) {
+      stats.value = emptyStats()
       if (!error.value) error.value = getApiErrorMessage(requestError, t)
     } finally {
       statsLoading.value = false
@@ -429,28 +448,40 @@
   .admin-view {
     display: grid;
     gap: 1.35rem;
+    --page-accent: var(--primary);
+    --page-accent-2: var(--accent);
   }
 
   .admin-workspace-grid {
     display: grid;
+    grid-template-columns: 1fr;
     gap: 1.35rem;
     align-items: start;
   }
 
-  @media (min-width: 1120px) {
-    .admin-workspace-grid {
-      grid-template-columns: minmax(0, 1.65fr) minmax(20rem, 0.95fr);
-    }
-
-    .admin-workspace-grid :deep(.admin-activity-panel) {
-      position: sticky;
-      top: 1rem;
-    }
+  .admin-workspace-grid :deep(.admin-users-panel) {
+    border-color: color-mix(in srgb, var(--border) 56%, var(--page-accent) 44%);
+    background:
+      radial-gradient(
+        circle at top left,
+        color-mix(in srgb, var(--page-accent) 14%, transparent),
+        transparent 42%
+      ),
+      var(--surface-panel);
   }
 
-  @media (max-width: 860px) {
-    .admin-workspace-grid :deep(.admin-activity-panel) {
-      position: static;
-    }
+  .admin-workspace-grid :deep(.admin-activity-panel) {
+    border-color: color-mix(in srgb, var(--border) 56%, var(--page-accent-2) 44%);
+    background:
+      radial-gradient(
+        circle at top right,
+        color-mix(in srgb, var(--page-accent-2) 14%, transparent),
+        transparent 44%
+      ),
+      var(--surface-panel);
+  }
+
+  .admin-workspace-grid :deep(.admin-activity-panel) {
+    min-width: 0;
   }
 </style>

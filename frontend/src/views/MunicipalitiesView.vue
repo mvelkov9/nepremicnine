@@ -88,6 +88,7 @@
   const compareRows = ref<MunicipalityExplorerItem[]>([])
   let explorerRequestVersion = 0
   let compareRequestVersion = 0
+  let lastCompareSignature = ''
 
   const activeTab = computed({
     get: () => viewerQuery.state.tab || 'cards',
@@ -151,6 +152,19 @@
       tone: 'success',
     },
   ])
+
+  function emptyMunicipalitiesPage(): ExplorerResponse<MunicipalityExplorerItem> {
+    return {
+      items: [],
+      total: 0,
+      page: explorerPage.value,
+      page_size: explorerPageSize.value,
+      pages: 0,
+      filters: {},
+      sort: viewerQuery.state.sort || 'count',
+      order: viewerQuery.state.sort === 'municipality' ? 'asc' : 'desc',
+    }
+  }
 
   function filters() {
     return {
@@ -263,6 +277,7 @@
       municipalities.value = data
     } catch (error) {
       if (requestVersion !== explorerRequestVersion) return
+      municipalities.value = emptyMunicipalitiesPage()
       explorerError.value = getApiErrorMessage(error, t)
     } finally {
       if (requestVersion === explorerRequestVersion) {
@@ -276,15 +291,25 @@
     compareLoading.value = true
     compareError.value = ''
     const targets = compareTargets()
+    const compareSignature = JSON.stringify({
+      targets,
+      property_type: viewerQuery.state.property_type || '',
+      year: viewerQuery.state.year || '',
+    })
 
     if (!targets.length) {
+      lastCompareSignature = ''
       compareRows.value = []
       compareLoading.value = false
       return
     }
 
+    if (compareSignature !== lastCompareSignature) {
+      compareRows.value = []
+    }
+
     try {
-      const rows = await Promise.all(
+      const rowResults = await Promise.allSettled(
         targets.map(async (municipality) => {
           const { data } = await api.get<ExplorerResponse<MunicipalityExplorerItem>>(
             '/api/stats/municipalities',
@@ -305,10 +330,25 @@
       )
 
       if (requestVersion !== compareRequestVersion) return
-      compareRows.value = rows.filter((row): row is MunicipalityExplorerItem => row !== null)
-    } catch (error) {
-      if (requestVersion !== compareRequestVersion) return
-      compareError.value = getApiErrorMessage(error, t)
+      lastCompareSignature = compareSignature
+
+      const fulfilledRows = rowResults
+        .filter(
+          (result): result is PromiseFulfilledResult<MunicipalityExplorerItem | null> =>
+            result.status === 'fulfilled',
+        )
+        .map((result) => result.value)
+        .filter((row): row is MunicipalityExplorerItem => row !== null)
+
+      compareRows.value = fulfilledRows
+
+      const firstRejected = rowResults.find(
+        (result): result is PromiseRejectedResult => result.status === 'rejected',
+      )
+
+      if (firstRejected) {
+        compareError.value = getApiErrorMessage(firstRejected.reason, t)
+      }
     } finally {
       if (requestVersion === compareRequestVersion) {
         compareLoading.value = false
@@ -513,7 +553,7 @@
               {{ t('common.loading') }}
             </p>
 
-            <div v-if="municipalities.items?.length" class="card-grid">
+            <div v-else-if="municipalities.items?.length" class="card-grid">
               <MunicipalityCard
                 v-for="item in municipalities.items"
                 :key="item.slug"
@@ -526,6 +566,7 @@
             </div>
             <EmptyState v-else :message="t('municipalities.noResults')" />
             <Paginator
+              v-if="!explorerError && municipalities.total > 0"
               :rows="explorerPageSize"
               :first="(explorerPage - 1) * explorerPageSize"
               :total-records="municipalities.total"
@@ -550,7 +591,15 @@
                   />
                 </div>
               </div>
+              <p
+                v-else-if="explorerLoading && municipalities.items.length"
+                class="muted"
+                role="status"
+              >
+                {{ t('common.loading') }}
+              </p>
               <DataTable
+                v-else-if="municipalities.items.length"
                 :value="municipalities.items"
                 lazy
                 paginator
@@ -605,6 +654,7 @@
                   </template>
                 </Column>
               </DataTable>
+              <EmptyState v-else :message="t('municipalities.noResults')" />
             </section>
           </section>
         </TabPanel>
@@ -635,6 +685,7 @@
   .municipalities-page {
     display: grid;
     gap: clamp(1.25rem, 2vw, 1.75rem);
+    animation: municipalities-in 420ms cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   .hero-summary,
@@ -657,13 +708,25 @@
 
   .municipalities-tabs {
     display: grid;
-    gap: 1rem;
+    gap: 1.15rem;
+  }
+
+  .municipalities-tabs :deep(.p-tablist) {
+    padding: 0.34rem;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--border) 70%, var(--primary) 30%);
+    background: color-mix(in srgb, var(--surface-strong) 90%, var(--primary-overlay) 10%);
+    box-shadow: 0 10px 20px color-mix(in srgb, var(--shadow-color) 8%, transparent);
   }
 
   .card-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
     gap: 1rem;
+  }
+
+  .card-grid > * {
+    min-width: 0;
   }
 
   .table-link {
@@ -695,6 +758,30 @@
       inset 0 1px 0 var(--content-glow),
       0 16px 34px color-mix(in srgb, rgb(2 6 23) 6%, transparent);
     padding: clamp(1rem, 1.8vw, 1.25rem);
+    transition:
+      border-color 170ms ease,
+      box-shadow 170ms ease,
+      transform 170ms ease;
+  }
+
+  .panel:hover {
+    border-color: color-mix(in srgb, var(--border) 56%, var(--primary) 44%);
+    box-shadow:
+      inset 0 1px 0 var(--content-glow),
+      0 24px 46px color-mix(in srgb, rgb(2 6 23) 10%, transparent);
+    transform: translateY(-1px);
+  }
+
+  @keyframes municipalities-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 
   @media (max-width: 1100px) {
@@ -707,6 +794,20 @@
     .hero-summary,
     .card-grid {
       grid-template-columns: 1fr;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .municipalities-page {
+      animation: none;
+    }
+
+    .panel {
+      transition: none;
+    }
+
+    .panel:hover {
+      transform: none;
     }
   }
 </style>

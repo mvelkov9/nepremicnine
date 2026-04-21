@@ -11,7 +11,12 @@
   import InputIcon from 'primevue/inputicon'
   import InputText from 'primevue/inputtext'
   import Select from 'primevue/select'
+  import Tab from 'primevue/tab'
+  import TabList from 'primevue/tablist'
+  import TabPanel from 'primevue/tabpanel'
+  import TabPanels from 'primevue/tabpanels'
   import Tag from 'primevue/tag'
+  import Tabs from 'primevue/tabs'
   import EmptyState from '../components/EmptyState.vue'
   import LoadingSpinner from '../components/LoadingSpinner.vue'
   import MetricCard from '../components/MetricCard.vue'
@@ -53,6 +58,7 @@
   const proofError = ref('')
   const searchInput = ref('')
   const proofRequestId = ref(0)
+  const benchmarkTab = ref<'snapshot' | 'methodology' | 'proof'>('snapshot')
 
   const table = useServerTableState(
     {
@@ -282,6 +288,19 @@
     }
   })
 
+  function emptyProofRows(): ServerTableResult<BenchmarkProofRow> {
+    return {
+      items: [],
+      total: 0,
+      page: table.page.value,
+      page_size: table.pageSize.value,
+      pages: 0,
+      filters: {},
+      sort: table.sort.value,
+      order: table.order.value,
+    }
+  }
+
   watch(
     () => table.search.value,
     (value) => {
@@ -368,6 +387,7 @@
       proofRows.value = data
     } catch (err) {
       if (requestId !== proofRequestId.value) return
+      proofRows.value = emptyProofRows()
       proofError.value = getApiErrorMessage(err, t)
     } finally {
       if (requestId !== proofRequestId.value) return
@@ -490,279 +510,314 @@
         </div>
       </section>
 
-      <div class="benchmark-sections">
-        <SectionPanel
-          class="benchmark-section benchmark-section-wide"
-          :eyebrow="t('benchmark.modelHeadline')"
-          :title="t('benchmark.errorCardsTitle')"
-        >
-          <p class="benchmark-section-intro muted">
-            {{ heroStory || summary.detail || t('benchmark.sharedCoverageBody') }}
-          </p>
+      <Tabs v-model:value="benchmarkTab" class="benchmark-tabs">
+        <TabList>
+          <Tab value="snapshot">{{ t('common.overview') }}</Tab>
+          <Tab value="methodology">{{ t('benchmark.methodologyTitle') }}</Tab>
+          <Tab v-if="auth.isAdmin" value="proof">{{ t('benchmark.adminTitle') }}</Tab>
+        </TabList>
+        <TabPanels>
+          <TabPanel value="snapshot">
+            <div class="benchmark-sections">
+              <SectionPanel
+                class="benchmark-section benchmark-section-wide"
+                :eyebrow="t('benchmark.modelHeadline')"
+                :title="t('benchmark.errorCardsTitle')"
+              >
+                <p class="benchmark-section-intro muted">
+                  {{ heroStory || summary.detail || t('benchmark.sharedCoverageBody') }}
+                </p>
 
-          <div class="benchmark-comparison-grid">
-            <article
-              v-for="card in comparisonCards"
-              :key="card.title"
-              class="benchmark-comparison-card"
-              :class="`tone-${card.severity}`"
-            >
-              <div class="benchmark-comparison-head">
-                <p class="eyebrow subtle">{{ card.badge }}</p>
-                <Tag :value="card.title" :severity="card.severity" />
-              </div>
-
-              <dl class="benchmark-comparison-metrics">
-                <div v-for="metric in card.metrics" :key="metric.label">
-                  <dt>{{ metric.label }}</dt>
-                  <dd>{{ metric.value }}</dd>
-                </div>
-              </dl>
-            </article>
-          </div>
-        </SectionPanel>
-
-        <SectionPanel
-          v-if="summary.winners"
-          class="benchmark-section"
-          :eyebrow="t('benchmark.modelHeadline')"
-          :title="t('benchmark.winnerBreakdownTitle')"
-        >
-          <div class="benchmark-winner-grid">
-            <article class="benchmark-winner-summary">
-              <p class="eyebrow subtle">{{ t('benchmark.modelHeadline') }}</p>
-              <strong>{{
-                winRate != null ? formatPercent(winRate, { minimumFractionDigits: 1 }) : '-'
-              }}</strong>
-              <span>{{ t('benchmark.modelWins') }}</span>
-              <small>{{ heroStory || summary.detail || t('benchmark.sharedCoverageBody') }}</small>
-            </article>
-
-            <div class="winner-grid">
-              <div class="winner-card winner-model">
-                <strong>{{ formatNumber(summary.winners.model) }}</strong>
-                <span>{{ t('benchmark.modelWins') }}</span>
-                <small v-if="winTotal">{{
-                  formatPercent(summary.winners.model / winTotal, { minimumFractionDigits: 1 })
-                }}</small>
-              </div>
-              <div class="winner-card winner-gurs">
-                <strong>{{ formatNumber(summary.winners.gurs) }}</strong>
-                <span>{{ t('benchmark.gursWins') }}</span>
-                <small v-if="winTotal">{{
-                  formatPercent(summary.winners.gurs / winTotal, { minimumFractionDigits: 1 })
-                }}</small>
-              </div>
-              <div v-if="summary.winners.tie > 0" class="winner-card winner-tie">
-                <strong>{{ formatNumber(summary.winners.tie) }}</strong>
-                <span>{{ t('benchmark.ties') }}</span>
-                <small v-if="winTotal">{{
-                  formatPercent(summary.winners.tie / winTotal, { minimumFractionDigits: 1 })
-                }}</small>
-              </div>
-            </div>
-          </div>
-        </SectionPanel>
-
-        <div class="segment-panels">
-          <BenchmarkSegmentSection
-            v-if="summary.top_regions?.length"
-            :eyebrow="t('benchmark.segmentRegions')"
-            :title="t('benchmark.bestRegionsTitle')"
-            kind="region"
-            :items="summary.top_regions"
-          />
-
-          <BenchmarkSegmentSection
-            v-if="summary.top_property_types?.length"
-            :eyebrow="t('benchmark.segmentTypes')"
-            :title="t('benchmark.bestTypesTitle')"
-            kind="type"
-            :items="summary.top_property_types"
-          />
-
-          <BenchmarkSegmentSection
-            v-if="summary.top_years?.length"
-            :eyebrow="t('benchmark.segmentYears')"
-            :title="t('benchmark.bestYearsTitle')"
-            kind="year"
-            :items="summary.top_years"
-          />
-        </div>
-
-        <SectionPanel
-          class="benchmark-section benchmark-methodology"
-          :eyebrow="t('benchmark.methodologyTitle')"
-          :title="t('benchmark.sharedCoverageTitle')"
-        >
-          <div class="benchmark-methodology-grid">
-            <article class="benchmark-methodology-story">
-              <p class="muted">{{ t('benchmark.sharedCoverageBody') }}</p>
-            </article>
-            <article class="benchmark-methodology-aside">
-              <span>{{ t('benchmark.methodologySharedCoverage') }}</span>
-              <strong>{{ methodologyLabel || t('benchmark.sharedCoverageTitle') }}</strong>
-              <small>{{ summary.detail || t('benchmark.sharedCoverageBody') }}</small>
-            </article>
-          </div>
-        </SectionPanel>
-
-        <SectionPanel
-          v-if="auth.isAdmin"
-          class="benchmark-section benchmark-proof"
-          :eyebrow="t('benchmark.adminKicker')"
-          :title="t('benchmark.adminTitle')"
-        >
-          <template #actions>
-            <Button
-              icon="pi pi-download"
-              :label="t('benchmark.exportCurrentPage')"
-              severity="secondary"
-              outlined
-              size="small"
-              :disabled="!proofRows.items.length"
-              @click="exportProof"
-            />
-          </template>
-
-          <div class="benchmark-proof-meta">
-            <p class="muted proof-summary">
-              {{
-                proofSummary.total
-                  ? `${formatNumber(proofSummary.start)}-${formatNumber(proofSummary.end)} / ${formatNumber(proofSummary.total)} ${t('map.transactions').toLowerCase()}`
-                  : t('benchmark.emptyBody')
-              }}
-            </p>
-            <p class="benchmark-proof-note muted">
-              {{ t('benchmark.sharedCoverageBody') }}
-            </p>
-          </div>
-
-          <div class="benchmark-proof-toolbar">
-            <IconField class="search-field">
-              <InputIcon class="pi pi-search" />
-              <InputText v-model="searchInput" :placeholder="t('benchmark.searchPlaceholder')" />
-            </IconField>
-
-            <Select
-              :model-value="selectedPropertyType"
-              @update:model-value="onPropertyTypeChange"
-              :options="propertyTypeOptions"
-              option-label="label"
-              option-value="value"
-              class="toolbar-select"
-            />
-
-            <Select
-              :model-value="selectedWinner"
-              @update:model-value="onWinnerChange"
-              :options="winnerOptions"
-              option-label="label"
-              option-value="value"
-              class="toolbar-select"
-            />
-
-            <Select
-              :model-value="selectedPageSize"
-              @update:model-value="onPageSizeChange"
-              :options="['10', '25', '50', '100']"
-              class="toolbar-select rows-select"
-            />
-          </div>
-
-          <div v-if="proofError" class="state-card state-card-stack" role="alert">
-            <EmptyState icon="pi pi-exclamation-triangle" :message="proofError" />
-            <div class="state-card-actions">
-              <Button
-                icon="pi pi-refresh"
-                severity="secondary"
-                outlined
-                :label="t('common.retry')"
-                :disabled="proofLoading"
-                @click="fetchProofRows"
-              />
-            </div>
-          </div>
-
-          <div class="proof-table-shell">
-            <DataTable
-              :value="proofRows.items"
-              :loading="proofLoading"
-              lazy
-              paginator
-              striped-rows
-              responsive-layout="scroll"
-              row-hover
-              :rows="table.pageSize.value"
-              :first="(table.page.value - 1) * table.pageSize.value"
-              :total-records="proofRows.total"
-              :sort-field="table.sort.value"
-              :sort-order="table.order.value === 'asc' ? 1 : -1"
-              @page="onPage"
-              @sort="onSort"
-            >
-              <template #empty>
-                <EmptyState icon="pi pi-inbox" :message="t('benchmark.emptyBody')" />
-              </template>
-
-              <Column field="municipality" :header="t('map.municipality')" sortable />
-              <Column field="region" :header="t('map.region')" sortable />
-
-              <Column field="property_type" :header="t('predict.propertyType')" sortable>
-                <template #body="{ data }">{{ formatType(data.property_type) }}</template>
-              </Column>
-
-              <Column field="transaction_year" :header="t('map.year')" sortable />
-
-              <Column field="vrsta_kupoprodajnega_posla" :header="t('benchmark.saleType')">
-                <template #body="{ data }">
-                  {{ saleTypeLabel(data.vrsta_kupoprodajnega_posla) }}
-                </template>
-              </Column>
-
-              <Column field="price_eur" :header="t('benchmark.actualPrice')" sortable>
-                <template #body="{ data }">{{ formatCurrency(data.price_eur) }}</template>
-              </Column>
-
-              <Column field="model_price_eur" :header="t('benchmark.modelPrice')" sortable>
-                <template #body="{ data }">{{ formatCurrency(data.model_price_eur) }}</template>
-              </Column>
-
-              <Column field="gurs_price_eur" :header="t('benchmark.gursPrice')" sortable>
-                <template #body="{ data }">{{ formatCurrency(data.gurs_price_eur) }}</template>
-              </Column>
-
-              <Column field="model_abs_error" :header="t('benchmark.modelError')" sortable>
-                <template #body="{ data }">{{ formatCurrency(data.model_abs_error) }}</template>
-              </Column>
-
-              <Column field="gurs_abs_error" :header="t('benchmark.gursError')" sortable>
-                <template #body="{ data }">{{ formatCurrency(data.gurs_abs_error) }}</template>
-              </Column>
-
-              <Column field="improvement_eur" :header="t('benchmark.improvement')" sortable>
-                <template #body="{ data }">
-                  <span
-                    :class="{
-                      'text-success': data.improvement_eur > 0,
-                      'text-danger': data.improvement_eur < 0,
-                    }"
+                <div class="benchmark-comparison-grid">
+                  <article
+                    v-for="card in comparisonCards"
+                    :key="card.title"
+                    class="benchmark-comparison-card"
+                    :class="`tone-${card.severity}`"
                   >
-                    {{ data.improvement_eur > 0 ? '+' : ''
-                    }}{{ formatCurrency(data.improvement_eur) }}
-                  </span>
-                </template>
-              </Column>
+                    <div class="benchmark-comparison-head">
+                      <p class="eyebrow subtle">{{ card.badge }}</p>
+                      <Tag :value="card.title" :severity="card.severity" />
+                    </div>
 
-              <Column field="winner" :header="t('benchmark.winnerColumn')" sortable>
-                <template #body="{ data }">
-                  <Tag :value="winnerLabel(data.winner)" :severity="winnerSeverity(data.winner)" />
+                    <dl class="benchmark-comparison-metrics">
+                      <div v-for="metric in card.metrics" :key="metric.label">
+                        <dt>{{ metric.label }}</dt>
+                        <dd>{{ metric.value }}</dd>
+                      </div>
+                    </dl>
+                  </article>
+                </div>
+              </SectionPanel>
+
+              <SectionPanel
+                v-if="summary.winners"
+                class="benchmark-section"
+                :eyebrow="t('benchmark.modelHeadline')"
+                :title="t('benchmark.winnerBreakdownTitle')"
+              >
+                <div class="benchmark-winner-grid">
+                  <article class="benchmark-winner-summary">
+                    <p class="eyebrow subtle">{{ t('benchmark.modelHeadline') }}</p>
+                    <strong>{{
+                      winRate != null ? formatPercent(winRate, { minimumFractionDigits: 1 }) : '-'
+                    }}</strong>
+                    <span>{{ t('benchmark.modelWins') }}</span>
+                    <small>{{
+                      heroStory || summary.detail || t('benchmark.sharedCoverageBody')
+                    }}</small>
+                  </article>
+
+                  <div class="winner-grid">
+                    <div class="winner-card winner-model">
+                      <strong>{{ formatNumber(summary.winners.model) }}</strong>
+                      <span>{{ t('benchmark.modelWins') }}</span>
+                      <small v-if="winTotal">{{
+                        formatPercent(summary.winners.model / winTotal, {
+                          minimumFractionDigits: 1,
+                        })
+                      }}</small>
+                    </div>
+                    <div class="winner-card winner-gurs">
+                      <strong>{{ formatNumber(summary.winners.gurs) }}</strong>
+                      <span>{{ t('benchmark.gursWins') }}</span>
+                      <small v-if="winTotal">{{
+                        formatPercent(summary.winners.gurs / winTotal, { minimumFractionDigits: 1 })
+                      }}</small>
+                    </div>
+                    <div v-if="summary.winners.tie > 0" class="winner-card winner-tie">
+                      <strong>{{ formatNumber(summary.winners.tie) }}</strong>
+                      <span>{{ t('benchmark.ties') }}</span>
+                      <small v-if="winTotal">{{
+                        formatPercent(summary.winners.tie / winTotal, { minimumFractionDigits: 1 })
+                      }}</small>
+                    </div>
+                  </div>
+                </div>
+              </SectionPanel>
+
+              <div class="segment-panels">
+                <BenchmarkSegmentSection
+                  v-if="summary.top_regions?.length"
+                  :eyebrow="t('benchmark.segmentRegions')"
+                  :title="t('benchmark.bestRegionsTitle')"
+                  kind="region"
+                  :items="summary.top_regions"
+                />
+
+                <BenchmarkSegmentSection
+                  v-if="summary.top_property_types?.length"
+                  :eyebrow="t('benchmark.segmentTypes')"
+                  :title="t('benchmark.bestTypesTitle')"
+                  kind="type"
+                  :items="summary.top_property_types"
+                />
+
+                <BenchmarkSegmentSection
+                  v-if="summary.top_years?.length"
+                  :eyebrow="t('benchmark.segmentYears')"
+                  :title="t('benchmark.bestYearsTitle')"
+                  kind="year"
+                  :items="summary.top_years"
+                />
+              </div>
+            </div>
+          </TabPanel>
+
+          <TabPanel value="methodology">
+            <div class="benchmark-sections">
+              <SectionPanel
+                class="benchmark-section benchmark-methodology"
+                :eyebrow="t('benchmark.methodologyTitle')"
+                :title="t('benchmark.sharedCoverageTitle')"
+              >
+                <div class="benchmark-methodology-grid">
+                  <article class="benchmark-methodology-story">
+                    <p class="muted">{{ t('benchmark.sharedCoverageBody') }}</p>
+                  </article>
+                  <article class="benchmark-methodology-aside">
+                    <span>{{ t('benchmark.methodologySharedCoverage') }}</span>
+                    <strong>{{ methodologyLabel || t('benchmark.sharedCoverageTitle') }}</strong>
+                    <small>{{ summary.detail || t('benchmark.sharedCoverageBody') }}</small>
+                  </article>
+                </div>
+              </SectionPanel>
+            </div>
+          </TabPanel>
+
+          <TabPanel v-if="auth.isAdmin" value="proof">
+            <div class="benchmark-sections">
+              <SectionPanel
+                class="benchmark-section benchmark-proof"
+                :eyebrow="t('benchmark.adminKicker')"
+                :title="t('benchmark.adminTitle')"
+              >
+                <template #actions>
+                  <Button
+                    icon="pi pi-download"
+                    :label="t('benchmark.exportCurrentPage')"
+                    severity="secondary"
+                    outlined
+                    size="small"
+                    :disabled="!proofRows.items.length"
+                    @click="exportProof"
+                  />
                 </template>
-              </Column>
-            </DataTable>
-          </div>
-        </SectionPanel>
-      </div>
+
+                <div class="benchmark-proof-meta">
+                  <p class="muted proof-summary">
+                    {{
+                      proofSummary.total
+                        ? `${formatNumber(proofSummary.start)}-${formatNumber(proofSummary.end)} / ${formatNumber(proofSummary.total)} ${t('map.transactions').toLowerCase()}`
+                        : t('benchmark.emptyBody')
+                    }}
+                  </p>
+                  <p class="benchmark-proof-note muted">
+                    {{ t('benchmark.sharedCoverageBody') }}
+                  </p>
+                </div>
+
+                <div class="benchmark-proof-toolbar">
+                  <IconField class="search-field">
+                    <InputIcon class="pi pi-search" />
+                    <InputText
+                      v-model="searchInput"
+                      :placeholder="t('benchmark.searchPlaceholder')"
+                    />
+                  </IconField>
+
+                  <Select
+                    :model-value="selectedPropertyType"
+                    @update:model-value="onPropertyTypeChange"
+                    :options="propertyTypeOptions"
+                    option-label="label"
+                    option-value="value"
+                    class="toolbar-select"
+                  />
+
+                  <Select
+                    :model-value="selectedWinner"
+                    @update:model-value="onWinnerChange"
+                    :options="winnerOptions"
+                    option-label="label"
+                    option-value="value"
+                    class="toolbar-select"
+                  />
+
+                  <Select
+                    :model-value="selectedPageSize"
+                    @update:model-value="onPageSizeChange"
+                    :options="['10', '25', '50', '100']"
+                    class="toolbar-select rows-select"
+                  />
+                </div>
+
+                <div v-if="proofError" class="state-card state-card-stack" role="alert">
+                  <EmptyState icon="pi pi-exclamation-triangle" :message="proofError" />
+                  <div class="state-card-actions">
+                    <Button
+                      icon="pi pi-refresh"
+                      severity="secondary"
+                      outlined
+                      :label="t('common.retry')"
+                      :disabled="proofLoading"
+                      @click="fetchProofRows"
+                    />
+                  </div>
+                </div>
+                <div v-else class="proof-table-shell">
+                  <DataTable
+                    :value="proofRows.items"
+                    :loading="proofLoading"
+                    lazy
+                    paginator
+                    striped-rows
+                    responsive-layout="scroll"
+                    row-hover
+                    :rows="table.pageSize.value"
+                    :first="(table.page.value - 1) * table.pageSize.value"
+                    :total-records="proofRows.total"
+                    :sort-field="table.sort.value"
+                    :sort-order="table.order.value === 'asc' ? 1 : -1"
+                    @page="onPage"
+                    @sort="onSort"
+                  >
+                    <template #empty>
+                      <EmptyState icon="pi pi-inbox" :message="t('benchmark.emptyBody')" />
+                    </template>
+
+                    <Column field="municipality" :header="t('map.municipality')" sortable />
+                    <Column field="region" :header="t('map.region')" sortable />
+
+                    <Column field="property_type" :header="t('predict.propertyType')" sortable>
+                      <template #body="{ data }">{{ formatType(data.property_type) }}</template>
+                    </Column>
+
+                    <Column field="transaction_year" :header="t('map.year')" sortable />
+
+                    <Column field="vrsta_kupoprodajnega_posla" :header="t('benchmark.saleType')">
+                      <template #body="{ data }">
+                        {{ saleTypeLabel(data.vrsta_kupoprodajnega_posla) }}
+                      </template>
+                    </Column>
+
+                    <Column field="price_eur" :header="t('benchmark.actualPrice')" sortable>
+                      <template #body="{ data }">{{ formatCurrency(data.price_eur) }}</template>
+                    </Column>
+
+                    <Column field="model_price_eur" :header="t('benchmark.modelPrice')" sortable>
+                      <template #body="{ data }">{{
+                        formatCurrency(data.model_price_eur)
+                      }}</template>
+                    </Column>
+
+                    <Column field="gurs_price_eur" :header="t('benchmark.gursPrice')" sortable>
+                      <template #body="{ data }">{{
+                        formatCurrency(data.gurs_price_eur)
+                      }}</template>
+                    </Column>
+
+                    <Column field="model_abs_error" :header="t('benchmark.modelError')" sortable>
+                      <template #body="{ data }">{{
+                        formatCurrency(data.model_abs_error)
+                      }}</template>
+                    </Column>
+
+                    <Column field="gurs_abs_error" :header="t('benchmark.gursError')" sortable>
+                      <template #body="{ data }">{{
+                        formatCurrency(data.gurs_abs_error)
+                      }}</template>
+                    </Column>
+
+                    <Column field="improvement_eur" :header="t('benchmark.improvement')" sortable>
+                      <template #body="{ data }">
+                        <span
+                          :class="{
+                            'text-success': data.improvement_eur > 0,
+                            'text-danger': data.improvement_eur < 0,
+                          }"
+                        >
+                          {{ data.improvement_eur > 0 ? '+' : ''
+                          }}{{ formatCurrency(data.improvement_eur) }}
+                        </span>
+                      </template>
+                    </Column>
+
+                    <Column field="winner" :header="t('benchmark.winnerColumn')" sortable>
+                      <template #body="{ data }">
+                        <Tag
+                          :value="winnerLabel(data.winner)"
+                          :severity="winnerSeverity(data.winner)"
+                        />
+                      </template>
+                    </Column>
+                  </DataTable>
+                </div>
+              </SectionPanel>
+            </div>
+          </TabPanel>
+        </TabPanels>
+      </Tabs>
     </template>
   </div>
 </template>
@@ -771,11 +826,29 @@
   .benchmark-page {
     display: grid;
     gap: var(--space-section);
+    --page-accent: var(--primary);
+    --page-accent-2: var(--accent);
   }
 
   .benchmark-hero {
     display: grid;
     gap: 1rem;
+    padding: 1.15rem;
+    border-radius: var(--radius-lg);
+    border: 1px solid color-mix(in srgb, var(--border) 56%, var(--page-accent) 44%);
+    background:
+      radial-gradient(
+        circle at 10% -20%,
+        color-mix(in srgb, var(--page-accent) 17%, transparent),
+        transparent 46%
+      ),
+      radial-gradient(
+        circle at 92% -34%,
+        color-mix(in srgb, var(--page-accent-2) 14%, transparent),
+        transparent 50%
+      ),
+      var(--surface-hero);
+    box-shadow: var(--hero-shadow);
   }
 
   .benchmark-hero-grid {
@@ -804,6 +877,11 @@
     border-radius: var(--radius-md);
     border: 1px solid color-mix(in srgb, var(--border) 76%, var(--primary) 24%);
     background:
+      linear-gradient(
+        140deg,
+        color-mix(in srgb, var(--page-accent-2) 12%, transparent),
+        transparent 48%
+      ),
       linear-gradient(
         180deg,
         color-mix(in srgb, var(--surface-card-strong) 96%, transparent),
@@ -874,6 +952,30 @@
     gap: var(--space-section);
   }
 
+  .benchmark-tabs {
+    display: grid;
+    gap: var(--space-section);
+  }
+
+  .benchmark-tabs :deep(.p-tablist) {
+    padding: 0.35rem;
+    border-radius: var(--radius-md);
+    border: 1px solid color-mix(in srgb, var(--border) 60%, var(--page-accent) 40%);
+    background:
+      linear-gradient(
+        130deg,
+        color-mix(in srgb, var(--page-accent-2) 12%, transparent),
+        transparent 55%
+      ),
+      var(--surface-subtle);
+  }
+
+  .benchmark-tabs :deep(.p-tab) {
+    min-height: 2.6rem;
+    border-radius: calc(var(--radius-sm) - 2px);
+    font-weight: 700;
+  }
+
   .benchmark-section {
     display: grid;
     gap: 0.9rem;
@@ -901,6 +1003,11 @@
     border-radius: var(--radius-md);
     border: 1px solid color-mix(in srgb, var(--border) 78%, var(--content-border-strong) 22%);
     background:
+      linear-gradient(
+        140deg,
+        color-mix(in srgb, var(--page-accent) 10%, transparent),
+        transparent 52%
+      ),
       linear-gradient(
         180deg,
         color-mix(in srgb, var(--surface-card-strong) 96%, transparent),
@@ -985,7 +1092,12 @@
     background:
       radial-gradient(
         circle at top right,
-        color-mix(in srgb, var(--primary) 12%, transparent),
+        color-mix(in srgb, var(--page-accent) 16%, transparent),
+        transparent 30%
+      ),
+      radial-gradient(
+        circle at bottom left,
+        color-mix(in srgb, var(--page-accent-2) 12%, transparent),
         transparent 28%
       ),
       var(--surface-panel-muted);
@@ -1089,6 +1201,11 @@
     border: 1px solid color-mix(in srgb, var(--border) 76%, var(--primary) 24%);
     background:
       linear-gradient(
+        120deg,
+        color-mix(in srgb, var(--page-accent-2) 10%, transparent),
+        transparent 52%
+      ),
+      linear-gradient(
         180deg,
         color-mix(in srgb, var(--surface-card-strong) 96%, transparent),
         transparent 130%
@@ -1144,7 +1261,13 @@
     padding: var(--space-panel-sm, 1rem);
     border-radius: var(--radius-sm);
     border: 1px solid color-mix(in srgb, var(--border) 78%, var(--content-border-strong) 22%);
-    background: var(--surface-subtle);
+    background:
+      linear-gradient(
+        140deg,
+        color-mix(in srgb, var(--page-accent) 8%, transparent),
+        transparent 55%
+      ),
+      var(--surface-subtle);
     box-shadow: var(--shadow-sm);
     text-align: center;
   }
@@ -1217,6 +1340,16 @@
   }
 
   @media (max-width: 768px) {
+    .benchmark-tabs :deep(.p-tablist) {
+      overflow-x: auto;
+      overscroll-behavior-x: contain;
+    }
+
+    .benchmark-tabs :deep(.p-tab) {
+      flex: 0 0 auto;
+      white-space: nowrap;
+    }
+
     .benchmark-hero-summary,
     .benchmark-hero-facts,
     .segment-panels,

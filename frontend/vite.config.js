@@ -82,7 +82,13 @@ export default defineConfig(({ mode }) => {
       host: '0.0.0.0',
       port: 5173,
       watch: {
-        ignored: ['**/.pnpm-store/**', '**/node_modules/.cache/**'],
+        ignored: [
+          '**/.pnpm-store/**',
+          '**/node_modules/.cache/**',
+          '**/playwright-report/**',
+          '**/test-results/**',
+          '**/coverage/**',
+        ],
       },
       proxy: {
         '/api': {

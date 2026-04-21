@@ -6,17 +6,17 @@
   color-scheme: light;
 
   /* Background */
-  --bg: #e7edf5;
+  --bg: #ece7df;
   --bg-accent:
-    radial-gradient(circle at top left, rgb(43 100 219 / 12%), transparent 34%),
-    radial-gradient(circle at top right, rgb(10 145 148 / 9%), transparent 22%),
-    linear-gradient(180deg, #f8fbff 0%, #edf3f9 48%, #e3eaf3 100%);
+    radial-gradient(circle at top left, rgb(31 95 191 / 16%), transparent 36%),
+    radial-gradient(circle at top right, rgb(76 150 241 / 12%), transparent 24%),
+    linear-gradient(180deg, #f8fbff 0%, #eef4fb 46%, #e5edf7 100%);
 
   /* Surfaces */
   --surface: rgb(255 255 255 / 98%);
   --surface-strong: #ffffff;
-  --surface-muted: #d8e1ec;
-  --surface-soft: #f1f6fb;
+  --surface-muted: #d6e1ef;
+  --surface-soft: #eef5fd;
   --surface-soft-strong: #fbfdff;
   --surface-soft-muted: #e3ecf6;
   --surface-soft-subtle: #dfe8f3;
@@ -27,13 +27,13 @@
   --surface-card-strong: #ffffff;
   --surface-panel-strong: linear-gradient(
     180deg,
-    color-mix(in srgb, #ffffff 97%, var(--primary) 3%),
-    color-mix(in srgb, #f2f7fd 94%, var(--secondary) 6%)
+    color-mix(in srgb, #ffffff 96%, var(--primary) 4%),
+    color-mix(in srgb, #eef6ff 90%, var(--accent) 10%)
   );
   --surface-hero: linear-gradient(
     180deg,
-    color-mix(in srgb, #ffffff 96%, var(--primary) 4%),
-    color-mix(in srgb, #eef5fc 89%, var(--secondary) 11%)
+    color-mix(in srgb, #ffffff 95%, var(--primary) 5%),
+    color-mix(in srgb, #eaf3ff 84%, var(--accent) 16%)
   );
   --surface-panel: linear-gradient(
     180deg,
@@ -43,21 +43,21 @@
   --surface-subtle: color-mix(in srgb, var(--surface-card-strong) 88%, var(--surface-muted) 12%);
   --surface-panel-muted: linear-gradient(
     180deg,
-    color-mix(in srgb, #fbfdff 93%, var(--primary) 7%),
-    color-mix(in srgb, #e8f1f8 88%, var(--secondary) 12%)
+    color-mix(in srgb, #fbfdff 92%, var(--accent) 8%),
+    color-mix(in srgb, #e7f1ff 86%, var(--secondary) 14%)
   );
   --surface-panel-dark: linear-gradient(180deg, #0f1727 0%, #132338 54%, #193758 100%);
   --surface-dark-alt: #23527d;
 
   /* Text */
-  --text: #102033;
-  --text-muted: #31465d;
-  --text-soft: #52677f;
+  --text: #1d2430;
+  --text-muted: #3f4a5a;
+  --text-soft: #5f6a7b;
   --text-on-dark: #edf4ff;
   --text-on-dark-soft: rgb(234 241 250 / 92%);
   --text-on-dark-muted: rgb(208 219 236 / 80%);
-  --link: #1b5bd6;
-  --link-hover: #1347af;
+  --link: #1f5fbf;
+  --link-hover: #194d99;
 
   /* Borders */
   --border: rgb(15 23 42 / 14%);
@@ -66,13 +66,15 @@
   --primary-border: color-mix(in srgb, var(--primary) 66%, white 8%);
 
   /* Brand colors */
-  --primary: #2265e5;
-  --primary-strong: #174bb5;
+  --primary: #1f5fbf;
+  --primary-strong: #194f9a;
   --primary-contrast: #f8fbff;
-  --secondary: #0d9391;
+  --secondary: #1f8aa8;
+  --accent: #4f79d8;
+  --accent-strong: #355eb8;
   --danger: #c93e58;
-  --success: #1e7a51;
-  --warning: #ac7120;
+  --success: #1d7f5f;
+  --warning: #b7862e;
 
   /* Component surfaces */
   --control-bg: color-mix(in srgb, var(--surface-card-strong) 95%, var(--primary) 5%);
@@ -94,8 +96,8 @@
   --option-hover-bg: color-mix(in srgb, var(--surface-card-strong) 82%, var(--primary) 18%);
   --option-selected-bg: color-mix(in srgb, var(--primary) 24%, var(--surface-card-strong) 76%);
   --option-selected-text: var(--text);
-  --button-primary-bg: linear-gradient(180deg, #2f72f0 0%, var(--primary-strong) 100%);
-  --button-primary-bg-hover: linear-gradient(180deg, #3c7df2 0%, #1c56ca 100%);
+  --button-primary-bg: linear-gradient(180deg, #2a69c7 0%, var(--primary-strong) 100%);
+  --button-primary-bg-hover: linear-gradient(180deg, #3b75cd 0%, #1f589f 100%);
   --button-primary-border: color-mix(in srgb, var(--primary) 78%, transparent);
   --button-primary-text: var(--primary-contrast);
   --button-primary-shadow: 0 16px 32px color-mix(in srgb, var(--primary) 24%, transparent);
@@ -129,16 +131,17 @@
   --warning-overlay: rgb(183 121 31 / 15%);
 
   /* Glow & ambient */
-  --accent-glow-start: rgb(45 108 223 / 16%);
-  --accent-glow-end: rgb(20 142 144 / 12%);
-  --shell-ambient-start: rgb(45 108 223 / 15%);
-  --shell-ambient-end: rgb(20 142 144 / 12%);
+  --accent-glow-start: rgb(31 95 191 / 17%);
+  --accent-glow-end: rgb(76 150 241 / 12%);
+  --shell-ambient-start: rgb(31 95 191 / 16%);
+  --shell-ambient-end: rgb(76 150 241 / 13%);
 
   /* Shadows */
   --shadow-color: rgb(15 23 42);
   --shadow-sm: 0 14px 30px rgb(15 23 42 / 12%);
+  --shadow-md: 0 20px 40px rgb(15 23 42 / 15%);
   --shadow-lg: 0 26px 60px rgb(15 23 42 / 16%);
-  --accent-shadow: 0 18px 36px rgb(34 101 229 / 18%);
+  --accent-shadow: 0 18px 36px rgb(31 95 191 / 20%);
   --hero-shadow: 0 26px 54px rgb(15 23 42 / 18%);
   --focus-ring: 0 0 0 4px color-mix(in srgb, var(--primary) 22%, transparent);
 
@@ -149,11 +152,25 @@
   --radius-lg: 34px;
 
   /* Spacing */
+  --space-2xs: 0.25rem;
+  --space-xs: 0.5rem;
+  --space-sm: 0.75rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2rem;
+  --space-2xl: 3rem;
   --space-panel: 1.35rem;
   --space-panel-sm: 1rem;
   --space-section: 1.25rem;
   --space-grid: 1rem;
-  --space-xs: 0.4rem;
+
+  /* Motion */
+  --motion-quick: 120ms;
+  --motion-standard: 200ms;
+  --motion-emphasis: 320ms;
+  --motion-entrance: 420ms;
+  --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-emphasis: cubic-bezier(0.16, 1, 0.3, 1);
 
   /* Type scale - small text */
   --text-xs: 0.72rem;
@@ -165,11 +182,12 @@
 
   /* Typography */
   --font-body:
-    'Segoe UI Variable Text', 'Segoe UI Variable', 'Segoe UI', 'Aptos', -apple-system,
-    BlinkMacSystemFont, 'Helvetica Neue', Arial, system-ui, sans-serif;
+    'Manrope', 'Avenir Next', 'Segoe UI Variable Text', 'Segoe UI Variable', 'Segoe UI', 'Aptos',
+    -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, system-ui, sans-serif;
   --font-display:
-    'Segoe UI Variable Display', 'Segoe UI Variable', 'Segoe UI', 'Aptos', -apple-system,
-    BlinkMacSystemFont, 'Helvetica Neue', Arial, system-ui, sans-serif;
+    'Space Grotesk', 'Manrope', 'Avenir Next Condensed', 'Segoe UI Variable Display',
+    'Segoe UI Variable', 'Segoe UI', 'Aptos', -apple-system, BlinkMacSystemFont, 'Helvetica Neue',
+    Arial, system-ui, sans-serif;
   --font-mono:
     'SFMono-Regular', 'SF Mono', Consolas, 'Liberation Mono', Menlo, Monaco, 'Courier New',
     monospace;
@@ -184,8 +202,8 @@
   --chart-3: var(--success);
   --chart-4: var(--warning);
   --chart-5: var(--danger);
-  --chart-6: #6e62d8;
-  --chart-7: #c46d3f;
+  --chart-6: #7b8cb3;
+  --chart-7: var(--accent);
   --chart-8: #64748b;
 
   /* Map */
@@ -207,7 +225,7 @@
   --shell-highlight-strong: rgb(255 255 255 / 12%);
   --shell-depth-shadow: rgb(0 0 0 / 16%);
   --shell-depth-shadow-strong: rgb(0 0 0 / 24%);
-  --shell-active-bg: linear-gradient(135deg, rgb(45 108 223 / 22%), rgb(20 142 144 / 14%));
+  --shell-active-bg: linear-gradient(135deg, rgb(31 95 191 / 24%), rgb(76 150 241 / 16%));
   --shell-active-border: rgb(152 190 255 / 38%);
   --shell-brand-start: #4a82f5;
   --shell-brand-end: #2257c9;
@@ -216,8 +234,8 @@
   --shell-topbar-shadow: 0 20px 40px rgb(3 7 18 / 22%);
 
   /* Authenticated app shell */
-  --app-shell-ambient-start: rgb(45 108 223 / 16%);
-  --app-shell-ambient-end: rgb(20 142 144 / 12%);
+  --app-shell-ambient-start: rgb(31 95 191 / 16%);
+  --app-shell-ambient-end: rgb(76 150 241 / 12%);
   --app-shell-bg: linear-gradient(180deg, rgb(244 248 252 / 98%) 0%, rgb(232 239 247 / 100%) 100%);
   --app-shell-border: rgb(148 163 184 / 22%);
   --app-shell-text: #102033;
@@ -233,7 +251,7 @@
   --app-shell-highlight-strong: #ffffff;
   --app-shell-depth-shadow: rgb(15 23 42 / 12%);
   --app-shell-depth-shadow-strong: rgb(15 23 42 / 18%);
-  --app-shell-active-bg: linear-gradient(135deg, rgb(45 108 223 / 20%), rgb(20 142 144 / 14%));
+  --app-shell-active-bg: linear-gradient(135deg, rgb(31 95 191 / 22%), rgb(76 150 241 / 15%));
   --app-shell-active-border: color-mix(in srgb, var(--primary) 42%, rgb(148 163 184 / 22%));
   --app-shell-brand-start: #3f78e8;
   --app-shell-brand-end: #1c5ccc;
@@ -250,11 +268,11 @@
   color-scheme: dark;
 
   /* Background */
-  --bg: #08111c;
+  --bg: #0d121a;
   --bg-accent:
-    radial-gradient(circle at top left, rgb(104 151 255 / 16%), transparent 34%),
-    radial-gradient(circle at top right, rgb(87 201 196 / 10%), transparent 24%),
-    linear-gradient(180deg, #08111b 0%, #0b1421 48%, #101a29 100%);
+    radial-gradient(circle at top left, rgb(143 183 255 / 16%), transparent 34%),
+    radial-gradient(circle at top right, rgb(126 192 255 / 12%), transparent 25%),
+    linear-gradient(180deg, #0b1118 0%, #101823 48%, #18202e 100%);
 
   /* Surfaces */
   --surface: rgb(9 17 28 / 94%);
@@ -271,13 +289,13 @@
   --surface-card-strong: rgb(15 25 39 / 97%);
   --surface-panel-strong: linear-gradient(
     180deg,
-    color-mix(in srgb, #111c2b 96%, var(--primary) 4%),
-    color-mix(in srgb, #0d1826 95%, var(--secondary) 5%)
+    color-mix(in srgb, #121c2c 95%, var(--primary) 5%),
+    color-mix(in srgb, #132338 92%, var(--accent) 8%)
   );
   --surface-hero: linear-gradient(
     180deg,
-    color-mix(in srgb, #111b2a 95%, var(--primary) 5%),
-    color-mix(in srgb, #0d1825 94%, var(--secondary) 6%)
+    color-mix(in srgb, #121b2a 94%, var(--primary) 6%),
+    color-mix(in srgb, #16273b 90%, var(--accent) 10%)
   );
   --surface-panel: linear-gradient(
     180deg,
@@ -291,8 +309,8 @@
   );
   --surface-panel-muted: linear-gradient(
     180deg,
-    color-mix(in srgb, #122031 90%, var(--primary) 10%),
-    color-mix(in srgb, #0d1826 86%, var(--secondary) 14%)
+    color-mix(in srgb, #162232 88%, var(--primary) 12%),
+    color-mix(in srgb, #18293f 82%, var(--accent) 18%)
   );
   --surface-panel-dark: linear-gradient(180deg, #081220 0%, #0d1b2f 58%, #143351 100%);
   --surface-dark-alt: #295070;
@@ -304,8 +322,8 @@
   --text-on-dark: #eef5ff;
   --text-on-dark-soft: rgb(231 238 248 / 92%);
   --text-on-dark-muted: rgb(201 213 231 / 82%);
-  --link: #9abdff;
-  --link-hover: #c4d8ff;
+  --link: #a7c4ff;
+  --link-hover: #c9dcff;
 
   /* Borders */
   --border: rgb(148 163 184 / 24%);
@@ -314,13 +332,15 @@
   --primary-border: color-mix(in srgb, var(--primary) 58%, transparent);
 
   /* Brand colors */
-  --primary: #80abff;
-  --primary-strong: #5f8fff;
+  --primary: #8fb7ff;
+  --primary-strong: #6f98e6;
   --primary-contrast: #f7fbff;
-  --secondary: #57c9c4;
+  --secondary: #78d0eb;
+  --accent: #9fb8ff;
+  --accent-strong: #7f9ee6;
   --danger: #ff919b;
-  --success: #5dce96;
-  --warning: #f1c56b;
+  --success: #73d39d;
+  --warning: #f4c777;
 
   /* Component surfaces */
   --control-bg: color-mix(in srgb, #101a28 90%, var(--primary) 10%);
@@ -342,8 +362,8 @@
   --option-hover-bg: color-mix(in srgb, var(--surface-card-strong) 74%, var(--primary) 26%);
   --option-selected-bg: color-mix(in srgb, var(--primary) 34%, var(--surface-card-strong) 66%);
   --option-selected-text: #f8fbff;
-  --button-primary-bg: linear-gradient(180deg, #70a0ff 0%, #4678ea 100%);
-  --button-primary-bg-hover: linear-gradient(180deg, #82adff 0%, #5685ef 100%);
+  --button-primary-bg: linear-gradient(180deg, #7ea8ff 0%, #5f89da 100%);
+  --button-primary-bg-hover: linear-gradient(180deg, #92b7ff 0%, #6f98e6 100%);
   --button-primary-border: color-mix(in srgb, var(--primary) 64%, transparent);
   --button-primary-text: #f7fbff;
   --button-primary-shadow: 0 18px 34px rgb(8 15 31 / 36%);
@@ -377,14 +397,15 @@
   --warning-overlay: rgb(242 191 99 / 16%);
 
   /* Glow & ambient */
-  --accent-glow-start: rgb(104 151 255 / 14%);
-  --accent-glow-end: rgb(87 201 196 / 10%);
-  --shell-ambient-start: rgb(104 151 255 / 12%);
-  --shell-ambient-end: rgb(87 201 196 / 10%);
+  --accent-glow-start: rgb(143 183 255 / 15%);
+  --accent-glow-end: rgb(126 192 255 / 12%);
+  --shell-ambient-start: rgb(143 183 255 / 13%);
+  --shell-ambient-end: rgb(126 192 255 / 12%);
 
   /* Shadows */
   --shadow-color: rgb(0 0 0);
   --shadow-sm: 0 18px 34px rgb(0 0 0 / 28%);
+  --shadow-md: 0 24px 48px rgb(0 0 0 / 32%);
   --shadow-lg: 0 32px 68px rgb(0 0 0 / 36%);
   --accent-shadow: 0 20px 40px rgb(0 0 0 / 30%);
   --hero-shadow: 0 30px 60px rgb(0 0 0 / 36%);
@@ -400,8 +421,8 @@
   --chart-3: var(--success);
   --chart-4: var(--warning);
   --chart-5: var(--danger);
-  --chart-6: #9b8cff;
-  --chart-7: #f39a68;
+  --chart-6: #a5b2ce;
+  --chart-7: var(--accent);
   --chart-8: #94a3b8;
 
   /* Map */
@@ -423,7 +444,7 @@
   --shell-highlight-strong: rgb(255 255 255 / 10%);
   --shell-depth-shadow: rgb(0 0 0 / 18%);
   --shell-depth-shadow-strong: rgb(0 0 0 / 28%);
-  --shell-active-bg: linear-gradient(135deg, rgb(104 151 255 / 24%), rgb(87 201 196 / 15%));
+  --shell-active-bg: linear-gradient(135deg, rgb(143 183 255 / 24%), rgb(126 192 255 / 16%));
   --shell-active-border: rgb(148 184 255 / 42%);
   --shell-brand-start: #91b6ff;
   --shell-brand-end: #6091ff;
@@ -432,8 +453,8 @@
   --shell-topbar-shadow: 0 22px 46px rgb(0 0 0 / 34%);
 
   /* Authenticated app shell */
-  --app-shell-ambient-start: rgb(104 151 255 / 12%);
-  --app-shell-ambient-end: rgb(87 201 196 / 10%);
+  --app-shell-ambient-start: rgb(143 183 255 / 12%);
+  --app-shell-ambient-end: rgb(126 192 255 / 10%);
   --app-shell-bg: linear-gradient(180deg, rgb(5 10 18 / 98%) 0%, rgb(8 17 31 / 99%) 100%);
   --app-shell-border: rgb(255 255 255 / 9%);
   --app-shell-text: #f3f8ff;
@@ -449,7 +470,7 @@
   --app-shell-highlight-strong: rgb(255 255 255 / 7%);
   --app-shell-depth-shadow: rgb(0 0 0 / 18%);
   --app-shell-depth-shadow-strong: rgb(0 0 0 / 28%);
-  --app-shell-active-bg: linear-gradient(135deg, rgb(104 151 255 / 24%), rgb(87 201 196 / 15%));
+  --app-shell-active-bg: linear-gradient(135deg, rgb(143 183 255 / 24%), rgb(126 192 255 / 16%));
   --app-shell-active-border: rgb(148 184 255 / 42%);
   --app-shell-brand-start: #91b6ff;
   --app-shell-brand-end: #6091ff;

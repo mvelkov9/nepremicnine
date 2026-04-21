@@ -1,11 +1,17 @@
 <script setup lang="ts">
-  import { computed, onMounted, ref, watch } from 'vue'
+  import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
   import { useRoute, useRouter } from 'vue-router'
   import { useI18n } from 'vue-i18n'
   import AutoComplete from 'primevue/autocomplete'
   import Button from 'primevue/button'
   import InputNumber from 'primevue/inputnumber'
   import Select from 'primevue/select'
+  import Slider from 'primevue/slider'
+  import Tab from 'primevue/tab'
+  import TabList from 'primevue/tablist'
+  import TabPanel from 'primevue/tabpanel'
+  import TabPanels from 'primevue/tabpanels'
+  import Tabs from 'primevue/tabs'
   import Textarea from 'primevue/textarea'
   import ToggleSwitch from 'primevue/toggleswitch'
   import api from '../composables/useApi'
@@ -95,12 +101,15 @@
   const threshold = ref(15)
   const loading = ref(false)
   const error = ref('')
+  const analysisTab = ref('guided')
   const result = ref<AnalysisResultPayload | null>(null)
   const advancedJson = ref('')
   const lastRunMode = ref<'guided' | 'advanced' | null>(null)
   const municipalitySuggestions = ref([])
   const naseljeSuggestions = ref([])
   const naseljeOptions = ref([])
+  let activeNaseljeController: AbortController | null = null
+  let naseljeRequestToken = 0
 
   const propertyTypes = [
     'stanovanje',
@@ -398,7 +407,12 @@
   }
 
   async function searchNaselja(event) {
+    const requestToken = ++naseljeRequestToken
     const query = String(event.query || '').trim()
+    activeNaseljeController?.abort()
+    const controller = new AbortController()
+    activeNaseljeController = controller
+
     try {
       const { data } = await api.get('/api/stats/naselja', {
         params: {
@@ -406,15 +420,24 @@
           municipality: guidedForm.value.municipality || undefined,
           limit: 12,
         },
+        signal: controller.signal,
       })
+
+      if (requestToken !== naseljeRequestToken || controller.signal.aborted) return
+
       naseljeOptions.value = (data || []).map((item) => ({
         ...item,
         label: `${item.naselje} (${item.municipality})`,
       }))
       naseljeSuggestions.value = naseljeOptions.value.map((item) => item.label)
     } catch {
+      if (requestToken !== naseljeRequestToken || controller.signal.aborted) return
       naseljeOptions.value = []
       naseljeSuggestions.value = []
+    } finally {
+      if (activeNaseljeController === controller) {
+        activeNaseljeController = null
+      }
     }
   }
 
@@ -508,6 +531,7 @@
   )
   const guidedWorkspaceState = computed(() => ({
     page: 'analysis',
+    tab: analysisTab.value,
     filters: buildGuidedPayload(),
   }))
 
@@ -611,10 +635,25 @@
     void referenceData.ensureLoaded()
   })
 
+  onBeforeUnmount(() => {
+    activeNaseljeController?.abort()
+  })
+
   watch(
     () => route.query,
     (query) => {
       applyRouteQuery(query)
+    },
+  )
+
+  watch(
+    () => guidedForm.value.municipality,
+    () => {
+      naseljeRequestToken += 1
+      activeNaseljeController?.abort()
+      activeNaseljeController = null
+      naseljeOptions.value = []
+      naseljeSuggestions.value = []
     },
   )
 </script>
@@ -659,343 +698,403 @@
       </template>
     </AnalysisWorkspaceHero>
 
-    <SectionPanel :eyebrow="t('analysis.guidedCheck')" :title="t('analysis.guidedTitle')">
-      <template #actions>
-        <div class="threshold">
-          <label for="analysis-threshold">{{ t('analysis.threshold') }}</label>
-          <InputNumber
-            v-model="threshold"
-            input-id="analysis-threshold"
-            :min="1"
-            :max="100"
-            suffix="%"
-          />
-        </div>
-      </template>
+    <Tabs v-model:value="analysisTab" class="analysis-tabs">
+      <TabList>
+        <Tab value="guided">{{ t('analysis.guidedTitle') }}</Tab>
+        <Tab value="results">{{ t('analysis.results') }}</Tab>
+        <Tab value="explore">{{ t('common.explore') }}</Tab>
+        <Tab v-if="auth.isAdmin" value="bulk">{{ t('analysis.bulkMode') }}</Tab>
+      </TabList>
+      <TabPanels>
+        <TabPanel value="guided">
+          <section class="analysis-tab-content">
+            <SectionPanel :eyebrow="t('analysis.guidedCheck')" :title="t('analysis.guidedTitle')">
+              <template #actions>
+                <div class="threshold">
+                  <label for="analysis-threshold">{{ t('analysis.threshold') }}</label>
+                  <div class="threshold-control">
+                    <InputNumber
+                      v-model="threshold"
+                      input-id="analysis-threshold"
+                      :min="1"
+                      :max="100"
+                      suffix="%"
+                    />
+                    <Slider v-model="threshold" :min="1" :max="100" />
+                  </div>
+                </div>
+              </template>
 
-      <div class="guided-workbench">
-        <div class="guided-summary">
-          <article class="summary-chip">
-            <span>{{ t('predict.naselje') }}</span>
-            <strong>{{ guidedForm.naselje || t('predict.naseljePlaceholder') }}</strong>
-          </article>
-          <article class="summary-chip">
-            <span>{{ t('predict.size') }}</span>
-            <strong>{{ fmt(guidedForm.uporabna_povrsina || guidedForm.size_m2, 1) }} m²</strong>
-          </article>
-          <article class="summary-chip">
-            <span>{{ t('analysis.askingPrice') }}</span>
-            <strong>{{ fmtCurrency(guidedForm.asking_price) }}</strong>
-          </article>
-        </div>
+              <div class="guided-workbench">
+                <div class="guided-summary">
+                  <article class="summary-chip">
+                    <span>{{ t('predict.naselje') }}</span>
+                    <strong>{{ guidedForm.naselje || t('predict.naseljePlaceholder') }}</strong>
+                  </article>
+                  <article class="summary-chip">
+                    <span>{{ t('predict.size') }}</span>
+                    <strong
+                      >{{ fmt(guidedForm.uporabna_povrsina || guidedForm.size_m2, 1) }} m²</strong
+                    >
+                  </article>
+                  <article class="summary-chip">
+                    <span>{{ t('analysis.askingPrice') }}</span>
+                    <strong>{{ fmtCurrency(guidedForm.asking_price) }}</strong>
+                  </article>
+                </div>
 
-        <div class="actions-row">
-          <Button
-            v-for="preset in guidedPresets"
-            :key="preset.key"
-            severity="secondary"
-            outlined
-            :label="t(preset.label)"
-            @click="applyGuidedPreset(preset.values)"
-          />
-        </div>
+                <div class="actions-row">
+                  <Button
+                    v-for="preset in guidedPresets"
+                    :key="preset.key"
+                    severity="secondary"
+                    outlined
+                    :label="t(preset.label)"
+                    @click="applyGuidedPreset(preset.values)"
+                  />
+                </div>
 
-        <div class="form-grid">
-          <label class="field">
-            <span>{{ t('predict.naselje') }}</span>
-            <AutoComplete
-              v-model="guidedForm.naselje"
-              :suggestions="naseljeSuggestions"
-              :placeholder="t('predict.naseljePlaceholder')"
-              dropdown
-              fluid
-              @complete="searchNaselja"
+                <div class="guided-layout">
+                  <div class="guided-form-stack">
+                    <div class="form-grid">
+                      <label class="field">
+                        <span>{{ t('predict.naselje') }}</span>
+                        <AutoComplete
+                          v-model="guidedForm.naselje"
+                          :suggestions="naseljeSuggestions"
+                          :placeholder="t('predict.naseljePlaceholder')"
+                          dropdown
+                          fluid
+                          @complete="searchNaselja"
+                        />
+                      </label>
+
+                      <label class="field">
+                        <span>{{ t('predict.municipality') }}</span>
+                        <AutoComplete
+                          v-model="guidedForm.municipality"
+                          :suggestions="municipalitySuggestions"
+                          :placeholder="t('predict.municipalityPlaceholder')"
+                          dropdown
+                          fluid
+                          @complete="searchMunicipalities"
+                        />
+                      </label>
+
+                      <label class="field">
+                        <span>{{ t('predict.propertyType') }}</span>
+                        <Select
+                          v-model="guidedForm.property_type"
+                          :options="propertyTypeOptions"
+                          option-label="label"
+                          option-value="value"
+                          fluid
+                        />
+                      </label>
+
+                      <label class="field">
+                        <span>{{ t('predict.size') }}</span>
+                        <InputNumber v-model="guidedForm.size_m2" :min="1" suffix=" m²" fluid />
+                      </label>
+
+                      <label class="field">
+                        <span>{{ t('predict.uporabnaPovrsina') }}</span>
+                        <InputNumber
+                          v-model="guidedForm.uporabna_povrsina"
+                          :min="0"
+                          suffix=" m²"
+                          fluid
+                        />
+                      </label>
+
+                      <label class="field">
+                        <span>{{ t('predict.rooms') }}</span>
+                        <InputNumber v-model="guidedForm.rooms" :min="0" :step="0.5" fluid />
+                      </label>
+
+                      <label class="field">
+                        <span>{{ t('predict.yearBuilt') }}</span>
+                        <InputNumber
+                          v-model="guidedForm.year_built"
+                          :min="1800"
+                          :max="2100"
+                          fluid
+                        />
+                      </label>
+
+                      <label class="field">
+                        <span>{{ t('predict.floor') }}</span>
+                        <InputNumber v-model="guidedForm.floor" :min="-2" :max="60" fluid />
+                      </label>
+
+                      <label class="field">
+                        <span>{{ t('predict.legaVStavbi') }}</span>
+                        <Select
+                          v-model="guidedForm.lega_v_stavbi"
+                          :options="[
+                            { label: t('common.noData'), value: '' },
+                            { label: t('predict.lega.pritlicje'), value: 'pritlicje' },
+                            { label: t('predict.lega.nadstropje'), value: 'nadstropje' },
+                            { label: t('predict.lega.klet'), value: 'klet' },
+                            { label: t('predict.lega.unknown'), value: 'unknown' },
+                          ]"
+                          option-label="label"
+                          option-value="value"
+                          fluid
+                        />
+                      </label>
+
+                      <label class="field">
+                        <span>{{ t('analysis.askingPrice') }}</span>
+                        <InputNumber
+                          v-model="guidedForm.asking_price"
+                          mode="currency"
+                          currency="EUR"
+                          locale="sl-SI"
+                          fluid
+                        />
+                      </label>
+
+                      <label class="field notes-field">
+                        <span>{{ t('analysis.contextNotes') }}</span>
+                        <Textarea v-model="guidedForm.notes" rows="3" auto-resize />
+                      </label>
+                    </div>
+
+                    <details class="analysis-fold">
+                      <summary>{{ t('analysis.previewSignalsTitle') }}</summary>
+                      <div class="flag-row">
+                        <label class="focus-chip">
+                          <ToggleSwitch
+                            :model-value="toggleValue('novogradnja')"
+                            @update:model-value="updateToggle('novogradnja', $event)"
+                          />
+                          <span>{{ t('predict.novogradnja') }}</span>
+                        </label>
+                        <label class="focus-chip">
+                          <ToggleSwitch
+                            :model-value="toggleValue('has_garaza')"
+                            @update:model-value="updateToggle('has_garaza', $event)"
+                          />
+                          <span>{{ t('predict.hasGaraza') }}</span>
+                        </label>
+                        <label class="focus-chip">
+                          <ToggleSwitch
+                            :model-value="toggleValue('has_klet')"
+                            @update:model-value="updateToggle('has_klet', $event)"
+                          />
+                          <span>{{ t('predict.hasKlet') }}</span>
+                        </label>
+                        <label class="focus-chip">
+                          <ToggleSwitch
+                            :model-value="toggleValue('has_shramba')"
+                            @update:model-value="updateToggle('has_shramba', $event)"
+                          />
+                          <span>{{ t('predict.hasShramba') }}</span>
+                        </label>
+                        <label class="focus-chip">
+                          <ToggleSwitch
+                            :model-value="toggleValue('has_terasa')"
+                            @update:model-value="updateToggle('has_terasa', $event)"
+                          />
+                          <span>{{ t('predict.hasTerasa') }}</span>
+                        </label>
+                        <label class="focus-chip">
+                          <ToggleSwitch
+                            :model-value="toggleValue('stavba_je_dokoncana')"
+                            @update:model-value="updateToggle('stavba_je_dokoncana', $event)"
+                          />
+                          <span>{{ t('predict.stavbaDokoncana') }}</span>
+                        </label>
+                        <label class="focus-chip">
+                          <ToggleSwitch
+                            :model-value="toggleValue('ddv_vkljucen')"
+                            @update:model-value="updateToggle('ddv_vkljucen', $event)"
+                          />
+                          <span>{{ t('predict.ddvVkljucen') }}</span>
+                        </label>
+                      </div>
+                    </details>
+                  </div>
+
+                  <aside class="workspace-status">
+                    <div class="guided-readiness">
+                      <article
+                        v-for="item in guidedReadiness"
+                        :key="item.key"
+                        class="guided-readiness-item"
+                        :class="{ ready: item.ready }"
+                      >
+                        <i
+                          :class="item.ready ? 'pi pi-check-circle' : 'pi pi-circle'"
+                          aria-hidden="true"
+                        ></i>
+                        <span>{{ item.text }}</span>
+                      </article>
+                    </div>
+
+                    <div class="actions-row">
+                      <Button
+                        icon="pi pi-search"
+                        :loading="loading"
+                        :label="t('analysis.analyzeButton')"
+                        @click="analyzeGuided"
+                      />
+                    </div>
+                  </aside>
+                </div>
+              </div>
+            </SectionPanel>
+          </section>
+        </TabPanel>
+
+        <TabPanel value="results">
+          <section class="analysis-tab-content">
+            <div v-if="error" class="state-card state-card-stack" role="alert">
+              <EmptyState icon="pi pi-exclamation-triangle" :message="error" />
+              <div class="state-card-actions">
+                <Button
+                  size="small"
+                  severity="secondary"
+                  outlined
+                  icon="pi pi-refresh"
+                  :label="t('common.retry')"
+                  @click="retryAnalysis"
+                />
+              </div>
+            </div>
+
+            <AnalysisResultsPanel
+              v-if="result"
+              :eyebrow="t('analysis.results')"
+              :title="t('analysis.scoredListings')"
+              :result="result"
+              :primary-listing="resultListings[0] || null"
+              :summary-cards="resultSummaryCards"
+              :comparison-url="comparisonUrl"
+              @export="exportToCSV(result.listings || [], 'analysis.csv')"
+              @open-prediction="openPredictionForListing"
+              @open-municipality="openMunicipalityForListing"
             />
-          </label>
 
-          <label class="field">
-            <span>{{ t('predict.municipality') }}</span>
-            <AutoComplete
-              v-model="guidedForm.municipality"
-              :suggestions="municipalitySuggestions"
-              :placeholder="t('predict.municipalityPlaceholder')"
-              dropdown
-              fluid
-              @complete="searchMunicipalities"
-            />
-          </label>
-
-          <label class="field">
-            <span>{{ t('predict.propertyType') }}</span>
-            <Select
-              v-model="guidedForm.property_type"
-              :options="propertyTypeOptions"
-              option-label="label"
-              option-value="value"
-              fluid
-            />
-          </label>
-
-          <label class="field">
-            <span>{{ t('predict.size') }}</span>
-            <InputNumber v-model="guidedForm.size_m2" :min="1" suffix=" m²" fluid />
-          </label>
-
-          <label class="field">
-            <span>{{ t('predict.uporabnaPovrsina') }}</span>
-            <InputNumber v-model="guidedForm.uporabna_povrsina" :min="0" suffix=" m²" fluid />
-          </label>
-
-          <label class="field">
-            <span>{{ t('predict.rooms') }}</span>
-            <InputNumber v-model="guidedForm.rooms" :min="0" :step="0.5" fluid />
-          </label>
-
-          <label class="field">
-            <span>{{ t('predict.yearBuilt') }}</span>
-            <InputNumber v-model="guidedForm.year_built" :min="1800" :max="2100" fluid />
-          </label>
-
-          <label class="field">
-            <span>{{ t('predict.floor') }}</span>
-            <InputNumber v-model="guidedForm.floor" :min="-2" :max="60" fluid />
-          </label>
-
-          <label class="field">
-            <span>{{ t('predict.legaVStavbi') }}</span>
-            <Select
-              v-model="guidedForm.lega_v_stavbi"
-              :options="[
-                { label: t('common.noData'), value: '' },
-                { label: t('predict.lega.pritlicje'), value: 'pritlicje' },
-                { label: t('predict.lega.nadstropje'), value: 'nadstropje' },
-                { label: t('predict.lega.klet'), value: 'klet' },
-                { label: t('predict.lega.unknown'), value: 'unknown' },
-              ]"
-              option-label="label"
-              option-value="value"
-              fluid
-            />
-          </label>
-
-          <label class="field">
-            <span>{{ t('analysis.askingPrice') }}</span>
-            <InputNumber
-              v-model="guidedForm.asking_price"
-              mode="currency"
-              currency="EUR"
-              locale="sl-SI"
-              fluid
-            />
-          </label>
-
-          <label class="field notes-field">
-            <span>{{ t('analysis.contextNotes') }}</span>
-            <Textarea v-model="guidedForm.notes" rows="3" auto-resize />
-          </label>
-        </div>
-
-        <div class="flag-row">
-          <label class="focus-chip">
-            <ToggleSwitch
-              :model-value="toggleValue('novogradnja')"
-              @update:model-value="updateToggle('novogradnja', $event)"
-            />
-            <span>{{ t('predict.novogradnja') }}</span>
-          </label>
-          <label class="focus-chip">
-            <ToggleSwitch
-              :model-value="toggleValue('has_garaza')"
-              @update:model-value="updateToggle('has_garaza', $event)"
-            />
-            <span>{{ t('predict.hasGaraza') }}</span>
-          </label>
-          <label class="focus-chip">
-            <ToggleSwitch
-              :model-value="toggleValue('has_klet')"
-              @update:model-value="updateToggle('has_klet', $event)"
-            />
-            <span>{{ t('predict.hasKlet') }}</span>
-          </label>
-          <label class="focus-chip">
-            <ToggleSwitch
-              :model-value="toggleValue('has_shramba')"
-              @update:model-value="updateToggle('has_shramba', $event)"
-            />
-            <span>{{ t('predict.hasShramba') }}</span>
-          </label>
-          <label class="focus-chip">
-            <ToggleSwitch
-              :model-value="toggleValue('has_terasa')"
-              @update:model-value="updateToggle('has_terasa', $event)"
-            />
-            <span>{{ t('predict.hasTerasa') }}</span>
-          </label>
-          <label class="focus-chip">
-            <ToggleSwitch
-              :model-value="toggleValue('stavba_je_dokoncana')"
-              @update:model-value="updateToggle('stavba_je_dokoncana', $event)"
-            />
-            <span>{{ t('predict.stavbaDokoncana') }}</span>
-          </label>
-          <label class="focus-chip">
-            <ToggleSwitch
-              :model-value="toggleValue('ddv_vkljucen')"
-              @update:model-value="updateToggle('ddv_vkljucen', $event)"
-            />
-            <span>{{ t('predict.ddvVkljucen') }}</span>
-          </label>
-        </div>
-
-        <div class="workspace-status">
-          <div class="guided-readiness">
-            <article
-              v-for="item in guidedReadiness"
-              :key="item.key"
-              class="guided-readiness-item"
-              :class="{ ready: item.ready }"
+            <SectionPanel
+              v-else
+              class="preview-panel"
+              :eyebrow="t('analysis.previewTitle')"
+              :title="t('analysis.previewHeading')"
             >
-              <i :class="item.ready ? 'pi pi-check-circle' : 'pi pi-circle'" aria-hidden="true"></i>
-              <span>{{ item.text }}</span>
-            </article>
-          </div>
+              <div class="guided-readiness">
+                <article
+                  v-for="item in guidedReadiness"
+                  :key="item.key"
+                  class="guided-readiness-item"
+                  :class="{ ready: item.ready }"
+                >
+                  <i
+                    :class="item.ready ? 'pi pi-check-circle' : 'pi pi-circle'"
+                    aria-hidden="true"
+                  ></i>
+                  <span>{{ item.text }}</span>
+                </article>
+              </div>
+            </SectionPanel>
+          </section>
+        </TabPanel>
 
-          <div class="actions-row">
-            <Button
-              icon="pi pi-search"
-              :loading="loading"
-              :label="t('analysis.analyzeButton')"
-              @click="analyzeGuided"
-            />
-          </div>
-        </div>
-      </div>
-    </SectionPanel>
+        <TabPanel value="explore">
+          <section class="analysis-tab-content">
+            <SectionPanel
+              class="analysis-explore-panel"
+              :eyebrow="t('nav.market')"
+              :title="t('analysis.previewHeading')"
+            >
+              <div class="analysis-preview-grid">
+                <article
+                  v-for="card in analysisPreviewCards"
+                  :key="card.key"
+                  class="analysis-preview-card"
+                >
+                  <span class="preview-icon"><i :class="card.icon"></i></span>
+                  <div>
+                    <strong>{{ card.title }}</strong>
+                    <p>{{ card.body }}</p>
+                  </div>
+                </article>
+              </div>
 
-    <SectionPanel
-      class="analysis-explore-panel"
-      :eyebrow="t('nav.market')"
-      :title="t('analysis.previewHeading')"
-    >
-      <div class="analysis-preview-grid">
-        <article v-for="card in analysisPreviewCards" :key="card.key" class="analysis-preview-card">
-          <span class="preview-icon"><i :class="card.icon"></i></span>
-          <div>
-            <strong>{{ card.title }}</strong>
-            <p>{{ card.body }}</p>
-          </div>
-        </article>
-      </div>
+              <div class="analysis-explore-actions">
+                <a :href="comparisonUrl" target="_blank" rel="noreferrer" class="hero-link">
+                  <Button
+                    severity="contrast"
+                    outlined
+                    icon="pi pi-external-link"
+                    :label="t('analysis.compareOnPortal')"
+                  />
+                </a>
+                <Button
+                  severity="secondary"
+                  text
+                  icon="pi pi-table"
+                  :label="t('nav.market')"
+                  @click="openMarketExplorer"
+                />
+                <Button
+                  severity="secondary"
+                  text
+                  icon="pi pi-map"
+                  :label="t('nav.map')"
+                  @click="openMapExplorer"
+                />
+                <Button
+                  severity="secondary"
+                  text
+                  icon="pi pi-building"
+                  :label="t('map.openMunicipality')"
+                  @click="openMunicipality"
+                />
+              </div>
+            </SectionPanel>
+          </section>
+        </TabPanel>
 
-      <div class="analysis-explore-actions">
-        <a :href="comparisonUrl" target="_blank" rel="noreferrer" class="hero-link">
-          <Button
-            severity="contrast"
-            outlined
-            icon="pi pi-external-link"
-            :label="t('analysis.compareOnPortal')"
-          />
-        </a>
-        <Button
-          severity="secondary"
-          text
-          icon="pi pi-table"
-          :label="t('nav.market')"
-          @click="openMarketExplorer"
-        />
-        <Button
-          severity="secondary"
-          text
-          icon="pi pi-map"
-          :label="t('nav.map')"
-          @click="openMapExplorer"
-        />
-        <Button
-          severity="secondary"
-          text
-          icon="pi pi-building"
-          :label="t('map.openMunicipality')"
-          @click="openMunicipality"
-        />
-      </div>
-    </SectionPanel>
+        <TabPanel v-if="auth.isAdmin" value="bulk">
+          <section class="analysis-tab-content">
+            <SectionPanel
+              class="analysis-advanced-panel"
+              :eyebrow="t('analysis.bulkMode')"
+              :title="t('analysis.advancedTitle')"
+            >
+              <details class="analysis-fold">
+                <summary>{{ t('analysis.advancedTitle') }}</summary>
+                <Textarea
+                  v-model="advancedJson"
+                  rows="8"
+                  auto-resize
+                  :placeholder="t('analysis.jsonPlaceholder')"
+                />
 
-    <div v-if="error" class="state-card state-card-stack" role="alert">
-      <EmptyState icon="pi pi-exclamation-triangle" :message="error" />
-      <div class="state-card-actions">
-        <Button
-          size="small"
-          severity="secondary"
-          outlined
-          icon="pi pi-refresh"
-          :label="t('common.retry')"
-          @click="retryAnalysis"
-        />
-      </div>
-    </div>
-
-    <AnalysisResultsPanel
-      v-if="result"
-      :eyebrow="t('analysis.results')"
-      :title="t('analysis.scoredListings')"
-      :result="result"
-      :primary-listing="resultListings[0] || null"
-      :summary-cards="resultSummaryCards"
-      :comparison-url="comparisonUrl"
-      @export="exportToCSV(result.listings || [], 'analysis.csv')"
-      @open-prediction="openPredictionForListing"
-      @open-municipality="openMunicipalityForListing"
-    />
-
-    <SectionPanel
-      v-if="!result"
-      class="preview-panel"
-      :eyebrow="t('analysis.previewTitle')"
-      :title="t('analysis.previewHeading')"
-    >
-      <div class="guided-readiness">
-        <article
-          v-for="item in guidedReadiness"
-          :key="item.key"
-          class="guided-readiness-item"
-          :class="{ ready: item.ready }"
-        >
-          <i :class="item.ready ? 'pi pi-check-circle' : 'pi pi-circle'" aria-hidden="true"></i>
-          <span>{{ item.text }}</span>
-        </article>
-      </div>
-    </SectionPanel>
-
-    <SectionPanel
-      v-if="auth.isAdmin"
-      class="analysis-advanced-panel"
-      :eyebrow="t('analysis.bulkMode')"
-      :title="t('analysis.advancedTitle')"
-    >
-      <Textarea
-        v-model="advancedJson"
-        rows="8"
-        auto-resize
-        :placeholder="t('analysis.jsonPlaceholder')"
-      />
-
-      <div class="actions-row">
-        <Button
-          severity="secondary"
-          outlined
-          icon="pi pi-file-edit"
-          :label="t('analysis.loadSample')"
-          @click="loadSample"
-        />
-        <Button
-          severity="secondary"
-          icon="pi pi-play"
-          :loading="loading"
-          :label="t('analysis.runBulk')"
-          @click="analyzeAdvanced"
-        />
-      </div>
-    </SectionPanel>
+                <div class="actions-row">
+                  <Button
+                    severity="secondary"
+                    outlined
+                    icon="pi pi-file-edit"
+                    :label="t('analysis.loadSample')"
+                    @click="loadSample"
+                  />
+                  <Button
+                    severity="secondary"
+                    icon="pi pi-play"
+                    :loading="loading"
+                    :label="t('analysis.runBulk')"
+                    @click="analyzeAdvanced"
+                  />
+                </div>
+              </details>
+            </SectionPanel>
+          </section>
+        </TabPanel>
+      </TabPanels>
+    </Tabs>
   </div>
 </template>
 
@@ -1003,6 +1102,28 @@
   .analysis-page {
     display: grid;
     gap: var(--space-section);
+    --page-accent: var(--primary);
+    --page-accent-2: var(--accent);
+  }
+
+  .analysis-tabs,
+  .analysis-tab-content {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .analysis-tabs :deep(.p-tablist) {
+    padding: 0.35rem;
+    border: 1px solid color-mix(in srgb, var(--border) 68%, var(--primary) 18%);
+    border-radius: var(--radius-lg);
+    background: color-mix(in srgb, var(--surface-strong) 92%, var(--primary-overlay) 8%);
+    box-shadow: 0 10px 22px color-mix(in srgb, var(--shadow-color) 8%, transparent);
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+
+  .analysis-tabs :deep(.p-tabpanels) {
+    padding-top: 0.15rem;
   }
 
   .state-card-stack {
@@ -1031,7 +1152,12 @@
     background:
       radial-gradient(
         circle at top right,
-        color-mix(in srgb, var(--secondary) 10%, transparent),
+        color-mix(in srgb, var(--page-accent) 16%, transparent),
+        transparent 30%
+      ),
+      radial-gradient(
+        circle at top left,
+        color-mix(in srgb, var(--page-accent-2) 11%, transparent),
         transparent 26%
       ),
       var(--surface-hero);
@@ -1122,7 +1248,7 @@
     background: color-mix(
       in srgb,
       var(--surface-card-strong, var(--surface-strong)) 92%,
-      var(--primary) 8%
+      var(--page-accent) 8%
     );
     box-shadow: var(--shadow-sm);
   }
@@ -1131,7 +1257,7 @@
     background: color-mix(
       in srgb,
       var(--surface-card-strong, var(--surface-strong)) 90%,
-      var(--secondary) 10%
+      var(--page-accent-2) 10%
     );
   }
 
@@ -1168,6 +1294,18 @@
     gap: 1rem;
   }
 
+  .guided-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(20rem, 0.92fr);
+    gap: 1rem;
+    align-items: start;
+  }
+
+  .guided-form-stack {
+    display: grid;
+    gap: 1rem;
+  }
+
   .hero-note {
     background: color-mix(
       in srgb,
@@ -1200,7 +1338,7 @@
     background: color-mix(
       in srgb,
       var(--surface-card-strong, var(--surface-strong)) 93%,
-      var(--secondary) 7%
+      var(--page-accent-2) 7%
     );
     box-shadow: var(--shadow-sm);
   }
@@ -1230,6 +1368,12 @@
     min-width: 8rem;
   }
 
+  .threshold-control {
+    display: grid;
+    gap: 0.55rem;
+    min-width: min(21rem, 42vw);
+  }
+
   .threshold label,
   .field span {
     display: block;
@@ -1243,13 +1387,73 @@
 
   .form-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
-    gap: 0.9rem;
+    grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+    gap: 1rem;
   }
 
   .field {
     display: grid;
     gap: 0.35rem;
+    min-width: 0;
+  }
+
+  .field :deep(.p-autocomplete),
+  .field :deep(.p-inputnumber),
+  .field :deep(.p-select),
+  .field :deep(.p-inputtext),
+  .field :deep(textarea) {
+    width: 100%;
+  }
+
+  .field :deep(.p-autocomplete),
+  .field :deep(.p-inputnumber),
+  .field :deep(.p-select) {
+    min-height: 3.15rem;
+  }
+
+  .field :deep(.p-inputtext),
+  .field :deep(.p-autocomplete-input),
+  .field :deep(.p-inputnumber-input),
+  .field :deep(.p-select-label),
+  .field :deep(textarea) {
+    font-size: 0.98rem;
+  }
+
+  .field :deep(.p-inputtext),
+  .field :deep(.p-autocomplete-input),
+  .field :deep(.p-inputnumber-input) {
+    min-height: 3.15rem;
+    padding-block: 0.82rem;
+  }
+
+  .field :deep(.p-select-label) {
+    padding-block: 0.82rem;
+  }
+
+  .notes-field :deep(textarea) {
+    min-height: 8.5rem;
+  }
+
+  .workspace-status {
+    position: sticky;
+    top: 5.9rem;
+    display: grid;
+    gap: 1rem;
+    padding: 1rem;
+    border-radius: var(--radius-md);
+    border: 1px solid color-mix(in srgb, var(--border) 72%, var(--page-accent-2) 28%);
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface-card-strong) 96%, transparent),
+        transparent 120%
+      ),
+      color-mix(in srgb, var(--surface-panel) 92%, var(--page-accent-2) 8%);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .workspace-status .actions-row {
+    margin-top: 0;
   }
 
   .notes-field {
@@ -1261,6 +1465,41 @@
     flex-wrap: wrap;
     gap: 0.65rem;
     margin-top: 1rem;
+  }
+
+  .analysis-fold {
+    display: grid;
+    gap: 0.8rem;
+  }
+
+  .analysis-fold > summary {
+    list-style: none;
+    cursor: pointer;
+    user-select: none;
+    padding: 0.75rem 0.95rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid color-mix(in srgb, var(--border) 60%, var(--page-accent) 40%);
+    background:
+      linear-gradient(
+        125deg,
+        color-mix(in srgb, var(--page-accent-2) 12%, transparent),
+        transparent 55%
+      ),
+      var(--surface-subtle);
+    color: var(--text-soft);
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .analysis-fold > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .analysis-fold[open] > summary {
+    color: var(--text);
+    border-color: color-mix(in srgb, var(--border) 52%, var(--page-accent) 48%);
   }
 
   .row-actions {
@@ -1286,7 +1525,7 @@
     background: color-mix(
       in srgb,
       var(--surface-card-strong, var(--surface-strong)) 92%,
-      var(--secondary) 8%
+      var(--page-accent-2) 8%
     );
     color: var(--text);
     padding: 0.7rem 0.9rem;
@@ -1305,7 +1544,7 @@
     background: color-mix(
       in srgb,
       var(--surface-card-strong, var(--surface-strong)) 88%,
-      var(--secondary) 12%
+      var(--page-accent-2) 12%
     );
     box-shadow: 0 16px 28px color-mix(in srgb, var(--shadow-color) 12%, transparent);
   }
@@ -1414,8 +1653,16 @@
       grid-template-columns: 1fr;
     }
 
+    .guided-layout {
+      grid-template-columns: 1fr;
+    }
+
+    .workspace-status {
+      position: static;
+    }
+
     .form-grid {
-      grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
     }
   }
 

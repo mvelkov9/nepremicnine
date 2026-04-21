@@ -211,6 +211,16 @@
   :deep(.legend-chip.p-button:not(.p-button-outlined)) {
     border-color: color-mix(in srgb, var(--primary) 34%, transparent);
     box-shadow: 0 18px 36px color-mix(in srgb, var(--primary) 12%, transparent);
+    color: var(--primary-contrast);
+  }
+
+  :deep(.legend-chip.p-button:not(.p-button-outlined) .p-button-label),
+  :deep(.legend-chip.p-button:not(.p-button-outlined) .legend-copy strong) {
+    color: var(--primary-contrast);
+  }
+
+  :deep(.legend-chip.p-button:not(.p-button-outlined) .legend-copy small) {
+    color: color-mix(in srgb, var(--primary-contrast) 76%, transparent);
   }
 
   .legend-dot {

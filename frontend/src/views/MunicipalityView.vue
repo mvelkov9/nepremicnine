@@ -109,7 +109,10 @@
 
   const loading = ref(false)
   const error = ref('')
+  const transactionsError = ref('')
   const transactions = ref<ExplorerResponse<TransactionRecord>>(emptyTransactions())
+  let municipalityLoadToken = 0
+  let transactionsLoadToken = 0
 
   const detail = computed<MunicipalityDetail | null>(
     () => stats.municipalityDetail as MunicipalityDetail | null,
@@ -200,37 +203,69 @@
       median_price_per_m2: item.median_price_per_m2,
     })),
   )
+  const transactionState = computed<ExplorerResponse<TransactionRecord>>(
+    () => transactions.value || emptyTransactions(),
+  )
+  const transactionRows = computed(() => transactionState.value.items || [])
 
   function shareStyle(share: number | null | undefined) {
     return { width: `${Math.max(10, Math.round((share || 0) * 100))}%` }
   }
 
-  async function loadTransactions() {
-    const data = await stats.fetchMunicipalityTransactions(String(route.params.slug), {
-      property_type: viewerQuery.state.property_type || undefined,
-      year: viewerQuery.state.year || undefined,
-      search: viewerQuery.state.search || undefined,
-      page: transactions.value.page,
-      page_size: transactions.value.page_size,
-      sort: 'recent',
-      order: 'desc',
-    })
-    transactions.value = data || emptyTransactions()
+  async function loadTransactions(
+    municipalityRequestToken = municipalityLoadToken,
+    transactionRequestToken = ++transactionsLoadToken,
+  ) {
+    transactionsError.value = ''
+    try {
+      const data = await stats.fetchMunicipalityTransactions(String(route.params.slug), {
+        property_type: viewerQuery.state.property_type || undefined,
+        year: viewerQuery.state.year || undefined,
+        search: viewerQuery.state.search || undefined,
+        page: transactionState.value.page,
+        page_size: transactionState.value.page_size,
+        sort: 'recent',
+        order: 'desc',
+      })
+      if (
+        municipalityRequestToken !== municipalityLoadToken ||
+        transactionRequestToken !== transactionsLoadToken
+      ) {
+        return
+      }
+      transactions.value = data || emptyTransactions()
+    } catch (err) {
+      if (
+        municipalityRequestToken !== municipalityLoadToken ||
+        transactionRequestToken !== transactionsLoadToken
+      ) {
+        return
+      }
+      transactions.value = emptyTransactions()
+      transactionsError.value = getApiErrorMessage(err, t)
+    }
   }
 
   async function loadMunicipality() {
+    const requestToken = ++municipalityLoadToken
+    const transactionRequestToken = ++transactionsLoadToken
     loading.value = true
     error.value = ''
     try {
       await Promise.all([
         stats.fetchMunicipalityDetail(String(route.params.slug)),
-        loadTransactions(),
+        loadTransactions(requestToken, transactionRequestToken),
       ])
     } catch (err) {
+      if (requestToken !== municipalityLoadToken) return
       stats.resetMunicipalityDetail()
+      transactions.value = emptyTransactions()
+      transactionsError.value = ''
       error.value = getApiErrorMessage(err, t)
     } finally {
-      loading.value = false
+      if (requestToken === municipalityLoadToken) {
+        loading.value = false
+      }
     }
   }
 
@@ -527,13 +562,19 @@
               :title="t('municipality.latestTransactions')"
               compact
             >
+              <EmptyState
+                v-if="transactionsError && !transactionRows.length"
+                icon="pi pi-exclamation-triangle"
+                :message="transactionsError"
+              />
               <DataTable
-                :value="transactions.items"
+                v-else-if="transactionRows.length"
+                :value="transactionRows"
                 lazy
                 paginator
-                :rows="transactions.page_size"
-                :first="(transactions.page - 1) * transactions.page_size"
-                :total-records="transactions.total"
+                :rows="transactionState.page_size"
+                :first="(transactionState.page - 1) * transactionState.page_size"
+                :total-records="transactionState.total"
                 size="small"
                 striped-rows
                 responsive-layout="scroll"
@@ -572,6 +613,7 @@
                   </template>
                 </Column>
               </DataTable>
+              <EmptyState v-else :message="t('common.noData')" />
             </SectionPanel>
           </TabPanel>
 

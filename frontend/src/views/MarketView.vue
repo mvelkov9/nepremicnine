@@ -72,6 +72,12 @@
     page_size: number
   }
 
+  interface FeatureImportanceItem {
+    feature: string
+    label: string
+    importance: number
+  }
+
   interface MarketPageEvent {
     page: number
     rows: number
@@ -154,17 +160,40 @@
     page_size: 6,
   })
 
-  const marketHome = computed<MarketAnalysisData>(
-    () =>
-      (stats.marketHome as MarketAnalysisData | null) || {
-        headline: {},
-        property_type_mix: [],
-        year_coverage: [],
-      },
+  function emptyMarketHome(): MarketAnalysisData {
+    return {
+      headline: {},
+      property_type_mix: [],
+      year_coverage: [],
+    }
+  }
+
+  function emptyMarketTablePage<T>(page: number, pageSize: number): MarketTablePage<T> {
+    return {
+      items: [],
+      total: 0,
+      page,
+      page_size: pageSize,
+    }
+  }
+
+  const marketHome = computed<MarketAnalysisData>(() =>
+    marketError.value
+      ? emptyMarketHome()
+      : (stats.marketHome as MarketAnalysisData | null) || emptyMarketHome(),
   )
-  const trendData = computed<TrendPoint[]>(() => (stats.trend as TrendPoint[]) || [])
-  const distributionData = computed<PriceDistribution | null>(
-    () => (stats.priceDistribution as PriceDistribution | null) || null,
+  const trendData = computed<TrendPoint[]>(() =>
+    trendError.value ? [] : (stats.trend as TrendPoint[]) || [],
+  )
+  const distributionData = computed<PriceDistribution | null>(() =>
+    distributionError.value ? null : (stats.priceDistribution as PriceDistribution | null) || null,
+  )
+  const marketFeatureImportance = computed<FeatureImportanceItem[]>(() =>
+    featureImportanceError.value
+      ? []
+      : Array.isArray(stats.featureImportance)
+        ? (stats.featureImportance as FeatureImportanceItem[])
+        : [],
   )
 
   const selectedRegionRef = computed(() => viewerQuery.state.region || '')
@@ -500,6 +529,10 @@
       transactions.value = data || transactions.value
     } catch (error) {
       if (requestVersion !== transactionsRequestVersion) return
+      transactions.value = emptyMarketTablePage<TransactionRecord>(
+        transactions.value.page,
+        transactions.value.page_size,
+      )
       transactionsError.value = getApiErrorMessage(error, t)
     } finally {
       if (requestVersion === transactionsRequestVersion) {
@@ -526,6 +559,10 @@
       regions.value = data || regions.value
     } catch (error) {
       if (requestVersion !== regionsRequestVersion) return
+      regions.value = emptyMarketTablePage<RegionExplorerItem>(
+        regions.value.page,
+        regions.value.page_size,
+      )
       regionsError.value = getApiErrorMessage(error, t)
     } finally {
       if (requestVersion === regionsRequestVersion) {
@@ -552,6 +589,10 @@
       largestMarkets.value = data || largestMarkets.value
     } catch (error) {
       if (requestVersion !== largestMarketsRequestVersion) return
+      largestMarkets.value = emptyMarketTablePage<MunicipalityExplorerItem>(
+        largestMarkets.value.page,
+        largestMarkets.value.page_size,
+      )
       largestMarketsError.value = getApiErrorMessage(error, t)
     } finally {
       if (requestVersion === largestMarketsRequestVersion) {
@@ -578,6 +619,10 @@
       priceLeaders.value = data || priceLeaders.value
     } catch (error) {
       if (requestVersion !== priceLeadersRequestVersion) return
+      priceLeaders.value = emptyMarketTablePage<MunicipalityExplorerItem>(
+        priceLeaders.value.page,
+        priceLeaders.value.page_size,
+      )
       priceLeadersError.value = getApiErrorMessage(error, t)
     } finally {
       if (requestVersion === priceLeadersRequestVersion) {
@@ -1014,7 +1059,7 @@
               <MarketStateFrame
                 :loading="featureImportanceLoading"
                 :error="featureImportanceError"
-                :has-data="(stats.featureImportance || []).length > 0"
+                :has-data="marketFeatureImportance.length > 0"
               >
                 <template #actions>
                   <Button
@@ -1026,7 +1071,7 @@
                     @click="loadFeatureImportance"
                   />
                 </template>
-                <FeatureImportanceChart :features="stats.featureImportance" :limit="15" />
+                <FeatureImportanceChart :features="marketFeatureImportance" :limit="15" />
               </MarketStateFrame>
             </MarketSectionCard>
           </section>
@@ -1422,6 +1467,7 @@
 
   .market-page {
     gap: var(--space-section);
+    animation: market-in 420ms cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   .market-hero {
@@ -1448,6 +1494,16 @@
         var(--surface-panel)
       );
     box-shadow: 0 18px 42px color-mix(in srgb, var(--shadow-color) 10%, transparent);
+    transition:
+      border-color 180ms ease,
+      box-shadow 180ms ease,
+      transform 180ms ease;
+  }
+
+  .market-hero:hover {
+    transform: translateY(-1px);
+    border-color: color-mix(in srgb, var(--border) 54%, var(--primary) 46%);
+    box-shadow: 0 26px 52px color-mix(in srgb, var(--shadow-color) 14%, transparent);
   }
 
   .market-hero__copy {
@@ -1508,6 +1564,7 @@
     background: color-mix(in srgb, var(--surface-strong) 92%, var(--primary-overlay) 8%);
     box-shadow: 0 10px 22px color-mix(in srgb, var(--shadow-color) 8%, transparent);
     overflow-x: auto;
+    scrollbar-width: thin;
   }
 
   .market-tabs :deep(.p-tabpanels) {
@@ -1541,13 +1598,19 @@
     transition:
       transform 0.16s ease,
       border-color 0.16s ease,
-      box-shadow 0.16s ease;
+      box-shadow 0.16s ease,
+      background 0.16s ease;
   }
 
   .market-rank-row:hover {
     transform: translateY(-1px);
     border-color: color-mix(in srgb, var(--primary) 34%, transparent);
     box-shadow: 0 16px 28px color-mix(in srgb, var(--shadow-color) 14%, transparent);
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface-strong) 92%, var(--primary-overlay) 8%),
+      color-mix(in srgb, var(--surface-subtle) 84%, var(--primary-overlay) 16%)
+    );
   }
 
   .market-rank-index {
@@ -1577,6 +1640,18 @@
 
   .table-link {
     font-weight: 700;
+  }
+
+  @keyframes market-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 
   @media (max-width: 1180px) {
@@ -1623,6 +1698,22 @@
     .market-rank-row :deep(.p-tag) {
       grid-column: 1 / -1;
       justify-self: start;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .market-page {
+      animation: none;
+    }
+
+    .market-hero,
+    .market-rank-row {
+      transition: none;
+    }
+
+    .market-hero:hover,
+    .market-rank-row:hover {
+      transform: none;
     }
   }
 </style>

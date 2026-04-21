@@ -1,5 +1,5 @@
 <script setup lang="ts">
-  import { computed, onMounted, ref } from 'vue'
+  import { computed, onMounted, reactive, ref } from 'vue'
   import { RouterLink } from 'vue-router'
   import Button from 'primevue/button'
   import { useI18n } from 'vue-i18n'
@@ -32,32 +32,45 @@
   const prepareError = ref('')
   const trainingLoading = ref(false)
   const trainingError = ref('')
+  const heroAvailability = reactive({
+    trainingDataset: false,
+    modelInfo: false,
+    diagnostics: false,
+  })
+
+  const visibleTrainingDataset = computed(() =>
+    heroAvailability.trainingDataset ? dataStore.trainingDataset : null,
+  )
+  const visibleModelInfo = computed(() => (heroAvailability.modelInfo ? modelStore.info : null))
+  const visibleModelDiagnostics = computed(() =>
+    heroAvailability.diagnostics ? modelStore.diagnostics : null,
+  )
 
   const summaryCards = computed(() => [
     {
       label: t('nav.data'),
-      value: dataStore.trainingDataset?.exists
-        ? formatNumber(dataStore.trainingDataset.rows || 0)
+      value: visibleTrainingDataset.value?.exists
+        ? formatNumber(visibleTrainingDataset.value.rows || 0)
         : t('common.noData'),
-      meta: dataStore.trainingDataset?.exists
-        ? dataStore.trainingDataset.relative_path
+      meta: visibleTrainingDataset.value?.exists
+        ? visibleTrainingDataset.value.relative_path
         : t('data.noPreparedDataset'),
-      tone: (dataStore.trainingDataset?.exists ? 'success' : 'warning') as 'success' | 'warning',
+      tone: (visibleTrainingDataset.value?.exists ? 'success' : 'warning') as 'success' | 'warning',
     },
     {
       label: t('nav.model'),
-      value: modelStore.info ? t('model.modelReady') : t('model.modelMissing'),
-      meta: modelStore.info?.trained_at
-        ? formatDateTime(modelStore.info.trained_at)
+      value: visibleModelInfo.value ? t('model.modelReady') : t('model.modelMissing'),
+      meta: visibleModelInfo.value?.trained_at
+        ? formatDateTime(visibleModelInfo.value.trained_at)
         : t('model.noModel'),
-      tone: (modelStore.info ? 'success' : 'warning') as 'success' | 'warning',
+      tone: (visibleModelInfo.value ? 'success' : 'warning') as 'success' | 'warning',
     },
     {
       label: t('nav.diagnostics'),
-      value: modelStore.diagnostics ? t('common.open') : t('common.noData'),
+      value: visibleModelDiagnostics.value ? t('common.open') : t('common.noData'),
       meta:
-        modelStore.info?.global_metrics?.r2 != null
-          ? `R2 ${modelStore.info.global_metrics.r2.toFixed(3)}`
+        visibleModelInfo.value?.global_metrics?.r2 != null
+          ? `R2 ${visibleModelInfo.value.global_metrics.r2.toFixed(3)}`
           : t('layout.page.diagnostics'),
     },
     {
@@ -90,17 +103,40 @@
     heroError.value = ''
     statsError.value = ''
     statsLoading.value = true
-    try {
-      await Promise.all([
-        dataStore.fetchTrainingDataset(),
-        modelStore.fetchInfo(),
-        modelStore.fetchDiagnostics(),
-      ])
-    } catch (error) {
-      heroError.value = getApiErrorMessage(error, t)
-    } finally {
-      statsLoading.value = false
+    const heroRequests = await Promise.allSettled([
+      dataStore.fetchTrainingDataset(),
+      modelStore.fetchInfo(),
+      modelStore.fetchDiagnostics(),
+    ])
+    const heroSections = [
+      { key: 'trainingDataset' as const, label: t('nav.data') },
+      { key: 'modelInfo' as const, label: t('nav.model') },
+      { key: 'diagnostics' as const, label: t('nav.diagnostics') },
+    ]
+    const failedSections: string[] = []
+    let firstFailure: unknown = null
+
+    heroRequests.forEach((result, index) => {
+      const section = heroSections[index]
+      const succeeded = result.status === 'fulfilled'
+      heroAvailability[section.key] = succeeded
+
+      if (!succeeded) {
+        failedSections.push(section.label)
+        if (firstFailure == null) {
+          firstFailure = result.reason
+        }
+      }
+    })
+
+    if (failedSections.length) {
+      const message = firstFailure ? getApiErrorMessage(firstFailure, t) : t('common.error')
+      heroError.value =
+        failedSections.length === 1
+          ? `${failedSections[0]}: ${message}`
+          : `${message} (${failedSections.join(', ')})`
     }
+    statsLoading.value = false
 
     try {
       const { data } = await api.get('/api/admin/stats')
@@ -248,6 +284,8 @@
   .admin-home {
     display: grid;
     gap: 1rem;
+    --page-accent: var(--secondary);
+    --page-accent-2: var(--accent);
   }
 
   .hero-link {
@@ -263,6 +301,11 @@
     border-radius: var(--radius-lg);
     border: 1px solid color-mix(in srgb, var(--danger) 28%, var(--border) 72%);
     background:
+      radial-gradient(
+        circle at top left,
+        color-mix(in srgb, var(--page-accent-2) 18%, transparent),
+        transparent 38%
+      ),
       radial-gradient(
         circle at top right,
         color-mix(in srgb, var(--danger) 12%, transparent),
@@ -297,16 +340,35 @@
   .admin-home-rail {
     display: grid;
     gap: 1rem;
+    grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+    align-items: start;
+  }
+
+  .admin-home-grid :deep(.admin-home-feed) {
+    border-color: color-mix(in srgb, var(--border) 56%, var(--page-accent) 44%);
+    background:
+      radial-gradient(
+        circle at top left,
+        color-mix(in srgb, var(--page-accent) 13%, transparent),
+        transparent 44%
+      ),
+      var(--surface-panel);
+  }
+
+  .admin-home-grid :deep(.admin-home-run-list) {
+    border-color: color-mix(in srgb, var(--border) 56%, var(--page-accent-2) 44%);
+    background:
+      radial-gradient(
+        circle at top right,
+        color-mix(in srgb, var(--page-accent-2) 13%, transparent),
+        transparent 44%
+      ),
+      var(--surface-panel);
   }
 
   @media (min-width: 1120px) {
-    .admin-home-grid {
-      grid-template-columns: minmax(0, 1.35fr) minmax(20rem, 0.95fr);
-    }
-
     .admin-home-rail {
-      position: sticky;
-      top: 1rem;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
   }
 

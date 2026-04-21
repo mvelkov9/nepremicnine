@@ -2,6 +2,7 @@
   import { ref, onMounted, onUnmounted, computed, reactive, watch } from 'vue'
   import { useRouter } from 'vue-router'
   import { useI18n } from 'vue-i18n'
+  import Skeleton from 'primevue/skeleton'
   import AdminRunDetailPanel from '../components/admin/AdminRunDetailPanel.vue'
   import EmptyState from '../components/EmptyState.vue'
   import PageHeader from '../components/PageHeader.vue'
@@ -41,6 +42,7 @@
   const router = useRouter()
 
   const loading = ref(false)
+  const bootstrapLoading = ref(true)
   const error = ref('')
   const result = ref<PrepareResultPayload | null>(null)
   const prepareStatus = ref<PrepareJobStatus | null>(null)
@@ -106,6 +108,7 @@
 
   // ETN pair mode
   const etnMode = ref<PrepareMode>('bulk')
+  const prepareWorkspaceTab = ref('configure')
   const singlePosli = ref('')
   const singleDelistavb = ref('')
 
@@ -163,16 +166,39 @@
   const detectedPairsFromApi = ref<PrepareDetectedPair[]>([])
   const datasetsLoadingForSelection = ref(false)
   const datasetsLoadedForSelection = ref(false)
+  const prepareRunsLoaded = ref(false)
+  const prepareRunsLoading = ref(false)
+  const trainingDatasetLoaded = ref(false)
+
+  async function ensurePrepareRunsLoaded(force = false) {
+    if (!force && (prepareRunsLoaded.value || prepareRunsLoading.value)) return
+
+    prepareRunsLoading.value = true
+    try {
+      await workbench.fetchPrepareRuns()
+      prepareRunsLoaded.value = true
+    } catch {
+      prepareRunsLoaded.value = false
+    } finally {
+      prepareRunsLoading.value = false
+    }
+  }
+
+  async function ensureTrainingDatasetLoaded(force = false) {
+    if (!force && trainingDatasetLoaded.value) return
+    await dataStore.fetchTrainingDataset()
+    trainingDatasetLoaded.value = true
+  }
 
   async function initializePage() {
     error.value = ''
-    await Promise.allSettled([
-      fetchDetectedPairs(),
-      dataStore.fetchTrainingDataset(),
-      modelStore.fetchActiveTraining(),
-      workbench.fetchPrepareRuns(),
-    ])
-    await syncExistingPrepareJob()
+    bootstrapLoading.value = true
+    try {
+      await Promise.allSettled([fetchDetectedPairs(), modelStore.fetchActiveTraining()])
+      await syncExistingPrepareJob()
+    } finally {
+      bootstrapLoading.value = false
+    }
   }
 
   onMounted(async () => {
@@ -182,9 +208,21 @@
   watch(
     () => workbench.prepareRuns,
     (runs) => {
-      if (!runs.length || selectedPrepareRunId.value) return
-      selectedPrepareRunId.value = runs[0].id
-      void loadPrepareRunDetail(runs[0].id)
+      if (!runs.length) return
+
+      const resolvedRunId = runs.some((item) => item.id === selectedPrepareRunId.value)
+        ? selectedPrepareRunId.value
+        : runs[0].id
+
+      if (!resolvedRunId) return
+
+      if (selectedPrepareRunId.value !== resolvedRunId) {
+        selectedPrepareRunId.value = resolvedRunId
+      }
+
+      if (selectedPrepareRun.value?.id !== resolvedRunId) {
+        void loadPrepareRunDetail(resolvedRunId)
+      }
     },
     { immediate: true },
   )
@@ -198,6 +236,38 @@
       void ensureSelectionDatasetsLoaded()
     }
   })
+
+  watch(
+    () => prepareWorkspaceTab.value,
+    (tab) => {
+      if (tab === 'monitor') {
+        void ensurePrepareRunsLoaded()
+      }
+    },
+    { immediate: true },
+  )
+
+  watch(
+    () => prepareStatus.value?.status,
+    (status) => {
+      if (status === 'completed' && result.value) {
+        prepareWorkspaceTab.value = 'results'
+        return
+      }
+      if (status && status !== 'completed' && status !== 'failed') {
+        prepareWorkspaceTab.value = 'monitor'
+      }
+    },
+  )
+
+  watch(
+    () => result.value,
+    (nextResult) => {
+      if (nextResult) {
+        prepareWorkspaceTab.value = 'results'
+      }
+    },
+  )
 
   // --- Dataset role & year helpers (mirrors v1 logic) ---
 
@@ -409,7 +479,7 @@
     if (data.status === 'completed') {
       result.value = data.result || null
       if (!result.value?.training_dataset) {
-        await dataStore.fetchTrainingDataset()
+        await ensureTrainingDatasetLoaded(true)
       }
       stopPreparePolling()
       loading.value = false
@@ -542,7 +612,7 @@
         enrichment_options: buildEnrichmentOptionsPayload(),
       })
       result.value = data
-      await dataStore.fetchTrainingDataset()
+      await ensureTrainingDatasetLoaded(true)
     } catch (e) {
       error.value = getPrepareErrorMessage(e)
     } finally {
@@ -561,7 +631,7 @@
         column_map: map,
       })
       result.value = data
-      await dataStore.fetchTrainingDataset()
+      await ensureTrainingDatasetLoaded(true)
     } catch (e) {
       if (e instanceof SyntaxError) {
         error.value = t('prepare.invalidJson')
@@ -863,276 +933,362 @@
       :status-severity="prepareStatusSeverity"
     />
 
-    <section class="prepare-workspace-grid">
-      <div class="prepare-workbench-panel">
-        <Tabs v-model:value="etnMode">
-          <TabList>
-            <Tab value="bulk">{{ t('prepare.autoEtn') }}</Tab>
-            <Tab value="single">{{ t('prepare.singleEtn') }}</Tab>
-            <Tab value="manual">{{ t('prepare.manualMapping') }}</Tab>
-          </TabList>
-
-          <TabPanels>
-            <!-- Bulk ETN -->
-            <TabPanel value="bulk">
-              <div class="prepare-tab-panel">
-                <div class="prepare-section-head">
-                  <PageHeader
-                    compact
-                    :eyebrow="t('prepare.autoEtn')"
-                    :title="t('prepare.autoEtn')"
-                    :description="t('prepare.autoEtnDesc')"
-                  />
-
-                  <div v-if="detectedPairs.length" class="prepare-selection-summary">
-                    <div class="prepare-selection-stat">
-                      <span class="prepare-selection-label">{{ t('prepare.autoEtn') }}</span>
-                      <strong>{{ fmt(selectedPairCount) }} / {{ fmt(detectedPairCount) }}</strong>
-                    </div>
-                    <p class="muted prepare-selection-note">
-                      {{ allSelected ? t('prepare.deselectAll') : t('prepare.selectAll') }}
-                    </p>
-                  </div>
+    <Tabs v-model:value="prepareWorkspaceTab" class="prepare-stage-tabs">
+      <TabList>
+        <Tab value="configure">{{ t('prepare.stepInit') }}</Tab>
+        <Tab value="monitor">{{ t('prepare.prepareProgress') }}</Tab>
+        <Tab value="results">{{ t('prepare.stepDone') }}</Tab>
+      </TabList>
+      <TabPanels>
+        <TabPanel value="configure">
+          <section class="prepare-workspace-grid prepare-workspace-grid--single">
+            <div
+              v-if="bootstrapLoading"
+              class="prepare-workbench-panel prepare-workbench-panel--loading"
+            >
+              <div class="prepare-loading-shell" aria-busy="true">
+                <div class="prepare-loading-tabs">
+                  <Skeleton width="9rem" height="2.4rem" border-radius="999px" />
+                  <Skeleton width="9rem" height="2.4rem" border-radius="999px" />
+                  <Skeleton width="9rem" height="2.4rem" border-radius="999px" />
                 </div>
-
-                <div v-if="!detectedPairs.length" class="muted">
-                  {{ t('prepare.noPairsDetected') }}
+                <Skeleton width="42%" height="1rem" />
+                <Skeleton width="74%" height="0.95rem" />
+                <Skeleton width="100%" height="10rem" border-radius="var(--radius-sm)" />
+                <Skeleton width="100%" height="12rem" border-radius="var(--radius-sm)" />
+                <div class="prepare-loading-action">
+                  <Skeleton width="11rem" height="2.8rem" border-radius="999px" />
                 </div>
+              </div>
+            </div>
 
-                <div v-else>
-                  <PrepareEnrichmentOptions
-                    :model-value="enrichmentOptions"
-                    @update:model-value="updateEnrichmentOptions"
-                    :title="t('prepare.enrichmentOptions')"
-                    :description="t('prepare.enrichmentOptionsDesc')"
-                    :options="ENRICHMENT_OPTIONS"
-                    :variant-placeholder="t('prepare.variantLabelPlaceholder')"
-                  />
+            <div v-else class="prepare-workbench-panel">
+              <Tabs v-model:value="etnMode">
+                <TabList>
+                  <Tab value="bulk">{{ t('prepare.autoEtn') }}</Tab>
+                  <Tab value="single">{{ t('prepare.singleEtn') }}</Tab>
+                  <Tab value="manual">{{ t('prepare.manualMapping') }}</Tab>
+                </TabList>
 
-                  <div class="prepare-selection-toolbar prepare-selection-toolbar--split">
-                    <p class="prepare-selection-toolbar-note muted">
-                      {{ fmt(selectedPairCount) }} / {{ fmt(detectedPairCount) }}
-                    </p>
-                    <Button
-                      size="small"
-                      severity="secondary"
-                      text
-                      :icon="allSelected ? 'pi pi-check-square' : 'pi pi-stop'"
-                      :label="allSelected ? t('prepare.deselectAll') : t('prepare.selectAll')"
-                      @click="allSelected ? deselectAll() : selectAll()"
-                    />
-                  </div>
+                <TabPanels>
+                  <!-- Bulk ETN -->
+                  <TabPanel value="bulk">
+                    <div class="prepare-tab-panel">
+                      <div class="prepare-section-head">
+                        <PageHeader
+                          compact
+                          :eyebrow="t('prepare.autoEtn')"
+                          :title="t('prepare.autoEtn')"
+                          :description="t('prepare.autoEtnDesc')"
+                        />
 
-                  <div class="prepare-table-shell">
-                    <DataTable
-                      v-model:selection="selectedPairsModel"
-                      :value="detectedPairs"
-                      data-key="year"
-                      striped-rows
-                      size="small"
-                    >
-                      <Column selection-mode="multiple" header-style="width: 3rem" />
-                      <Column :header="t('prepare.year')">
-                        <template #body="{ data: pair }">
-                          <Tag :value="String(pair.year)" severity="info" />
-                        </template>
-                      </Column>
-                      <Column :header="t('prepare.posliFile')">
-                        <template #body="{ data: pair }">
-                          {{ pair.posli.original_name }}
-                        </template>
-                      </Column>
-                      <Column :header="t('prepare.delistavbFile')">
-                        <template #body="{ data: pair }">
-                          {{ pair.delistavb.original_name }}
-                        </template>
-                      </Column>
-                      <Column :header="t('prepare.pairStatus')">
-                        <template #body="{ data: pair }">
-                          <Tag
-                            :value="pairStatusLabel(pair)"
-                            :severity="
-                              pairStatus(pair) === 'complete'
-                                ? 'success'
-                                : pairStatus(pair) === 'ready'
-                                  ? 'info'
-                                  : 'warn'
-                            "
+                        <div v-if="detectedPairs.length" class="prepare-selection-summary">
+                          <div class="prepare-selection-stat">
+                            <span class="prepare-selection-label">{{ t('prepare.autoEtn') }}</span>
+                            <strong
+                              >{{ fmt(selectedPairCount) }} / {{ fmt(detectedPairCount) }}</strong
+                            >
+                          </div>
+                          <p class="muted prepare-selection-note">
+                            {{ allSelected ? t('prepare.deselectAll') : t('prepare.selectAll') }}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div v-if="!detectedPairs.length" class="muted">
+                        {{ t('prepare.noPairsDetected') }}
+                      </div>
+
+                      <div v-else>
+                        <details class="prepare-fold" open>
+                          <summary>{{ t('prepare.enrichmentOptions') }}</summary>
+                          <PrepareEnrichmentOptions
+                            :model-value="enrichmentOptions"
+                            @update:model-value="updateEnrichmentOptions"
+                            :title="t('prepare.enrichmentOptions')"
+                            :description="t('prepare.enrichmentOptionsDesc')"
+                            :options="ENRICHMENT_OPTIONS"
+                            :variant-placeholder="t('prepare.variantLabelPlaceholder')"
                           />
-                        </template>
-                      </Column>
-                    </DataTable>
-                  </div>
+                        </details>
 
-                  <div class="prepare-action-row">
-                    <Button
-                      icon="pi pi-cog"
-                      :loading="loading"
-                      :disabled="loading || trainingLocked || !selectedPairs().length"
-                      :label="loading ? t('common.loading') : t('prepare.prepareButton')"
-                      @click="prepareEtnBulk"
-                    />
-                  </div>
+                        <details class="prepare-fold" open>
+                          <summary>{{ t('prepare.autoEtn') }}</summary>
+                          <div class="prepare-selection-toolbar prepare-selection-toolbar--split">
+                            <p class="prepare-selection-toolbar-note muted">
+                              {{ fmt(selectedPairCount) }} / {{ fmt(detectedPairCount) }}
+                            </p>
+                            <Button
+                              size="small"
+                              severity="secondary"
+                              text
+                              :icon="allSelected ? 'pi pi-check-square' : 'pi pi-stop'"
+                              :label="
+                                allSelected ? t('prepare.deselectAll') : t('prepare.selectAll')
+                              "
+                              @click="allSelected ? deselectAll() : selectAll()"
+                            />
+                          </div>
+
+                          <div class="prepare-table-shell">
+                            <DataTable
+                              v-model:selection="selectedPairsModel"
+                              :value="detectedPairs"
+                              data-key="year"
+                              striped-rows
+                              size="small"
+                            >
+                              <Column selection-mode="multiple" header-style="width: 3rem" />
+                              <Column :header="t('prepare.year')">
+                                <template #body="{ data: pair }">
+                                  <Tag :value="String(pair.year)" severity="info" />
+                                </template>
+                              </Column>
+                              <Column :header="t('prepare.posliFile')">
+                                <template #body="{ data: pair }">
+                                  {{ pair.posli.original_name }}
+                                </template>
+                              </Column>
+                              <Column :header="t('prepare.delistavbFile')">
+                                <template #body="{ data: pair }">
+                                  {{ pair.delistavb.original_name }}
+                                </template>
+                              </Column>
+                              <Column :header="t('prepare.pairStatus')">
+                                <template #body="{ data: pair }">
+                                  <Tag
+                                    :value="pairStatusLabel(pair)"
+                                    :severity="
+                                      pairStatus(pair) === 'complete'
+                                        ? 'success'
+                                        : pairStatus(pair) === 'ready'
+                                          ? 'info'
+                                          : 'warn'
+                                    "
+                                  />
+                                </template>
+                              </Column>
+                            </DataTable>
+                          </div>
+                        </details>
+
+                        <div class="prepare-action-row">
+                          <Button
+                            icon="pi pi-cog"
+                            :loading="loading"
+                            :disabled="loading || trainingLocked || !selectedPairs().length"
+                            :label="loading ? t('common.loading') : t('prepare.prepareButton')"
+                            @click="prepareEtnBulk"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </TabPanel>
+
+                  <!-- Single ETN -->
+                  <TabPanel value="single">
+                    <div class="prepare-tab-panel">
+                      <PageHeader
+                        compact
+                        :eyebrow="t('prepare.singleEtn')"
+                        :title="t('prepare.singleEtn')"
+                        :description="t('prepare.singleEtnDesc')"
+                      />
+
+                      <div class="prepare-form-grid">
+                        <div>
+                          <label class="form-label">{{ t('prepare.posliFile') }}</label>
+                          <Select
+                            v-model="singlePosli"
+                            :options="[
+                              { label: t('prepare.selectFile'), value: '' },
+                              ...getDatasetPaths(),
+                            ]"
+                            option-label="label"
+                            option-value="value"
+                            :loading="datasetsLoadingForSelection"
+                          />
+                        </div>
+                        <div>
+                          <label class="form-label">{{ t('prepare.delistavbFile') }}</label>
+                          <Select
+                            v-model="singleDelistavb"
+                            :options="[
+                              { label: t('prepare.selectFile'), value: '' },
+                              ...getDatasetPaths(),
+                            ]"
+                            option-label="label"
+                            option-value="value"
+                            :loading="datasetsLoadingForSelection"
+                          />
+                        </div>
+                      </div>
+
+                      <PrepareEnrichmentOptions
+                        class="mt-4"
+                        :model-value="enrichmentOptions"
+                        @update:model-value="updateEnrichmentOptions"
+                        :title="t('prepare.enrichmentOptions')"
+                        :description="t('prepare.enrichmentOptionsDesc')"
+                        :options="ENRICHMENT_OPTIONS"
+                        :variant-placeholder="t('prepare.variantLabelPlaceholder')"
+                      />
+
+                      <Button
+                        icon="pi pi-cog"
+                        :loading="loading"
+                        :disabled="loading || trainingLocked || !singlePosli || !singleDelistavb"
+                        :label="loading ? t('common.loading') : t('prepare.prepareButton')"
+                        @click="prepareEtnSingle"
+                      />
+                    </div>
+                  </TabPanel>
+
+                  <!-- Manual mapping -->
+                  <TabPanel value="manual">
+                    <div class="prepare-tab-panel">
+                      <PageHeader
+                        compact
+                        :eyebrow="t('prepare.manualMapping')"
+                        :title="t('prepare.manualMapping')"
+                        :description="t('prepare.manualDesc')"
+                      />
+
+                      <div class="mb-4">
+                        <label class="form-label">{{ t('prepare.sourceFile') }}</label>
+                        <Select
+                          v-model="manualCsvPath"
+                          :options="[
+                            { label: t('prepare.selectFile'), value: '' },
+                            ...getDatasetPaths(),
+                          ]"
+                          option-label="label"
+                          option-value="value"
+                          :loading="datasetsLoadingForSelection"
+                        />
+                      </div>
+
+                      <div>
+                        <label class="form-label">{{ t('prepare.columnMapping') }}</label>
+                        <Textarea
+                          v-model="columnMap"
+                          class="prepare-code-textarea"
+                          rows="8"
+                          :placeholder="columnMapPlaceholder"
+                          auto-resize
+                        />
+                      </div>
+
+                      <Button
+                        icon="pi pi-cog"
+                        :loading="loading"
+                        :disabled="loading || trainingLocked || !manualCsvPath || !columnMap"
+                        :label="loading ? t('common.loading') : t('prepare.prepareButton')"
+                        @click="prepareManual"
+                      />
+                    </div>
+                  </TabPanel>
+                </TabPanels>
+              </Tabs>
+            </div>
+          </section>
+        </TabPanel>
+
+        <TabPanel value="monitor">
+          <section class="prepare-monitor-grid">
+            <aside class="prepare-side-stack">
+              <div
+                v-if="prepareRunsLoading && !prepareRunsLoaded"
+                class="prepare-workbench-panel prepare-workbench-panel--loading"
+                aria-busy="true"
+              >
+                <div class="prepare-loading-shell">
+                  <Skeleton width="42%" height="1rem" />
+                  <Skeleton width="70%" height="0.95rem" />
+                  <Skeleton width="100%" height="10rem" border-radius="var(--radius-sm)" />
                 </div>
               </div>
-            </TabPanel>
+              <AdminRunDetailPanel
+                v-else
+                :eyebrow="t('nav.prepare')"
+                :title="t('workbench.recentPrepareRuns')"
+                :description="t('workbench.prepareRunDetailHint')"
+                run-type="prepare"
+                :runs="workbench.prepareRuns.slice(0, 8)"
+                :selected-run-id="selectedPrepareRunId"
+                :selected-run="selectedPrepareRun"
+                :loading="workbench.prepareRunDetailLoading"
+                :error="workbench.prepareRunDetailError || workbench.prepareRunsError"
+                @select="loadPrepareRunDetail"
+              />
 
-            <!-- Single ETN -->
-            <TabPanel value="single">
-              <div class="prepare-tab-panel">
-                <PageHeader
-                  compact
-                  :eyebrow="t('prepare.singleEtn')"
-                  :title="t('prepare.singleEtn')"
-                  :description="t('prepare.singleEtnDesc')"
-                />
-
-                <div class="prepare-form-grid">
-                  <div>
-                    <label class="form-label">{{ t('prepare.posliFile') }}</label>
-                    <Select
-                      v-model="singlePosli"
-                      :options="[
-                        { label: t('prepare.selectFile'), value: '' },
-                        ...getDatasetPaths(),
-                      ]"
-                      option-label="label"
-                      option-value="value"
-                      :loading="datasetsLoadingForSelection"
-                    />
-                  </div>
-                  <div>
-                    <label class="form-label">{{ t('prepare.delistavbFile') }}</label>
-                    <Select
-                      v-model="singleDelistavb"
-                      :options="[
-                        { label: t('prepare.selectFile'), value: '' },
-                        ...getDatasetPaths(),
-                      ]"
-                      option-label="label"
-                      option-value="value"
-                      :loading="datasetsLoadingForSelection"
-                    />
-                  </div>
-                </div>
-
-                <PrepareEnrichmentOptions
-                  class="mt-4"
-                  :model-value="enrichmentOptions"
-                  @update:model-value="updateEnrichmentOptions"
-                  :title="t('prepare.enrichmentOptions')"
-                  :description="t('prepare.enrichmentOptionsDesc')"
-                  :options="ENRICHMENT_OPTIONS"
-                  :variant-placeholder="t('prepare.variantLabelPlaceholder')"
-                />
-
-                <Button
-                  icon="pi pi-cog"
-                  :loading="loading"
-                  :disabled="loading || trainingLocked || !singlePosli || !singleDelistavb"
-                  :label="loading ? t('common.loading') : t('prepare.prepareButton')"
-                  @click="prepareEtnSingle"
-                />
-              </div>
-            </TabPanel>
-
-            <!-- Manual mapping -->
-            <TabPanel value="manual">
-              <div class="prepare-tab-panel">
-                <PageHeader
-                  compact
-                  :eyebrow="t('prepare.manualMapping')"
-                  :title="t('prepare.manualMapping')"
-                  :description="t('prepare.manualDesc')"
-                />
-
-                <div class="mb-4">
-                  <label class="form-label">{{ t('prepare.sourceFile') }}</label>
-                  <Select
-                    v-model="manualCsvPath"
-                    :options="[{ label: t('prepare.selectFile'), value: '' }, ...getDatasetPaths()]"
-                    option-label="label"
-                    option-value="value"
-                    :loading="datasetsLoadingForSelection"
+              <div v-if="error" class="state-card state-card-stack" role="alert">
+                <EmptyState icon="pi pi-exclamation-triangle" :message="error" />
+                <div class="state-card-actions">
+                  <Button
+                    size="small"
+                    severity="secondary"
+                    outlined
+                    icon="pi pi-refresh"
+                    :label="t('common.retry')"
+                    @click="initializePage"
                   />
                 </div>
+              </div>
 
-                <div>
-                  <label class="form-label">{{ t('prepare.columnMapping') }}</label>
-                  <Textarea
-                    v-model="columnMap"
-                    class="prepare-code-textarea"
-                    rows="8"
-                    :placeholder="columnMapPlaceholder"
-                    auto-resize
-                  />
-                </div>
+              <PrepareProgressPanel
+                v-if="prepareProgressVisible"
+                :eyebrow="t('prepare.prepareProgress')"
+                :title="prepareStageLabel"
+                :description="t('prepare.jobProgressDesc')"
+                :status-label="prepareStatusLabel"
+                :status-severity="prepareStatusSeverity"
+                :progress="prepareProgress"
+                :current-label="prepareStatus?.current_label"
+                :timeline="prepareTimeline"
+                :error="prepareStatus?.error"
+                @retry="syncExistingPrepareJob"
+              />
+            </aside>
 
-                <Button
-                  icon="pi pi-cog"
-                  :loading="loading"
-                  :disabled="loading || trainingLocked || !manualCsvPath || !columnMap"
-                  :label="loading ? t('common.loading') : t('prepare.prepareButton')"
-                  @click="prepareManual"
+            <div class="card prepare-monitor-card">
+              <PageHeader
+                compact
+                :eyebrow="t('prepare.prepareProgress')"
+                :title="prepareStatusLabel"
+                :description="prepareStageLabel"
+              />
+              <div class="kpi-grid">
+                <MetricCard
+                  v-for="item in prepareSummaryCards"
+                  :key="item.label"
+                  :label="item.label"
+                  :value="item.value"
+                  :meta="item.meta"
+                  :tone="item.tone"
                 />
               </div>
-            </TabPanel>
-          </TabPanels>
-        </Tabs>
-      </div>
+            </div>
+          </section>
+        </TabPanel>
 
-      <aside class="prepare-side-stack">
-        <AdminRunDetailPanel
-          :eyebrow="t('nav.prepare')"
-          :title="t('workbench.recentPrepareRuns')"
-          :description="t('workbench.prepareRunDetailHint')"
-          run-type="prepare"
-          :runs="workbench.prepareRuns.slice(0, 8)"
-          :selected-run="selectedPrepareRun"
-          :loading="workbench.prepareRunDetailLoading"
-          @select="loadPrepareRunDetail"
-        />
-
-        <div v-if="error" class="state-card state-card-stack" role="alert">
-          <EmptyState icon="pi pi-exclamation-triangle" :message="error" />
-          <div class="state-card-actions">
-            <Button
-              size="small"
-              severity="secondary"
-              outlined
-              icon="pi pi-refresh"
-              :label="t('common.retry')"
-              @click="initializePage"
-            />
+        <TabPanel value="results">
+          <PrepareResultsWorkspace
+            v-if="result"
+            :result="result"
+            :selected-variant-label="selectedVariantLabel"
+            :per-year-rows="perYearRows"
+            :training-dataset-rows="trainingDatasetRows"
+            :enrichment-rows="enrichmentRows"
+            :enrichment-totals="enrichmentTotals"
+            @open-model="openModelView"
+          />
+          <div v-else class="state-card state-card-stack" role="status">
+            <EmptyState icon="pi pi-chart-line" :message="t('common.noData')" />
           </div>
-        </div>
-
-        <PrepareProgressPanel
-          v-if="prepareProgressVisible"
-          :eyebrow="t('prepare.prepareProgress')"
-          :title="prepareStageLabel"
-          :description="t('prepare.jobProgressDesc')"
-          :status-label="prepareStatusLabel"
-          :status-severity="prepareStatusSeverity"
-          :progress="prepareProgress"
-          :current-label="prepareStatus?.current_label"
-          :timeline="prepareTimeline"
-          :error="prepareStatus?.error"
-          @retry="syncExistingPrepareJob"
-        />
-      </aside>
-    </section>
-
-    <PrepareResultsWorkspace
-      v-if="result"
-      :result="result"
-      :selected-variant-label="selectedVariantLabel"
-      :per-year-rows="perYearRows"
-      :training-dataset-rows="trainingDatasetRows"
-      :enrichment-rows="enrichmentRows"
-      :enrichment-totals="enrichmentTotals"
-      @open-model="openModelView"
-    />
+        </TabPanel>
+      </TabPanels>
+    </Tabs>
   </div>
 </template>
 
@@ -1140,11 +1296,42 @@
   .prepare-page {
     display: grid;
     gap: var(--space-section);
+    --page-accent: var(--primary);
+    --page-accent-2: var(--accent);
+  }
+
+  .prepare-stage-tabs {
+    display: grid;
+    gap: var(--space-section);
+  }
+
+  .prepare-stage-tabs :deep(.p-tablist) {
+    padding: 0.35rem;
+    border: 1px solid color-mix(in srgb, var(--border) 66%, var(--page-accent) 34%);
+    border-radius: var(--radius-md);
+    background: color-mix(in srgb, var(--surface-soft) 84%, var(--page-accent) 16%);
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+
+  .prepare-stage-tabs :deep(.p-tabpanels) {
+    padding-top: 0.2rem;
   }
 
   .prepare-workspace-grid {
     display: grid;
     grid-template-columns: minmax(0, 1.55fr) minmax(320px, 0.95fr);
+    gap: var(--space-section);
+    align-items: start;
+  }
+
+  .prepare-workspace-grid--single {
+    grid-template-columns: 1fr;
+  }
+
+  .prepare-monitor-grid {
+    display: grid;
+    grid-template-columns: 1fr;
     gap: var(--space-section);
     align-items: start;
   }
@@ -1163,9 +1350,58 @@
     border-radius: var(--radius-md);
     border: 1px solid color-mix(in srgb, var(--border) 78%, var(--content-border-strong) 22%);
     background:
+      radial-gradient(
+        circle at top right,
+        color-mix(in srgb, var(--page-accent-2) 14%, transparent),
+        transparent 42%
+      ),
       linear-gradient(
         180deg,
         color-mix(in srgb, var(--surface-card-strong) 97%, transparent),
+        transparent 120%
+      ),
+      var(--surface-panel);
+    box-shadow:
+      inset 0 1px 0 var(--content-glow),
+      var(--shadow-sm);
+  }
+
+  .prepare-workbench-panel--loading {
+    min-height: 30rem;
+  }
+
+  .prepare-loading-shell,
+  .prepare-loading-tabs {
+    display: grid;
+    gap: 0.85rem;
+  }
+
+  .prepare-loading-tabs {
+    grid-template-columns: repeat(3, minmax(0, max-content));
+    align-items: center;
+  }
+
+  .prepare-loading-action {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .prepare-monitor-card {
+    order: -1;
+    display: grid;
+    gap: 1rem;
+    padding: clamp(1.05rem, 1.45vw, 1.4rem);
+    border-radius: var(--radius-md);
+    border: 1px solid color-mix(in srgb, var(--border) 72%, var(--page-accent) 28%);
+    background:
+      radial-gradient(
+        circle at top right,
+        color-mix(in srgb, var(--page-accent-2) 16%, transparent),
+        transparent 44%
+      ),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface-card-strong) 96%, transparent),
         transparent 120%
       ),
       var(--surface-panel);
@@ -1190,9 +1426,15 @@
     justify-content: space-between;
     gap: 1rem;
     padding: 0.8rem 1rem;
-    border: 1px solid var(--border);
+    border: 1px solid color-mix(in srgb, var(--border) 62%, var(--page-accent) 38%);
     border-radius: var(--radius-sm);
-    background: color-mix(in srgb, var(--surface-muted) 72%, var(--surface));
+    background:
+      linear-gradient(
+        140deg,
+        color-mix(in srgb, var(--page-accent) 12%, transparent),
+        transparent 52%
+      ),
+      color-mix(in srgb, var(--surface-muted) 72%, var(--surface));
   }
 
   .prepare-selection-stat {
@@ -1230,6 +1472,41 @@
 
   .prepare-selection-toolbar-note {
     margin: 0;
+  }
+
+  .prepare-fold {
+    display: grid;
+    gap: 0.8rem;
+  }
+
+  .prepare-fold > summary {
+    list-style: none;
+    cursor: pointer;
+    user-select: none;
+    padding: 0.75rem 0.95rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid color-mix(in srgb, var(--border) 60%, var(--page-accent) 40%);
+    background:
+      linear-gradient(
+        128deg,
+        color-mix(in srgb, var(--page-accent-2) 12%, transparent),
+        transparent 56%
+      ),
+      var(--surface-subtle);
+    color: var(--text-soft);
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .prepare-fold > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .prepare-fold[open] > summary {
+    color: var(--text);
+    border-color: color-mix(in srgb, var(--border) 52%, var(--page-accent) 48%);
   }
 
   .prepare-form-grid {
@@ -1286,6 +1563,10 @@
     .prepare-workspace-grid {
       grid-template-columns: 1fr;
     }
+
+    .prepare-monitor-grid {
+      grid-template-columns: 1fr;
+    }
   }
 
   @media (max-width: 720px) {
@@ -1311,6 +1592,14 @@
     .prepare-action-row :deep(.p-button) {
       width: 100%;
       min-width: 0;
+    }
+
+    .prepare-loading-tabs {
+      grid-template-columns: 1fr;
+    }
+
+    .prepare-loading-action {
+      justify-content: flex-start;
     }
   }
 </style>

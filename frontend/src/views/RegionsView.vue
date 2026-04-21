@@ -157,6 +157,30 @@
     },
   ])
 
+  function emptyRegionsPage(
+    page = regions.value.page,
+    pageSize = regions.value.page_size,
+  ): ExplorerPage<RegionExplorerItem> {
+    return {
+      items: [],
+      total: 0,
+      page,
+      page_size: pageSize,
+    }
+  }
+
+  function emptyDrilldownPage(
+    page = drilldown.value.page,
+    pageSize = drilldown.value.page_size,
+  ): ExplorerPage<MunicipalityExplorerItem> {
+    return {
+      items: [],
+      total: 0,
+      page,
+      page_size: pageSize,
+    }
+  }
+
   function filters() {
     return {
       property_type: viewerQuery.state.property_type || undefined,
@@ -243,6 +267,7 @@
       regions.value = data
     } catch (error) {
       if (requestVersion !== regionsRequestVersion) return
+      regions.value = emptyRegionsPage()
       regionsError.value = getApiErrorMessage(error, t)
     } finally {
       if (requestVersion === regionsRequestVersion) {
@@ -280,6 +305,7 @@
       drilldown.value = data
     } catch (error) {
       if (requestVersion !== drilldownRequestVersion) return
+      drilldown.value = emptyDrilldownPage()
       drilldownError.value = getApiErrorMessage(error, t)
     } finally {
       if (requestVersion === drilldownRequestVersion) {
@@ -547,7 +573,7 @@
                 </p>
 
                 <RegionBarChart
-                  v-if="regions.items?.length"
+                  v-else-if="regions.items?.length"
                   :regions="regions.items"
                   :metric="chartMetric"
                 />
@@ -659,7 +685,11 @@
                   />
                 </div>
               </div>
+              <p v-else-if="regionsLoading && regions.items.length" class="muted" role="status">
+                {{ t('common.loading') }}
+              </p>
               <DataTable
+                v-else-if="regions.items.length"
                 :value="regions.items"
                 lazy
                 paginator
@@ -723,6 +753,7 @@
                   </template>
                 </Column>
               </DataTable>
+              <EmptyState v-else :message="t('common.noData')" />
             </section>
           </section>
         </TabPanel>
@@ -778,7 +809,7 @@
               </p>
 
               <DataTable
-                v-if="drilldown.items?.length"
+                v-else-if="drilldown.items?.length"
                 :value="drilldown.items"
                 lazy
                 paginator

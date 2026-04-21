@@ -44,6 +44,9 @@
     </span>
     <div class="empty-copy">
       <p class="empty-message">{{ message }}</p>
+      <div v-if="$slots.actions" class="empty-actions">
+        <slot name="actions" />
+      </div>
     </div>
   </div>
 </template>
@@ -61,8 +64,8 @@
     background:
       radial-gradient(
         circle at top left,
-        color-mix(in srgb, var(--primary) 10%, transparent),
-        transparent 28%
+        color-mix(in srgb, var(--primary) 12%, transparent),
+        transparent 32%
       ),
       linear-gradient(
         180deg,
@@ -98,7 +101,7 @@
 
   .empty-copy {
     display: grid;
-    gap: 0.35rem;
+    gap: 0.5rem;
     min-width: 0;
   }
 
@@ -112,6 +115,13 @@
     text-align: left;
   }
 
+  .empty-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+  }
+
   @media (max-width: 520px) {
     .empty-state {
       grid-template-columns: 1fr;
@@ -121,6 +131,14 @@
 
     .empty-message {
       text-align: center;
+    }
+
+    .empty-actions {
+      justify-content: center;
+    }
+
+    .empty-actions :deep(.p-button) {
+      width: 100%;
     }
   }
 </style>

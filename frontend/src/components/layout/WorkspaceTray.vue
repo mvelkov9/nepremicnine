@@ -1,10 +1,12 @@
 <script setup lang="ts">
-  import { computed, watch } from 'vue'
+  import { computed, ref, watch } from 'vue'
   import { useRouter } from 'vue-router'
   import { useI18n } from 'vue-i18n'
   import Button from 'primevue/button'
   import Dialog from 'primevue/dialog'
   import Tag from 'primevue/tag'
+  import EmptyState from '../EmptyState.vue'
+  import LoadingSpinner from '../LoadingSpinner.vue'
   import {
     buildWorkspaceRoute,
     describeRoute,
@@ -14,22 +16,58 @@
   import type { WatchlistFeedItem } from '../../types/api'
   import { useUiStore } from '../../stores/ui'
   import { useWorkbenchStore } from '../../stores/workbench'
+  import { getApiErrorMessage } from '../../utils/apiError'
   import { formatCurrency, formatNumber } from '../../utils/format'
 
   const { t } = useI18n()
   const router = useRouter()
   const ui = useUiStore()
   const workbench = useWorkbenchStore()
+  const watchlistFeedLoading = ref(false)
+  const pinnedWorkspacesLoading = ref(false)
+  const watchlistFeedError = ref('')
+  const pinnedWorkspacesError = ref('')
 
   const municipalityCompareItems = computed(() =>
     workbench.compareTray.filter((item) => item.entity_type === 'municipality'),
   )
 
+  const trayWatchlistFeed = computed(() =>
+    watchlistFeedError.value ? [] : workbench.watchlistFeed,
+  )
+
+  const trayPinnedWorkspaces = computed(() =>
+    pinnedWorkspacesError.value ? [] : workbench.pinnedWorkspaces,
+  )
+
+  async function refreshWorkspaceTray() {
+    watchlistFeedLoading.value = true
+    pinnedWorkspacesLoading.value = true
+    watchlistFeedError.value = ''
+    pinnedWorkspacesError.value = ''
+
+    const [watchlistResult, workspacesResult] = await Promise.allSettled([
+      workbench.fetchWatchlistFeed(),
+      workbench.fetchWorkspaces(),
+    ])
+
+    if (watchlistResult.status === 'rejected') {
+      watchlistFeedError.value = getApiErrorMessage(watchlistResult.reason, t)
+    }
+
+    if (workspacesResult.status === 'rejected') {
+      pinnedWorkspacesError.value = getApiErrorMessage(workspacesResult.reason, t)
+    }
+
+    watchlistFeedLoading.value = false
+    pinnedWorkspacesLoading.value = false
+  }
+
   watch(
     () => ui.workspaceTrayOpen,
     async (open) => {
       if (!open) return
-      await Promise.allSettled([workbench.fetchWatchlistFeed(), workbench.fetchWorkspaces()])
+      await refreshWorkspaceTray()
     },
   )
 
@@ -179,31 +217,51 @@
       <section class="tray-column">
         <div class="tray-head">
           <h3>{{ t('workbench.watchlistFeed') }}</h3>
-          <Tag :value="String(workbench.watchlistFeed.length)" severity="secondary" />
+          <Tag :value="String(trayWatchlistFeed.length)" severity="secondary" />
         </div>
 
-        <article
-          v-for="item in workbench.watchlistFeed"
-          :key="item.id"
-          class="tray-card"
-          :class="{ clickable: Boolean(item.link) }"
-          @click="item.link && openFeedItem(item)"
-        >
-          <div>
-            <strong>{{ item.display_label }}</strong>
-            <small>
-              {{ watchlistFeedSummary(item) }}
-              <template v-if="watchlistFeedTrend(item)"> | {{ watchlistFeedTrend(item) }}</template>
-            </small>
-          </div>
-          <Tag
-            v-if="item.trend_value != null"
-            :value="`${formatNumber(item.trend_value, { maximumFractionDigits: 1 })}%`"
-            :severity="item.trend_value >= 0 ? 'success' : 'danger'"
+        <LoadingSpinner
+          v-if="watchlistFeedLoading && !trayWatchlistFeed.length"
+          :label="t('common.loading')"
+        />
+        <div v-else-if="watchlistFeedError" class="tray-state" role="alert">
+          <EmptyState icon="pi pi-exclamation-triangle" :message="watchlistFeedError" />
+          <Button
+            size="small"
+            severity="secondary"
+            outlined
+            icon="pi pi-refresh"
+            :label="t('common.retry')"
+            :disabled="watchlistFeedLoading || pinnedWorkspacesLoading"
+            @click="refreshWorkspaceTray"
           />
-        </article>
+        </div>
+        <template v-else-if="trayWatchlistFeed.length">
+          <article
+            v-for="item in trayWatchlistFeed"
+            :key="item.id"
+            class="tray-card"
+            :class="{ clickable: Boolean(item.link) }"
+            @click="item.link && openFeedItem(item)"
+          >
+            <div>
+              <strong>{{ item.display_label }}</strong>
+              <small>
+                {{ watchlistFeedSummary(item) }}
+                <template v-if="watchlistFeedTrend(item)">
+                  | {{ watchlistFeedTrend(item) }}
+                </template>
+              </small>
+            </div>
+            <Tag
+              v-if="item.trend_value != null"
+              :value="`${formatNumber(item.trend_value, { maximumFractionDigits: 1 })}%`"
+              :severity="item.trend_value >= 0 ? 'success' : 'danger'"
+            />
+          </article>
+        </template>
 
-        <p v-if="!workbench.watchlistFeed.length" class="muted tray-empty">
+        <p v-else class="muted tray-empty">
           {{ t('workbench.noWatchlistFeed') }}
         </p>
 
@@ -232,22 +290,40 @@
       <section class="tray-column">
         <div class="tray-head">
           <h3>{{ t('workbench.pinnedWorkspaces') }}</h3>
-          <Tag :value="String(workbench.pinnedWorkspaces.length)" severity="secondary" />
+          <Tag :value="String(trayPinnedWorkspaces.length)" severity="secondary" />
         </div>
 
-        <article
-          v-for="item in workbench.pinnedWorkspaces"
-          :key="item.id"
-          class="tray-card clickable"
-          @click="openPinnedWorkspace(item)"
-        >
-          <div>
-            <strong>{{ item.name }}</strong>
-            <small>{{ t(workspacePageTitleKeys[item.page] || 'app.title') }}</small>
-          </div>
-        </article>
+        <LoadingSpinner
+          v-if="pinnedWorkspacesLoading && !trayPinnedWorkspaces.length"
+          :label="t('common.loading')"
+        />
+        <div v-else-if="pinnedWorkspacesError" class="tray-state" role="alert">
+          <EmptyState icon="pi pi-exclamation-triangle" :message="pinnedWorkspacesError" />
+          <Button
+            size="small"
+            severity="secondary"
+            outlined
+            icon="pi pi-refresh"
+            :label="t('common.retry')"
+            :disabled="watchlistFeedLoading || pinnedWorkspacesLoading"
+            @click="refreshWorkspaceTray"
+          />
+        </div>
+        <template v-else-if="trayPinnedWorkspaces.length">
+          <article
+            v-for="item in trayPinnedWorkspaces"
+            :key="item.id"
+            class="tray-card clickable"
+            @click="openPinnedWorkspace(item)"
+          >
+            <div>
+              <strong>{{ item.name }}</strong>
+              <small>{{ t(workspacePageTitleKeys[item.page] || 'app.title') }}</small>
+            </div>
+          </article>
+        </template>
 
-        <p v-if="!workbench.pinnedWorkspaces.length" class="muted tray-empty">
+        <p v-else class="muted tray-empty">
           {{ t('workbench.noPinnedWorkspaces') }}
         </p>
 
@@ -286,6 +362,11 @@
   .tray-head {
     display: grid;
     gap: 0.85rem;
+  }
+
+  .tray-state {
+    display: grid;
+    gap: 0.8rem;
   }
 
   .tray-column {

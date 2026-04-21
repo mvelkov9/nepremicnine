@@ -2,6 +2,7 @@
   import Button from 'primevue/button'
   import ProgressBar from 'primevue/progressbar'
   import Tag from 'primevue/tag'
+  import Timeline from 'primevue/timeline'
   import { useI18n } from 'vue-i18n'
   import EmptyState from '../../components/EmptyState.vue'
   import PageHeader from '../../components/PageHeader.vue'
@@ -59,24 +60,21 @@
     <ProgressBar :value="progress" :show-value="false" class="prepare-progress-bar" />
 
     <div class="prepare-timeline-shell">
-      <div class="prepare-timeline">
-        <div
-          v-for="step in timeline"
-          :key="step.key"
-          class="prepare-timeline-step"
-          :class="`prepare-timeline-step--${step.state}`"
-        >
-          <span class="prepare-timeline-dot" />
-          <div class="prepare-timeline-copy">
+      <Timeline :value="timeline" class="prepare-timeline">
+        <template #marker="{ item }">
+          <span class="prepare-timeline-dot" :class="`prepare-timeline-dot--${item.state}`" />
+        </template>
+        <template #content="{ item }">
+          <div class="prepare-timeline-copy" :class="`prepare-timeline-copy--${item.state}`">
             <div class="prepare-timeline-label-row">
-              <span class="prepare-timeline-label">{{ step.label }}</span>
-              <span v-if="step.meta" class="prepare-timeline-meta">{{ step.meta }}</span>
+              <span class="prepare-timeline-label">{{ item.label }}</span>
+              <span v-if="item.meta" class="prepare-timeline-meta">{{ item.meta }}</span>
             </div>
-            <span v-if="step.detail" class="prepare-timeline-detail">{{ step.detail }}</span>
+            <span v-if="item.detail" class="prepare-timeline-detail">{{ item.detail }}</span>
 
-            <div v-if="step.substeps?.length" class="prepare-spatial-substeps">
+            <div v-if="item.substeps?.length" class="prepare-spatial-substeps">
               <div
-                v-for="substep in step.substeps"
+                v-for="substep in item.substeps"
                 :key="substep.key"
                 class="prepare-spatial-sub"
                 :class="`prepare-spatial-sub--${substep.state}`"
@@ -86,8 +84,8 @@
               </div>
             </div>
           </div>
-        </div>
-      </div>
+        </template>
+      </Timeline>
     </div>
 
     <div v-if="error" class="state-card state-card-stack" role="alert">
@@ -186,53 +184,47 @@
   }
 
   .prepare-timeline {
-    display: grid;
-    gap: 0.15rem;
+    width: 100%;
   }
 
-  .prepare-timeline-step {
-    position: relative;
-    display: flex;
-    gap: 0.85rem;
-    padding: 0.6rem 0;
+  .prepare-timeline :deep(.p-timeline-event-opposite) {
+    display: none;
   }
 
-  .prepare-timeline-step:not(:last-child)::before {
-    content: '';
-    position: absolute;
-    left: 0.6rem;
-    top: 1.55rem;
-    bottom: -0.4rem;
+  .prepare-timeline :deep(.p-timeline-event-separator) {
+    margin-inline: 0.1rem 0.75rem;
+  }
+
+  .prepare-timeline :deep(.p-timeline-event-connector) {
     width: 2px;
-    background: var(--border);
+    background: color-mix(in srgb, var(--border) 74%, var(--primary) 26%);
   }
 
-  .prepare-timeline-step--done:not(:last-child)::before {
-    background: var(--success);
+  .prepare-timeline :deep(.p-timeline-event) {
+    padding: 0.05rem 0 0.45rem;
   }
 
-  .prepare-timeline-step--active:not(:last-child)::before {
-    background: color-mix(in srgb, var(--primary) 40%, var(--border));
+  .prepare-timeline :deep(.p-timeline-event-content) {
+    min-width: 0;
   }
 
   .prepare-timeline-dot {
     width: 1.2rem;
     height: 1.2rem;
-    margin-top: 0.1rem;
     border-radius: 50%;
     border: 2px solid var(--border);
     background: var(--surface);
-    flex-shrink: 0;
+    display: inline-flex;
     position: relative;
-    z-index: 1;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 12%, transparent);
   }
 
-  .prepare-timeline-step--done .prepare-timeline-dot {
+  .prepare-timeline-dot--done {
     background: var(--success);
     border-color: var(--success);
   }
 
-  .prepare-timeline-step--done .prepare-timeline-dot::after {
+  .prepare-timeline-dot--done::after {
     content: '';
     position: absolute;
     inset: 3px;
@@ -240,21 +232,37 @@
     clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
   }
 
-  .prepare-timeline-step--active .prepare-timeline-dot {
+  .prepare-timeline-dot--active {
     border-color: var(--primary);
     background: var(--primary);
     animation: pulse-dot 1.4s ease-in-out infinite;
   }
 
-  .prepare-timeline-step--error .prepare-timeline-dot {
+  .prepare-timeline-dot--error {
     border-color: var(--danger);
     background: var(--danger);
   }
 
   .prepare-timeline-copy {
     display: grid;
-    gap: 0.15rem;
+    gap: 0.25rem;
     min-width: 0;
+  }
+
+  .prepare-timeline-copy--pending .prepare-timeline-label {
+    color: var(--text-muted);
+  }
+
+  .prepare-timeline-copy--active .prepare-timeline-detail {
+    color: var(--primary);
+  }
+
+  .prepare-timeline-copy--done .prepare-timeline-detail {
+    color: var(--success);
+  }
+
+  .prepare-timeline-copy--error .prepare-timeline-detail {
+    color: var(--danger);
   }
 
   .prepare-timeline-label-row {
@@ -269,18 +277,10 @@
     font-size: 0.88rem;
   }
 
-  .prepare-timeline-step--pending .prepare-timeline-label {
-    color: var(--text-muted);
-  }
-
   .prepare-timeline-meta,
   .prepare-timeline-detail {
     font-size: 0.8rem;
     color: var(--text-muted);
-  }
-
-  .prepare-timeline-detail {
-    color: var(--primary);
   }
 
   .prepare-spatial-substeps {

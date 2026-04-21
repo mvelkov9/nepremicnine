@@ -13,7 +13,9 @@
     description?: string
     runs?: AdminRunSummary[]
     selectedRun?: AdminRunDetail | null
+    selectedRunId?: string | null
     loading?: boolean
+    error?: string | null
     runType?: 'prepare' | 'training'
   }>()
 
@@ -26,6 +28,7 @@
   const metrics = computed(() => props.selectedRun?.metrics || [])
   const timeline = computed(() => props.selectedRun?.timeline || [])
   const artifacts = computed(() => props.selectedRun?.artifacts || [])
+  const activeRunId = computed(() => props.selectedRunId || props.selectedRun?.id || '')
   const contextRows = computed(() => {
     const context = props.selectedRun?.context || {}
     return Object.entries(context)
@@ -138,9 +141,9 @@
           v-for="item in runs || []"
           :key="item.id"
           class="run-list-item"
-          :severity="selectedRun?.id === item.id ? 'contrast' : 'secondary'"
-          :outlined="selectedRun?.id !== item.id"
-          :aria-pressed="selectedRun?.id === item.id"
+          :severity="activeRunId === item.id ? 'contrast' : 'secondary'"
+          :outlined="activeRunId !== item.id"
+          :aria-pressed="activeRunId === item.id"
           @click="emit('select', item.id)"
         >
           <div class="run-list-copy">
@@ -221,6 +224,8 @@
           </section>
         </template>
 
+        <EmptyState v-else-if="error" icon="pi pi-exclamation-triangle" :message="error" />
+
         <EmptyState v-else icon="pi pi-compass" :message="t('workbench.selectRunHint')" />
       </div>
     </div>
@@ -248,8 +253,9 @@
 
   .run-detail-shell {
     display: grid;
-    grid-template-columns: minmax(260px, 0.7fr) minmax(0, 1.3fr);
+    grid-template-columns: minmax(320px, 0.92fr) minmax(0, 1.08fr);
     gap: 1rem;
+    align-items: start;
   }
 
   :deep(.run-list-item.p-button) {
@@ -264,11 +270,20 @@
   .run-list-copy {
     display: grid;
     gap: 0.2rem;
+    min-width: 0;
   }
 
   .run-list-copy small,
   .run-detail-summary p {
     color: var(--text-soft);
+  }
+
+  .run-list-copy strong,
+  .run-list-copy small,
+  .run-detail-summary strong,
+  .context-row strong {
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
 
   .run-list-meta,
@@ -342,6 +357,7 @@
 
   .run-list-item :deep(.p-button-label) {
     width: 100%;
+    min-width: 0;
   }
 
   .artifact-row code {
@@ -350,7 +366,7 @@
     font-size: var(--text-sm);
   }
 
-  @media (max-width: 980px) {
+  @media (max-width: 1120px) {
     .run-detail-shell,
     .run-metric-grid,
     .run-section-grid {

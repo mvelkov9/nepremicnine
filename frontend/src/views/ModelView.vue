@@ -7,7 +7,12 @@
   import Button from 'primevue/button'
   import Column from 'primevue/column'
   import DataTable from 'primevue/datatable'
+  import Tab from 'primevue/tab'
+  import TabList from 'primevue/tablist'
+  import TabPanel from 'primevue/tabpanel'
+  import TabPanels from 'primevue/tabpanels'
   import Tag from 'primevue/tag'
+  import Tabs from 'primevue/tabs'
   import AdminRunDetailPanel from '../components/admin/AdminRunDetailPanel.vue'
   import AdminWorkspaceHero from '../components/admin/AdminWorkspaceHero.vue'
   import EmptyState from '../components/EmptyState.vue'
@@ -78,6 +83,7 @@
   const workbench = useWorkbenchStore()
 
   const selectedCsv = ref('')
+  const modelTab = ref<'analysis' | 'importance' | 'history'>('analysis')
   const pollTimer = ref<number | null>(null)
   const selectedTrainingRunId = ref('')
 
@@ -337,9 +343,21 @@
   watch(
     () => workbench.trainingRuns,
     (runs) => {
-      if (!runs.length || selectedTrainingRunId.value) return
-      selectedTrainingRunId.value = runs[0].id
-      void loadTrainingRunDetail(runs[0].id)
+      if (!runs.length) return
+
+      const resolvedRunId = runs.some((item) => item.id === selectedTrainingRunId.value)
+        ? selectedTrainingRunId.value
+        : runs[0].id
+
+      if (!resolvedRunId) return
+
+      if (selectedTrainingRunId.value !== resolvedRunId) {
+        selectedTrainingRunId.value = resolvedRunId
+      }
+
+      if (selectedTrainingRun.value?.id !== resolvedRunId) {
+        void loadTrainingRunDetail(resolvedRunId)
+      }
     },
     { immediate: true },
   )
@@ -434,7 +452,7 @@
   }
 
   async function refreshModelArtifacts() {
-    await Promise.all([
+    await Promise.allSettled([
       model.fetchInfo(),
       model.fetchImportance(),
       model.fetchDiagnostics(),
@@ -585,259 +603,287 @@
       </SectionPanel>
     </section>
 
-    <section class="model-secondary-grid">
-      <SectionPanel
-        v-if="modelInfo?.per_type_metrics"
-        class="model-analysis-panel"
-        :eyebrow="t('model.perTypeMetrics')"
-        :title="t('model.propertyTypeBreakdown')"
-        :description="t('model.propertyTypeBreakdownHint')"
-      >
-        <DataTable
-          :value="
-            Object.entries(modelInfo.per_type_metrics).map(([propertyType, metrics]) => ({
-              propertyType,
-              ...(metrics as Record<string, unknown>),
-            }))
-          "
-          size="small"
-          striped-rows
-          table-style="min-width: 100%"
-        >
-          <Column field="propertyType" :header="t('model.propertyType')" sortable>
-            <template #body="{ data }">{{ formatType(data.propertyType) }}</template>
-          </Column>
-          <Column field="mae" header="MAE" sortable>
-            <template #body="{ data }">{{ fmtCurrency(data.mae) }}</template>
-          </Column>
-          <Column field="rmse" header="RMSE" sortable>
-            <template #body="{ data }">{{ fmtCurrency(data.rmse) }}</template>
-          </Column>
-          <Column field="r2" :header="t('diag.r2Metric')" sortable>
-            <template #body="{ data }">
-              <Tag
-                :severity="data.r2 >= 0.7 ? 'success' : data.r2 >= 0.4 ? 'warn' : 'danger'"
-                :value="formatScore(data.r2)"
-              />
-            </template>
-          </Column>
-          <Column field="mape" header="MAPE" sortable>
-            <template #body="{ data }">{{ fmtPercent(data.mape) }}</template>
-          </Column>
-          <Column field="n_train" :header="t('diag.sampleCount')" sortable>
-            <template #body="{ data }">{{ fmt(data.n_train) }}</template>
-          </Column>
-        </DataTable>
-      </SectionPanel>
+    <Tabs v-model:value="modelTab" class="model-tabs">
+      <TabList>
+        <Tab value="analysis">{{ t('common.overview') }}</Tab>
+        <Tab value="importance">{{ t('model.featureImportance') }}</Tab>
+        <Tab v-if="isAdmin" value="history">{{ t('model.trainingHistory') }}</Tab>
+      </TabList>
+      <TabPanels>
+        <TabPanel value="analysis">
+          <section class="model-secondary-grid">
+            <SectionPanel
+              v-if="modelInfo?.per_type_metrics"
+              class="model-analysis-panel"
+              :eyebrow="t('model.perTypeMetrics')"
+              :title="t('model.propertyTypeBreakdown')"
+              :description="t('model.propertyTypeBreakdownHint')"
+            >
+              <DataTable
+                :value="
+                  Object.entries(modelInfo.per_type_metrics).map(([propertyType, metrics]) => ({
+                    propertyType,
+                    ...(metrics as Record<string, unknown>),
+                  }))
+                "
+                size="small"
+                striped-rows
+                table-style="min-width: 100%"
+              >
+                <Column field="propertyType" :header="t('model.propertyType')" sortable>
+                  <template #body="{ data }">{{ formatType(data.propertyType) }}</template>
+                </Column>
+                <Column field="mae" header="MAE" sortable>
+                  <template #body="{ data }">{{ fmtCurrency(data.mae) }}</template>
+                </Column>
+                <Column field="rmse" header="RMSE" sortable>
+                  <template #body="{ data }">{{ fmtCurrency(data.rmse) }}</template>
+                </Column>
+                <Column field="r2" :header="t('diag.r2Metric')" sortable>
+                  <template #body="{ data }">
+                    <Tag
+                      :severity="data.r2 >= 0.7 ? 'success' : data.r2 >= 0.4 ? 'warn' : 'danger'"
+                      :value="formatScore(data.r2)"
+                    />
+                  </template>
+                </Column>
+                <Column field="mape" header="MAPE" sortable>
+                  <template #body="{ data }">{{ fmtPercent(data.mape) }}</template>
+                </Column>
+                <Column field="n_train" :header="t('diag.sampleCount')" sortable>
+                  <template #body="{ data }">{{ fmt(data.n_train) }}</template>
+                </Column>
+              </DataTable>
+            </SectionPanel>
 
-      <SectionPanel
-        v-if="researchImpact"
-        class="model-analysis-panel"
-        :eyebrow="t('diag.researchImpact')"
-        :title="t('diag.perTypeFeaturePlan')"
-        :description="t('diag.researchImpactDesc')"
-      >
-        <div class="model-snapshot-metrics">
-          <MetricCard
-            v-for="card in researchSummaryCards"
-            :key="card.label"
-            :label="card.label"
-            :value="card.value"
-            :meta="card.meta"
-            :tone="card.tone || 'default'"
+            <SectionPanel
+              v-if="researchImpact"
+              class="model-analysis-panel"
+              :eyebrow="t('diag.researchImpact')"
+              :title="t('diag.perTypeFeaturePlan')"
+              :description="t('diag.researchImpactDesc')"
+            >
+              <div class="model-snapshot-metrics">
+                <MetricCard
+                  v-for="card in researchSummaryCards"
+                  :key="card.label"
+                  :label="card.label"
+                  :value="card.value"
+                  :meta="card.meta"
+                  :tone="card.tone || 'default'"
+                />
+              </div>
+
+              <DataTable
+                v-if="researchDraggingRows.length"
+                :value="researchDraggingRows"
+                size="small"
+                striped-rows
+                table-style="min-width: 100%"
+              >
+                <Column field="property_type" :header="t('diag.weakestTypes')" sortable>
+                  <template #body="{ data }">{{ formatType(data.property_type) }}</template>
+                </Column>
+                <Column field="r2" :header="t('diag.r2Metric')" sortable>
+                  <template #body="{ data }">
+                    <Tag
+                      :severity="data.r2 >= 0.7 ? 'success' : data.r2 >= 0.4 ? 'warn' : 'danger'"
+                      :value="formatScore(data.r2)"
+                    />
+                  </template>
+                </Column>
+                <Column field="mape" header="MAPE" sortable>
+                  <template #body="{ data }">{{ fmtPercent(data.mape) }}</template>
+                </Column>
+                <Column field="n_test" :header="t('diag.sampleCount')" sortable>
+                  <template #body="{ data }">{{ fmt(data.n_test) }}</template>
+                </Column>
+                <Column :header="t('diag.gapToGoal')">
+                  <template #body="{ data }">{{ formatGoalGap(data) }}</template>
+                </Column>
+              </DataTable>
+
+              <DataTable
+                v-if="researchAuditRows.length"
+                :value="researchAuditRows"
+                size="small"
+                striped-rows
+                table-style="min-width: 100%"
+              >
+                <Column field="property_type" :header="t('diag.type')" sortable>
+                  <template #body="{ data }">{{ formatType(data.property_type) }}</template>
+                </Column>
+                <Column field="feature_load" :header="t('diag.featureLoad')" sortable>
+                  <template #body="{ data }">
+                    <Tag
+                      :severity="featureLoadSeverity(data.feature_load)"
+                      :value="humanizeToken(data.feature_load)"
+                    />
+                  </template>
+                </Column>
+                <Column field="selected_total" :header="t('diag.featureCount')" sortable>
+                  <template #body="{ data }">
+                    {{ fmt(data.selected_total) }} ({{ fmt(data.selected_numeric) }}/{{
+                      fmt(data.selected_categorical)
+                    }})
+                  </template>
+                </Column>
+                <Column field="chosen_feature_variant" :header="t('diag.featureVariant')" sortable>
+                  <template #body="{ data }">{{
+                    humanizeToken(data.chosen_feature_variant)
+                  }}</template>
+                </Column>
+                <Column
+                  field="chosen_target_transform"
+                  :header="t('diag.targetTransform')"
+                  sortable
+                >
+                  <template #body="{ data }">{{
+                    humanizeToken(data.chosen_target_transform)
+                  }}</template>
+                </Column>
+                <Column field="training_policy" :header="t('diag.trainingPolicy')" sortable>
+                  <template #body="{ data }">{{ humanizeToken(data.training_policy) }}</template>
+                </Column>
+                <Column field="routing_mode" :header="t('diag.routing')" sortable>
+                  <template #body="{ data }">
+                    {{ humanizeToken(data.routing_mode) }} ·
+                    {{
+                      formatNumber(data.blend_weight, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })
+                    }}
+                  </template>
+                </Column>
+                <Column :header="t('diag.topFeatureStack')">
+                  <template #body="{ data }">{{ formatResearchTopFeatures(data) }}</template>
+                </Column>
+              </DataTable>
+            </SectionPanel>
+          </section>
+        </TabPanel>
+
+        <TabPanel value="importance">
+          <SectionPanel
+            v-if="featureImportance.length"
+            class="model-chart-panel"
+            :eyebrow="t('model.featureImportance')"
+            :title="t('model.featureImportanceTitle')"
+            :description="t('model.featureImportanceHint')"
+          >
+            <div class="importance-chart">
+              <Bar :data="importanceChart" :options="importanceOptions" />
+            </div>
+          </SectionPanel>
+        </TabPanel>
+
+        <TabPanel v-if="isAdmin" value="history">
+          <section v-if="isAdmin" class="history-grid">
+            <SectionPanel
+              class="model-history-panel"
+              :eyebrow="t('model.trainingHistory')"
+              :title="t('model.jobHistoryTitle')"
+              :description="t('model.trainingHistoryHint')"
+            >
+              <DataTable
+                :value="recentJobs"
+                size="small"
+                striped-rows
+                table-style="min-width: 100%"
+                responsive-layout="scroll"
+              >
+                <Column field="created_at" :header="t('predict.date')">
+                  <template #body="{ data }">{{ formatDate(data.created_at) }}</template>
+                </Column>
+                <Column field="status" :header="t('model.trainingStatus')">
+                  <template #body="{ data }">
+                    <Tag
+                      :severity="jobSeverity(data.status)"
+                      :value="jobStatusLabel(data.status)"
+                    />
+                  </template>
+                </Column>
+                <Column field="stage" :header="t('model.trainingStage')">
+                  <template #body="{ data }">{{ stageLabel(data.stage) }}</template>
+                </Column>
+                <Column field="progress" :header="t('model.trainingProgress')">
+                  <template #body="{ data }">{{ progressLabel(data.progress) }}</template>
+                </Column>
+                <Column field="current_model" :header="t('model.currentModel')">
+                  <template #body="{ data }">{{ currentModelLabel(data.current_model) }}</template>
+                </Column>
+                <Column field="elapsed_sec" :header="t('model.elapsed')">
+                  <template #body="{ data }">
+                    {{ formatDuration(data.elapsed_sec || data.duration_sec) }}
+                  </template>
+                </Column>
+              </DataTable>
+
+              <p v-if="!model.jobsLoading && !recentJobs.length" class="muted history-empty">
+                {{ t('model.noTrainingHistory') }}
+              </p>
+            </SectionPanel>
+
+            <SectionPanel
+              class="model-history-panel"
+              :eyebrow="t('model.completedRuns')"
+              :title="t('model.completedRunsTitle')"
+              :description="t('model.completedRunsHint')"
+            >
+              <DataTable
+                :value="recentRuns"
+                size="small"
+                striped-rows
+                table-style="min-width: 100%"
+                responsive-layout="scroll"
+              >
+                <Column field="created_at" :header="t('predict.date')">
+                  <template #body="{ data }">{{ formatDate(data.created_at) }}</template>
+                </Column>
+                <Column field="source_csv_path" :header="t('model.currentSource')" />
+                <Column field="rows" :header="t('data.rows')">
+                  <template #body="{ data }">{{ fmt(data.rows) }}</template>
+                </Column>
+                <Column field="mae" header="MAE">
+                  <template #body="{ data }">{{ fmtCurrency(data.mae) }}</template>
+                </Column>
+                <Column field="rmse" header="RMSE">
+                  <template #body="{ data }">{{ fmtCurrency(data.rmse) }}</template>
+                </Column>
+                <Column field="mape" header="MAPE">
+                  <template #body="{ data }">{{ fmtPercent(data.mape) }}</template>
+                </Column>
+                <Column field="duration_sec" :header="t('diag.duration')">
+                  <template #body="{ data }">{{ formatDuration(data.duration_sec) }}</template>
+                </Column>
+                <Column field="per_type_count" :header="t('model.perTypeModels')">
+                  <template #body="{ data }">{{ fmt(data.per_type_count) }}</template>
+                </Column>
+              </DataTable>
+
+              <p v-if="!model.runsLoading && !recentRuns.length" class="muted history-empty">
+                {{ t('model.noCompletedRuns') }}
+              </p>
+            </SectionPanel>
+          </section>
+
+          <AdminRunDetailPanel
+            v-if="isAdmin"
+            :eyebrow="t('nav.model')"
+            :title="t('workbench.recentTrainingRuns')"
+            :description="t('workbench.trainingRunDetailHint')"
+            run-type="training"
+            :runs="workbench.trainingRuns.slice(0, 8)"
+            :selected-run-id="selectedTrainingRunId"
+            :selected-run="selectedTrainingRun"
+            :loading="workbench.trainingRunDetailLoading"
+            :error="workbench.trainingRunDetailError || workbench.trainingRunsError"
+            @select="loadTrainingRunDetail"
           />
-        </div>
-
-        <DataTable
-          v-if="researchDraggingRows.length"
-          :value="researchDraggingRows"
-          size="small"
-          striped-rows
-          table-style="min-width: 100%"
-        >
-          <Column field="property_type" :header="t('diag.weakestTypes')" sortable>
-            <template #body="{ data }">{{ formatType(data.property_type) }}</template>
-          </Column>
-          <Column field="r2" :header="t('diag.r2Metric')" sortable>
-            <template #body="{ data }">
-              <Tag
-                :severity="data.r2 >= 0.7 ? 'success' : data.r2 >= 0.4 ? 'warn' : 'danger'"
-                :value="formatScore(data.r2)"
-              />
-            </template>
-          </Column>
-          <Column field="mape" header="MAPE" sortable>
-            <template #body="{ data }">{{ fmtPercent(data.mape) }}</template>
-          </Column>
-          <Column field="n_test" :header="t('diag.sampleCount')" sortable>
-            <template #body="{ data }">{{ fmt(data.n_test) }}</template>
-          </Column>
-          <Column :header="t('diag.gapToGoal')">
-            <template #body="{ data }">{{ formatGoalGap(data) }}</template>
-          </Column>
-        </DataTable>
-
-        <DataTable
-          v-if="researchAuditRows.length"
-          :value="researchAuditRows"
-          size="small"
-          striped-rows
-          table-style="min-width: 100%"
-        >
-          <Column field="property_type" :header="t('diag.type')" sortable>
-            <template #body="{ data }">{{ formatType(data.property_type) }}</template>
-          </Column>
-          <Column field="feature_load" :header="t('diag.featureLoad')" sortable>
-            <template #body="{ data }">
-              <Tag
-                :severity="featureLoadSeverity(data.feature_load)"
-                :value="humanizeToken(data.feature_load)"
-              />
-            </template>
-          </Column>
-          <Column field="selected_total" :header="t('diag.featureCount')" sortable>
-            <template #body="{ data }">
-              {{ fmt(data.selected_total) }} ({{ fmt(data.selected_numeric) }}/{{
-                fmt(data.selected_categorical)
-              }})
-            </template>
-          </Column>
-          <Column field="chosen_feature_variant" :header="t('diag.featureVariant')" sortable>
-            <template #body="{ data }">{{ humanizeToken(data.chosen_feature_variant) }}</template>
-          </Column>
-          <Column field="chosen_target_transform" :header="t('diag.targetTransform')" sortable>
-            <template #body="{ data }">{{ humanizeToken(data.chosen_target_transform) }}</template>
-          </Column>
-          <Column field="training_policy" :header="t('diag.trainingPolicy')" sortable>
-            <template #body="{ data }">{{ humanizeToken(data.training_policy) }}</template>
-          </Column>
-          <Column field="routing_mode" :header="t('diag.routing')" sortable>
-            <template #body="{ data }">
-              {{ humanizeToken(data.routing_mode) }} ·
-              {{
-                formatNumber(data.blend_weight, {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })
-              }}
-            </template>
-          </Column>
-          <Column :header="t('diag.topFeatureStack')">
-            <template #body="{ data }">{{ formatResearchTopFeatures(data) }}</template>
-          </Column>
-        </DataTable>
-      </SectionPanel>
-    </section>
-
-    <SectionPanel
-      v-if="featureImportance.length"
-      class="model-chart-panel"
-      :eyebrow="t('model.featureImportance')"
-      :title="t('model.featureImportanceTitle')"
-      :description="t('model.featureImportanceHint')"
-    >
-      <div class="importance-chart">
-        <Bar :data="importanceChart" :options="importanceOptions" />
-      </div>
-    </SectionPanel>
-
-    <section v-if="isAdmin" class="history-grid">
-      <SectionPanel
-        class="model-history-panel"
-        :eyebrow="t('model.trainingHistory')"
-        :title="t('model.jobHistoryTitle')"
-        :description="t('model.trainingHistoryHint')"
-      >
-        <DataTable
-          :value="recentJobs"
-          size="small"
-          striped-rows
-          table-style="min-width: 100%"
-          responsive-layout="scroll"
-        >
-          <Column field="created_at" :header="t('predict.date')">
-            <template #body="{ data }">{{ formatDate(data.created_at) }}</template>
-          </Column>
-          <Column field="status" :header="t('model.trainingStatus')">
-            <template #body="{ data }">
-              <Tag :severity="jobSeverity(data.status)" :value="jobStatusLabel(data.status)" />
-            </template>
-          </Column>
-          <Column field="stage" :header="t('model.trainingStage')">
-            <template #body="{ data }">{{ stageLabel(data.stage) }}</template>
-          </Column>
-          <Column field="progress" :header="t('model.trainingProgress')">
-            <template #body="{ data }">{{ progressLabel(data.progress) }}</template>
-          </Column>
-          <Column field="current_model" :header="t('model.currentModel')">
-            <template #body="{ data }">{{ currentModelLabel(data.current_model) }}</template>
-          </Column>
-          <Column field="elapsed_sec" :header="t('model.elapsed')">
-            <template #body="{ data }">
-              {{ formatDuration(data.elapsed_sec || data.duration_sec) }}
-            </template>
-          </Column>
-        </DataTable>
-
-        <p v-if="!model.jobsLoading && !recentJobs.length" class="muted history-empty">
-          {{ t('model.noTrainingHistory') }}
-        </p>
-      </SectionPanel>
-
-      <SectionPanel
-        class="model-history-panel"
-        :eyebrow="t('model.completedRuns')"
-        :title="t('model.completedRunsTitle')"
-        :description="t('model.completedRunsHint')"
-      >
-        <DataTable
-          :value="recentRuns"
-          size="small"
-          striped-rows
-          table-style="min-width: 100%"
-          responsive-layout="scroll"
-        >
-          <Column field="created_at" :header="t('predict.date')">
-            <template #body="{ data }">{{ formatDate(data.created_at) }}</template>
-          </Column>
-          <Column field="source_csv_path" :header="t('model.currentSource')" />
-          <Column field="rows" :header="t('data.rows')">
-            <template #body="{ data }">{{ fmt(data.rows) }}</template>
-          </Column>
-          <Column field="mae" header="MAE">
-            <template #body="{ data }">{{ fmtCurrency(data.mae) }}</template>
-          </Column>
-          <Column field="rmse" header="RMSE">
-            <template #body="{ data }">{{ fmtCurrency(data.rmse) }}</template>
-          </Column>
-          <Column field="mape" header="MAPE">
-            <template #body="{ data }">{{ fmtPercent(data.mape) }}</template>
-          </Column>
-          <Column field="duration_sec" :header="t('diag.duration')">
-            <template #body="{ data }">{{ formatDuration(data.duration_sec) }}</template>
-          </Column>
-          <Column field="per_type_count" :header="t('model.perTypeModels')">
-            <template #body="{ data }">{{ fmt(data.per_type_count) }}</template>
-          </Column>
-        </DataTable>
-
-        <p v-if="!model.runsLoading && !recentRuns.length" class="muted history-empty">
-          {{ t('model.noCompletedRuns') }}
-        </p>
-      </SectionPanel>
-    </section>
-
-    <AdminRunDetailPanel
-      v-if="isAdmin"
-      :eyebrow="t('nav.model')"
-      :title="t('workbench.recentTrainingRuns')"
-      :description="t('workbench.trainingRunDetailHint')"
-      run-type="training"
-      :runs="workbench.trainingRuns.slice(0, 8)"
-      :selected-run="selectedTrainingRun"
-      :loading="workbench.trainingRunDetailLoading"
-      @select="loadTrainingRunDetail"
-    />
+        </TabPanel>
+      </TabPanels>
+    </Tabs>
   </div>
 </template>
 
@@ -845,6 +891,26 @@
   .model-page {
     display: grid;
     gap: var(--space-section);
+    --page-accent: var(--primary);
+    --page-accent-2: var(--accent);
+  }
+
+  .model-tabs {
+    display: grid;
+    gap: var(--space-section);
+  }
+
+  .model-tabs :deep(.p-tablist) {
+    padding: 0.35rem;
+    border-radius: var(--radius-md);
+    border: 1px solid color-mix(in srgb, var(--border) 60%, var(--page-accent) 40%);
+    background: color-mix(in srgb, var(--surface-soft) 84%, var(--page-accent) 16%);
+  }
+
+  .model-tabs :deep(.p-tab) {
+    min-height: 2.6rem;
+    border-radius: calc(var(--radius-sm) - 2px);
+    font-weight: 700;
   }
 
   .model-primary-grid {
@@ -873,6 +939,11 @@
     overflow: hidden;
     border-radius: var(--radius-lg);
     background:
+      linear-gradient(
+        140deg,
+        color-mix(in srgb, var(--page-accent) 8%, transparent),
+        transparent 50%
+      ),
       linear-gradient(
         180deg,
         color-mix(in srgb, var(--surface-card-strong) 98%, transparent),
@@ -955,6 +1026,16 @@
   }
 
   @media (max-width: 720px) {
+    .model-tabs :deep(.p-tablist) {
+      overflow-x: auto;
+      overscroll-behavior-x: contain;
+    }
+
+    .model-tabs :deep(.p-tab) {
+      flex: 0 0 auto;
+      white-space: nowrap;
+    }
+
     .model-snapshot-metrics {
       grid-template-columns: 1fr;
     }

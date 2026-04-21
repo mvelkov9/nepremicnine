@@ -110,7 +110,7 @@ export const useStatsStore = defineStore('stats', () => {
 
   async function fetchMunicipalityDetail(slug) {
     return runLatestRequest(
-      `municipalityDetail:${slug}`,
+      'municipalityDetail',
       async (signal) => {
         const { data } = await api.get(`/api/stats/municipality/${slug}`, { signal })
         municipalityDetail.value = data

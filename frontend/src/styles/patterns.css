@@ -36,7 +36,7 @@
 .panel-head h2 {
   margin: 0;
   font-family: var(--font-display);
-  font-size: clamp(1.04rem, 1.6vw, 1.32rem);
+  font-size: clamp(1.08rem, 1.68vw, 1.38rem);
   line-height: 1.08;
   text-wrap: balance;
 }
@@ -60,6 +60,81 @@
   max-width: 44rem;
   color: var(--text-muted);
   font-size: 0.92rem;
+}
+
+.context-chip-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.context-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  max-width: 100%;
+  padding: 0.42rem 0.72rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--border) 68%, var(--page-accent, var(--primary)) 32%);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface-card-strong) 94%, transparent),
+      transparent 120%
+    ),
+    color-mix(in srgb, var(--surface-card-strong) 90%, var(--page-accent, var(--primary)) 10%);
+  box-shadow: inset 0 1px 0 var(--content-glow);
+  color: var(--text-soft);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.context-chip span,
+.context-chip strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.context-chip strong {
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.context-chip.is-accent {
+  border-color: color-mix(in srgb, var(--border) 58%, var(--primary) 42%);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface-card-strong) 94%, transparent),
+      transparent 120%
+    ),
+    color-mix(in srgb, var(--surface-card-strong) 82%, var(--primary) 18%);
+}
+
+.context-chip.is-success {
+  border-color: color-mix(in srgb, var(--border) 56%, var(--success) 44%);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface-card-strong) 94%, transparent),
+      transparent 120%
+    ),
+    color-mix(in srgb, var(--surface-card-strong) 84%, var(--success) 16%);
+}
+
+.context-chip.is-warning {
+  border-color: color-mix(in srgb, var(--border) 56%, var(--warning) 44%);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface-card-strong) 94%, transparent),
+      transparent 120%
+    ),
+    color-mix(in srgb, var(--surface-card-strong) 84%, var(--warning) 16%);
 }
 
 .page-title,
@@ -86,14 +161,24 @@
 .selected-source-card,
 .source-option,
 .mini-status-card {
-  background: var(--surface-panel);
+  background:
+    linear-gradient(
+      140deg,
+      color-mix(in srgb, var(--page-accent, var(--primary)) 8%, transparent),
+      transparent 46%
+    ),
+    var(--surface-panel);
   border: 1px solid color-mix(in srgb, var(--border) 82%, var(--content-border-strong) 18%);
   box-shadow: var(--shadow-sm);
+  transition:
+    border-color 170ms ease,
+    box-shadow 170ms ease,
+    transform 170ms ease;
 }
 
 .card {
   border-radius: var(--radius-md);
-  padding: 1.25rem;
+  padding: 1.4rem;
   box-shadow:
     inset 0 1px 0 var(--content-glow),
     var(--shadow-sm);
@@ -106,8 +191,13 @@
 }
 
 .panel {
-  padding: 1.4rem;
+  padding: 1.55rem;
   background:
+    linear-gradient(
+      120deg,
+      color-mix(in srgb, var(--page-accent-2, var(--secondary)) 8%, transparent),
+      transparent 52%
+    ),
     linear-gradient(
       180deg,
       color-mix(in srgb, var(--surface-card-strong) 98%, transparent),
@@ -119,9 +209,31 @@
     var(--shadow-sm);
 }
 
+@media (hover: hover) {
+  .card:hover,
+  .panel:hover,
+  .state-card:hover,
+  .hero-panel:hover,
+  .spotlight-card:hover,
+  .selected-source-card:hover,
+  .source-option:hover,
+  .mini-status-card:hover {
+    border-color: color-mix(in srgb, var(--border) 62%, var(--primary) 38%);
+    box-shadow:
+      inset 0 1px 0 var(--content-glow),
+      0 18px 34px color-mix(in srgb, var(--shadow-color) 12%, transparent);
+    transform: translateY(-1px);
+  }
+}
+
 .state-card {
   padding: var(--space-panel-sm) 1.2rem;
   background:
+    linear-gradient(
+      130deg,
+      color-mix(in srgb, var(--page-accent, var(--primary)) 12%, transparent),
+      transparent 58%
+    ),
     linear-gradient(
       180deg,
       color-mix(in srgb, var(--primary-overlay) 18%, transparent),
@@ -135,14 +247,19 @@
 
 .hero-shell,
 .filter-shell {
-  border: 1px solid color-mix(in srgb, var(--primary-border) 38%, var(--border) 62%);
+  border: 1px solid color-mix(in srgb, var(--border) 58%, var(--page-accent, var(--primary)) 42%);
   border-radius: var(--radius-lg);
   padding: 1.25rem;
   background:
     radial-gradient(
       circle at top right,
-      color-mix(in srgb, var(--primary-overlay) 78%, transparent),
+      color-mix(in srgb, var(--page-accent, var(--primary)) 18%, transparent),
       transparent 32%
+    ),
+    radial-gradient(
+      circle at top left,
+      color-mix(in srgb, var(--page-accent-2, var(--secondary)) 14%, transparent),
+      transparent 36%
     ),
     linear-gradient(
       180deg,
@@ -243,6 +360,26 @@
   font-size: 0.9rem;
 }
 
+.table-link {
+  color: color-mix(in srgb, var(--link) 80%, var(--text) 20%);
+  font-weight: 700;
+  text-decoration-color: color-mix(in srgb, var(--link) 58%, transparent);
+  text-underline-offset: 0.16em;
+  text-decoration-thickness: 0.09em;
+  transition:
+    color 140ms ease,
+    text-decoration-color 140ms ease;
+}
+
+.table-link:hover {
+  color: var(--link-hover);
+  text-decoration-color: color-mix(in srgb, var(--link-hover) 74%, transparent);
+}
+
+.table-link:focus-visible {
+  border-radius: 0.45rem;
+}
+
 .spotlight-grid {
   grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
   margin-bottom: 1rem;
@@ -309,15 +446,15 @@
 
 .kpi-grid {
   display: grid;
-  gap: 0.9rem;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 1.1rem;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
 }
 
 .kpi-card {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
-  padding: 0.95rem;
+  gap: 0.35rem;
+  padding: 1.1rem;
   border-radius: var(--radius-sm);
   border: 1px solid color-mix(in srgb, var(--border) 74%, var(--content-border-strong) 26%);
   background: var(--surface-subtle);
@@ -557,6 +694,20 @@
     ),
     var(--surface-subtle);
   box-shadow: var(--shadow-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card,
+  .panel,
+  .state-card,
+  .hero-panel,
+  .spotlight-card,
+  .action-tile,
+  .selected-source-card,
+  .source-option,
+  .mini-status-card {
+    transition: none;
+  }
 }
 
 .story-head {

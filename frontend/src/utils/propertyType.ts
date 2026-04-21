@@ -10,6 +10,8 @@ const FALLBACK_LABELS = {
   parcela: 'Parcela',
 }
 
+const KNOWN_PROPERTY_TYPES = new Set(Object.keys(FALLBACK_LABELS))
+
 function humanizePropertyType(value) {
   return String(value || '')
     .replaceAll('_', ' ')
@@ -18,11 +20,16 @@ function humanizePropertyType(value) {
 }
 
 export function getPropertyTypeLabel(value, t) {
-  if (!value) return ''
-  const key = `propertyTypes.${value}`
-  const translated = typeof t === 'function' ? t(key) : key
-  if (translated && translated !== key) {
-    return translated
+  const normalizedValue = String(value || '').trim()
+  if (!normalizedValue) return ''
+
+  if (KNOWN_PROPERTY_TYPES.has(normalizedValue)) {
+    const key = `propertyTypes.${normalizedValue}`
+    const translated = typeof t === 'function' ? t(key) : key
+    if (translated && translated !== key) {
+      return translated
+    }
   }
-  return FALLBACK_LABELS[value] || humanizePropertyType(value)
+
+  return FALLBACK_LABELS[normalizedValue] || humanizePropertyType(normalizedValue)
 }

@@ -155,6 +155,7 @@
   .activity-row {
     display: grid;
     gap: 0.3rem;
+    min-height: 100%;
     padding: 0.95rem 1rem;
     border-radius: var(--radius-sm);
     border: 1px solid color-mix(in srgb, var(--border) 62%, var(--primary) 38%);
@@ -199,6 +200,12 @@
 
   .activity-row p {
     margin: 0.25rem 0 0;
+  }
+
+  @media (min-width: 1180px) {
+    .activity-list {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
   }
 
   @media (max-width: 860px) {
