@@ -49,13 +49,16 @@ def _load_research_impact_report() -> dict | None:
 
 
 async def _load_cached_gurs_benchmark_payload(request: Request) -> dict:
+    # Benchmark rebuild reads the full CSV + runs predictions (~30-60s).
+    # Results only change when the model is retrained, so cache aggressively (24h).
+    # Cache is invalidated automatically on model retrain via invalidate_cache_prefixes.
     cache_key = "cache:model:benchmark:gurs:all"
     cached = await cache_get(request, cache_key)
     if cached is not None:
         return cached
 
     payload = build_gurs_benchmark_payload()
-    await cache_set(request, cache_key, payload)
+    await cache_set(request, cache_key, payload, ttl=86400)
     return payload
 
 

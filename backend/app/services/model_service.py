@@ -3727,12 +3727,18 @@ def _build_time_holdout_split(
     return X_train, X_test, y_train, y_test, info
 
 
-def _build_recency_sample_weights(frame: pd.DataFrame, y: np.ndarray | None = None) -> np.ndarray:
-    """Exponential recency + price-tier weighting.
+def _build_recency_sample_weights(
+    frame: pd.DataFrame,
+    y: np.ndarray | None = None,
+    *,
+    apply_price_boost: bool = True,
+) -> np.ndarray:
+    """Exponential recency + optional price-tier weighting.
 
     Recency: recent years get 4x the weight of oldest (exponential decay).
     Price tier: expensive properties (top quartile) get 1.5x weight to reduce
-    MAE on high-value transactions that dominate absolute error.
+    MAE on high-value transactions. Only safe WITHIN a property type —
+    disable for global-model training where price scales vary 100x across types.
     """
     years, _year_source = _extract_year_series(frame)
     if not years.notna().any():
@@ -3746,8 +3752,7 @@ def _build_recency_sample_weights(frame: pd.DataFrame, y: np.ndarray | None = No
         w_max = weights.max()
         weights = 1.0 + 3.0 * (weights - w_min) / (w_max - w_min) if w_max > w_min else np.ones(len(frame), dtype=float)
 
-    # Price-tier boost: upweight expensive properties to reduce MAE
-    if y is not None and len(y) > 100:
+    if apply_price_boost and y is not None and len(y) > 100:
         p75 = float(np.percentile(y, 75))
         if p75 > 0:
             price_boost = np.where(y >= p75, 1.5, 1.0)
@@ -4845,7 +4850,7 @@ def train_from_csv(
         fitted_trees=0,
         total_trees=global_model.iterations,
     )
-    global_sample_weight = _build_recency_sample_weights(X_train, y_train)
+    global_sample_weight = _build_recency_sample_weights(X_train, y_train, apply_price_boost=False)
     global_result = _train_single_model(
         global_model,
         X_train,
@@ -4872,7 +4877,7 @@ def train_from_csv(
     else:
         kf_plain = KFold(n_splits=OOF_STACKING_FOLDS, shuffle=True, random_state=42)
         fold_iter = kf_plain.split(X_train)
-    oof_fold_weights = _build_recency_sample_weights(X_train, y_train)
+    oof_fold_weights = _build_recency_sample_weights(X_train, y_train, apply_price_boost=False)
     # Minimum rows needed to train a CatBoost model (depth+1 to avoid constant-feature error)
     _MIN_OOF_FOLD_ROWS = 10
     for fold_idx, (fold_train_idx, fold_val_idx) in enumerate(fold_iter):
@@ -6920,7 +6925,13 @@ def build_gurs_benchmark_payload() -> dict[str, Any]:
         )
 
     ev_vals = pd.to_numeric(X_test[ev_benchmark_col], errors="coerce")
-    ev_mask = ev_vals.notna() & (ev_vals > 0)
+    # Filter broken GURS values: decimal/unit errors make some GURS valuations
+    # 1000x the actual price (e.g. a €15K apartment listed at €25M). These are
+    # upstream data errors, not real valuations — exclude them from the benchmark
+    # so Dokazi reflects genuine model-vs-GURS comparison on clean coverage.
+    actual_series = pd.Series(y_test, index=X_test.index)
+    ratio = ev_vals / actual_series.clip(lower=1)
+    ev_mask = ev_vals.notna() & (ev_vals > 0) & (ratio >= 0.1) & (ratio <= 10.0)
     if not bool(ev_mask.any()):
         return _empty_gurs_benchmark_payload(
             "No holdout transactions currently have both a model-ready record and a comparable GURS estimate.",

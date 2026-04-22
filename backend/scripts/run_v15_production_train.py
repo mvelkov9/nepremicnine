@@ -1,12 +1,16 @@
-"""Train the v16 production model.
+"""Train the v17 production model.
 
-v16 changes vs v15:
+v17 changes vs v16:
+  - Price-tier boost applied ONLY to per-type models (not global). Mixing types
+    (€10K garaza vs €500K hisa) made "top quartile" meaningless at global scope
+    and cost 0.04 R² on the global fallback.
+  - poslovni_prostor reverted to log_ppm2 (log_price hurt R² by 0.03).
+
+v16 cumulative:
   - Adaptive z-score: large types z>2.0/min=20, small types (<3000) z>2.5/min=30
-  - stanovanje min_ppm2 raised 500->700 (removes ~3K more noisy transactions)
-  - log_price target for stanovanje, hisa, poslovni specialist models
-    (captures non-linear size-price relationship)
-  - Price-tier sample weighting: top-quartile properties get 1.5x weight
-    (targets MAE reduction on expensive transactions)
+  - stanovanje min_ppm2 raised to 700
+  - log_price target for stanovanje, hisa specialist models
+  - Per-type price-tier sample weighting (top-quartile 1.5x)
 """
 
 from __future__ import annotations
@@ -35,7 +39,7 @@ def main() -> None:
         csv_path,
         model_output_path=model_path,
         artifact_metadata={
-            "variant_label": "v16_production",
+            "variant_label": "v17_production",
             "research_mode": False,
             "dataset_window": {"start_year": 2020, "end_year": 2026},
         },
