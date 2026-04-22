@@ -1,19 +1,12 @@
-"""Train the v15 production model.
+"""Train the v16 production model.
 
-v15 changes vs v13:
-  - Tightened MARKET_VALIDITY_RULES: stanovanje min_ppm2 200->500, hisa 120->250,
-    poslovni 150->250, turisticni/gostinstvo 150->200, industrijski 80->100
-  - Stronger recency sample weights: exponential decay with a 4:1 recent-to-old ratio
-  - Tighter per-municipality z-score outlier pass: z>2.0 with min_group=20 (was z>2.5/30)
-  - RMSE remains the production loss; Huber is still disabled because GPU experiments
-    were unstable and degraded holdout quality
-
-v13 cumulative changes vs v9:
-  - Market validity filter for all 9 types
-  - Per-municipality z-score outlier pass
-  - max_leaves=128 Lossguide for large types (stanovanje, hisa, parcela)
-  - 8K iters, LR=0.02, od_wait=300, max_ctr_complexity=2 for large types
-  - hp_overrides re-applied after GPU adjustments for correct per-type params
+v16 changes vs v15:
+  - Adaptive z-score: large types z>2.0/min=20, small types (<3000) z>2.5/min=30
+  - stanovanje min_ppm2 raised 500->700 (removes ~3K more noisy transactions)
+  - log_price target for stanovanje, hisa, poslovni specialist models
+    (captures non-linear size-price relationship)
+  - Price-tier sample weighting: top-quartile properties get 1.5x weight
+    (targets MAE reduction on expensive transactions)
 """
 
 from __future__ import annotations
@@ -42,7 +35,7 @@ def main() -> None:
         csv_path,
         model_output_path=model_path,
         artifact_metadata={
-            "variant_label": "v15_production",
+            "variant_label": "v16_production",
             "research_mode": False,
             "dataset_window": {"start_year": 2020, "end_year": 2026},
         },

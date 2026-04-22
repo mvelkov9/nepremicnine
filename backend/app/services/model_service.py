@@ -453,7 +453,7 @@ _ENABLE_PREDICTION_SPATIAL_ENRICHMENT = _env_bool("ENABLE_PREDICTION_SPATIAL_ENR
 _PREDICTION_ENRICHMENT_TIMEOUT_SEC = max(0.0, _env_float("PREDICTION_ENRICHMENT_TIMEOUT_SEC", 12.0))
 
 MARKET_VALIDITY_RULES: dict[str, dict[str, Any]] = {
-    "stanovanje": {"min_price_eur": 8000.0, "min_ppm2": 500.0},
+    "stanovanje": {"min_price_eur": 8000.0, "min_ppm2": 700.0},
     "hisa": {"min_price_eur": 15000.0, "min_ppm2": 250.0},
     "parcela": {"min_price_eur": 2500.0, "min_ppm2": 0.45},
     "kmetijsko": {"min_price_eur": 5000.0, "min_ppm2": 70.0, "drop_unknown_municipality": True},
@@ -1455,7 +1455,7 @@ TYPE_SPECIALIST_MODEL_PRIORS: dict[str, dict[str, Any]] = {
     # buckets will fall back to the parent hisa model.
     "hisa": {
         "feature_variant": "rich",
-        "target_transform": "log_ppm2",
+        "target_transform": "log_price",
         "min_train_rows": 8000,
         "min_test_rows": 800,
         "enable_subtype_family": True,
@@ -1468,6 +1468,41 @@ TYPE_SPECIALIST_MODEL_PRIORS: dict[str, dict[str, Any]] = {
             "min_data_in_leaf": 10,
             "l2_leaf_reg": 3.0,
             "random_strength": 1.5,
+            "od_wait": 200,
+        },
+    },
+    # v16: stanovanje specialist with log_price target — lets the model learn
+    # non-linear size-price relationships (100m² != 2x 50m²).
+    "stanovanje": {
+        "feature_variant": "rich",
+        "target_transform": "log_price",
+        "min_train_rows": 8000,
+        "min_test_rows": 800,
+        "enable_subtype_family": False,
+        "hp_overrides": {
+            "iterations": 3500,
+            "learning_rate": 0.04,
+            "depth": 8,
+            "min_data_in_leaf": 10,
+            "l2_leaf_reg": 2.0,
+            "random_strength": 1.0,
+            "od_wait": 250,
+        },
+    },
+    # v16: poslovni_prostor — log_price hurt R² (-0.033), revert to log_ppm2.
+    "poslovni_prostor": {
+        "feature_variant": "rich",
+        "target_transform": "log_ppm2",
+        "min_train_rows": 1500,
+        "min_test_rows": 200,
+        "enable_subtype_family": False,
+        "hp_overrides": {
+            "iterations": 2500,
+            "learning_rate": 0.045,
+            "depth": 7,
+            "min_data_in_leaf": 10,
+            "l2_leaf_reg": 4.0,
+            "random_strength": 2.0,
             "od_wait": 200,
         },
     },
@@ -2892,7 +2927,7 @@ def _train_specialist_fallback_model(
         f"specialist:{property_type}",
         training_progress,
         target_transform=specialist_target_transform,
-        sample_weight=_build_recency_sample_weights(X_train_type),
+        sample_weight=_build_recency_sample_weights(X_train_type, y_train_type),
     )
     base_specialist = {
         "pipeline": specialist_model,
@@ -2951,7 +2986,7 @@ def _train_specialist_fallback_model(
             f"subtype:{property_type}",
             None,
             target_transform=specialist_target_transform,
-            sample_weight=_build_recency_sample_weights(X_sub_train),
+            sample_weight=_build_recency_sample_weights(X_sub_train, y_sub_train),
         )
         subtype_models[str(subtype_key)] = {
             "pipeline": subtype_model,
@@ -3692,26 +3727,31 @@ def _build_time_holdout_split(
     return X_train, X_test, y_train, y_test, info
 
 
-def _build_recency_sample_weights(frame: pd.DataFrame) -> np.ndarray:
-    """Exponential recency weighting: recent years get 4x the weight of oldest.
+def _build_recency_sample_weights(frame: pd.DataFrame, y: np.ndarray | None = None) -> np.ndarray:
+    """Exponential recency + price-tier weighting.
 
-    Uses exponential decay so the model strongly favours recent price levels,
-    which is critical in a market with 50-70% appreciation over 6 years.
+    Recency: recent years get 4x the weight of oldest (exponential decay).
+    Price tier: expensive properties (top quartile) get 1.5x weight to reduce
+    MAE on high-value transactions that dominate absolute error.
     """
     years, _year_source = _extract_year_series(frame)
     if not years.notna().any():
-        return np.ones(len(frame), dtype=float)
+        weights = np.ones(len(frame), dtype=float)
+    else:
+        latest_year = float(years.max())
+        age = (latest_year - years).clip(lower=0.0).fillna(6.0)
+        decay_rate = 0.23  # ln(4)/6 ≈ 0.23
+        weights = np.exp(-decay_rate * age.to_numpy(dtype=float))
+        w_min = weights.min()
+        w_max = weights.max()
+        weights = 1.0 + 3.0 * (weights - w_min) / (w_max - w_min) if w_max > w_min else np.ones(len(frame), dtype=float)
 
-    latest_year = float(years.max())
-    age = (latest_year - years).clip(lower=0.0).fillna(6.0)
-    # Exponential decay: weight = base^(-age * decay_rate)
-    # At age=0 -> 1.0, at age=6 -> ~0.25, giving 4:1 ratio
-    decay_rate = 0.23  # ln(4)/6 ≈ 0.23
-    weights = np.exp(-decay_rate * age.to_numpy(dtype=float))
-    # Scale so min weight = 1.0, max = 4.0
-    w_min = weights.min()
-    w_max = weights.max()
-    weights = 1.0 + 3.0 * (weights - w_min) / (w_max - w_min) if w_max > w_min else np.ones(len(frame), dtype=float)
+    # Price-tier boost: upweight expensive properties to reduce MAE
+    if y is not None and len(y) > 100:
+        p75 = float(np.percentile(y, 75))
+        if p75 > 0:
+            price_boost = np.where(y >= p75, 1.5, 1.0)
+            weights = weights * price_boost
     return weights
 
 
@@ -4514,21 +4554,26 @@ def train_from_csv(
             if keep_mask_p2.sum() >= 100:
                 df = df[keep_mask_p2 | ~type_mask]
         # Pass 3: per (type, municipality) z-score pass — remove transactions
-        # where log(ppm2) is >2.0 std from the local group mean (min group size 20).
-        # Tightened from z>2.5/min=30 to z>2.0/min=20 to catch more local outliers
-        # (e.g. Kranj stanovanje €538/m2 among €2800 medians).
+        # where log(ppm2) deviates from the local group mean.
+        # Large types (n>=3000): z>2.0, min_group=20 (tight, catches local outliers)
+        # Small types (n<3000): z>2.5, min_group=30 (relaxed, preserves scarce data)
         if "municipality_normalized" in df.columns:
             n_before_muni = len(df)
+            type_counts = df["property_type"].value_counts()
             keep_muni = pd.Series(True, index=df.index)
-            for (_ptype, _muni), grp in df.groupby(["property_type", "municipality_normalized"]):
-                if len(grp) < 20:
+            for (ptype, _muni), grp in df.groupby(["property_type", "municipality_normalized"]):
+                n_type = int(type_counts.get(ptype, 0))
+                is_small_type = n_type < 3000
+                min_group = 30 if is_small_type else 20
+                z_threshold = 2.5 if is_small_type else 2.0
+                if len(grp) < min_group:
                     continue
                 lp = grp["_log_ppm2_tmp"]
                 mu, sigma = lp.mean(), lp.std()
                 if sigma < 0.01:
                     continue
                 z = ((lp - mu) / sigma).abs()
-                keep_muni.loc[grp.index[z > 2.0]] = False
+                keep_muni.loc[grp.index[z > z_threshold]] = False
             df = df[keep_muni]
             logger.info("Per-municipality outlier pass: %d -> %d rows", n_before_muni, len(df))
         df = df.drop(columns=["_log_ppm2_tmp"])
@@ -4800,7 +4845,7 @@ def train_from_csv(
         fitted_trees=0,
         total_trees=global_model.iterations,
     )
-    global_sample_weight = _build_recency_sample_weights(X_train)
+    global_sample_weight = _build_recency_sample_weights(X_train, y_train)
     global_result = _train_single_model(
         global_model,
         X_train,
@@ -4827,7 +4872,7 @@ def train_from_csv(
     else:
         kf_plain = KFold(n_splits=OOF_STACKING_FOLDS, shuffle=True, random_state=42)
         fold_iter = kf_plain.split(X_train)
-    oof_fold_weights = _build_recency_sample_weights(X_train)
+    oof_fold_weights = _build_recency_sample_weights(X_train, y_train)
     # Minimum rows needed to train a CatBoost model (depth+1 to avoid constant-feature error)
     _MIN_OOF_FOLD_ROWS = 10
     for fold_idx, (fold_train_idx, fold_val_idx) in enumerate(fold_iter):
@@ -5093,7 +5138,7 @@ def train_from_csv(
                                 f"type:{ptype}",
                                 training_progress,
                                 target_transform=target_transform,
-                                sample_weight=_build_recency_sample_weights(X_policy),
+                                sample_weight=_build_recency_sample_weights(X_policy, y_policy),
                             )
                             candidate_results.append(
                                 {
