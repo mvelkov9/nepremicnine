@@ -244,6 +244,15 @@ def test_normalize_house_number_key_strips_spreadsheet_decimal_suffix():
 def test_format_municipality_label_canonicalizes_aliases_and_unknowns():
     assert format_municipality_label("sv. trojica v slov. goricah") == "Sveta Trojica v Slovenskih goricah"
     assert format_municipality_label("kanal") == "Kanal ob Soči"
+    assert format_municipality_label("Dobrova") == "Dobrova - Polhov Gradec"
+    assert format_municipality_label("Dolenje Toplice") == "Dolenjske Toplice"
+    assert format_municipality_label("Ljubljana Center") == "Ljubljana"
+    assert format_municipality_label("Ljubljana - Vič") == "Ljubljana"
+    assert format_municipality_label("Mol") == "Ljubljana"
+    assert format_municipality_label("Videm pri Ptuju") == "Videm"
+    assert format_municipality_label("Vogrsko") == "Renče - Vogrsko"
+    assert format_municipality_label("Borovnic?a") == "Borovnica"
+    assert format_municipality_label("Ni Podatka") is None
     assert format_municipality_label("sucna vas") is None
 
 
@@ -275,6 +284,29 @@ def test_build_quality_summary_uses_canonical_municipalities_and_tracks_unresolv
         "Kanal ob Soči",
         "Sveta Trojica v Slovenskih goricah",
     }
+
+
+def test_build_quality_summary_excludes_noncanonical_municipalities_from_coverage(tmp_path, monkeypatch):
+    csv_path = tmp_path / "train.csv"
+    pd.DataFrame(
+        {
+            "municipality": [
+                "Ljubljana",
+                "Sveti Jurij",
+                "Polzepa",
+                "Ni Podatka",
+            ]
+        }
+    ).to_csv(csv_path, index=False)
+
+    monkeypatch.setattr(data_api, "TRAIN_CSV", str(csv_path))
+
+    summary = data_api._build_quality_summary()
+
+    assert summary["covered_municipalities"] == 1
+    assert summary["unresolved_rows"] == 3
+    assert summary["noncanonical_rows"] == 2
+    assert {item["label"] for item in summary["noncanonical_labels"]} == {"Sveti Jurij", "Polzepa"}
 
 
 def test_build_training_df_from_etn_kpp_extracts_requested_share_and_phase_features():

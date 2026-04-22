@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class TrainRequest(BaseModel):
-    csv_path: str
+    csv_path: str = Field(min_length=1, max_length=1000)
 
 
 class TrainStatusResponse(BaseModel):

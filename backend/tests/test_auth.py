@@ -2,6 +2,9 @@
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
+
+from app.models.user import User
 
 
 @pytest.mark.asyncio
@@ -90,6 +93,34 @@ async def test_login_success(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_login_updates_last_login_at(client: AsyncClient, db_session):
+    await client.post(
+        "/api/auth/register",
+        json={
+            "email": "login-audit@test.com",
+            "password": "testpass123",
+            "full_name": "Audit User",
+        },
+    )
+
+    user = (await db_session.execute(select(User).where(User.email == "login-audit@test.com"))).scalar_one()
+    assert user.last_login_at is None
+
+    resp = await client.post(
+        "/api/auth/login",
+        json={
+            "email": "login-audit@test.com",
+            "password": "testpass123",
+        },
+    )
+
+    assert resp.status_code == 200
+
+    updated_user = (await db_session.execute(select(User).where(User.email == "login-audit@test.com"))).scalar_one()
+    assert updated_user.last_login_at is not None
+
+
+@pytest.mark.asyncio
 async def test_login_wrong_password(client: AsyncClient):
     await client.post(
         "/api/auth/register",
@@ -132,6 +163,8 @@ async def test_me_authenticated(client: AsyncClient):
     assert resp.status_code == 200
     assert resp.json()["email"] == "me@test.com"
     assert resp.json()["avatar_url"] is None
+    assert resp.json()["created_at"] is not None
+    assert resp.json()["last_login_at"] is not None
 
 
 @pytest.mark.asyncio
@@ -224,6 +257,36 @@ async def test_refresh_token(client: AsyncClient):
     )
     assert resp.status_code == 200
     assert "access_token" in resp.json()
+
+
+@pytest.mark.asyncio
+async def test_refresh_updates_last_login_at(client: AsyncClient, db_session):
+    await client.post(
+        "/api/auth/register",
+        json={
+            "email": "refresh-login@test.com",
+            "password": "testpass123",
+            "full_name": "Refresh Login User",
+        },
+    )
+    login_resp = await client.post(
+        "/api/auth/login",
+        json={
+            "email": "refresh-login@test.com",
+            "password": "testpass123",
+        },
+    )
+    refresh_token = login_resp.json()["refresh_token"]
+
+    user = (await db_session.execute(select(User).where(User.email == "refresh-login@test.com"))).scalar_one()
+    user.last_login_at = None
+    await db_session.commit()
+
+    resp = await client.post("/api/auth/refresh", json={"refresh_token": refresh_token})
+    assert resp.status_code == 200
+
+    refreshed_user = (await db_session.execute(select(User).where(User.email == "refresh-login@test.com"))).scalar_one()
+    assert refreshed_user.last_login_at is not None
 
 
 @pytest.mark.asyncio

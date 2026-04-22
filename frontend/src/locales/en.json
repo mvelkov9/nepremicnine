@@ -1083,6 +1083,7 @@
     "role": "Role",
     "status": "Status",
     "created": "Created",
+    "lastLogin": "Last sign-in",
     "active": "Active",
     "disabled": "Disabled",
     "disable": "Disable",

@@ -8,6 +8,7 @@ import math
 import os
 import uuid
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from arq import create_pool
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -17,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.database import get_db
-from app.dependencies.auth import get_current_user, require_admin
+from app.dependencies.auth import require_admin
 from app.models.training_job import JobStatus, TrainingJob
 from app.models.user import User
 from app.rate_limit import limiter
@@ -51,6 +52,13 @@ def _coerce_progress(value: object, fallback: int = 0) -> int:
         return fallback
 
 
+def _state_value(payload: dict | None, key: str, fallback: Any) -> Any:
+    if not payload:
+        return fallback
+    value = payload.get(key)
+    return fallback if value is None else value
+
+
 async def _read_redis_job_state(redis, job_id: str) -> dict | None:
     raw = await redis.get(f"{JOB_PREFIX}{job_id}")
     if raw is None:
@@ -65,10 +73,10 @@ async def _read_redis_job_state(redis, job_id: str) -> dict | None:
 
 
 async def _get_request_redis(request: Request) -> tuple[object, bool]:
-    settings = get_settings()
     shared_redis = getattr(request.app.state, "redis", None)
-    if settings.app_env != "test" and shared_redis is not None:
+    if shared_redis is not None and hasattr(shared_redis, "get"):
         return shared_redis, False
+    settings = get_settings()
     pooled_redis = await create_pool(_parse_redis_url(settings.redis_url))
     return pooled_redis, True
 
@@ -80,24 +88,24 @@ def _serialize_job(job: TrainingJob, state: dict | None = None) -> TrainStatusRe
     return TrainStatusResponse(
         job_id=job.job_id,
         status=status_value or (job.status.value if isinstance(job.status, JobStatus) else str(job.status)),
-        stage=payload.get("stage") or job.stage,
+        stage=_state_value(payload, "stage", job.stage),
         progress=_coerce_progress(progress_value, fallback=job.progress or 0),
-        rows=payload.get("rows") or job.rows,
-        current_model=payload.get("current_model") or job.current_model,
-        current_model_index=payload.get("current_model_index") or job.current_model_index,
-        total_models=payload.get("total_models") or job.total_models,
+        rows=_state_value(payload, "rows", job.rows),
+        current_model=_state_value(payload, "current_model", job.current_model),
+        current_model_index=_state_value(payload, "current_model_index", job.current_model_index),
+        total_models=_state_value(payload, "total_models", job.total_models),
         current_model_progress=_coerce_progress(
             payload.get("current_model_progress"),
             fallback=job.current_model_progress or 0,
         )
         if payload.get("current_model_progress") is not None or job.current_model_progress is not None
         else None,
-        fitted_trees=payload.get("fitted_trees") or job.fitted_trees,
-        total_trees=payload.get("total_trees") or job.total_trees,
-        elapsed_sec=payload.get("elapsed_sec") or job.elapsed_sec,
-        eta_sec=payload.get("eta_sec") or job.eta_sec,
+        fitted_trees=_state_value(payload, "fitted_trees", job.fitted_trees),
+        total_trees=_state_value(payload, "total_trees", job.total_trees),
+        elapsed_sec=_state_value(payload, "elapsed_sec", job.elapsed_sec),
+        eta_sec=_state_value(payload, "eta_sec", job.eta_sec),
         result=payload.get("result"),
-        error=payload.get("error") or job.error,
+        error=_state_value(payload, "error", job.error),
     )
 
 
@@ -123,29 +131,29 @@ async def _reconcile_active_job(db: AsyncSession, redis) -> tuple[TrainingJob | 
         state = await _read_redis_job_state(redis, job.job_id)
         if state is not None:
             redis_status = state.get("status")
-            job.stage = state.get("stage") or job.stage
+            job.stage = _state_value(state, "stage", job.stage)
             job.progress = _coerce_progress(state.get("progress"), fallback=job.progress or 0)
-            job.rows = state.get("rows") or job.rows
-            job.current_model = state.get("current_model") or job.current_model
-            job.current_model_index = state.get("current_model_index") or job.current_model_index
-            job.total_models = state.get("total_models") or job.total_models
+            job.rows = _state_value(state, "rows", job.rows)
+            job.current_model = _state_value(state, "current_model", job.current_model)
+            job.current_model_index = _state_value(state, "current_model_index", job.current_model_index)
+            job.total_models = _state_value(state, "total_models", job.total_models)
             if state.get("current_model_progress") is not None:
                 job.current_model_progress = _coerce_progress(
                     state.get("current_model_progress"),
                     fallback=job.current_model_progress or 0,
                 )
-            job.fitted_trees = state.get("fitted_trees") or job.fitted_trees
-            job.total_trees = state.get("total_trees") or job.total_trees
-            job.elapsed_sec = state.get("elapsed_sec") or job.elapsed_sec
-            job.eta_sec = state.get("eta_sec") or job.eta_sec
-            job.error = state.get("error") or job.error
+            job.fitted_trees = _state_value(state, "fitted_trees", job.fitted_trees)
+            job.total_trees = _state_value(state, "total_trees", job.total_trees)
+            job.elapsed_sec = _state_value(state, "elapsed_sec", job.elapsed_sec)
+            job.eta_sec = _state_value(state, "eta_sec", job.eta_sec)
+            job.error = _state_value(state, "error", job.error)
             dirty = True
 
             if redis_status == "completed":
                 job.status = JobStatus.completed
                 result_payload = state.get("result") or {}
-                job.rows = result_payload.get("rows") or job.rows
-                job.duration_sec = result_payload.get("duration_sec") or job.duration_sec
+                job.rows = _state_value(result_payload, "rows", job.rows)
+                job.duration_sec = _state_value(result_payload, "duration_sec", job.duration_sec)
                 job.current_model_progress = 100
                 dirty = True
                 continue
@@ -184,13 +192,15 @@ async def start_training(
     user: User = Depends(require_admin),
 ):
     """Start an async training job. Admin only."""
-    csv_path = req.csv_path
+    csv_path = req.csv_path.strip()
+    if not csv_path:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "csv_path is required")
     if not os.path.isabs(csv_path):
         csv_path = os.path.join(DATA_DIR, csv_path)
     csv_path = os.path.realpath(csv_path)
-    if not csv_path.startswith(DATA_DIR + os.sep) and csv_path != DATA_DIR:
+    if not csv_path.startswith(DATA_DIR + os.sep):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "CSV path is outside the allowed data directory")
-    if os.path.islink(req.csv_path if os.path.isabs(req.csv_path) else os.path.join(DATA_DIR, req.csv_path)):
+    if os.path.islink(req.csv_path if os.path.isabs(req.csv_path) else os.path.join(DATA_DIR, req.csv_path.strip())):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Symbolic links are not allowed")
     if not os.path.exists(csv_path):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "CSV not found")
@@ -214,8 +224,24 @@ async def start_training(
         db.add(job)
         await db.commit()
 
-        # Enqueue ARQ task
-        await redis.enqueue_job("run_training", job_id, csv_path)
+        queue_error = "Training worker queue is unavailable"
+        try:
+            enqueued_job = await redis.enqueue_job("run_training", job_id, csv_path)
+        except Exception:
+            logger.exception("Failed to enqueue training job %s", job_id)
+            job.status = JobStatus.failed
+            job.stage = "error"
+            job.error = queue_error
+            await db.commit()
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, queue_error) from None
+
+        if enqueued_job is None:
+            logger.error("Training queue returned no job handle for %s", job_id)
+            job.status = JobStatus.failed
+            job.stage = "error"
+            job.error = queue_error
+            await db.commit()
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, queue_error)
 
         return TrainStatusResponse(job_id=job_id, status="queued", progress=0)
     finally:
@@ -227,7 +253,7 @@ async def start_training(
 async def get_active_training(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(get_current_user),
+    _user: User = Depends(require_admin),
 ):
     """Return the currently active queued/running training job, if any."""
     redis, should_close = await _get_request_redis(request)
@@ -248,7 +274,7 @@ async def get_training_status(
     job_id: str,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(get_current_user),
+    _user: User = Depends(require_admin),
 ):
     """Get training job status from Redis."""
     redis, should_close = await _get_request_redis(request)
@@ -294,7 +320,7 @@ async def list_jobs(
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(get_current_user),
+    _user: User = Depends(require_admin),
 ):
     """List all training jobs (most recent first)."""
     redis, should_close = await _get_request_redis(request)
@@ -349,12 +375,29 @@ async def list_jobs(
 
 @router.delete("/jobs/clear", status_code=status.HTTP_200_OK)
 async def clear_jobs(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_admin),
 ):
     """Delete all training job records."""
-    result = await db.execute(select(func.count(TrainingJob.id)))
-    count = result.scalar() or 0
-    await db.execute(delete(TrainingJob))
-    await db.commit()
-    return {"deleted": count}
+    redis, should_close = await _get_request_redis(request)
+    try:
+        active_job, active_state = await _reconcile_active_job(db, redis)
+        if active_job is not None:
+            return JSONResponse(
+                status_code=status.HTTP_409_CONFLICT,
+                content={
+                    "detail": "Cannot clear training jobs while a job is queued or running",
+                    **_serialize_job(active_job, active_state).model_dump(),
+                },
+            )
+
+        result = await db.execute(select(func.count(TrainingJob.id)))
+        count = result.scalar() or 0
+        await db.execute(delete(TrainingJob))
+        await db.commit()
+        await invalidate_request_caches(request, prefixes=("cache:activity:", "cache:admin:"))
+        return {"deleted": count}
+    finally:
+        if should_close:
+            await redis.close()

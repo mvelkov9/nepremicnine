@@ -24,12 +24,14 @@ describe('API response contracts', () => {
         role: 'viewer',
         is_active: true,
         created_at: '2024-01-01T00:00:00Z',
+        last_login_at: '2024-01-02T09:30:00Z',
       }
       expect(user.id).toBeTypeOf('number')
       expect(user.email).toBeTypeOf('string')
       expect(user.role).toMatch(/^(admin|viewer)$/)
       expect(user.is_active).toBeTypeOf('boolean')
       expect(user.created_at).toBeTypeOf('string')
+      expect(user.last_login_at).toBeTypeOf('string')
     })
 
     it('allows null for optional fields', () => {
@@ -41,9 +43,11 @@ describe('API response contracts', () => {
         role: 'admin',
         is_active: true,
         created_at: '2024-01-01T00:00:00Z',
+        last_login_at: null,
       }
       expect(user.full_name).toBeNull()
       expect(user.avatar_url).toBeNull()
+      expect(user.last_login_at).toBeNull()
     })
   })
 

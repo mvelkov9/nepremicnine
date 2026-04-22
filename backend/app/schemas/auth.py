@@ -1,5 +1,7 @@
 """Auth request/response schemas."""
 
+from datetime import datetime
+
 from pydantic import BaseModel, EmailStr, Field, SecretStr
 
 
@@ -40,5 +42,7 @@ class UserResponse(BaseModel):
     avatar_url: str | None = None
     role: str
     is_active: bool
+    created_at: datetime
+    last_login_at: datetime | None = None
 
     model_config = {"from_attributes": True}

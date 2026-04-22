@@ -8,7 +8,11 @@ from pathlib import Path
 import pandas as pd
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 
+from app.api.data import _sync_prepare_run
+from app.models.dataset import DatasetFile
+from app.models.prepare_run import PrepareRun
 from app.schemas.dataset import TrainingDatasetResponse
 from app.services.data_processing_service import prepare_training_csv_from_etn_kpp_bulk
 from app.tasks.training_worker import PREPARE_ACTIVE_KEY, PREPARE_JOB_PREFIX
@@ -143,6 +147,24 @@ async def test_training_dataset_endpoint_reports_prepared_csv(client: AsyncClien
 
 
 @pytest.mark.asyncio
+async def test_prepare_etn_kpp_pairs_requires_admin(client: AsyncClient, viewer_token: str):
+    resp = await client.get(
+        "/api/data/prepare-etn-kpp-pairs",
+        headers={"Authorization": f"Bearer {viewer_token}"},
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_training_dataset_requires_admin(client: AsyncClient, viewer_token: str):
+    resp = await client.get(
+        "/api/data/training-dataset",
+        headers={"Authorization": f"Bearer {viewer_token}"},
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_upload_dedup(client: AsyncClient, admin_token: str):
     token = admin_token
     csv_content = b"col1,col2\nA,B\n"
@@ -175,6 +197,15 @@ async def test_delete_requires_admin(client: AsyncClient, viewer_token: str):
 async def test_datasets_unauthenticated(client: AsyncClient):
     resp = await client.get("/api/data/datasets")
     assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_datasets_list_requires_admin(client: AsyncClient, viewer_token: str):
+    resp = await client.get(
+        "/api/data/datasets",
+        headers={"Authorization": f"Bearer {viewer_token}"},
+    )
+    assert resp.status_code == 403
 
 
 @pytest.mark.asyncio
@@ -476,6 +507,116 @@ async def test_prepare_etn_bulk_start_and_status_use_async_job_flow(
 
 
 @pytest.mark.asyncio
+async def test_prepare_etn_bulk_start_marks_run_failed_when_enqueue_fails(
+    client: AsyncClient,
+    admin_token: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    db_session,
+):
+    token = admin_token
+    fake_data_dir = Path(tmp_path) / "data"
+    monkeypatch.setattr("app.api.data.DATA_DIR", str(fake_data_dir))
+    uploads_dir = fake_data_dir / "uploads"
+    posli = uploads_dir / "posli.csv"
+    deli = uploads_dir / "deli.csv"
+    posli.parent.mkdir(parents=True, exist_ok=True)
+    posli.write_text("id\n1\n", encoding="utf-8")
+    deli.write_text("id\n1\n", encoding="utf-8")
+
+    transport = client._transport
+    redis = transport.app.state.redis
+
+    async def failing_enqueue(*_args, **_kwargs):
+        raise RuntimeError("queue down")
+
+    monkeypatch.setattr(redis, "enqueue_job", failing_enqueue)
+
+    resp = await client.post(
+        "/api/data/prepare-etn-kpp-bulk/start",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "pairs": [
+                {
+                    "posli_csv_path": "uploads/posli.csv",
+                    "delistavb_csv_path": "uploads/deli.csv",
+                    "year": "2024",
+                    "label": "2024",
+                }
+            ]
+        },
+    )
+
+    assert resp.status_code == 503
+    assert resp.json()["detail"] == "Preparation worker queue is unavailable"
+    assert await redis.get(PREPARE_ACTIVE_KEY) is None
+
+    runs = (await db_session.execute(select(PrepareRun).order_by(PrepareRun.created_at.desc()))).scalars().all()
+    assert len(runs) == 1
+    assert runs[0].status == "failed"
+    assert runs[0].stage == "error"
+    assert runs[0].error == "Preparation worker queue is unavailable"
+    assert await redis.get(f"{PREPARE_JOB_PREFIX}{runs[0].job_id}") is None
+
+
+@pytest.mark.asyncio
+async def test_prepare_etn_bulk_active_and_status_viewer_forbidden(
+    client: AsyncClient,
+    admin_token: str,
+    viewer_token: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    admin_auth = {"Authorization": f"Bearer {admin_token}"}
+    viewer_auth = {"Authorization": f"Bearer {viewer_token}"}
+    fake_data_dir = Path(tmp_path) / "data"
+    monkeypatch.setattr("app.api.data.DATA_DIR", str(fake_data_dir))
+    uploads_dir = fake_data_dir / "uploads"
+    posli = uploads_dir / "posli.csv"
+    deli = uploads_dir / "deli.csv"
+    posli.parent.mkdir(parents=True, exist_ok=True)
+    posli.write_text("id\n1\n", encoding="utf-8")
+    deli.write_text("id\n1\n", encoding="utf-8")
+
+    start_resp = await client.post(
+        "/api/data/prepare-etn-kpp-bulk/start",
+        headers=admin_auth,
+        json={
+            "pairs": [
+                {
+                    "posli_csv_path": "uploads/posli.csv",
+                    "delistavb_csv_path": "uploads/deli.csv",
+                    "year": "2024",
+                    "label": "2024",
+                }
+            ]
+        },
+    )
+
+    assert start_resp.status_code == 200
+    job_id = start_resp.json()["job_id"]
+
+    active_resp = await client.get("/api/data/prepare-etn-kpp-bulk/active", headers=viewer_auth)
+    status_resp = await client.get(f"/api/data/prepare-etn-kpp-bulk/status/{job_id}", headers=viewer_auth)
+
+    assert active_resp.status_code == 403
+    assert status_resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_prepare_etn_bulk_start_requires_at_least_one_pair(client: AsyncClient, admin_token: str):
+    admin_auth = {"Authorization": f"Bearer {admin_token}"}
+
+    resp = await client.post(
+        "/api/data/prepare-etn-kpp-bulk/start",
+        headers=admin_auth,
+        json={"pairs": []},
+    )
+
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_training_dataset_endpoint_includes_preparation_metadata(
     client: AsyncClient, admin_token: str, monkeypatch: pytest.MonkeyPatch
 ):
@@ -507,3 +648,172 @@ async def test_training_dataset_endpoint_includes_preparation_metadata(
     data = resp.json()
     assert data["preparation_metadata"]["source"] == "etn_kpp_bulk"
     assert data["preparation_metadata"]["filter_summary"]["building"][0]["stage"] == "building_merged_rows"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("endpoint", ["preview", "inspect"])
+async def test_dataset_read_endpoints_require_admin(client: AsyncClient, viewer_token: str, endpoint: str):
+    resp = await client.get(
+        f"/api/data/{endpoint}/999",
+        headers={"Authorization": f"Bearer {viewer_token}"},
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("endpoint", ["preview", "inspect"])
+async def test_dataset_read_endpoints_reject_paths_outside_upload_dir(
+    client: AsyncClient,
+    admin_token: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    db_session,
+    endpoint: str,
+):
+    upload_dir = tmp_path / "uploads"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    outside_file = tmp_path / "outside.csv"
+    outside_file.write_text("col1,col2\n1,2\n", encoding="utf-8")
+    monkeypatch.setattr("app.api.data.UPLOAD_DIR", str(upload_dir))
+
+    dataset = DatasetFile(
+        original_name="outside.csv",
+        stored_path=str(outside_file.resolve()),
+        source_type="csv",
+        row_count=1,
+        columns_json='["col1","col2"]',
+        file_hash=f"hash-{endpoint}",
+        uploaded_by=None,
+    )
+    db_session.add(dataset)
+    await db_session.commit()
+    await db_session.refresh(dataset)
+
+    resp = await client.get(
+        f"/api/data/{endpoint}/{dataset.id}",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+
+    assert resp.status_code == 422
+    assert resp.json()["detail"] == "Dataset file is outside the managed upload directory"
+
+
+@pytest.mark.asyncio
+async def test_delete_dataset_skips_files_outside_upload_dir(
+    client: AsyncClient,
+    admin_token: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    db_session,
+):
+    upload_dir = tmp_path / "uploads"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    outside_file = tmp_path / "outside.csv"
+    outside_file.write_text("col1,col2\n1,2\n", encoding="utf-8")
+    monkeypatch.setattr("app.api.data.UPLOAD_DIR", str(upload_dir))
+
+    dataset = DatasetFile(
+        original_name="outside.csv",
+        stored_path=str(outside_file.resolve()),
+        source_type="csv",
+        row_count=1,
+        columns_json='["col1","col2"]',
+        file_hash="hash-delete-outside",
+        uploaded_by=None,
+    )
+    db_session.add(dataset)
+    await db_session.commit()
+    await db_session.refresh(dataset)
+
+    resp = await client.delete(
+        f"/api/data/datasets/{dataset.id}",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+
+    assert resp.status_code == 204
+    assert outside_file.exists()
+    deleted = await db_session.get(DatasetFile, dataset.id)
+    assert deleted is None
+
+
+@pytest.mark.asyncio
+async def test_dataset_sync_prunes_records_outside_upload_dir(
+    client: AsyncClient,
+    admin_token: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    db_session,
+):
+    upload_dir = tmp_path / "uploads"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    outside_file = tmp_path / "outside.csv"
+    outside_file.write_text("col1,col2\n1,2\n", encoding="utf-8")
+    monkeypatch.setattr("app.api.data.UPLOAD_DIR", str(upload_dir))
+
+    dataset = DatasetFile(
+        original_name="outside.csv",
+        stored_path=str(outside_file.resolve()),
+        source_type="csv",
+        row_count=1,
+        columns_json='["col1","col2"]',
+        file_hash="hash-sync-outside",
+        uploaded_by=None,
+    )
+    db_session.add(dataset)
+    await db_session.commit()
+
+    resp = await client.get(
+        "/api/data/datasets?sync=true",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["items"] == []
+    remaining = (await db_session.execute(select(DatasetFile))).scalars().all()
+    assert remaining == []
+
+
+@pytest.mark.asyncio
+async def test_sync_prepare_run_preserves_zero_values_from_payload(db_session):
+    run = PrepareRun(
+        job_id="prepare-zero",
+        status="running",
+        stage="pair_processing",
+        progress=72,
+        total_pairs=4,
+        current_pair_index=3,
+        current_label="2024",
+        pairs_completed=2,
+        rows=321,
+        spatial_phase="kn",
+        error="previous error",
+    )
+    db_session.add(run)
+    await db_session.commit()
+
+    synced = await _sync_prepare_run(
+        db_session,
+        job_id="prepare-zero",
+        payload={
+            "status": "running",
+            "stage": "spatial",
+            "progress": 0,
+            "total_pairs": 0,
+            "current_pair_index": 0,
+            "current_label": "",
+            "pairs_completed": 0,
+            "rows": 0,
+            "spatial_phase": "",
+            "error": "",
+        },
+    )
+
+    assert synced.stage == "spatial"
+    assert synced.progress == 0
+    assert synced.total_pairs == 0
+    assert synced.current_pair_index == 0
+    assert synced.current_label == ""
+    assert synced.pairs_completed == 0
+    assert synced.rows == 0
+    assert synced.spatial_phase == ""
+    assert synced.error == ""

@@ -1,6 +1,6 @@
 ﻿<script setup lang="ts">
   import { ref, onMounted, onUnmounted, computed, reactive, watch } from 'vue'
-  import { useRouter } from 'vue-router'
+  import { useRoute, useRouter } from 'vue-router'
   import { useI18n } from 'vue-i18n'
   import Skeleton from 'primevue/skeleton'
   import AdminRunDetailPanel from '../components/admin/AdminRunDetailPanel.vue'
@@ -19,6 +19,7 @@
   import { getApiErrorMessage } from '../utils/apiError'
   import { buildGursEnrichmentRows, summarizeGursEnrichment } from '../utils/enrichmentSummary'
   import { useFormat } from '../composables/useFormat'
+  import { readQueryString, readQueryTab } from '../utils/routeQuery'
   import { formatNumber } from '../utils/format'
   import type {
     PrepareDetectedPair,
@@ -39,7 +40,10 @@
   const dataStore = useDataStore()
   const modelStore = useModelStore()
   const workbench = useWorkbenchStore()
+  const route = useRoute()
   const router = useRouter()
+
+  const prepareWorkspaceTabs = ['configure', 'monitor', 'results'] as const
 
   const loading = ref(false)
   const bootstrapLoading = ref(true)
@@ -48,7 +52,7 @@
   const prepareStatus = ref<PrepareJobStatus | null>(null)
   const preparePollTimer = ref<ReturnType<typeof setTimeout> | null>(null)
   const preparePollInFlight = ref(false)
-  const selectedPrepareRunId = ref('')
+  const selectedPrepareRunId = ref(readQueryString(route.query.run) || '')
   let preparePollVersion = 0
   let activePrepareJobId = ''
   const enrichmentOptions = reactive<PrepareEnrichmentState>({
@@ -108,7 +112,9 @@
 
   // ETN pair mode
   const etnMode = ref<PrepareMode>('bulk')
-  const prepareWorkspaceTab = ref('configure')
+  const prepareWorkspaceTab = ref<(typeof prepareWorkspaceTabs)[number]>(
+    readQueryTab(route.query.tab, prepareWorkspaceTabs, 'configure'),
+  )
   const singlePosli = ref('')
   const singleDelistavb = ref('')
 
@@ -202,6 +208,8 @@
   }
 
   onMounted(async () => {
+    syncPrepareTabFromRoute(route.query)
+    syncPrepareRunFromRoute(route.query)
     await initializePage()
   })
 
@@ -209,6 +217,7 @@
     () => workbench.prepareRuns,
     (runs) => {
       if (!runs.length) return
+      const hasRequestedRun = Boolean(readQueryString(route.query.run))
 
       const resolvedRunId = runs.some((item) => item.id === selectedPrepareRunId.value)
         ? selectedPrepareRunId.value
@@ -221,7 +230,11 @@
       }
 
       if (selectedPrepareRun.value?.id !== resolvedRunId) {
-        void loadPrepareRunDetail(resolvedRunId)
+        if (hasRequestedRun) {
+          void loadPrepareRunDetail(resolvedRunId)
+        } else {
+          void workbench.fetchPrepareRunDetail(resolvedRunId)
+        }
       }
     },
     { immediate: true },
@@ -238,11 +251,26 @@
   })
 
   watch(
+    () => route.query.tab,
+    () => {
+      syncPrepareTabFromRoute(route.query)
+    },
+  )
+
+  watch(
+    () => route.query.run,
+    () => {
+      syncPrepareRunFromRoute(route.query)
+    },
+  )
+
+  watch(
     () => prepareWorkspaceTab.value,
     (tab) => {
       if (tab === 'monitor') {
         void ensurePrepareRunsLoaded()
       }
+      syncPrepareTabToRoute(tab)
     },
     { immediate: true },
   )
@@ -457,8 +485,47 @@
     return status === 'completed' || status === 'failed'
   }
 
+  function syncPrepareTabFromRoute(query = route.query) {
+    const nextTab = readQueryTab(query.tab, prepareWorkspaceTabs, 'configure')
+    if (prepareWorkspaceTab.value !== nextTab) {
+      prepareWorkspaceTab.value = nextTab
+    }
+  }
+
+  function syncPrepareTabToRoute(tab: string) {
+    const nextTab = readQueryTab(tab, prepareWorkspaceTabs, 'configure')
+    const currentTab = readQueryTab(route.query.tab, prepareWorkspaceTabs, 'configure')
+    if (currentTab === nextTab) return
+    void router.replace({ query: { ...route.query, tab: nextTab } })
+  }
+
+  function syncPrepareRunFromRoute(query = route.query) {
+    const nextRunId = readQueryString(query.run)
+    if (!nextRunId || selectedPrepareRunId.value === nextRunId) return
+    selectedPrepareRunId.value = nextRunId
+    if (prepareWorkspaceTab.value !== 'monitor') {
+      prepareWorkspaceTab.value = 'monitor'
+    }
+  }
+
+  function syncPrepareRunToRoute(jobId: string) {
+    const currentRunId = readQueryString(route.query.run) || ''
+    if (currentRunId === jobId) return
+    void router.replace({
+      query: {
+        ...route.query,
+        ...(jobId ? { run: jobId } : {}),
+      },
+    })
+  }
+
   async function loadPrepareRunDetail(jobId: string) {
+    if (!jobId) return
     selectedPrepareRunId.value = jobId
+    if (prepareWorkspaceTab.value !== 'monitor') {
+      prepareWorkspaceTab.value = 'monitor'
+    }
+    syncPrepareRunToRoute(jobId)
     await workbench.fetchPrepareRunDetail(jobId)
   }
 

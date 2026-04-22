@@ -856,7 +856,7 @@
 
   function currentQuerySubset() {
     const subset: Record<string, string> = {}
-    const keys = ['property_type', 'region', 'year', 'price_band', 'municipality', 'view']
+    const keys = ['property_type', 'region', 'year', 'price_band', 'municipality', 'view', 'tab']
     for (const key of keys) {
       const value = route.query[key]
       if (typeof value === 'string' && value) subset[key] = value
@@ -872,6 +872,7 @@
     if (selectedPriceBand.value) subset.price_band = selectedPriceBand.value
     if (selectedMunicipality.value) subset.municipality = selectedMunicipality.value
     if (viewMode.value === 'overview') subset.view = viewMode.value
+    if (mapTab.value === 'regions') subset.tab = mapTab.value
     return subset
   }
 
@@ -881,7 +882,15 @@
     if (JSON.stringify(nextSubset) === JSON.stringify(currentSubset)) return
 
     const nextQuery = { ...route.query }
-    for (const key of ['property_type', 'region', 'year', 'price_band', 'municipality', 'view']) {
+    for (const key of [
+      'property_type',
+      'region',
+      'year',
+      'price_band',
+      'municipality',
+      'view',
+      'tab',
+    ]) {
       delete nextQuery[key]
     }
     for (const [key, value] of Object.entries(nextSubset)) nextQuery[key] = value
@@ -972,6 +981,7 @@
     selectedPriceBand.value = route.query.price_band ? String(route.query.price_band) : ''
     selectedMunicipality.value = route.query.municipality ? String(route.query.municipality) : ''
     viewMode.value = route.query.view === 'overview' ? 'overview' : 'transactions'
+    mapTab.value = route.query.tab === 'regions' ? 'regions' : 'workspace'
     syncingRoute = false
   }
 
@@ -983,6 +993,11 @@
       if (initialized.value) debouncedFetchData()
     },
   )
+
+  watch(mapTab, () => {
+    if (syncingRoute) return
+    syncRouteQuery()
+  })
 
   watch(
     () => route.query,

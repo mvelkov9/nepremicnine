@@ -16,7 +16,7 @@ services:
   backend:
     # Remove dev overrides: no source mount, no reload, run as appuser
     user: appuser
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
     volumes: !override
       - backend-data:/app/data
       - backend-models:/app/models

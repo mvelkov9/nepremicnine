@@ -79,6 +79,10 @@
     return formatDate(value, { dateStyle: 'medium' })
   }
 
+  function formatLastLogin(value: string | null) {
+    return value ? formatDate(value, { dateStyle: 'medium', timeStyle: 'short' }) : '-'
+  }
+
   function onPage(event: AdminPageEvent) {
     emit('page', event)
   }
@@ -219,6 +223,12 @@
         <Column field="created_at" :header="t('admin.created')" sortable>
           <template #body="{ data }">
             {{ formatCreatedAt(data.created_at) }}
+          </template>
+        </Column>
+
+        <Column field="last_login_at" :header="t('admin.lastLogin')">
+          <template #body="{ data }">
+            {{ formatLastLogin(data.last_login_at) }}
           </template>
         </Column>
 

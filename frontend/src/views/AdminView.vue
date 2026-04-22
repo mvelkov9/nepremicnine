@@ -335,6 +335,9 @@
         role: user.role,
         status: user.is_active ? t('admin.active') : t('admin.disabled'),
         created_at: formatDate(user.created_at, { dateStyle: 'medium' }),
+        last_login_at: user.last_login_at
+          ? formatDate(user.last_login_at, { dateStyle: 'medium', timeStyle: 'short' })
+          : '',
       })),
       'admin-users-current-page.csv',
     )

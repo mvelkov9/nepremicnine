@@ -46,4 +46,12 @@ test.describe('Authentication', () => {
     const skipLink = page.locator('.skip-link')
     await expect(skipLink).toHaveAttribute('href', '#guest-main-content')
   })
+
+  test('document language follows the selected locale', async ({ page }) => {
+    await page.goto('/login')
+    await expect(page.locator('html')).toHaveAttribute('lang', 'sl')
+
+    await page.getByRole('button', { name: 'EN' }).click()
+    await expect(page.locator('html')).toHaveAttribute('lang', 'en')
+  })
 })

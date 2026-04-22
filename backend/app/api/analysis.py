@@ -95,7 +95,7 @@ async def score_listings(
 ):
     artifact = load_model()
     if artifact is None:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "No trained model. Train first.")
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "No trained model. Train first.")
 
     scored = []
     overpriced = underpriced = market_aligned = 0
@@ -156,6 +156,7 @@ async def score_listings(
         overpriced_count=overpriced,
         underpriced_count=underpriced,
         market_aligned_count=market_aligned,
+        user_id=user.id,
     )
     db.add(run)
     await db.commit()
@@ -182,6 +183,7 @@ async def list_runs(
     rows = (
         await db.execute(
             select(ListingsRun, func.count(ListingsRun.id).over().label("total_count"))
+            .where(ListingsRun.user_id == _user.id)
             .order_by(ListingsRun.created_at.desc())
             .offset(offset)
             .limit(per_page)

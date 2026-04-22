@@ -11,6 +11,8 @@ export default [
       ".vite/",
       "node_modules/",
       "playwright-report/",
+      "src/types/auto-imports.d.ts",
+      "src/types/components.d.ts",
       "test-results/",
     ],
   },

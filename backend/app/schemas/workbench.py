@@ -1,15 +1,36 @@
 """Pydantic schemas for GUI phase 2 workbench APIs."""
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
+
+WorkspacePage = Literal[
+    "dashboard",
+    "market",
+    "regions",
+    "municipalities",
+    "municipality",
+    "map",
+    "prediction",
+    "analysis",
+    "benchmark",
+    "admin-home",
+    "data",
+    "prepare",
+    "model",
+    "diagnostics",
+    "admin-benchmark",
+    "users",
+]
+WorkspaceScope = Literal["private"]
+WatchlistEntityType = Literal["municipality", "region"]
 
 
 class WorkspaceBase(BaseModel):
     name: str = Field(min_length=1, max_length=200)
-    scope: str = Field(default="private", max_length=40)
-    page: str = Field(min_length=1, max_length=80)
+    scope: WorkspaceScope = "private"
+    page: WorkspacePage
     filters: dict[str, Any] = Field(default_factory=dict)
     tab: str | None = Field(default=None, max_length=80)
     sort: str | None = Field(default=None, max_length=120)
@@ -23,8 +44,8 @@ class WorkspaceCreateRequest(WorkspaceBase):
 
 class WorkspaceUpdateRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
-    scope: str | None = Field(default=None, max_length=40)
-    page: str | None = Field(default=None, min_length=1, max_length=80)
+    scope: WorkspaceScope | None = None
+    page: WorkspacePage | None = None
     filters: dict[str, Any] | None = None
     tab: str | None = Field(default=None, max_length=80)
     sort: str | None = Field(default=None, max_length=120)
@@ -41,7 +62,7 @@ class SavedWorkspaceResponse(WorkspaceBase):
 
 
 class WatchlistCreateRequest(BaseModel):
-    entity_type: str = Field(min_length=1, max_length=40)
+    entity_type: WatchlistEntityType
     entity_key: str = Field(min_length=1, max_length=200)
     display_label: str = Field(min_length=1, max_length=200)
     metadata: dict[str, Any] = Field(default_factory=dict)

@@ -69,7 +69,7 @@ async def activity_feed(
         select(ActivityEvent)
         .where(ActivityEvent.user_id == user.id)
         .order_by(ActivityEvent.created_at.desc())
-        .limit(min(limit, 15))
+        .limit(limit)
     )
     for event in event_rows.scalars().all():
         items.append(
@@ -90,7 +90,7 @@ async def activity_feed(
         select(PredictionLog)
         .where(PredictionLog.user_id == user.id)
         .order_by(PredictionLog.created_at.desc())
-        .limit(min(limit, 4))
+        .limit(limit)
     )
     for row in prediction_rows.scalars().all():
         payload = json.loads(row.payload_json) if row.payload_json else {}
@@ -107,7 +107,9 @@ async def activity_feed(
             )
         )
 
-    analysis_rows = await db.execute(select(ListingsRun).order_by(ListingsRun.created_at.desc()).limit(min(limit, 4)))
+    analysis_rows = await db.execute(
+        select(ListingsRun).where(ListingsRun.user_id == user.id).order_by(ListingsRun.created_at.desc()).limit(limit)
+    )
     for row in analysis_rows.scalars().all():
         items.append(
             _activity_from_model(
@@ -123,7 +125,7 @@ async def activity_feed(
         )
 
     if user.role.value == "admin":
-        prepare_rows = await db.execute(select(PrepareRun).order_by(PrepareRun.created_at.desc()).limit(min(limit, 4)))
+        prepare_rows = await db.execute(select(PrepareRun).order_by(PrepareRun.created_at.desc()).limit(limit))
         for row in prepare_rows.scalars().all():
             items.append(
                 _activity_from_model(
@@ -138,9 +140,7 @@ async def activity_feed(
                 )
             )
 
-        training_rows = await db.execute(
-            select(TrainingJob).order_by(TrainingJob.created_at.desc()).limit(min(limit, 4))
-        )
+        training_rows = await db.execute(select(TrainingJob).order_by(TrainingJob.created_at.desc()).limit(limit))
         for row in training_rows.scalars().all():
             items.append(
                 _activity_from_model(
@@ -155,9 +155,7 @@ async def activity_feed(
                 )
             )
 
-        dataset_rows = await db.execute(
-            select(DatasetFile).order_by(DatasetFile.uploaded_at.desc()).limit(min(limit, 4))
-        )
+        dataset_rows = await db.execute(select(DatasetFile).order_by(DatasetFile.uploaded_at.desc()).limit(limit))
         for row in dataset_rows.scalars().all():
             items.append(
                 _activity_from_model(
@@ -172,7 +170,7 @@ async def activity_feed(
                 )
             )
 
-        run_rows = await db.execute(select(ModelRun).order_by(ModelRun.created_at.desc()).limit(min(limit, 4)))
+        run_rows = await db.execute(select(ModelRun).order_by(ModelRun.created_at.desc()).limit(limit))
         for row in run_rows.scalars().all():
             items.append(
                 _activity_from_model(

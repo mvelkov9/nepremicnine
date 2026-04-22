@@ -41,8 +41,9 @@ class _FakeRedis:
     async def set(self, key: str, value: str, ex: int | None = None) -> None:
         self._store[key] = value
 
-    async def enqueue_job(self, function_name: str, *args, **kwargs) -> None:
+    async def enqueue_job(self, function_name: str, *args, **kwargs):
         self.enqueued_jobs.append((function_name, args, kwargs))
+        return {"function_name": function_name, "args": args, "kwargs": kwargs}
 
     async def scan(self, cursor=0, match: str | None = None, count: int | None = None):
         prefix = (match or "").rstrip("*")

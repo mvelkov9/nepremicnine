@@ -1083,6 +1083,7 @@
     "role": "Vloga",
     "status": "Stanje",
     "created": "Ustvarjeno",
+    "lastLogin": "Zadnja prijava",
     "active": "Aktiven",
     "disabled": "Onemogočen",
     "disable": "Onemogoči",

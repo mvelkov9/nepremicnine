@@ -98,6 +98,16 @@
     if (value == null || Number.isNaN(Number(value))) return ''
     return `${formatNumber(value, { maximumFractionDigits: 0 })}%`
   }
+
+  function runLink(item: AdminRunSummary) {
+    return {
+      path: props.to,
+      query: {
+        run: item.id,
+        tab: props.runType === 'prepare' ? 'monitor' : 'history',
+      },
+    }
+  }
 </script>
 
 <template>
@@ -134,12 +144,7 @@
     </div>
 
     <div v-else-if="listItems.length" class="run-list-stack">
-      <RouterLink
-        v-for="item in listItems"
-        :key="item.id"
-        :to="{ path: to, query: { run: item.id } }"
-        class="run-row"
-      >
+      <RouterLink v-for="item in listItems" :key="item.id" :to="runLink(item)" class="run-row">
         <div class="run-row-top">
           <div class="run-row-copy">
             <strong>{{ item.title }}</strong>

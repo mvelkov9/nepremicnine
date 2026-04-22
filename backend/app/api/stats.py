@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 
 from app.dependencies.auth import get_current_user
 from app.models.user import User
-from app.services.regions_service import CANONICAL_REGION_ROWS, lookup_region
+from app.services.regions_service import CANONICAL_REGION_LOOKUP, CANONICAL_REGION_ROWS, lookup_region
 from app.utils.cache import cache_get, cache_set
 from app.utils.municipality import municipality_slug, normalize_municipality_name
 from app.utils.slovenian_labels import (
@@ -85,6 +85,7 @@ _PREPARED_DF_CACHE: dict[str, object] = {
 }
 _CACHE_LOCK = threading.RLock()
 _CANONICAL_REGION_TOTAL = len(CANONICAL_REGION_ROWS)
+_CANONICAL_MUNICIPALITY_KEYS = set(CANONICAL_REGION_LOOKUP)
 
 
 def _resolve_train_csv_path() -> str:
@@ -368,7 +369,7 @@ def _prepare_market_df(property_type: str | None = None) -> pd.DataFrame | None:
                     )
                     frame["_municipality_slug"] = frame["municipality"].map(municipality_slug)
                     frame["_municipality_normalized"] = frame["municipality"].map(normalize_municipality_name)
-                    frame["_municipality_known"] = frame["municipality"].map(lambda value: not is_unknown_label(value))
+                    frame["_municipality_known"] = frame["_municipality_normalized"].isin(_CANONICAL_MUNICIPALITY_KEYS)
 
                 if "naselje" in frame.columns:
                     frame["naselje"] = (
@@ -450,15 +451,30 @@ def _canonical_municipality_coverage(df: pd.DataFrame) -> dict[str, int]:
             "present": 0,
             "official_total": _CANONICAL_REGION_TOTAL,
             "unresolved_rows": 0,
+            "noncanonical_rows": 0,
+            "noncanonical_labels": [],
         }
 
     known = df[_known_municipality_mask(df)]
     present = int(known["_municipality_slug"].nunique()) if "_municipality_slug" in known.columns else 0
     unresolved_rows = int((~_known_municipality_mask(df)).sum())
+    noncanonical_labels: list[dict[str, int | str]] = []
+    noncanonical_rows = 0
+    if "_municipality_normalized" in df.columns:
+        noncanonical_mask = (~df["_municipality_normalized"].isin(_CANONICAL_MUNICIPALITY_KEYS)) & ~df[
+            "municipality"
+        ].map(is_unknown_label)
+        noncanonical_rows = int(noncanonical_mask.sum())
+        noncanonical_counts = df.loc[noncanonical_mask, "municipality"].astype(str).value_counts()
+        noncanonical_labels = [
+            {"label": str(label), "count": int(count)} for label, count in noncanonical_counts.head(12).items()
+        ]
     return {
         "present": present,
         "official_total": _CANONICAL_REGION_TOTAL,
         "unresolved_rows": unresolved_rows,
+        "noncanonical_rows": noncanonical_rows,
+        "noncanonical_labels": noncanonical_labels,
     }
 
 

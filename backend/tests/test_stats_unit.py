@@ -103,6 +103,92 @@ async def test_market_home_uses_canonical_municipality_coverage(monkeypatch: pyt
 
 
 @pytest.mark.asyncio
+async def test_market_home_recognizes_canonical_municipalities_with_spaces_and_hyphens(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    df = _build_market_df().copy()
+    df.loc[len(df)] = {
+        "price_eur": 275_000,
+        "size_m2": 88,
+        "uporabna_povrsina": 82,
+        "municipality": "Hoče - Slivnica",
+        "property_type": "stanovanje",
+        "source_label": "2026",
+        "statistical_region": "podravska",
+        "latitude": 100_000.0,
+        "longitude": 460_000.0,
+    }
+
+    monkeypatch.setattr("app.api.stats._load_df", lambda property_type=None: df.copy())
+    monkeypatch.setattr("app.api.stats._RAW_DF_CACHE", {"mtime": None, "df": None})
+    monkeypatch.setattr("app.api.stats._PREPARED_DF_CACHE", {"mtime": None, "df": None})
+
+    result = await market_home(_fake_request(), _FakeResponse(), _user=object())
+
+    assert result["headline"]["municipalities_count"] == 4
+    assert result["market_coverage"]["present"] == 4
+    assert result["market_coverage"]["noncanonical_rows"] == 0
+    assert any(item["municipality"] == "Hoče - Slivnica" for item in result["largest_markets"])
+
+
+@pytest.mark.asyncio
+async def test_market_home_normalizes_known_municipality_aliases(monkeypatch: pytest.MonkeyPatch):
+    df = _build_market_df().copy()
+    df.loc[len(df)] = {
+        "price_eur": 99_000,
+        "size_m2": 44,
+        "uporabna_povrsina": 42,
+        "municipality": "Ljubljana Center",
+        "property_type": "stanovanje",
+        "source_label": "2026",
+        "statistical_region": "osrednjeslovenska",
+        "latitude": 100_000.0,
+        "longitude": 460_000.0,
+    }
+
+    monkeypatch.setattr("app.api.stats._load_df", lambda property_type=None: df.copy())
+    monkeypatch.setattr("app.api.stats._RAW_DF_CACHE", {"mtime": None, "df": None})
+    monkeypatch.setattr("app.api.stats._PREPARED_DF_CACHE", {"mtime": None, "df": None})
+
+    result = await market_home(_fake_request(), _FakeResponse(), _user=object())
+
+    assert result["headline"]["municipalities_count"] == 3
+    assert result["market_coverage"]["present"] == 3
+    assert result["market_coverage"]["noncanonical_rows"] == 0
+    assert all(item["municipality"] != "Ljubljana Center" for item in result["largest_markets"])
+
+
+@pytest.mark.asyncio
+async def test_market_home_excludes_truly_noncanonical_municipalities_from_viewer_coverage(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    df = _build_market_df().copy()
+    df.loc[len(df)] = {
+        "price_eur": 99_000,
+        "size_m2": 44,
+        "uporabna_povrsina": 42,
+        "municipality": "Sveti Jurij",
+        "property_type": "stanovanje",
+        "source_label": "2026",
+        "statistical_region": "osrednjeslovenska",
+        "latitude": 100_000.0,
+        "longitude": 460_000.0,
+    }
+
+    monkeypatch.setattr("app.api.stats._load_df", lambda property_type=None: df.copy())
+    monkeypatch.setattr("app.api.stats._RAW_DF_CACHE", {"mtime": None, "df": None})
+    monkeypatch.setattr("app.api.stats._PREPARED_DF_CACHE", {"mtime": None, "df": None})
+
+    result = await market_home(_fake_request(), _FakeResponse(), _user=object())
+
+    assert result["headline"]["municipalities_count"] == 3
+    assert result["market_coverage"]["present"] == 3
+    assert result["market_coverage"]["noncanonical_rows"] == 1
+    assert result["market_coverage"]["noncanonical_labels"][0]["label"] == "Sveti Jurij"
+    assert all(item["municipality"] != "Sveti Jurij" for item in result["largest_markets"])
+
+
+@pytest.mark.asyncio
 async def test_regions_stats_property_type_filter_scopes_region_counts(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(
         "app.api.stats._load_df",

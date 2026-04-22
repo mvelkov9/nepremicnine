@@ -34,8 +34,8 @@
     position: relative;
     isolation: isolate;
     display: grid;
-    gap: 1.1rem;
-    padding: 1.35rem;
+    gap: 1.15rem;
+    padding: 1.4rem;
     border-radius: var(--radius-md);
     border: 1px solid color-mix(in srgb, var(--border) 80%, var(--content-border-strong) 20%);
     background:
@@ -80,7 +80,6 @@
     box-shadow:
       inset 0 1px 0 var(--content-glow),
       0 18px 38px color-mix(in srgb, var(--shadow-color) 12%, transparent);
-    transform: translateY(-1px);
   }
 
   .section-panel:focus-within {

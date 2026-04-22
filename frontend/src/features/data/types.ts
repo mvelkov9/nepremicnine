@@ -73,7 +73,12 @@ export interface QualitySummary {
   canonical_reference_total?: number
   coverage_ratio?: number
   unresolved_rows?: number
+  noncanonical_rows?: number
   unresolved_labels?: Array<{
+    label: string
+    count: number
+  }>
+  noncanonical_labels?: Array<{
     label: string
     count: number
   }>

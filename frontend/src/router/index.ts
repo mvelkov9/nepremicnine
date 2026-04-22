@@ -234,6 +234,16 @@ const routes: RouteRecordRaw[] = [
     path: '/admin/benchmark',
     redirect: { name: 'admin-benchmark' },
   },
+  {
+    path: '/:pathMatch(.*)*',
+    name: 'not-found',
+    component: () => import('../views/NotFoundView.vue'),
+    meta: {
+      requiresAuth: true,
+      titleKey: 'error.notFound',
+      descriptionKey: 'error.notFound',
+    },
+  },
 ]
 
 const router = createRouter({
@@ -267,7 +277,7 @@ router.afterEach((to) => {
   const ui = useUiStore()
   ui.routeTransitioning = false
 
-  const base = 'Nepremičnine'
+  const base = i18n.global.t('app.title')
   const pageTitle = to.meta.titleKey ? i18n.global.t(to.meta.titleKey as string) : base
   document.title = to.meta.titleKey ? `${pageTitle} | ${base}` : base
   ui.routeTitle = pageTitle

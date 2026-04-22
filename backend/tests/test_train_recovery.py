@@ -64,3 +64,56 @@ async def test_reconcile_active_job_marks_missing_stale_jobs_failed(db_session):
     refreshed = result.scalar_one()
     assert refreshed.status == JobStatus.failed
     assert refreshed.stage == "stale"
+
+
+@pytest.mark.asyncio
+async def test_reconcile_active_job_preserves_zero_values_from_redis(db_session):
+    job = TrainingJob(
+        job_id="zero-job",
+        status=JobStatus.running,
+        csv_path="/tmp/train.csv",
+        progress=55,
+        rows=1200,
+        current_model_index=3,
+        total_models=8,
+        fitted_trees=45,
+        total_trees=500,
+        elapsed_sec=12.5,
+        eta_sec=98.0,
+    )
+    db_session.add(job)
+    await db_session.commit()
+
+    active_job, active_state = await _reconcile_active_job(
+        db_session,
+        _FakeRedis(
+            {
+                "training_job:zero-job": json.dumps(
+                    {
+                        "status": "running",
+                        "stage": "fitting",
+                        "progress": 56,
+                        "rows": 0,
+                        "current_model_index": 0,
+                        "total_models": 0,
+                        "current_model_progress": 0,
+                        "fitted_trees": 0,
+                        "total_trees": 0,
+                        "elapsed_sec": 0,
+                        "eta_sec": 0,
+                    }
+                )
+            }
+        ),
+    )
+
+    assert active_job is not None
+    assert active_state is not None
+    assert active_job.rows == 0
+    assert active_job.current_model_index == 0
+    assert active_job.total_models == 0
+    assert active_job.current_model_progress == 0
+    assert active_job.fitted_trees == 0
+    assert active_job.total_trees == 0
+    assert active_job.elapsed_sec == 0
+    assert active_job.eta_sec == 0

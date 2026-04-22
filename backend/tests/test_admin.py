@@ -5,6 +5,8 @@ from __future__ import annotations
 import pytest
 from httpx import AsyncClient
 
+from app.models.training_job import JobStatus, TrainingJob
+
 # ── GET /api/admin/users ─────────────────────────────────────────────────────
 
 
@@ -183,6 +185,34 @@ async def test_admin_stats_success(client: AsyncClient, admin_headers: dict):
     # At least the admin user exists
     assert data["total_users"] >= 1
     assert data["active_users"] >= 1
+
+
+@pytest.mark.asyncio
+async def test_admin_activity_does_not_truncate_busy_single_category(
+    client: AsyncClient,
+    admin_headers: dict,
+    db_session,
+):
+    db_session.add_all(
+        [
+            TrainingJob(
+                job_id=f"train-{index}",
+                status=JobStatus.running,
+                stage="training_global",
+                progress=index,
+                csv_path="raw/train.csv",
+            )
+            for index in range(7)
+        ]
+    )
+    await db_session.commit()
+
+    resp = await client.get("/api/admin/activity?limit=7", headers=admin_headers)
+
+    assert resp.status_code == 200
+    items = resp.json()
+    assert len(items) == 7
+    assert all(item["id"].startswith("training:") for item in items)
 
 
 # ── GET /api/admin/users — pagination ────────────────────────────────────────

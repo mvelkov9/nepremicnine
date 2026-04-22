@@ -1,18 +1,25 @@
 <script setup>
-  defineProps({
+  import { computed } from 'vue'
+
+  const props = defineProps({
     eyebrow: { type: String, default: '' },
     title: { type: String, required: true },
     description: { type: String, default: '' },
     compact: { type: Boolean, default: false },
   })
+
+  const titleTag = computed(() => (props.compact ? 'h2' : 'h1'))
 </script>
 
 <template>
-  <header class="page-header" :class="{ compact }">
+  <header
+    class="page-header"
+    :class="{ compact, 'has-meta': !!$slots.meta, 'has-actions': !!$slots.actions }"
+  >
     <div class="page-header-main">
       <div class="page-header-copy">
         <span v-if="eyebrow" class="page-header-eyebrow">{{ eyebrow }}</span>
-        <h1 class="page-header-title">{{ title }}</h1>
+        <component :is="titleTag" class="page-header-title">{{ title }}</component>
         <p v-if="description" class="page-header-description">{{ description }}</p>
       </div>
 
@@ -30,30 +37,26 @@
 <style scoped>
   .page-header {
     position: relative;
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 1rem;
-    padding: 0.55rem 0.1rem 0.5rem;
-    border-bottom: 1px solid color-mix(in srgb, var(--border) 82%, var(--content-border-strong) 18%);
+    display: grid;
+    gap: 0.95rem;
+    padding: 0.15rem 0 0.7rem;
     animation: page-header-enter 420ms cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   .page-header.compact {
-    align-items: center;
-    padding-block: 0.4rem;
+    gap: 0.55rem;
+    padding-block: 0 0.05rem;
   }
 
   .page-header-main {
     display: grid;
-    gap: 0.72rem;
+    gap: 0.9rem;
     min-width: 0;
-    flex: 1 1 auto;
   }
 
   .page-header-copy {
     display: grid;
-    gap: 0.42rem;
+    gap: 0.48rem;
     min-width: 0;
   }
 
@@ -61,13 +64,19 @@
     display: grid;
     gap: 0.55rem;
     min-width: 0;
+    align-content: end;
+  }
+
+  .page-header.has-meta:not(.compact) .page-header-main {
+    grid-template-columns: minmax(0, 1fr) minmax(15rem, 23rem);
+    align-items: end;
   }
 
   .page-header::before {
     content: '';
     position: absolute;
-    left: 0.1rem;
-    bottom: -1px;
+    left: 0;
+    bottom: 0;
     width: clamp(5rem, 16vw, 11rem);
     height: 2px;
     border-radius: 999px;
@@ -77,6 +86,28 @@
       color-mix(in srgb, var(--secondary) 66%, var(--primary) 34%)
     );
     opacity: 0.9;
+  }
+
+  .page-header::after {
+    content: '';
+    position: absolute;
+    inset: auto 0 0;
+    height: 1px;
+    background: linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--border) 86%, transparent),
+      color-mix(in srgb, var(--border) 36%, transparent)
+    );
+    opacity: 0.95;
+  }
+
+  .page-header.compact::before {
+    width: clamp(3.5rem, 12vw, 7rem);
+    opacity: 0.72;
+  }
+
+  .page-header.compact::after {
+    opacity: 0.58;
   }
 
   .page-header-eyebrow {
@@ -106,44 +137,55 @@
     margin: 0;
     font-family: var(--font-display);
     font-size: clamp(1.62rem, 2.6vw, 2.45rem);
-    line-height: 0.98;
+    max-width: 18ch;
+    line-height: 0.99;
     letter-spacing: -0.05em;
     text-wrap: balance;
   }
 
   .page-header.compact .page-header-title {
     font-size: clamp(1.2rem, 1.75vw, 1.6rem);
+    letter-spacing: -0.035em;
   }
 
-  .page-header-description {
-    margin: 0;
-    max-width: 58ch;
-    color: var(--text-muted);
-    font-size: 0.93rem;
-    line-height: 1.62;
-    text-wrap: pretty;
-  }
-
-  .page-header-actions {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    flex-wrap: wrap;
-    gap: 0.55rem;
-    align-self: flex-start;
-    padding: 0.45rem;
-    border-radius: 1.1rem;
-    border: 1px solid color-mix(in srgb, var(--border) 72%, var(--primary) 28%);
+  .page-header.compact .page-header-eyebrow {
+    padding: 0.28rem 0.62rem;
+    font-size: 0.64rem;
+    letter-spacing: 0.12em;
     background:
       linear-gradient(
         180deg,
         color-mix(in srgb, var(--surface-card-strong) 96%, transparent),
         transparent 120%
       ),
-      var(--surface-panel);
-    box-shadow:
-      inset 0 1px 0 var(--content-glow),
-      var(--shadow-sm);
+      color-mix(in srgb, var(--surface-card-strong) 94%, var(--primary) 6%);
+  }
+
+  .page-header.compact .page-header-description {
+    font-size: 0.9rem;
+    line-height: 1.5;
+  }
+
+  .page-header-description {
+    margin: 0;
+    max-width: 62ch;
+    color: var(--text-soft);
+    font-size: 0.95rem;
+    line-height: 1.58;
+    text-wrap: pretty;
+  }
+
+  .page-header-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    min-width: 0;
+  }
+
+  .page-header.has-actions .page-header-actions {
+    padding-top: 0.05rem;
   }
 
   @keyframes page-header-enter {
@@ -160,19 +202,28 @@
 
   @media (max-width: 720px) {
     .page-header {
-      flex-direction: column;
-      align-items: stretch;
       gap: 0.75rem;
-      padding-top: 0.4rem;
+      padding-top: 0.05rem;
     }
 
     .page-header-main {
       gap: 0.65rem;
     }
 
+    .page-header.has-meta .page-header-main {
+      grid-template-columns: 1fr;
+    }
+
+    .page-header-title {
+      max-width: none;
+    }
+
+    .page-header-meta {
+      justify-items: start;
+    }
+
     .page-header-actions {
       width: 100%;
-      justify-content: stretch;
     }
 
     .page-header-actions :deep(.p-button),

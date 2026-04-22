@@ -6,6 +6,60 @@ import AutoImport from 'unplugin-auto-import/vite'
 import { PrimeVueResolver } from '@primevue/auto-import-resolver'
 import { fileURLToPath } from 'node:url'
 
+const primeVueOptimizeDeps = [
+  'primevue/autocomplete',
+  'primevue/button',
+  'primevue/column',
+  'primevue/config',
+  'primevue/confirmationservice',
+  'primevue/confirmdialog',
+  'primevue/datatable',
+  'primevue/dialog',
+  'primevue/drawer',
+  'primevue/fileupload',
+  'primevue/iconfield',
+  'primevue/inputicon',
+  'primevue/inputnumber',
+  'primevue/inputtext',
+  'primevue/menu',
+  'primevue/paginator',
+  'primevue/password',
+  'primevue/progressbar',
+  'primevue/select',
+  'primevue/selectbutton',
+  'primevue/skeleton',
+  'primevue/slider',
+  'primevue/tab',
+  'primevue/tablist',
+  'primevue/tabpanel',
+  'primevue/tabpanels',
+  'primevue/tabs',
+  'primevue/tag',
+  'primevue/textarea',
+  'primevue/timeline',
+  'primevue/toast',
+  'primevue/toastservice',
+  'primevue/toggleswitch',
+  'primevue/tooltip',
+  'primevue/useconfirm',
+  'primevue/usetoast',
+]
+
+const appOptimizeDeps = [
+  'vue',
+  'vue-router',
+  'pinia',
+  'vue-i18n',
+  '@vueuse/core',
+  'axios',
+  '@primeuix/themes',
+  '@primeuix/themes/aura',
+  'chart.js',
+  'vue-chartjs',
+  'leaflet',
+  ...primeVueOptimizeDeps,
+]
+
 function packageInPath(id, pkg) {
   return id.includes(`/node_modules/${pkg}/`) || id.includes(`/node_modules/.pnpm/${pkg}`)
 }
@@ -21,7 +75,11 @@ function getPrimeVueChunk(id) {
     return 'primevue-overlay'
   }
 
-  if (/primevue\/(inputtext|inputnumber|autocomplete|textarea|password|select|selectbutton|toggleswitch|checkbox|radiobutton|datepicker)/.test(id)) {
+  if (
+    /primevue\/(inputtext|inputnumber|autocomplete|textarea|password|select|selectbutton|toggleswitch|checkbox|radiobutton|datepicker)/.test(
+      id,
+    )
+  ) {
     return 'primevue-forms'
   }
 
@@ -56,6 +114,11 @@ export default defineConfig(({ mode }) => {
       alias: {
         '@': fileURLToPath(new URL('./src', import.meta.url)),
       },
+    },
+    optimizeDeps: {
+      // Prevent cold-start hash churn in dev when auto-imported PrimeVue modules
+      // are discovered after the first route render.
+      include: appOptimizeDeps,
     },
     build: {
       chunkSizeWarningLimit: 600,

@@ -6895,23 +6895,38 @@ def build_gurs_benchmark_payload() -> dict[str, Any]:
 
     per_type_models = artifact.get("per_type_models") or {}
     global_model_entry = artifact.get("global_model") or {}
-    global_pipeline = (
-        global_model_entry.get("pipeline") if isinstance(global_model_entry, dict) else artifact.get("global_pipeline")
+    global_model_meta = (
+        dict(global_model_entry)
+        if isinstance(global_model_entry, dict) and global_model_entry.get("pipeline") is not None
+        else {
+            "pipeline": artifact.get("global_pipeline"),
+            "numeric_features": NUMERIC_FEATURES,
+            "categorical_features": CATEGORICAL_FEATURES,
+        }
     )
+    global_target_transform = str(
+        global_model_meta.get("target_transform")
+        or artifact.get("target_transform")
+        or ("log_price" if artifact.get("log_target") else "none")
+    )
+    global_model_meta["target_transform"] = global_target_transform
+    global_pipeline = global_model_meta.get("pipeline")
     if global_pipeline is None:
-        raise RuntimeError("Current model artifact is incomplete.")
+        return _empty_gurs_benchmark_payload("The current model artifact is incomplete.")
 
     if per_type_models:
         y_pred_model = _predict_combined_routed(
             X_test,
             global_pipeline,
             per_type_models,
-            target_transform=str(artifact.get("target_transform") or "log_ppm2"),
+            target_transform=global_target_transform,
         )
     else:
-        size_test = X_test["size_m2"].clip(lower=1).values.astype(float)
-        y_pred_raw = np.clip(global_pipeline.predict(X_test), -30, 30)
-        y_pred_model = np.maximum(size_test * np.exp(y_pred_raw), 0)
+        y_pred_model = _predict_with_model_meta(
+            X_test,
+            global_model_meta,
+            default_target_transform=global_target_transform,
+        )
 
     calibration = artifact.get("calibration")
     if calibration:

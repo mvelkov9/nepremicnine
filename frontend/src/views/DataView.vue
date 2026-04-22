@@ -1,5 +1,6 @@
 <script setup lang="ts">
   import { computed, onMounted, ref, watch } from 'vue'
+  import { useRoute, useRouter } from 'vue-router'
   import { useDebounceFn } from '@vueuse/core'
   import { useI18n } from 'vue-i18n'
   import { useConfirm } from 'primevue/useconfirm'
@@ -13,7 +14,7 @@
   import TabPanels from 'primevue/tabpanels'
   import Tabs from 'primevue/tabs'
   import EmptyState from '../components/EmptyState.vue'
-  import PageHeader from '../components/PageHeader.vue'
+  import MetricCard from '../components/MetricCard.vue'
   import SavedWorkspaceMenu from '../components/workbench/SavedWorkspaceMenu.vue'
   import AdminRunDetailPanel from '../components/admin/AdminRunDetailPanel.vue'
   import AdminWorkspaceHero from '../components/admin/AdminWorkspaceHero.vue'
@@ -39,9 +40,12 @@
     UploadItem,
   } from '../features/data/types'
   import { getApiErrorMessage } from '../utils/apiError'
+  import { readQueryString, readQueryTab } from '../utils/routeQuery'
   import { formatDate as formatDateValue, formatNumber, formatPercent } from '../utils/format'
 
   const { t } = useI18n()
+  const route = useRoute()
+  const router = useRouter()
   const auth = useAuthStore()
   const dataStore = useDataStore()
   const workbench = useWorkbenchStore()
@@ -67,8 +71,13 @@
   const previewVisible = ref(false)
   const error = ref('')
   const rescanning = ref(false)
-  const selectedPrepareRunId = ref('')
-  const dataTab = ref(auth.isAdmin ? 'upload' : 'library')
+  const dataTabs = ['upload', 'quality', 'library'] as const
+  const selectedPrepareRunId = ref(readQueryString(route.query.run) || '')
+  const dataTab = ref(
+    auth.isAdmin
+      ? readQueryTab(route.query.tab, dataTabs, 'upload')
+      : readQueryTab(route.query.tab, dataTabs, 'library'),
+  )
 
   const qualitySummary = computed(() => dataStore.qualitySummary as QualitySummary | null)
   const uploadCapacity = computed(() => dataStore.uploadCapacity as UploadCapacitySummary | null)
@@ -119,6 +128,39 @@
       label: t('data.unresolvedRows'),
       value: formatNumber(qualitySummary.value?.unresolved_rows || 0),
       meta: t('data.qualityHint'),
+    },
+  ])
+
+  const qualityOverviewCards = computed(() => [
+    {
+      label: t('data.coverageRatio'),
+      value:
+        qualitySummary.value?.coverage_ratio != null
+          ? formatPercent(qualitySummary.value.coverage_ratio)
+          : '-',
+      meta:
+        qualitySummary.value?.canonical_reference_total != null
+          ? `${formatNumber(qualitySummary.value.covered_municipalities || 0)} / ${formatNumber(qualitySummary.value.canonical_reference_total || 0)}`
+          : t('data.referenceCoverageHint'),
+    },
+    {
+      label: t('data.unresolvedMunicipalities'),
+      value: formatNumber(qualitySummary.value?.unresolved_labels?.length || 0),
+      meta: t('data.unresolvedHint'),
+    },
+    {
+      label: t('data.aliasCollisions'),
+      value: formatNumber(qualitySummary.value?.alias_collisions?.length || 0),
+      meta: t('data.aliasHint'),
+    },
+    {
+      label: t('data.preparedDataset'),
+      value: trainingDataset.value?.exists
+        ? formatNumber(trainingDataset.value.rows || 0)
+        : t('common.noData'),
+      meta: trainingDataset.value?.exists
+        ? trainingDataset.value.relative_path || t('common.noData')
+        : t('data.noPreparedDataset'),
     },
   ])
 
@@ -190,6 +232,49 @@
     },
     { immediate: true },
   )
+
+  function syncPrepareRunFromRoute(query = route.query) {
+    const nextRunId = readQueryString(query.run)
+    if (!nextRunId || selectedPrepareRunId.value === nextRunId) return
+    selectedPrepareRunId.value = nextRunId
+    if (auth.isAdmin && dataTab.value !== 'upload') {
+      dataTab.value = 'upload'
+    }
+  }
+
+  function syncPrepareRunToRoute(jobId: string) {
+    const currentRunId = readQueryString(route.query.run) || ''
+    if (currentRunId === jobId) return
+    void router.replace({
+      query: {
+        ...route.query,
+        ...(jobId ? { run: jobId } : {}),
+      },
+    })
+  }
+
+  watch(
+    () => route.query.tab,
+    () => {
+      const nextTab = readQueryTab(route.query.tab, dataTabs, auth.isAdmin ? 'upload' : 'library')
+      if (dataTab.value !== nextTab) dataTab.value = nextTab
+    },
+    { immediate: true },
+  )
+
+  watch(
+    () => route.query.run,
+    () => {
+      syncPrepareRunFromRoute(route.query)
+    },
+    { immediate: true },
+  )
+
+  watch(dataTab, (tab) => {
+    const currentTab = readQueryTab(route.query.tab, dataTabs, auth.isAdmin ? 'upload' : 'library')
+    if (currentTab === tab) return
+    void router.replace({ query: { ...route.query, tab } })
+  })
 
   watch(datasetSearchInput, (value) => {
     debouncedDatasetSearchSync(value)
@@ -283,7 +368,12 @@
   })
 
   async function loadPrepareRunDetail(jobId: string) {
+    if (!jobId) return
     selectedPrepareRunId.value = jobId
+    if (auth.isAdmin && dataTab.value !== 'upload') {
+      dataTab.value = 'upload'
+    }
+    syncPrepareRunToRoute(jobId)
     await workbench.fetchPrepareRunDetail(jobId)
   }
 
@@ -291,6 +381,7 @@
     () => workbench.prepareRuns,
     (runs) => {
       if (!runs.length) return
+      const hasRequestedRun = Boolean(readQueryString(route.query.run))
 
       const resolvedRunId = runs.some((item) => item.id === selectedPrepareRunId.value)
         ? selectedPrepareRunId.value
@@ -303,7 +394,11 @@
       }
 
       if (selectedPrepareRun.value?.id !== resolvedRunId) {
-        void loadPrepareRunDetail(resolvedRunId)
+        if (hasRequestedRun) {
+          void loadPrepareRunDetail(resolvedRunId)
+        } else {
+          void workbench.fetchPrepareRunDetail(resolvedRunId)
+        }
       }
     },
     { immediate: true },
@@ -644,6 +739,7 @@
             page: 'data',
             tab: dataTab,
             filters: {
+              run: selectedPrepareRunId,
               search: datasetTable.state.search,
               page: datasetTable.state.page,
               page_size: datasetTable.state.page_size,
@@ -705,53 +801,88 @@
         </TabPanel>
 
         <TabPanel value="quality">
-          <section class="quality-grid quality-grid--split data-tab-content">
-            <article class="card quality-card">
-              <PageHeader
-                compact
-                :eyebrow="t('data.qualitySummary')"
-                :title="t('data.unresolvedMunicipalities')"
-                :description="t('data.unresolvedHint')"
-              />
+          <section class="quality-board data-tab-content">
+            <article class="card quality-overview-card">
+              <div class="quality-board-head">
+                <div class="quality-board-copy">
+                  <p class="quality-eyebrow">{{ t('nav.data') }}</p>
+                  <h2>{{ t('data.qualitySummary') }}</h2>
+                  <p>
+                    {{ t('data.referenceCoverageHint') }}
+                  </p>
+                </div>
+                <p class="quality-board-note">
+                  {{ t('data.qualityHint') }}
+                </p>
+              </div>
 
-              <DataTable
-                :value="qualitySummary?.unresolved_labels || []"
-                paginator
-                :rows="10"
-                size="small"
-                striped-rows
-                responsive-layout="scroll"
-              >
-                <Column field="label" :header="t('dashboard.municipality')" sortable />
-                <Column field="count" :header="t('dashboard.transactions')" sortable />
-              </DataTable>
+              <div class="kpi-grid quality-overview-grid">
+                <MetricCard
+                  v-for="item in qualityOverviewCards"
+                  :key="item.label"
+                  :label="item.label"
+                  :value="item.value"
+                  :meta="item.meta"
+                />
+              </div>
             </article>
 
-            <article class="card quality-card">
-              <PageHeader
-                compact
-                :eyebrow="t('data.qualitySummary')"
-                :title="t('data.aliasCollisions')"
-                :description="t('data.aliasHint')"
-              />
+            <section class="quality-grid quality-grid--split">
+              <article class="card quality-card">
+                <div class="quality-card-head">
+                  <div class="quality-card-copy">
+                    <p class="quality-card-kicker">{{ t('data.qualitySummary') }}</p>
+                    <h3>{{ t('data.unresolvedMunicipalities') }}</h3>
+                    <p>{{ t('data.unresolvedHint') }}</p>
+                  </div>
+                  <strong class="quality-card-value">
+                    {{ formatNumber(qualitySummary?.unresolved_labels?.length || 0) }}
+                  </strong>
+                </div>
 
-              <DataTable
-                :value="qualitySummary?.alias_collisions || []"
-                paginator
-                :rows="10"
-                size="small"
-                striped-rows
-                responsive-layout="scroll"
-              >
-                <Column field="canonical" :header="t('data.canonicalLabel')" sortable />
-                <Column field="variant_count" :header="t('data.variantCount')" sortable />
-                <Column :header="t('data.variants')">
-                  <template #body="{ data }">
-                    {{ data.variants?.join(', ') || '-' }}
-                  </template>
-                </Column>
-              </DataTable>
-            </article>
+                <DataTable
+                  :value="qualitySummary?.unresolved_labels || []"
+                  paginator
+                  :rows="10"
+                  size="small"
+                  striped-rows
+                  responsive-layout="scroll"
+                >
+                  <Column field="label" :header="t('dashboard.municipality')" sortable />
+                  <Column field="count" :header="t('dashboard.transactions')" sortable />
+                </DataTable>
+              </article>
+
+              <article class="card quality-card">
+                <div class="quality-card-head">
+                  <div class="quality-card-copy">
+                    <p class="quality-card-kicker">{{ t('data.qualitySummary') }}</p>
+                    <h3>{{ t('data.aliasCollisions') }}</h3>
+                    <p>{{ t('data.aliasHint') }}</p>
+                  </div>
+                  <strong class="quality-card-value">
+                    {{ formatNumber(qualitySummary?.alias_collisions?.length || 0) }}
+                  </strong>
+                </div>
+
+                <DataTable
+                  :value="qualitySummary?.alias_collisions || []"
+                  paginator
+                  :rows="10"
+                  size="small"
+                  striped-rows
+                  responsive-layout="scroll"
+                >
+                  <Column field="canonical" :header="t('data.canonicalLabel')" sortable />
+                  <Column field="variant_count" :header="t('data.variantCount')" sortable />
+                  <Column :header="t('data.variants')">
+                    <template #body="{ data }">
+                      {{ data.variants?.join(', ') || '-' }}
+                    </template>
+                  </Column>
+                </DataTable>
+              </article>
+            </section>
           </section>
         </TabPanel>
 
@@ -893,7 +1024,8 @@
   .data-page,
   .data-admin-grid,
   .data-side-stack,
-  .quality-grid {
+  .quality-grid,
+  .quality-board {
     display: grid;
     gap: var(--space-section);
   }
@@ -906,6 +1038,10 @@
   .data-tabs,
   .data-tab-content {
     display: grid;
+    gap: 1rem;
+  }
+
+  .quality-board {
     gap: 1rem;
   }
 
@@ -938,10 +1074,10 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .quality-overview-card,
   .quality-card {
     display: grid;
     gap: 1rem;
-    padding: 1.1rem;
     border-radius: var(--radius-lg);
     border: 1px solid color-mix(in srgb, var(--border) 72%, var(--content-border-strong) 28%);
     background:
@@ -962,6 +1098,103 @@
       ),
       var(--surface-panel);
     box-shadow: var(--accent-shadow, var(--shadow-sm));
+  }
+
+  .quality-overview-card {
+    padding: 1.2rem;
+    gap: 1.15rem;
+  }
+
+  .quality-board-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(16rem, 22rem);
+    gap: 1rem;
+    align-items: start;
+  }
+
+  .quality-board-copy,
+  .quality-card-copy {
+    display: grid;
+    gap: 0.45rem;
+    min-width: 0;
+  }
+
+  .quality-board-copy h2,
+  .quality-card-copy h3 {
+    margin: 0;
+    font-family: var(--font-display);
+    line-height: 1.02;
+    letter-spacing: -0.04em;
+  }
+
+  .quality-board-copy h2 {
+    font-size: clamp(1.45rem, 2vw, 2rem);
+  }
+
+  .quality-card-copy h3 {
+    font-size: 1.25rem;
+  }
+
+  .quality-board-copy p,
+  .quality-card-copy p {
+    margin: 0;
+    color: var(--text-soft);
+    line-height: 1.55;
+  }
+
+  .quality-eyebrow,
+  .quality-card-kicker {
+    display: inline-flex;
+    width: fit-content;
+    align-items: center;
+    padding: 0.3rem 0.7rem;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--page-accent) 20%, var(--border) 80%);
+    background: color-mix(in srgb, var(--surface-card-strong) 92%, var(--page-accent) 8%);
+    color: color-mix(in srgb, var(--page-accent) 78%, var(--text) 22%);
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .quality-board-note {
+    margin: 0;
+    padding: 0.95rem 1rem;
+    border-radius: var(--radius-md);
+    border: 1px solid color-mix(in srgb, var(--border) 70%, var(--page-accent) 30%);
+    background: color-mix(in srgb, var(--surface-soft) 90%, var(--page-accent) 10%);
+    color: var(--text-soft);
+    line-height: 1.55;
+  }
+
+  .quality-overview-grid {
+    margin-top: 0.1rem;
+  }
+
+  .quality-card {
+    padding: 1.1rem;
+  }
+
+  .quality-card-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 1rem;
+    align-items: start;
+  }
+
+  .quality-card-value {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 3.2rem;
+    padding: 0.55rem 0.8rem;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--surface-soft) 84%, var(--page-accent) 16%);
+    color: var(--text);
+    font-size: 1rem;
+    line-height: 1;
+    box-shadow: inset 0 1px 0 var(--glass-highlight);
   }
 
   .preview-dialog {
@@ -989,14 +1222,24 @@
   }
 
   @media (max-width: 1100px) {
+    .quality-board-head,
     .quality-grid--split {
       grid-template-columns: 1fr;
     }
   }
 
   @media (max-width: 720px) {
+    .quality-overview-card,
     .quality-card {
       padding: 1rem;
+    }
+
+    .quality-card-head {
+      grid-template-columns: 1fr;
+    }
+
+    .quality-card-value {
+      justify-self: start;
     }
   }
 </style>

@@ -14,7 +14,7 @@ test.describe('Navigation', () => {
 
   test('page title updates on navigation', async ({ page }) => {
     await page.goto('/login')
-    await expect(page).toHaveTitle(/Nepremi(?:č|c)nine/)
+    await expect(page).toHaveTitle(/Nepremi\u010dnine/)
   })
 
   test('page loader appears during boot', async ({ page }) => {

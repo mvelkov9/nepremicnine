@@ -1,7 +1,7 @@
 <script setup lang="ts">
   import { computed, onMounted, ref, watch } from 'vue'
   import { useDebounceFn } from '@vueuse/core'
-  import { RouterLink } from 'vue-router'
+  import { RouterLink, useRoute } from 'vue-router'
   import Button from 'primevue/button'
   import Column from 'primevue/column'
   import DataTable from 'primevue/datatable'
@@ -23,6 +23,7 @@
   import PageHeader from '../components/PageHeader.vue'
   import SavedWorkspaceMenu from '../components/workbench/SavedWorkspaceMenu.vue'
   import MunicipalityCompareWorkspace from '../components/municipalities/MunicipalityCompareWorkspace.vue'
+  import { buildCanonicalCompareSlots } from '../features/municipalities/compareState'
   import { useFilterOptions } from '../composables/useFilterOptions'
   import { useViewerQueryState } from '../composables/useViewerQueryState'
   import api from '../composables/useApi'
@@ -52,6 +53,7 @@
   }
 
   const { t } = useI18n()
+  const route = useRoute()
   const workbench = useWorkbenchStore()
   const referenceData = useReferenceDataStore()
   const viewerQuery = useViewerQueryState<MunicipalitiesQueryState>({
@@ -223,10 +225,14 @@
   }
 
   function normalizeQueryState() {
-    const validMunicipalities = new Set(
-      referenceData.municipalities.map((item) => item.municipality),
-    )
-    const nextCompareSlots = compareTargets().filter(
+    const validMunicipalityNames = referenceData.municipalities.map((item) => item.municipality)
+    const validMunicipalities = new Set(validMunicipalityNames)
+    const canonicalCompareSlots = buildCanonicalCompareSlots(route.query, validMunicipalityNames)
+    const nextCompareSlots = [
+      canonicalCompareSlots.compareA || viewerQuery.state.compare_a,
+      canonicalCompareSlots.compareB || viewerQuery.state.compare_b,
+      canonicalCompareSlots.compareC || viewerQuery.state.compare_c,
+    ].filter(
       (value, index, array) => array.indexOf(value) === index && validMunicipalities.has(value),
     )
     const patch: Partial<MunicipalitiesQueryState> = {}
@@ -404,6 +410,14 @@
     () => {
       if (!initialized.value) return
       void loadCompareRows()
+    },
+  )
+
+  watch(
+    () => route.query.compare,
+    () => {
+      if (!referenceData.loaded) return
+      normalizeQueryState()
     },
   )
 

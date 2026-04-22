@@ -14,7 +14,7 @@ import uuid
 import zipfile
 from collections import Counter
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Any, Literal
 
 import pandas as pd
 from arq import create_pool
@@ -25,7 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.database import get_db
-from app.dependencies.auth import get_current_user, require_admin
+from app.dependencies.auth import require_admin
 from app.models.dataset import DatasetFile
 from app.models.prepare_run import PrepareRun
 from app.models.user import User
@@ -84,6 +84,8 @@ UPLOAD_STREAM_CHUNK_SIZE = 8 * 1024 * 1024
 _CACHE_LOCK = threading.Lock()
 _TRAINING_DATASET_CACHE: dict[str, object | None] = {"signature": None, "value": None}
 _QUALITY_SUMMARY_CACHE: dict[str, object | None] = {"signature": None, "value": None}
+_CANONICAL_MUNICIPALITY_KEYS = {normalize_municipality_name(str(row["obcina_naziv"])) for row in CANONICAL_REGION_ROWS}
+_QUALITY_SUMMARY_CACHE_VERSION = 2
 
 
 def _upload_disk_reserve_bytes() -> int:
@@ -305,6 +307,25 @@ def _is_path_within(base_dir: str, candidate_path: str) -> bool:
     return cand_real == base_real or cand_real.startswith(base_real + os.sep)
 
 
+def _resolve_managed_dataset_path(raw_path: str) -> str:
+    resolved = os.path.realpath(raw_path)
+    if not _is_path_within(UPLOAD_DIR, resolved):
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "Dataset file is outside the managed upload directory",
+        )
+    return resolved
+
+
+def _remove_managed_dataset_file(raw_path: str) -> None:
+    try:
+        resolved = _resolve_managed_dataset_path(raw_path)
+    except HTTPException:
+        logger.warning("Skipping deletion for unmanaged dataset path %s", raw_path)
+        return
+    _remove_file_if_exists(resolved)
+
+
 async def _sync_upload_directory_records(db: AsyncSession) -> tuple[int, int]:
     """Index manually added upload files so they appear in the dataset library."""
     # Pre-extract ZIPs so their contents appear as individual files in the listing.
@@ -323,10 +344,12 @@ async def _sync_upload_directory_records(db: AsyncSession) -> tuple[int, int]:
         existing_hash_counts[record.file_hash] = existing_hash_counts.get(record.file_hash, 0) + 1
 
     for record in existing_records:
-        if os.path.exists(record.stored_path):
+        resolved = os.path.realpath(record.stored_path)
+        if not _is_path_within(UPLOAD_DIR, resolved):
+            logger.warning("Dropping unmanaged dataset record %s -> %s", record.id, record.stored_path)
+        elif os.path.exists(resolved):
             continue
 
-        resolved = os.path.realpath(record.stored_path)
         existing_by_path.pop(resolved, None)
 
         remaining_hash_refs = existing_hash_counts.get(record.file_hash, 0) - 1
@@ -421,7 +444,7 @@ def _get_training_dataset_metadata() -> TrainingDatasetResponse:
     file_exists = os.path.exists(TRAIN_CSV)
     relative_path = _to_relative_data_path(TRAIN_CSV)
     if not file_exists:
-        signature = ("missing",)
+        signature = ("missing", _QUALITY_SUMMARY_CACHE_VERSION)
         with _CACHE_LOCK:
             if _TRAINING_DATASET_CACHE["signature"] == signature and _TRAINING_DATASET_CACHE["value"] is not None:
                 return _TRAINING_DATASET_CACHE["value"]
@@ -431,7 +454,7 @@ def _get_training_dataset_metadata() -> TrainingDatasetResponse:
             _TRAINING_DATASET_CACHE["value"] = response
         return response
 
-    signature = ("present",) + _training_file_signature(TRAIN_CSV)
+    signature = ("present", _QUALITY_SUMMARY_CACHE_VERSION) + _training_file_signature(TRAIN_CSV)
     with _CACHE_LOCK:
         if _TRAINING_DATASET_CACHE["signature"] == signature and _TRAINING_DATASET_CACHE["value"] is not None:
             return _TRAINING_DATASET_CACHE["value"]
@@ -479,10 +502,17 @@ def _validate_path_within_data_dir(raw_path: str) -> str:
     return resolved
 
 
+def _require_non_blank_path(raw_path: str, field_name: str) -> str:
+    cleaned = raw_path.strip()
+    if not cleaned:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, f"{field_name} is required")
+    return cleaned
+
+
 def _build_quality_summary() -> dict:
     reference_total = len(CANONICAL_REGION_ROWS)
     if not os.path.exists(TRAIN_CSV):
-        signature = ("missing",)
+        signature = ("missing", _QUALITY_SUMMARY_CACHE_VERSION)
         with _CACHE_LOCK:
             if _QUALITY_SUMMARY_CACHE["signature"] == signature and _QUALITY_SUMMARY_CACHE["value"] is not None:
                 return _QUALITY_SUMMARY_CACHE["value"]
@@ -492,6 +522,8 @@ def _build_quality_summary() -> dict:
             "covered_municipalities": 0,
             "unresolved_rows": 0,
             "unresolved_labels": [],
+            "noncanonical_rows": 0,
+            "noncanonical_labels": [],
             "alias_collisions": [],
         }
         with _CACHE_LOCK:
@@ -499,7 +531,7 @@ def _build_quality_summary() -> dict:
             _QUALITY_SUMMARY_CACHE["value"] = response
         return response
 
-    signature = ("present",) + _training_file_signature(TRAIN_CSV)
+    signature = ("present", _QUALITY_SUMMARY_CACHE_VERSION) + _training_file_signature(TRAIN_CSV)
     with _CACHE_LOCK:
         if _QUALITY_SUMMARY_CACHE["signature"] == signature and _QUALITY_SUMMARY_CACHE["value"] is not None:
             return _QUALITY_SUMMARY_CACHE["value"]
@@ -532,6 +564,8 @@ def _build_quality_summary() -> dict:
             "covered_municipalities": 0,
             "unresolved_rows": 0,
             "unresolved_labels": [],
+            "noncanonical_rows": 0,
+            "noncanonical_labels": [],
             "alias_collisions": [],
         }
         with _CACHE_LOCK:
@@ -543,11 +577,14 @@ def _build_quality_summary() -> dict:
     canonical_labels = raw_values.map(format_municipality_label)
     normalized = canonical_labels.map(normalize_municipality_name)
     known_mask = canonical_labels.map(lambda value: value is not None and not is_unknown_label(value))
+    canonical_mask = known_mask & normalized.isin(_CANONICAL_MUNICIPALITY_KEYS)
+    noncanonical_mask = known_mask & ~normalized.isin(_CANONICAL_MUNICIPALITY_KEYS)
 
-    unresolved_labels = Counter(raw_values[~known_mask])
+    unresolved_labels = Counter(raw_values[~canonical_mask])
+    noncanonical_labels = Counter(str(label) for label in canonical_labels[noncanonical_mask] if label)
     collision_map: dict[str, set[str]] = {}
-    for raw, canonical in zip(raw_values, canonical_labels, strict=False):
-        if canonical is None:
+    for raw, canonical, is_canonical in zip(raw_values, canonical_labels, canonical_mask, strict=False):
+        if canonical is None or not is_canonical:
             continue
         collision_map.setdefault(str(canonical), set()).add(str(raw).strip())
 
@@ -558,15 +595,19 @@ def _build_quality_summary() -> dict:
     ]
     alias_collisions.sort(key=lambda item: item["variant_count"], reverse=True)
 
-    covered = int(normalized[known_mask].nunique())
+    covered = int(normalized[canonical_mask].nunique())
     response = {
         "training_dataset_exists": True,
         "canonical_reference_total": reference_total,
         "covered_municipalities": covered,
         "coverage_ratio": round(covered / max(reference_total, 1), 4),
-        "unresolved_rows": int((~known_mask).sum()),
+        "unresolved_rows": int((~canonical_mask).sum()),
         "unresolved_labels": [
             {"label": label or "unknown", "count": int(count)} for label, count in unresolved_labels.most_common(12)
+        ],
+        "noncanonical_rows": int(noncanonical_mask.sum()),
+        "noncanonical_labels": [
+            {"label": label, "count": int(count)} for label, count in noncanonical_labels.most_common(12)
         ],
         "alias_collisions": alias_collisions[:12],
     }
@@ -799,7 +840,7 @@ async def list_datasets(
     sort: str = Query("uploaded_at"),
     order: str = Query("desc", pattern="^(asc|desc)$"),
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(get_current_user),
+    _user: User = Depends(require_admin),
 ):
     import math
 
@@ -858,7 +899,7 @@ async def list_prepare_etn_kpp_pairs(
     request: Request,
     response: Response,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(get_current_user),
+    _user: User = Depends(require_admin),
 ):
     """Return deduplicated ETN KPP year pairs for fast bulk-prepare selection."""
     response.headers["Cache-Control"] = "private, max-age=300"
@@ -932,7 +973,7 @@ async def rescan_datasets(
 
 
 @router.get("/training-dataset", response_model=TrainingDatasetResponse)
-async def training_dataset(_user: User = Depends(get_current_user)):
+async def training_dataset(_user: User = Depends(require_admin)):
     """Expose the prepared train.csv artifact so the frontend can guide users into training."""
     return _get_training_dataset_metadata()
 
@@ -948,66 +989,68 @@ async def preview_dataset(
     dataset_id: int,
     limit: int = Query(50, ge=1, le=1000),
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(get_current_user),
+    _user: User = Depends(require_admin),
 ):
     result = await db.execute(select(DatasetFile).where(DatasetFile.id == dataset_id))
     dataset = result.scalar_one_or_none()
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
 
-    if not os.path.exists(dataset.stored_path):
+    stored_path = _resolve_managed_dataset_path(dataset.stored_path)
+
+    if not os.path.exists(stored_path):
         raise HTTPException(status_code=404, detail="File not found on disk")
 
-    if dataset.source_type == "gpkg" or dataset.stored_path.lower().endswith(".gpkg"):
+    if dataset.source_type == "gpkg" or stored_path.lower().endswith(".gpkg"):
         try:
-            preview = inspect_gpkg(dataset.stored_path, preview_rows=limit)
+            preview = inspect_gpkg(stored_path, preview_rows=limit)
             return DatasetPreviewResponse(
                 columns=preview.get("columns", []),
                 rows=preview.get("rows", []),
                 total_rows=int(preview.get("total_rows", 0)),
             )
         except (sqlite3.DatabaseError, OSError, ValueError):
-            logger.exception("Cannot read GeoPackage file %s for preview", dataset.stored_path)
+            logger.exception("Cannot read GeoPackage file %s for preview", stored_path)
             raise HTTPException(status_code=500, detail="Cannot read the GeoPackage file") from None
 
     if dataset.source_type == "shape-zip":
         try:
-            preview = inspect_shapefile_zip_with_cache(dataset.stored_path, UPLOAD_DIR, preview_rows=limit)
+            preview = inspect_shapefile_zip_with_cache(stored_path, UPLOAD_DIR, preview_rows=limit)
             return DatasetPreviewResponse(
                 columns=preview.get("columns", []),
                 rows=preview.get("rows", []),
                 total_rows=int(preview.get("total_rows", 0)),
             )
         except ValueError:
-            logger.exception("Cannot preview shapefile ZIP %s", dataset.stored_path)
+            logger.exception("Cannot preview shapefile ZIP %s", stored_path)
             raise HTTPException(
                 status_code=422, detail="ZIP does not contain any previewable shapefile attribute tables"
             ) from None
         except OSError:
-            logger.exception("Cannot read shapefile ZIP %s for preview", dataset.stored_path)
+            logger.exception("Cannot read shapefile ZIP %s for preview", stored_path)
             raise HTTPException(status_code=500, detail="Cannot read the shapefile ZIP") from None
 
-    if dataset.source_type in ("zip", "etn") or dataset.stored_path.lower().endswith(".zip"):
+    if dataset.source_type in ("zip", "etn") or stored_path.lower().endswith(".zip"):
         try:
-            preview = _peek_zip_for_csv_preview(dataset.stored_path, limit)
+            preview = _peek_zip_for_csv_preview(stored_path, limit)
             return DatasetPreviewResponse(
                 columns=preview["columns"],
                 rows=preview["rows"],
                 total_rows=dataset.row_count or preview["total_rows"],
             )
         except (OSError, zipfile.BadZipFile, ValueError):
-            logger.exception("Cannot peek ZIP %s for preview", dataset.stored_path)
+            logger.exception("Cannot peek ZIP %s for preview", stored_path)
             raise HTTPException(status_code=500, detail="Cannot read the dataset file") from None
 
     try:
-        df = read_csv_flexible(dataset.stored_path, nrows=limit)
+        df = read_csv_flexible(stored_path, nrows=limit)
         return DatasetPreviewResponse(
             columns=list(df.columns),
             rows=df.fillna("").to_dict(orient="records"),
             total_rows=dataset.row_count or len(df),
         )
     except (pd.errors.ParserError, pd.errors.EmptyDataError, ValueError, UnicodeDecodeError, OSError):
-        logger.exception("Cannot read dataset file %s for preview", dataset.stored_path)
+        logger.exception("Cannot read dataset file %s for preview", stored_path)
         raise HTTPException(status_code=500, detail="Cannot read the dataset file") from None
 
 
@@ -1023,9 +1066,7 @@ async def delete_dataset(
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
 
-    # Remove file from disk
-    if os.path.exists(dataset.stored_path):
-        os.remove(dataset.stored_path)
+    _remove_managed_dataset_file(dataset.stored_path)
 
     await db.delete(dataset)
     await db.commit()
@@ -1048,8 +1089,7 @@ async def delete_datasets_bulk(
 
     deleted = 0
     for dataset in rows:
-        if os.path.exists(dataset.stored_path):
-            os.remove(dataset.stored_path)
+        _remove_managed_dataset_file(dataset.stored_path)
         await db.delete(dataset)
         deleted += 1
     await db.commit()
@@ -1065,6 +1105,13 @@ def _coerce_progress(value: object, fallback: int = 0) -> int:
         return max(0, min(100, int(round(float(value)))))
     except (TypeError, ValueError):
         return fallback
+
+
+def _state_value(payload: dict | None, key: str, fallback: Any) -> Any:
+    if not payload:
+        return fallback
+    value = payload.get(key)
+    return fallback if value is None else value
 
 
 async def _read_prepare_job_state(redis, job_id: str) -> dict | None:
@@ -1130,15 +1177,15 @@ async def _sync_prepare_run(
 
     data = payload or {}
     row.status = str(data.get("status") or row.status or "unknown")
-    row.stage = data.get("stage") or row.stage
+    row.stage = _state_value(data, "stage", row.stage)
     row.progress = _coerce_progress(data.get("progress"), fallback=row.progress or 0)
-    row.total_pairs = data.get("total_pairs") or row.total_pairs
-    row.current_pair_index = data.get("current_pair_index") or row.current_pair_index
-    row.current_label = data.get("current_label") or row.current_label
-    row.pairs_completed = data.get("pairs_completed") or row.pairs_completed
-    row.rows = data.get("rows") or row.rows
-    row.spatial_phase = data.get("spatial_phase") or row.spatial_phase
-    row.error = data.get("error") or row.error
+    row.total_pairs = _state_value(data, "total_pairs", row.total_pairs)
+    row.current_pair_index = _state_value(data, "current_pair_index", row.current_pair_index)
+    row.current_label = _state_value(data, "current_label", row.current_label)
+    row.pairs_completed = _state_value(data, "pairs_completed", row.pairs_completed)
+    row.rows = _state_value(data, "rows", row.rows)
+    row.spatial_phase = _state_value(data, "spatial_phase", row.spatial_phase)
+    row.error = _state_value(data, "error", row.error)
     if data.get("result") is not None:
         row.result_json = json.dumps(data.get("result") or {}, ensure_ascii=True)
     await db.flush()
@@ -1166,8 +1213,8 @@ async def _get_active_prepare_job(redis) -> tuple[str | None, dict | None]:
 
 
 async def _get_prepare_enqueue_redis(request: Request):
-    shared_redis = request.app.state.redis
-    if hasattr(shared_redis, "enqueued_jobs"):
+    shared_redis = getattr(request.app.state, "redis", None)
+    if shared_redis is not None and hasattr(shared_redis, "enqueue_job"):
         return shared_redis, False
 
     redis = await create_pool(_parse_redis_url(get_settings().redis_url))
@@ -1175,8 +1222,8 @@ async def _get_prepare_enqueue_redis(request: Request):
 
 
 class EtnPrepareRequest(BaseModel):
-    posli_csv_path: str
-    delistavb_csv_path: str
+    posli_csv_path: str = Field(min_length=1, max_length=1000)
+    delistavb_csv_path: str = Field(min_length=1, max_length=1000)
     enrichment_options: dict | None = None
 
 
@@ -1187,8 +1234,8 @@ async def prepare_etn_kpp(
     _user: User = Depends(require_admin),
 ):
     """Prepare training CSV from a single ETN KPP posli+delistavb pair."""
-    posli = _validate_path_within_data_dir(req.posli_csv_path)
-    delistavb = _validate_path_within_data_dir(req.delistavb_csv_path)
+    posli = _validate_path_within_data_dir(_require_non_blank_path(req.posli_csv_path, "posli_csv_path"))
+    delistavb = _validate_path_within_data_dir(_require_non_blank_path(req.delistavb_csv_path, "delistavb_csv_path"))
     try:
         result = prepare_training_csv_from_etn_kpp(posli, delistavb, TRAIN_CSV, req.enrichment_options)
     except ValueError as exc:
@@ -1206,15 +1253,15 @@ async def prepare_etn_kpp(
 
 
 class EtnBulkPair(BaseModel):
-    posli_csv_path: str
-    delistavb_csv_path: str
+    posli_csv_path: str = Field(min_length=1, max_length=1000)
+    delistavb_csv_path: str = Field(min_length=1, max_length=1000)
     zemljisca_csv_path: str | None = None
     label: str | None = None
     year: str | None = None
 
 
 class EtnBulkRequest(BaseModel):
-    pairs: list[EtnBulkPair] = Field(..., max_length=50)
+    pairs: list[EtnBulkPair] = Field(..., min_length=1, max_length=50)
     enrichment_options: dict | None = None
 
 
@@ -1229,10 +1276,16 @@ async def start_prepare_etn_kpp_bulk(
     pairs_dicts = []
     for pair in req.pairs:
         resolved_pair = pair.model_dump()
-        resolved_pair["posli_csv_path"] = _validate_path_within_data_dir(pair.posli_csv_path)
-        resolved_pair["delistavb_csv_path"] = _validate_path_within_data_dir(pair.delistavb_csv_path)
+        resolved_pair["posli_csv_path"] = _validate_path_within_data_dir(
+            _require_non_blank_path(pair.posli_csv_path, "posli_csv_path")
+        )
+        resolved_pair["delistavb_csv_path"] = _validate_path_within_data_dir(
+            _require_non_blank_path(pair.delistavb_csv_path, "delistavb_csv_path")
+        )
         if pair.zemljisca_csv_path:
-            resolved_pair["zemljisca_csv_path"] = _validate_path_within_data_dir(pair.zemljisca_csv_path)
+            resolved_pair["zemljisca_csv_path"] = _validate_path_within_data_dir(
+                _require_non_blank_path(pair.zemljisca_csv_path, "zemljisca_csv_path")
+            )
         pairs_dicts.append(resolved_pair)
 
     redis, should_close = await _get_prepare_enqueue_redis(request)
@@ -1265,14 +1318,43 @@ async def start_prepare_etn_kpp_bulk(
         )
         await redis.set(f"{PREPARE_JOB_PREFIX}{job_id}", json.dumps(initial_payload), ex=86400)
         await redis.set(PREPARE_ACTIVE_KEY, job_id, ex=86400)
-        enqueued_job = await redis.enqueue_job(
-            "run_prepare_etn_bulk", job_id, pairs_dicts, TRAIN_CSV, req.enrichment_options
-        )
-        if should_close and enqueued_job is None:
-            logger.error("Failed to enqueue prepare job %s", job_id)
+        queue_error = "Preparation worker queue is unavailable"
+        try:
+            enqueued_job = await redis.enqueue_job(
+                "run_prepare_etn_bulk", job_id, pairs_dicts, TRAIN_CSV, req.enrichment_options
+            )
+        except Exception:
+            logger.exception("Failed to enqueue prepare job %s", job_id)
             await redis.delete(PREPARE_ACTIVE_KEY)
             await redis.delete(f"{PREPARE_JOB_PREFIX}{job_id}")
-            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Preparation worker queue is unavailable")
+            await _sync_prepare_run(
+                db,
+                job_id=job_id,
+                payload={
+                    **initial_payload,
+                    "status": "failed",
+                    "stage": "error",
+                    "error": queue_error,
+                },
+            )
+            await db.commit()
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, queue_error) from None
+        if enqueued_job is None:
+            logger.error("Prepare queue returned no job handle for %s", job_id)
+            await redis.delete(PREPARE_ACTIVE_KEY)
+            await redis.delete(f"{PREPARE_JOB_PREFIX}{job_id}")
+            await _sync_prepare_run(
+                db,
+                job_id=job_id,
+                payload={
+                    **initial_payload,
+                    "status": "failed",
+                    "stage": "error",
+                    "error": queue_error,
+                },
+            )
+            await db.commit()
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, queue_error)
         logger.info("Queued prepare job %s for %d pairs", job_id, len(pairs_dicts))
         await db.commit()
         return _serialize_prepare_job(job_id, initial_payload)
@@ -1285,7 +1367,7 @@ async def start_prepare_etn_kpp_bulk(
 async def get_active_prepare_etn_kpp_bulk(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(get_current_user),
+    _user: User = Depends(require_admin),
 ):
     """Return the currently active ETN bulk preparation job, if any."""
     job_id, state = await _get_active_prepare_job(request.app.state.redis)
@@ -1301,7 +1383,7 @@ async def get_prepare_etn_kpp_bulk_status(
     job_id: str,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(get_current_user),
+    _user: User = Depends(require_admin),
 ):
     """Return ETN bulk preparation status from Redis."""
     state = await _read_prepare_job_state(request.app.state.redis, job_id)
@@ -1327,10 +1409,16 @@ async def prepare_etn_kpp_bulk(
     pairs_dicts = []
     for pair in req.pairs:
         resolved_pair = pair.model_dump()
-        resolved_pair["posli_csv_path"] = _validate_path_within_data_dir(pair.posli_csv_path)
-        resolved_pair["delistavb_csv_path"] = _validate_path_within_data_dir(pair.delistavb_csv_path)
+        resolved_pair["posli_csv_path"] = _validate_path_within_data_dir(
+            _require_non_blank_path(pair.posli_csv_path, "posli_csv_path")
+        )
+        resolved_pair["delistavb_csv_path"] = _validate_path_within_data_dir(
+            _require_non_blank_path(pair.delistavb_csv_path, "delistavb_csv_path")
+        )
         if pair.zemljisca_csv_path:
-            resolved_pair["zemljisca_csv_path"] = _validate_path_within_data_dir(pair.zemljisca_csv_path)
+            resolved_pair["zemljisca_csv_path"] = _validate_path_within_data_dir(
+                _require_non_blank_path(pair.zemljisca_csv_path, "zemljisca_csv_path")
+            )
         pairs_dicts.append(resolved_pair)
     try:
         result = prepare_training_csv_from_etn_kpp_bulk(
@@ -1351,7 +1439,7 @@ async def prepare_etn_kpp_bulk(
 
 
 class RpeRnImportRequest(BaseModel):
-    rn_csv_path: str
+    rn_csv_path: str = Field(min_length=1, max_length=1000)
     stat_regije_csv_path: str | None = None
 
 
@@ -1365,8 +1453,12 @@ async def import_rpe_rn_endpoint(
     """Import RPE + RN data, store municipality→region mappings in DB."""
     from app.models.region import RegionLookup as RegionLookupModel
 
-    rn_path = _validate_path_within_data_dir(req.rn_csv_path)
-    stat_path = _validate_path_within_data_dir(req.stat_regije_csv_path) if req.stat_regije_csv_path else None
+    rn_path = _validate_path_within_data_dir(_require_non_blank_path(req.rn_csv_path, "rn_csv_path"))
+    stat_path = (
+        _validate_path_within_data_dir(_require_non_blank_path(req.stat_regije_csv_path, "stat_regije_csv_path"))
+        if req.stat_regije_csv_path
+        else None
+    )
     try:
         result = import_rpe_rn(rn_path, stat_path, UPLOAD_DIR)
     except Exception as exc:
@@ -1401,24 +1493,25 @@ async def import_rpe_rn_endpoint(
 async def inspect_dataset(
     dataset_id: int,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(get_current_user),
+    _user: User = Depends(require_admin),
 ):
     """Inspect a dataset: columns, row count, preview rows."""
     result = await db.execute(select(DatasetFile).where(DatasetFile.id == dataset_id))
     dataset = result.scalar_one_or_none()
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
-    if not os.path.exists(dataset.stored_path):
+    stored_path = _resolve_managed_dataset_path(dataset.stored_path)
+    if not os.path.exists(stored_path):
         raise HTTPException(status_code=404, detail="File not found on disk")
     try:
-        return inspect_csv(dataset.stored_path)
+        return inspect_csv(stored_path)
     except (pd.errors.ParserError, pd.errors.EmptyDataError, ValueError, UnicodeDecodeError, OSError):
-        logger.exception("Cannot inspect dataset file %s", dataset.stored_path)
+        logger.exception("Cannot inspect dataset file %s", stored_path)
         raise HTTPException(status_code=500, detail="Cannot inspect the dataset file") from None
 
 
 class PrepareTrainRequest(BaseModel):
-    source_csv_path: str
+    source_csv_path: str = Field(min_length=1, max_length=1000)
     column_map: dict[str, str]
 
 
@@ -1429,7 +1522,7 @@ async def prepare_train(
     _user: User = Depends(require_admin),
 ):
     """Prepare training CSV from a source CSV with custom column mapping."""
-    source = _validate_path_within_data_dir(req.source_csv_path)
+    source = _validate_path_within_data_dir(_require_non_blank_path(req.source_csv_path, "source_csv_path"))
     try:
         result = prepare_training_csv(source, req.column_map, TRAIN_CSV)
     except ValueError as exc:

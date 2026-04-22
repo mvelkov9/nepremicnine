@@ -9,6 +9,11 @@ type Locale = 'sl' | 'en'
 const storedLocale = useLocalStorage<Locale>('locale', 'sl')
 const initialLocale: Locale = storedLocale.value === 'en' ? 'en' : 'sl'
 
+function applyDocumentLocale(locale: Locale) {
+  if (typeof document === 'undefined') return
+  document.documentElement.lang = locale
+}
+
 export const i18n = createI18n({
   legacy: false,
   locale: initialLocale,
@@ -16,8 +21,11 @@ export const i18n = createI18n({
   messages: { sl, en },
 })
 
+applyDocumentLocale(initialLocale)
+
 export function setLocale(nextLocale: string) {
   const normalizedLocale: Locale = nextLocale === 'en' ? 'en' : 'sl'
   i18n.global.locale.value = normalizedLocale
   storedLocale.value = normalizedLocale
+  applyDocumentLocale(normalizedLocale)
 }

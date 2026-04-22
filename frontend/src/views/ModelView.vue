@@ -1,6 +1,6 @@
 ﻿<script setup lang="ts">
   import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-  import { RouterLink } from 'vue-router'
+  import { RouterLink, useRoute, useRouter } from 'vue-router'
   import { useI18n } from 'vue-i18n'
   import { Bar } from 'vue-chartjs'
   import { BarElement, CategoryScale, Chart as ChartJS, LinearScale, Tooltip } from 'chart.js'
@@ -24,6 +24,7 @@
   import { useModelStore } from '../stores/model'
   import { useWorkbenchStore } from '../stores/workbench'
   import { useFormat } from '../composables/useFormat'
+  import { readQueryString, readQueryTab } from '../utils/routeQuery'
   import { formatDateTime, formatNumber, formatPercent } from '../utils/format'
   import type { AdminRunSummary, AdminRunDetail } from '../types/api'
   import type {
@@ -75,17 +76,23 @@
     research_impact?: ModelResearchImpact | null
   }
 
+  const modelTabs = ['analysis', 'importance', 'history'] as const
+
   const { t } = useI18n()
   const { fmt, fmtCurrency, formatType } = useFormat()
+  const route = useRoute()
+  const router = useRouter()
   const auth = useAuthStore()
   const dataStore = useDataStore()
   const model = useModelStore()
   const workbench = useWorkbenchStore()
 
   const selectedCsv = ref('')
-  const modelTab = ref<'analysis' | 'importance' | 'history'>('analysis')
+  const modelTab = ref<'analysis' | 'importance' | 'history'>(
+    readQueryTab(route.query.tab, modelTabs, 'analysis'),
+  )
   const pollTimer = ref<number | null>(null)
-  const selectedTrainingRunId = ref('')
+  const selectedTrainingRunId = ref(readQueryString(route.query.run) || '')
 
   const isAdmin = computed(() => auth.user?.role === 'admin')
   const trainingDataset = computed(() => dataStore.trainingDataset as TrainingDatasetSource | null)
@@ -344,6 +351,7 @@
     () => workbench.trainingRuns,
     (runs) => {
       if (!runs.length) return
+      const hasRequestedRun = Boolean(readQueryString(route.query.run))
 
       const resolvedRunId = runs.some((item) => item.id === selectedTrainingRunId.value)
         ? selectedTrainingRunId.value
@@ -356,7 +364,11 @@
       }
 
       if (selectedTrainingRun.value?.id !== resolvedRunId) {
-        void loadTrainingRunDetail(resolvedRunId)
+        if (hasRequestedRun) {
+          void loadTrainingRunDetail(resolvedRunId)
+        } else {
+          void workbench.fetchTrainingRunDetail(resolvedRunId)
+        }
       }
     },
     { immediate: true },
@@ -437,8 +449,49 @@
     return 'secondary'
   }
 
+  function syncModelTabFromRoute(query = route.query) {
+    const allowedTabs = isAdmin.value ? modelTabs : modelTabs.filter((tab) => tab !== 'history')
+    const nextTab = readQueryTab(query.tab, allowedTabs, 'analysis')
+    if (modelTab.value !== nextTab) {
+      modelTab.value = nextTab
+    }
+  }
+
+  function syncModelTabToRoute(tab: string) {
+    const allowedTabs = isAdmin.value ? modelTabs : modelTabs.filter((value) => value !== 'history')
+    const nextTab = readQueryTab(tab, allowedTabs, 'analysis')
+    const currentTab = readQueryTab(route.query.tab, allowedTabs, 'analysis')
+    if (currentTab === nextTab) return
+    void router.replace({ query: { ...route.query, tab: nextTab } })
+  }
+
+  function syncTrainingRunFromRoute(query = route.query) {
+    const nextRunId = readQueryString(query.run)
+    if (!nextRunId || selectedTrainingRunId.value === nextRunId) return
+    selectedTrainingRunId.value = nextRunId
+    if (isAdmin.value && modelTab.value !== 'history') {
+      modelTab.value = 'history'
+    }
+  }
+
+  function syncTrainingRunToRoute(jobId: string) {
+    const currentRunId = readQueryString(route.query.run) || ''
+    if (currentRunId === jobId) return
+    void router.replace({
+      query: {
+        ...route.query,
+        ...(jobId ? { run: jobId } : {}),
+      },
+    })
+  }
+
   async function loadTrainingRunDetail(jobId: string) {
+    if (!jobId) return
     selectedTrainingRunId.value = jobId
+    if (isAdmin.value && modelTab.value !== 'history') {
+      modelTab.value = 'history'
+    }
+    syncTrainingRunToRoute(jobId)
     await workbench.fetchTrainingRunDetail(jobId)
   }
 
@@ -508,11 +561,31 @@
   }
 
   onMounted(async () => {
+    syncModelTabFromRoute(route.query)
+    syncTrainingRunFromRoute(route.query)
     await initializePage()
   })
 
   onUnmounted(() => {
     stopPolling()
+  })
+
+  watch(
+    () => route.query.tab,
+    () => {
+      syncModelTabFromRoute(route.query)
+    },
+  )
+
+  watch(
+    () => route.query.run,
+    () => {
+      syncTrainingRunFromRoute(route.query)
+    },
+  )
+
+  watch(modelTab, (tab) => {
+    syncModelTabToRoute(tab)
   })
 </script>
 

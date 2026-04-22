@@ -50,10 +50,6 @@
         : t('app.title'),
   )
 
-  const currentDescription = computed(() =>
-    route.meta.descriptionKey ? t(route.meta.descriptionKey as string) : t('layout.page.default'),
-  )
-
   const workspaceLabel = computed(() =>
     isAdminArea.value ? t('layout.adminWorkbench') : t('layout.marketWorkspace'),
   )
@@ -261,27 +257,28 @@
                   <span class="page-kicker">{{ workspaceLabel }}</span>
                   <Tag v-if="versionBadge" :value="versionBadge" rounded />
                 </div>
-                <h1 class="page-heading">{{ currentTitle }}</h1>
-                <p class="page-description">{{ currentDescription }}</p>
+                <p class="page-heading">{{ currentTitle }}</p>
               </div>
             </div>
 
             <div class="shell-header-actions">
-              <RouterLink v-if="switchLink" :to="switchLink.to" class="shell-link-pill">
-                <AppIcon :name="switchLink.icon" :size="16" />
-                <span>{{ switchLink.label }}</span>
-              </RouterLink>
+              <div class="shell-utility-cluster">
+                <RouterLink v-if="switchLink" :to="switchLink.to" class="shell-link-pill">
+                  <AppIcon :name="switchLink.icon" :size="16" />
+                  <span>{{ switchLink.label }}</span>
+                </RouterLink>
 
-              <Button
-                class="shell-action-button shell-action-button--badge"
-                rounded
-                @click="ui.toggleWorkspaceTray()"
-                :aria-label="t('layout.workspace')"
-              >
-                <AppIcon name="market" :size="16" />
-                <span>{{ t('layout.workspace') }}</span>
-                <small v-if="workspaceBadge" class="shell-badge">{{ workspaceBadge }}</small>
-              </Button>
+                <Button
+                  class="shell-action-button shell-action-button--badge"
+                  rounded
+                  @click="ui.toggleWorkspaceTray()"
+                  :aria-label="t('layout.workspace')"
+                >
+                  <AppIcon name="market" :size="16" />
+                  <span>{{ t('layout.workspace') }}</span>
+                  <small v-if="workspaceBadge" class="shell-badge">{{ workspaceBadge }}</small>
+                </Button>
+              </div>
 
               <Button class="profile-trigger" rounded @click="openProfile">
                 <span class="avatar-frame">
@@ -386,7 +383,7 @@
     border-bottom: 1px solid var(--app-shell-border);
     box-shadow:
       inset 0 1px 0 var(--app-shell-highlight),
-      0 12px 26px var(--app-shell-depth-shadow);
+      0 10px 22px var(--app-shell-depth-shadow);
     backdrop-filter: blur(18px) saturate(1.08);
     transition:
       box-shadow 160ms ease,
@@ -401,7 +398,7 @@
   .shell-topbar-inner,
   .shell-footer-inner {
     width: 100%;
-    padding: 0.9rem 1.15rem;
+    padding: 0.78rem 1.15rem;
   }
 
   .shell-heading-row {
@@ -413,7 +410,7 @@
 
   .shell-heading-main {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     gap: 0.7rem;
     min-width: 0;
   }
@@ -421,7 +418,7 @@
   .page-meta {
     min-width: 0;
     display: grid;
-    gap: 0.16rem;
+    gap: 0.12rem;
   }
 
   .page-meta-row {
@@ -443,19 +440,9 @@
     margin: 0;
     color: var(--app-shell-text);
     font-family: var(--font-display);
-    font-size: clamp(1.28rem, 1.9vw, 1.7rem);
-    line-height: 1;
-    letter-spacing: -0.045em;
-    text-wrap: balance;
-  }
-
-  .page-description {
-    margin: 0;
-    max-width: 48ch;
-    color: var(--app-shell-text-soft);
-    font-size: 0.8rem;
-    line-height: 1.45;
-    text-wrap: pretty;
+    font-size: clamp(1.02rem, 1.4vw, 1.16rem);
+    line-height: 1.08;
+    letter-spacing: -0.03em;
   }
 
   .shell-header-actions {
@@ -464,6 +451,19 @@
     justify-content: flex-end;
     gap: 0.6rem;
     flex-wrap: wrap;
+    margin-left: auto;
+  }
+
+  .shell-utility-cluster {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    flex-wrap: wrap;
+    padding: 0.26rem;
+    border-radius: 999px;
+    border: 1px solid var(--app-shell-control-border);
+    background: color-mix(in srgb, var(--app-shell-control-bg) 90%, transparent);
+    box-shadow: inset 0 1px 0 var(--app-shell-highlight-soft);
   }
 
   .shell-link-pill {
@@ -694,7 +694,7 @@
   }
 
   .desktop-sidebar-toggle {
-    margin-top: 0.1rem;
+    margin-top: 0;
   }
 
   :deep(.shell-icon-button .p-button-label),
@@ -762,6 +762,10 @@
     .footer-meta {
       justify-content: flex-start;
     }
+
+    .shell-header-actions {
+      margin-left: 0;
+    }
   }
 
   @media (max-width: 960px) {
@@ -819,12 +823,14 @@
       padding-block: 1rem 1.6rem;
     }
 
-    .page-description {
-      max-width: none;
-    }
-
     .shell-header-actions {
       gap: 0.55rem;
+    }
+
+    .shell-utility-cluster {
+      width: 100%;
+      justify-content: flex-start;
+      border-radius: 1rem;
     }
 
     .shell-link-pill,

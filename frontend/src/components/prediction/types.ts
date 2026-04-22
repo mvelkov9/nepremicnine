@@ -59,9 +59,12 @@ export interface PredictionReadinessItem {
   text: string
 }
 
+export type PredictionRouteQueryKey =
+  | keyof PredictionFormData
+  | 'price_eur'
+  | 'predicted_price_eur'
+  | 'tab'
+
 export type PredictionRouteQuery = Partial<
-  Record<
-    'naselje' | 'municipality' | 'property_type' | 'size_m2' | 'year_built' | 'floor' | 'price_eur',
-    string | string[] | null | undefined
-  >
+  Record<PredictionRouteQueryKey, string | string[] | null | undefined>
 >

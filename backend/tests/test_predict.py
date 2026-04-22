@@ -130,9 +130,10 @@ async def test_clear_history_unauthenticated(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_clear_history_viewer_forbidden(client: AsyncClient, viewer_headers: dict):
+async def test_clear_history_viewer_success(client: AsyncClient, viewer_headers: dict):
     resp = await client.delete("/api/predict/history/clear", headers=viewer_headers)
-    assert resp.status_code == 403
+    assert resp.status_code == 200
+    assert "deleted" in resp.json()
 
 
 @pytest.mark.asyncio
@@ -140,3 +141,31 @@ async def test_clear_history_admin_success(client: AsyncClient, admin_headers: d
     resp = await client.delete("/api/predict/history/clear", headers=admin_headers)
     assert resp.status_code == 200
     assert "deleted" in resp.json()
+
+
+@pytest.mark.asyncio
+async def test_clear_history_only_deletes_current_users_entries(
+    client: AsyncClient,
+    admin_headers: dict,
+    viewer_headers: dict,
+):
+    fake_result = {
+        "predicted_price_eur": 200_000.0,
+        "model_used": "global",
+        "features_used": {"size_m2": "80.0"},
+    }
+    with patch("app.api.predict.predict_one", return_value=fake_result):
+        await client.post("/api/predict", json={"size_m2": 80}, headers=admin_headers)
+        await client.post("/api/predict", json={"size_m2": 90}, headers=viewer_headers)
+
+    clear_resp = await client.delete("/api/predict/history/clear", headers=viewer_headers)
+    assert clear_resp.status_code == 200
+    assert clear_resp.json()["deleted"] == 1
+
+    admin_history = await client.get("/api/predict/history", headers=admin_headers)
+    viewer_history = await client.get("/api/predict/history", headers=viewer_headers)
+
+    assert admin_history.status_code == 200
+    assert viewer_history.status_code == 200
+    assert admin_history.json()["total"] == 1
+    assert viewer_history.json()["total"] == 0

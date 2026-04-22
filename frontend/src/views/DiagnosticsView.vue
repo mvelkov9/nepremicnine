@@ -660,6 +660,68 @@
     ]
   })
 
+  const diagnosticsBenchmarkChips = computed<DiagnosticsContextChip[]>(() => [
+    {
+      label: t('diag.variantBenchmarks'),
+      value: formatNumber(variantBenchmarkRows.value.length),
+      tone: 'accent',
+    },
+    {
+      label: t('diag.focusType'),
+      value: selectedType.value === 'all' ? t('diag.allTypes') : formatType(selectedType.value),
+    },
+    {
+      label: t('diag.compareMetrics'),
+      value: selectedMetric.value.toUpperCase(),
+    },
+  ])
+
+  const variantSpotlightCards = computed<DiagnosticsSummaryCard[]>(() => {
+    if (!variantBenchmarkRows.value.length) return []
+
+    const bestR2 = [...variantBenchmarkRows.value]
+      .filter((row) => row.r2 != null)
+      .sort((left, right) => Number(right.r2 ?? -Infinity) - Number(left.r2 ?? -Infinity))[0]
+
+    const lowestMae = [...variantBenchmarkRows.value]
+      .filter((row) => row.mae != null)
+      .sort((left, right) => Number(left.mae ?? Infinity) - Number(right.mae ?? Infinity))[0]
+
+    const broadestSources = [...variantBenchmarkRows.value].sort(
+      (left, right) => countEnabledSources(right.sources) - countEnabledSources(left.sources),
+    )[0]
+
+    const cards: DiagnosticsSummaryCard[] = []
+
+    if (bestR2) {
+      cards.push({
+        label: t('diag.globalR2'),
+        value: formatMetric(bestR2.r2, 3),
+        meta: `${bestR2.label} · ${variantSourceSummary(bestR2.sources)}`,
+        tone: 'success',
+      })
+    }
+
+    if (lowestMae) {
+      cards.push({
+        label: t('diag.globalMae'),
+        value: formatCurrency(lowestMae.mae),
+        meta: `${lowestMae.label} · ${variantSourceSummary(lowestMae.sources)}`,
+        tone: 'success',
+      })
+    }
+
+    if (broadestSources) {
+      cards.push({
+        label: t('diag.sources'),
+        value: variantSourceSummary(broadestSources.sources),
+        meta: broadestSources.label,
+      })
+    }
+
+    return cards
+  })
+
   const evBaselinePerTypeRows = computed<
     Array<
       DiagnosticsEvBaselineTypeRow & { propertyType: string; typeLabel: string; delta_mae: number }
@@ -784,6 +846,22 @@
     })
   })
 
+  const diagnosticsInsightsChips = computed<DiagnosticsContextChip[]>(() => [
+    {
+      label: t('diag.topFeatures'),
+      value: formatNumber(featureHighlights.value.length),
+      tone: 'accent',
+    },
+    {
+      label: t('diag.perTypeTable'),
+      value: formatNumber(perTypeRows.value.length),
+    },
+    {
+      label: t('diag.perRegionTable'),
+      value: formatNumber(perRegionRows.value.length),
+    },
+  ])
+
   const preparationMetadata = computed(
     () =>
       model.diagnostics?.data_preparation ||
@@ -820,6 +898,55 @@
     )
   })
 
+  const filterOverviewCards = computed<DiagnosticsSummaryCard[]>(() => {
+    if (!filterRows.value.length) return []
+
+    const buildingStages = filterRows.value.filter((row) => row.group === 'building')
+    const landStages = filterRows.value.filter((row) => row.group === 'land')
+    const lastBuildingStage = buildingStages[buildingStages.length - 1]
+    const lastLandStage = landStages[landStages.length - 1]
+    const biggestDrop = [...filterRows.value].sort(
+      (left, right) => right.dropped_since_previous - left.dropped_since_previous,
+    )[0]
+
+    const cards: DiagnosticsSummaryCard[] = []
+
+    if (buildingStages.length) {
+      cards.push({
+        label: t('diag.buildingFlow'),
+        value: formatNumber(lastBuildingStage?.rows || 0),
+        meta: t('diag.rowsKept'),
+        tone: 'success',
+      })
+    }
+
+    if (landStages.length) {
+      cards.push({
+        label: t('diag.landFlow'),
+        value: formatNumber(lastLandStage?.rows || 0),
+        meta: t('diag.rowsKept'),
+        tone: 'success',
+      })
+    }
+
+    if (biggestDrop) {
+      cards.push({
+        label: t('diag.rowsDropped'),
+        value: formatNumber(biggestDrop.dropped_since_previous),
+        meta: `${biggestDrop.groupLabel} · ${biggestDrop.stageLabel}`,
+        tone: 'warning',
+      })
+    }
+
+    cards.push({
+      label: t('diag.stage'),
+      value: formatNumber(filterRows.value.length),
+      meta: t('diag.filterSummary'),
+    })
+
+    return cards
+  })
+
   const enrichmentRows = computed(() =>
     buildGursEnrichmentRows(
       preparationMetadata.value?.reports,
@@ -828,6 +955,64 @@
   )
 
   const enrichmentTotals = computed(() => summarizeGursEnrichment(enrichmentRows.value))
+
+  const enrichmentSourceCards = computed<DiagnosticsSummaryCard[]>(() => {
+    if (!enrichmentRows.value.length) return []
+
+    const totalRuns = enrichmentRows.value.length
+    const buildCard = (
+      label: string,
+      totalMatches: number,
+      availableRuns: number,
+      matchedRuns: number,
+    ): DiagnosticsSummaryCard => ({
+      label,
+      value: formatNumber(totalMatches),
+      meta: `${formatNumber(matchedRuns)} / ${formatNumber(totalRuns)} ${t('diag.yearsCovered')}`,
+      tone: matchedRuns > 0 ? 'success' : availableRuns > 0 ? 'warning' : 'default',
+    })
+
+    return [
+      buildCard(
+        t('diag.rnRegister'),
+        enrichmentTotals.value.rnExactAddress + enrichmentTotals.value.rnRegionId,
+        enrichmentRows.value.filter((row) => row.rnAvailable).length,
+        enrichmentRows.value.filter((row) => row.rnExactAddress > 0 || row.rnRegionId > 0).length,
+      ),
+      buildCard(
+        t('diag.evBuildings'),
+        enrichmentTotals.value.evBuildingMatch,
+        enrichmentRows.value.filter((row) => row.evBuildingAvailable).length,
+        enrichmentRows.value.filter((row) => row.evBuildingMatch > 0).length,
+      ),
+      buildCard(
+        t('diag.evParcels'),
+        enrichmentTotals.value.evParcelMatch,
+        enrichmentRows.value.filter((row) => row.evParcelAvailable).length,
+        enrichmentRows.value.filter((row) => row.evParcelMatch > 0).length,
+      ),
+      buildCard(
+        t('diag.knPolygons'),
+        enrichmentTotals.value.knPolygonMatch,
+        enrichmentRows.value.filter((row) => row.knAvailable).length,
+        enrichmentRows.value.filter((row) => row.knPolygonMatch > 0).length,
+      ),
+      buildCard(
+        t('diag.gjiInfrastructure'),
+        enrichmentTotals.value.gjiVodovodNearby + enrichmentTotals.value.gjiKanalizacijaNearby,
+        enrichmentRows.value.filter((row) => row.gjiAvailable).length,
+        enrichmentRows.value.filter(
+          (row) => row.gjiVodovodNearby > 0 || row.gjiKanalizacijaNearby > 0,
+        ).length,
+      ),
+      buildCard(
+        t('diag.emvZones'),
+        enrichmentTotals.value.emvZoneMatch,
+        enrichmentRows.value.filter((row) => row.emvAvailable || row.emvSpatialEnabled).length,
+        enrichmentRows.value.filter((row) => row.emvZoneMatch > 0).length,
+      ),
+    ]
+  })
 
   const enrichmentSourcesMissing = computed(() => {
     if (!enrichmentRows.value.length) return false
@@ -842,6 +1027,24 @@
         !row.emvAvailable,
     )
   })
+
+  const diagnosticsQualityChips = computed<DiagnosticsContextChip[]>(() => [
+    {
+      label: t('diag.filterSummary'),
+      value: formatNumber(filterRows.value.length),
+      tone: 'accent',
+    },
+    {
+      label: t('diag.datasetEnrichment'),
+      value: formatNumber(enrichmentRows.value.length),
+    },
+    {
+      label: t('diag.yearsCovered'),
+      value: Array.isArray(preparationMetadata.value?.reports)
+        ? formatNumber(preparationMetadata.value.reports.length)
+        : t('common.noData'),
+    },
+  ])
 
   const segmentRows = computed(
     () => model.diagnostics?.segment_diagnostics?.[selectedSegmentGroup.value] || [],
@@ -897,6 +1100,12 @@
     if (value == null || Number.isNaN(Number(value))) return '—'
     const sign = Number(value) > 0 ? '+' : ''
     return `${sign}${formatCurrency(value)}`
+  }
+
+  function countEnabledSources(sources?: DiagnosticsVariantSources | null) {
+    return (
+      Number(Boolean(sources?.rn)) + Number(Boolean(sources?.ev)) + Number(Boolean(sources?.emv))
+    )
   }
 
   function variantSourceSummary(sources?: DiagnosticsVariantSources | null) {
@@ -1260,6 +1469,26 @@
           </TabPanel>
 
           <TabPanel value="benchmarks">
+            <section class="card diagnostics-card diagnostics-section-intro">
+              <div class="diagnostics-section-copy">
+                <p class="diagnostics-section-eyebrow">{{ t('nav.benchmark') }}</p>
+                <h2>{{ t('diag.variantBenchmarks') }}</h2>
+                <p>{{ t('diag.variantBenchmarksDesc') }}</p>
+              </div>
+
+              <div class="context-chip-strip">
+                <span
+                  v-for="chip in diagnosticsBenchmarkChips"
+                  :key="`benchmark-${chip.label}-${chip.value}`"
+                  class="context-chip"
+                  :class="chip.tone ? `is-${chip.tone}` : ''"
+                >
+                  <span>{{ chip.label }}</span>
+                  <strong>{{ chip.value }}</strong>
+                </span>
+              </div>
+            </section>
+
             <Tabs v-model:value="diagnosticsBenchmarkTab" class="diagnostics-subtabs">
               <TabList>
                 <Tab value="variants">{{ t('diag.variantBenchmarks') }}</Tab>
@@ -1277,6 +1506,20 @@
                         :description="t('diag.variantBenchmarksDesc')"
                       />
 
+                      <div
+                        v-if="variantSpotlightCards.length"
+                        class="kpi-grid diagnostics-kpi-grid"
+                      >
+                        <MetricCard
+                          v-for="item in variantSpotlightCards"
+                          :key="`${item.label}-${item.value}`"
+                          :label="item.label"
+                          :value="item.value"
+                          :meta="item.meta"
+                          :tone="item.tone"
+                        />
+                      </div>
+
                       <div v-if="variantBenchmarkCards.length" class="kpi-grid">
                         <MetricCard
                           v-for="item in variantBenchmarkCards"
@@ -1287,58 +1530,67 @@
                         />
                       </div>
 
-                      <DataTable
-                        :value="variantBenchmarkRows"
-                        striped-rows
-                        table-style="min-width: 100%"
-                      >
-                        <Column field="label" :header="t('diag.variant')" sortable />
-                        <Column :header="t('diag.sources')">
-                          <template #body="{ data }">
-                            <span class="muted source-cell">{{
-                              variantSourceSummary(data.sources)
-                            }}</span>
-                          </template>
-                        </Column>
-                        <Column field="r2" header="R²" sortable>
-                          <template #body="{ data }">
-                            <Tag
-                              :value="formatMetric(data.r2, 3)"
-                              :severity="r2Severity(data.r2)"
-                            />
-                          </template>
-                        </Column>
-                        <Column field="mae" header="MAE" sortable>
-                          <template #body="{ data }">{{ formatCurrency(data.mae) }}</template>
-                        </Column>
-                        <Column field="rmse" header="RMSE" sortable>
-                          <template #body="{ data }">{{ formatCurrency(data.rmse) }}</template>
-                        </Column>
-                        <Column field="mape" header="MAPE" sortable>
-                          <template #body="{ data }">{{ formatMape(data.mape) }}</template>
-                        </Column>
-                        <Column field="delta_r2" :header="t('diag.deltaVsFullR2')" sortable>
-                          <template #body="{ data }">
-                            {{ formatSignedNumber(data.delta_r2, 3) }}
-                          </template>
-                        </Column>
-                        <Column field="delta_mae" :header="t('diag.deltaVsFullMae')" sortable>
-                          <template #body="{ data }">
-                            {{ formatSignedCurrency(data.delta_mae) }}
-                          </template>
-                        </Column>
-                        <Column :header="t('diag.variantRemovedFeatures')">
-                          <template #body="{ data }">
-                            <span class="muted source-cell">
-                              {{
-                                data.removedFeatures.length
-                                  ? data.removedFeatures.join(', ')
-                                  : t('common.noData')
-                              }}
-                            </span>
-                          </template>
-                        </Column>
-                      </DataTable>
+                      <details class="diagnostics-fold">
+                        <summary>
+                          {{ t('diag.variantBenchmarks') }} ·
+                          {{ formatNumber(variantBenchmarkRows.length) }}
+                        </summary>
+
+                        <div class="diagnostics-fold-body">
+                          <DataTable
+                            :value="variantBenchmarkRows"
+                            striped-rows
+                            table-style="min-width: 100%"
+                          >
+                            <Column field="label" :header="t('diag.variant')" sortable />
+                            <Column :header="t('diag.sources')">
+                              <template #body="{ data }">
+                                <span class="muted source-cell">{{
+                                  variantSourceSummary(data.sources)
+                                }}</span>
+                              </template>
+                            </Column>
+                            <Column field="r2" header="R²" sortable>
+                              <template #body="{ data }">
+                                <Tag
+                                  :value="formatMetric(data.r2, 3)"
+                                  :severity="r2Severity(data.r2)"
+                                />
+                              </template>
+                            </Column>
+                            <Column field="mae" header="MAE" sortable>
+                              <template #body="{ data }">{{ formatCurrency(data.mae) }}</template>
+                            </Column>
+                            <Column field="rmse" header="RMSE" sortable>
+                              <template #body="{ data }">{{ formatCurrency(data.rmse) }}</template>
+                            </Column>
+                            <Column field="mape" header="MAPE" sortable>
+                              <template #body="{ data }">{{ formatMape(data.mape) }}</template>
+                            </Column>
+                            <Column field="delta_r2" :header="t('diag.deltaVsFullR2')" sortable>
+                              <template #body="{ data }">
+                                {{ formatSignedNumber(data.delta_r2, 3) }}
+                              </template>
+                            </Column>
+                            <Column field="delta_mae" :header="t('diag.deltaVsFullMae')" sortable>
+                              <template #body="{ data }">
+                                {{ formatSignedCurrency(data.delta_mae) }}
+                              </template>
+                            </Column>
+                            <Column :header="t('diag.variantRemovedFeatures')">
+                              <template #body="{ data }">
+                                <span class="muted source-cell">
+                                  {{
+                                    data.removedFeatures.length
+                                      ? data.removedFeatures.join(', ')
+                                      : t('common.noData')
+                                  }}
+                                </span>
+                              </template>
+                            </Column>
+                          </DataTable>
+                        </div>
+                      </details>
                     </div>
 
                     <div
@@ -1352,41 +1604,54 @@
                         :description="t('diag.variantMatrixDesc')"
                       />
 
-                      <DataTable
-                        :value="variantMatrixRows"
-                        striped-rows
-                        table-style="min-width: 100%"
-                      >
-                        <Column field="label" :header="t('diag.variant')" sortable />
-                        <Column :header="t('diag.sources')">
-                          <template #body="{ data }">
-                            <span class="muted source-cell">{{
-                              variantSourceSummary(data.sources)
-                            }}</span>
-                          </template>
-                        </Column>
-                        <Column field="globalR2" :header="t('diag.globalR2')" sortable>
-                          <template #body="{ data }">{{ formatMetric(data.globalR2, 3) }}</template>
-                        </Column>
-                        <Column field="combinedR2" :header="t('diag.routedR2')" sortable>
-                          <template #body="{ data }">
-                            {{ formatMetric(data.combinedR2, 3) }}
-                          </template>
-                        </Column>
-                        <Column field="globalMae" :header="t('diag.globalMae')" sortable>
-                          <template #body="{ data }">{{ formatCurrency(data.globalMae) }}</template>
-                        </Column>
-                        <Column field="combinedMae" :header="t('diag.routedMae')" sortable>
-                          <template #body="{ data }">
-                            {{ formatCurrency(data.combinedMae) }}
-                          </template>
-                        </Column>
-                        <Column field="perTypeCount" :header="t('diag.perTypeModels')" sortable>
-                          <template #body="{ data }">
-                            {{ formatNumber(data.perTypeCount) }}
-                          </template>
-                        </Column>
-                      </DataTable>
+                      <details class="diagnostics-fold">
+                        <summary>
+                          {{ t('diag.variantMatrix') }} ·
+                          {{ formatNumber(variantMatrixRows.length) }}
+                        </summary>
+
+                        <div class="diagnostics-fold-body">
+                          <DataTable
+                            :value="variantMatrixRows"
+                            striped-rows
+                            table-style="min-width: 100%"
+                          >
+                            <Column field="label" :header="t('diag.variant')" sortable />
+                            <Column :header="t('diag.sources')">
+                              <template #body="{ data }">
+                                <span class="muted source-cell">{{
+                                  variantSourceSummary(data.sources)
+                                }}</span>
+                              </template>
+                            </Column>
+                            <Column field="globalR2" :header="t('diag.globalR2')" sortable>
+                              <template #body="{ data }">
+                                {{ formatMetric(data.globalR2, 3) }}
+                              </template>
+                            </Column>
+                            <Column field="combinedR2" :header="t('diag.routedR2')" sortable>
+                              <template #body="{ data }">
+                                {{ formatMetric(data.combinedR2, 3) }}
+                              </template>
+                            </Column>
+                            <Column field="globalMae" :header="t('diag.globalMae')" sortable>
+                              <template #body="{ data }">
+                                {{ formatCurrency(data.globalMae) }}
+                              </template>
+                            </Column>
+                            <Column field="combinedMae" :header="t('diag.routedMae')" sortable>
+                              <template #body="{ data }">
+                                {{ formatCurrency(data.combinedMae) }}
+                              </template>
+                            </Column>
+                            <Column field="perTypeCount" :header="t('diag.perTypeModels')" sortable>
+                              <template #body="{ data }">
+                                {{ formatNumber(data.perTypeCount) }}
+                              </template>
+                            </Column>
+                          </DataTable>
+                        </div>
+                      </details>
                     </div>
 
                     <div v-if="evBaselineCards.length" class="card diagnostics-card">
@@ -1417,48 +1682,62 @@
                         </span>
                       </div>
 
-                      <DataTable
-                        v-if="evBaselinePerTypeRows.length"
-                        :value="evBaselinePerTypeRows"
-                        size="small"
-                        striped-rows
-                        table-style="min-width: 100%"
-                      >
-                        <Column field="typeLabel" :header="t('diag.type')" sortable />
-                        <Column field="n" :header="t('diag.sampleCount')" sortable>
-                          <template #body="{ data }">{{ formatNumber(data.n) }}</template>
-                        </Column>
-                        <Column field="model_mae" :header="t('diag.modelMaeOnCoverage')" sortable>
-                          <template #body="{ data }">{{ formatCurrency(data.model_mae) }}</template>
-                        </Column>
-                        <Column field="mae" :header="t('diag.evBenchmarkMae')" sortable>
-                          <template #body="{ data }">{{ formatCurrency(data.mae) }}</template>
-                        </Column>
-                        <Column field="delta_mae" :header="t('diag.evMaeSaved')" sortable>
-                          <template #body="{ data }">
-                            <Tag
-                              :value="formatSignedCurrency(data.delta_mae)"
-                              :severity="data.delta_mae > 0 ? 'success' : 'danger'"
-                            />
-                          </template>
-                        </Column>
-                        <Column field="model_r2" :header="t('diag.modelR2OnCoverage')" sortable>
-                          <template #body="{ data }">
-                            <Tag
-                              :value="formatMetric(data.model_r2, 3)"
-                              :severity="r2Severity(data.model_r2)"
-                            />
-                          </template>
-                        </Column>
-                        <Column field="r2" :header="t('diag.evBenchmarkR2')" sortable>
-                          <template #body="{ data }">
-                            <Tag
-                              :value="formatMetric(data.r2, 3)"
-                              :severity="r2Severity(data.r2)"
-                            />
-                          </template>
-                        </Column>
-                      </DataTable>
+                      <details v-if="evBaselinePerTypeRows.length" class="diagnostics-fold">
+                        <summary>
+                          {{ t('diag.perTypeTable') }} ·
+                          {{ formatNumber(evBaselinePerTypeRows.length) }}
+                        </summary>
+
+                        <div class="diagnostics-fold-body">
+                          <DataTable
+                            :value="evBaselinePerTypeRows"
+                            size="small"
+                            striped-rows
+                            table-style="min-width: 100%"
+                          >
+                            <Column field="typeLabel" :header="t('diag.type')" sortable />
+                            <Column field="n" :header="t('diag.sampleCount')" sortable>
+                              <template #body="{ data }">{{ formatNumber(data.n) }}</template>
+                            </Column>
+                            <Column
+                              field="model_mae"
+                              :header="t('diag.modelMaeOnCoverage')"
+                              sortable
+                            >
+                              <template #body="{ data }">
+                                {{ formatCurrency(data.model_mae) }}
+                              </template>
+                            </Column>
+                            <Column field="mae" :header="t('diag.evBenchmarkMae')" sortable>
+                              <template #body="{ data }">{{ formatCurrency(data.mae) }}</template>
+                            </Column>
+                            <Column field="delta_mae" :header="t('diag.evMaeSaved')" sortable>
+                              <template #body="{ data }">
+                                <Tag
+                                  :value="formatSignedCurrency(data.delta_mae)"
+                                  :severity="data.delta_mae > 0 ? 'success' : 'danger'"
+                                />
+                              </template>
+                            </Column>
+                            <Column field="model_r2" :header="t('diag.modelR2OnCoverage')" sortable>
+                              <template #body="{ data }">
+                                <Tag
+                                  :value="formatMetric(data.model_r2, 3)"
+                                  :severity="r2Severity(data.model_r2)"
+                                />
+                              </template>
+                            </Column>
+                            <Column field="r2" :header="t('diag.evBenchmarkR2')" sortable>
+                              <template #body="{ data }">
+                                <Tag
+                                  :value="formatMetric(data.r2, 3)"
+                                  :severity="r2Severity(data.r2)"
+                                />
+                              </template>
+                            </Column>
+                          </DataTable>
+                        </div>
+                      </details>
                     </div>
 
                     <div
@@ -1572,6 +1851,26 @@
               </div>
             </div>
 
+            <section class="card diagnostics-card diagnostics-section-intro">
+              <div class="diagnostics-section-copy">
+                <p class="diagnostics-section-eyebrow">{{ t('diag.filterSummary') }}</p>
+                <h2>{{ t('diag.datasetEnrichment') }}</h2>
+                <p>{{ t('diag.datasetEnrichmentDesc') }}</p>
+              </div>
+
+              <div class="context-chip-strip">
+                <span
+                  v-for="chip in diagnosticsQualityChips"
+                  :key="`quality-${chip.label}-${chip.value}`"
+                  class="context-chip"
+                  :class="chip.tone ? `is-${chip.tone}` : ''"
+                >
+                  <span>{{ chip.label }}</span>
+                  <strong>{{ chip.value }}</strong>
+                </span>
+              </div>
+            </section>
+
             <Tabs v-model:value="diagnosticsQualityTab" class="diagnostics-subtabs">
               <TabList>
                 <Tab value="filters">{{ t('diag.filterSummary') }}</Tab>
@@ -1586,30 +1885,50 @@
                       :title="t('diag.filterSummary')"
                       :description="t('diag.filterSummaryDesc')"
                     />
-                    <DataTable
-                      :value="filterRows"
-                      size="small"
-                      striped-rows
-                      table-style="min-width: 100%"
-                    >
-                      <Column field="groupLabel" :header="t('diag.flow')" sortable />
-                      <Column field="stageLabel" :header="t('diag.stage')" sortable />
-                      <Column field="rows" :header="t('diag.rowsKept')" sortable>
-                        <template #body="{ data }">{{ formatNumber(data.rows) }}</template>
-                      </Column>
-                      <Column
-                        field="dropped_since_previous"
-                        :header="t('diag.rowsDropped')"
-                        sortable
-                      >
-                        <template #body="{ data }">
-                          {{ formatNumber(data.dropped_since_previous) }}
-                        </template>
-                      </Column>
-                      <Column field="reports" :header="t('diag.yearsCovered')" sortable>
-                        <template #body="{ data }">{{ formatNumber(data.reports) }}</template>
-                      </Column>
-                    </DataTable>
+
+                    <div v-if="filterOverviewCards.length" class="kpi-grid diagnostics-kpi-grid">
+                      <MetricCard
+                        v-for="item in filterOverviewCards"
+                        :key="`${item.label}-${item.value}`"
+                        :label="item.label"
+                        :value="item.value"
+                        :meta="item.meta"
+                        :tone="item.tone"
+                      />
+                    </div>
+
+                    <details class="diagnostics-fold">
+                      <summary>
+                        {{ t('diag.filterSummary') }} · {{ formatNumber(filterRows.length) }}
+                      </summary>
+
+                      <div class="diagnostics-fold-body">
+                        <DataTable
+                          :value="filterRows"
+                          size="small"
+                          striped-rows
+                          table-style="min-width: 100%"
+                        >
+                          <Column field="groupLabel" :header="t('diag.flow')" sortable />
+                          <Column field="stageLabel" :header="t('diag.stage')" sortable />
+                          <Column field="rows" :header="t('diag.rowsKept')" sortable>
+                            <template #body="{ data }">{{ formatNumber(data.rows) }}</template>
+                          </Column>
+                          <Column
+                            field="dropped_since_previous"
+                            :header="t('diag.rowsDropped')"
+                            sortable
+                          >
+                            <template #body="{ data }">
+                              {{ formatNumber(data.dropped_since_previous) }}
+                            </template>
+                          </Column>
+                          <Column field="reports" :header="t('diag.yearsCovered')" sortable>
+                            <template #body="{ data }">{{ formatNumber(data.reports) }}</template>
+                          </Column>
+                        </DataTable>
+                      </div>
+                    </details>
                   </div>
                   <div v-else class="card diagnostics-card">
                     <EmptyState icon="pi pi-list-check" :message="t('common.noData')" />
@@ -1664,130 +1983,166 @@
                       />
                     </div>
 
-                    <DataTable
-                      :value="enrichmentRows"
-                      size="small"
-                      striped-rows
-                      table-style="min-width: 100%"
-                    >
-                      <Column :header="t('diag.yearsCovered')" sortable>
-                        <template #body="{ data: row }">
-                          <Tag :value="enrichmentRunLabel(row.label)" severity="info" />
-                        </template>
-                      </Column>
-                      <Column :header="t('diag.sourceCoverage')">
-                        <template #body="{ data: row }">
-                          <div class="coverage-tags">
-                            <Tag
-                              :value="t('diag.rnRegister')"
-                              :severity="
-                                enrichmentSeverity(
-                                  row.rnAvailable,
-                                  row.rnExactAddress > 0 || row.rnRegionId > 0,
-                                )
-                              "
-                            />
-                            <Tag
-                              :value="t('diag.evBuildings')"
-                              :severity="
-                                enrichmentSeverity(row.evBuildingAvailable, row.evBuildingMatch > 0)
-                              "
-                            />
-                            <Tag
-                              :value="t('diag.evParcels')"
-                              :severity="
-                                enrichmentSeverity(row.evParcelAvailable, row.evParcelMatch > 0)
-                              "
-                            />
-                            <Tag
-                              :value="t('diag.knPolygons')"
-                              :severity="
-                                enrichmentSeverity(row.knAvailable, row.knPolygonMatch > 0)
-                              "
-                            />
-                            <Tag
-                              :value="t('diag.gjiInfrastructure')"
-                              :severity="
-                                enrichmentSeverity(
-                                  row.gjiAvailable,
-                                  row.gjiVodovodNearby > 0 || row.gjiKanalizacijaNearby > 0,
-                                )
-                              "
-                            />
-                            <Tag
-                              :value="t('diag.emvZones')"
-                              :severity="
-                                enrichmentSeverity(
-                                  row.emvAvailable || row.emvSpatialEnabled,
-                                  row.emvZoneMatch > 0,
-                                )
-                              "
-                            />
-                          </div>
-                        </template>
-                      </Column>
-                      <Column
-                        field="rnExactAddress"
-                        :header="t('diag.exactAddressMatches')"
-                        sortable
-                      >
-                        <template #body="{ data: row }">
-                          {{ formatNumber(row.rnExactAddress) }}
-                        </template>
-                      </Column>
-                      <Column field="rnRegionId" :header="t('diag.regionIdsRecovered')" sortable>
-                        <template #body="{ data: row }">
-                          {{ formatNumber(row.rnRegionId) }}
-                        </template>
-                      </Column>
-                      <Column
-                        field="evBuildingMatch"
-                        :header="t('diag.evBuildingMatches')"
-                        sortable
-                      >
-                        <template #body="{ data: row }">
-                          {{ formatNumber(row.evBuildingMatch) }}
-                        </template>
-                      </Column>
-                      <Column field="evParcelMatch" :header="t('diag.evParcelMatches')" sortable>
-                        <template #body="{ data: row }">
-                          {{ formatNumber(row.evParcelMatch) }}
-                        </template>
-                      </Column>
-                      <Column field="knPolygonMatch" :header="t('diag.knPolygonMatches')" sortable>
-                        <template #body="{ data: row }">
-                          {{ formatNumber(row.knPolygonMatch) }}
-                        </template>
-                      </Column>
-                      <Column
-                        field="gjiVodovodNearby"
-                        :header="t('diag.gjiVodovodMatches')"
-                        sortable
-                      >
-                        <template #body="{ data: row }">
-                          {{ formatNumber(row.gjiVodovodNearby) }}
-                        </template>
-                      </Column>
-                      <Column
-                        field="gjiKanalizacijaNearby"
-                        :header="t('diag.gjiKanalizacijaMatches')"
-                        sortable
-                      >
-                        <template #body="{ data: row }">
-                          {{ formatNumber(row.gjiKanalizacijaNearby) }}
-                        </template>
-                      </Column>
-                      <Column field="emvZoneMatch" :header="t('diag.emvZoneMatches')" sortable>
-                        <template #body="{ data: row }">
-                          {{ formatNumber(row.emvZoneMatch) }}
-                        </template>
-                      </Column>
-                      <Column :header="t('diag.enrichmentSources')">
-                        <template #body="{ data: row }">
-                          <span class="muted source-cell">{{ enrichmentSourcesLabel(row) }}</span>
-                        </template>
-                      </Column>
-                    </DataTable>
+                    <div v-if="enrichmentSourceCards.length" class="kpi-grid diagnostics-kpi-grid">
+                      <MetricCard
+                        v-for="item in enrichmentSourceCards"
+                        :key="`${item.label}-${item.value}`"
+                        :label="item.label"
+                        :value="item.value"
+                        :meta="item.meta"
+                        :tone="item.tone"
+                      />
+                    </div>
+
+                    <details class="diagnostics-fold">
+                      <summary>
+                        {{ t('diag.yearsCovered') }} · {{ formatNumber(enrichmentRows.length) }}
+                      </summary>
+
+                      <div class="diagnostics-fold-body">
+                        <DataTable
+                          :value="enrichmentRows"
+                          size="small"
+                          striped-rows
+                          table-style="min-width: 100%"
+                        >
+                          <Column :header="t('diag.yearsCovered')" sortable>
+                            <template #body="{ data: row }">
+                              <Tag :value="enrichmentRunLabel(row.label)" severity="info" />
+                            </template>
+                          </Column>
+                          <Column :header="t('diag.sourceCoverage')">
+                            <template #body="{ data: row }">
+                              <div class="coverage-tags">
+                                <Tag
+                                  :value="t('diag.rnRegister')"
+                                  :severity="
+                                    enrichmentSeverity(
+                                      row.rnAvailable,
+                                      row.rnExactAddress > 0 || row.rnRegionId > 0,
+                                    )
+                                  "
+                                />
+                                <Tag
+                                  :value="t('diag.evBuildings')"
+                                  :severity="
+                                    enrichmentSeverity(
+                                      row.evBuildingAvailable,
+                                      row.evBuildingMatch > 0,
+                                    )
+                                  "
+                                />
+                                <Tag
+                                  :value="t('diag.evParcels')"
+                                  :severity="
+                                    enrichmentSeverity(row.evParcelAvailable, row.evParcelMatch > 0)
+                                  "
+                                />
+                                <Tag
+                                  :value="t('diag.knPolygons')"
+                                  :severity="
+                                    enrichmentSeverity(row.knAvailable, row.knPolygonMatch > 0)
+                                  "
+                                />
+                                <Tag
+                                  :value="t('diag.gjiInfrastructure')"
+                                  :severity="
+                                    enrichmentSeverity(
+                                      row.gjiAvailable,
+                                      row.gjiVodovodNearby > 0 || row.gjiKanalizacijaNearby > 0,
+                                    )
+                                  "
+                                />
+                                <Tag
+                                  :value="t('diag.emvZones')"
+                                  :severity="
+                                    enrichmentSeverity(
+                                      row.emvAvailable || row.emvSpatialEnabled,
+                                      row.emvZoneMatch > 0,
+                                    )
+                                  "
+                                />
+                              </div>
+                            </template>
+                          </Column>
+                          <Column
+                            field="rnExactAddress"
+                            :header="t('diag.exactAddressMatches')"
+                            sortable
+                          >
+                            <template #body="{ data: row }">
+                              {{ formatNumber(row.rnExactAddress) }}
+                            </template>
+                          </Column>
+                          <Column
+                            field="rnRegionId"
+                            :header="t('diag.regionIdsRecovered')"
+                            sortable
+                          >
+                            <template #body="{ data: row }">
+                              {{ formatNumber(row.rnRegionId) }}
+                            </template>
+                          </Column>
+                          <Column
+                            field="evBuildingMatch"
+                            :header="t('diag.evBuildingMatches')"
+                            sortable
+                          >
+                            <template #body="{ data: row }">
+                              {{ formatNumber(row.evBuildingMatch) }}
+                            </template>
+                          </Column>
+                          <Column
+                            field="evParcelMatch"
+                            :header="t('diag.evParcelMatches')"
+                            sortable
+                          >
+                            <template #body="{ data: row }">
+                              {{ formatNumber(row.evParcelMatch) }}
+                            </template>
+                          </Column>
+                          <Column
+                            field="knPolygonMatch"
+                            :header="t('diag.knPolygonMatches')"
+                            sortable
+                          >
+                            <template #body="{ data: row }">
+                              {{ formatNumber(row.knPolygonMatch) }}
+                            </template>
+                          </Column>
+                          <Column
+                            field="gjiVodovodNearby"
+                            :header="t('diag.gjiVodovodMatches')"
+                            sortable
+                          >
+                            <template #body="{ data: row }">
+                              {{ formatNumber(row.gjiVodovodNearby) }}
+                            </template>
+                          </Column>
+                          <Column
+                            field="gjiKanalizacijaNearby"
+                            :header="t('diag.gjiKanalizacijaMatches')"
+                            sortable
+                          >
+                            <template #body="{ data: row }">
+                              {{ formatNumber(row.gjiKanalizacijaNearby) }}
+                            </template>
+                          </Column>
+                          <Column field="emvZoneMatch" :header="t('diag.emvZoneMatches')" sortable>
+                            <template #body="{ data: row }">
+                              {{ formatNumber(row.emvZoneMatch) }}
+                            </template>
+                          </Column>
+                          <Column :header="t('diag.enrichmentSources')">
+                            <template #body="{ data: row }">
+                              <span class="muted source-cell">{{
+                                enrichmentSourcesLabel(row)
+                              }}</span>
+                            </template>
+                          </Column>
+                        </DataTable>
+                      </div>
+                    </details>
                   </div>
                   <div v-else class="card diagnostics-card">
                     <EmptyState icon="pi pi-database" :message="t('common.noData')" />
@@ -1798,6 +2153,26 @@
           </TabPanel>
 
           <TabPanel value="insights">
+            <section class="card diagnostics-card diagnostics-section-intro">
+              <div class="diagnostics-section-copy">
+                <p class="diagnostics-section-eyebrow">{{ t('diag.compareMetrics') }}</p>
+                <h2>{{ t('diag.topFeatures') }}</h2>
+                <p>{{ t('diag.topFeaturesDesc') }}</p>
+              </div>
+
+              <div class="context-chip-strip">
+                <span
+                  v-for="chip in diagnosticsInsightsChips"
+                  :key="`insights-${chip.label}-${chip.value}`"
+                  class="context-chip"
+                  :class="chip.tone ? `is-${chip.tone}` : ''"
+                >
+                  <span>{{ chip.label }}</span>
+                  <strong>{{ chip.value }}</strong>
+                </span>
+              </div>
+            </section>
+
             <Tabs v-model:value="diagnosticsInsightsTab" class="diagnostics-subtabs">
               <TabList>
                 <Tab value="compare">{{ t('diag.compareMetrics') }}</Tab>
@@ -2052,9 +2427,18 @@
     font-weight: 700;
   }
 
+  .diagnostics-subtabs :deep(.p-tabpanels) {
+    padding-top: 0.1rem;
+  }
+
   .diagnostics-fold {
     display: grid;
     gap: 0.65rem;
+  }
+
+  .diagnostics-fold-body {
+    display: grid;
+    gap: 0.9rem;
   }
 
   .diagnostics-fold > summary {
@@ -2116,6 +2500,46 @@
 
   .diagnostics-focus-panel {
     min-width: 0;
+  }
+
+  .diagnostics-section-intro {
+    grid-template-columns: minmax(0, 1.2fr) minmax(18rem, 0.95fr);
+    align-items: start;
+  }
+
+  .diagnostics-section-copy {
+    display: grid;
+    gap: 0.45rem;
+    min-width: 0;
+  }
+
+  .diagnostics-section-copy h2 {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: clamp(1.4rem, 2vw, 1.95rem);
+    line-height: 1.02;
+    letter-spacing: -0.04em;
+  }
+
+  .diagnostics-section-copy p {
+    margin: 0;
+    color: var(--text-soft);
+    line-height: 1.55;
+  }
+
+  .diagnostics-section-eyebrow {
+    display: inline-flex;
+    width: fit-content;
+    align-items: center;
+    padding: 0.3rem 0.7rem;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--page-accent) 20%, var(--border) 80%);
+    background: color-mix(in srgb, var(--surface-card-strong) 92%, var(--page-accent) 8%);
+    color: color-mix(in srgb, var(--page-accent) 78%, var(--text) 22%);
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
   }
 
   .diagnostics-primary-grid {
@@ -2364,6 +2788,7 @@
     .diagnostics-summary-grid,
     .diagnostics-report-grid,
     .diagnostics-benchmark-grid,
+    .diagnostics-section-intro,
     .compare-chart-grid,
     .feature-row {
       grid-template-columns: 1fr;

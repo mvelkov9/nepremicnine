@@ -22,11 +22,20 @@
   import { useReferenceDataStore } from '../stores/referenceData'
   import { useStatsStore } from '../stores/stats'
   import { useWorkbenchStore } from '../stores/workbench'
+  import {
+    buildPredictionFormFromQuery,
+    createDefaultPredictionForm,
+    hasPredictionRouteState,
+    predictionRouteFields,
+    predictionTabs,
+    type PredictionTab,
+  } from '../features/prediction/routeState'
   import { buildNepremicnineSearchUrl } from '../utils/externalSearch'
   import { getApiErrorMessage } from '../utils/apiError'
   import { useFormat } from '../composables/useFormat'
   import { formatDateTime } from '../utils/format'
   import { municipalitySlug, normalizeMunicipalityName } from '../utils/municipality'
+  import { readQueryTab } from '../utils/routeQuery'
   import type { TransactionRecord } from '../types/api'
   import type {
     PredictionFormData,
@@ -46,27 +55,7 @@
   const workbench = useWorkbenchStore()
   const { exportToCSV } = useExport()
 
-  const form = ref<PredictionFormData>({
-    size_m2: null,
-    rooms: null,
-    year_built: null,
-    floor: null,
-    latitude: null,
-    longitude: null,
-    naselje: '',
-    municipality: '',
-    ime_ko: '',
-    property_type: 'stanovanje',
-    uporabna_povrsina: null,
-    lega_v_stavbi: '',
-    novogradnja: 0,
-    has_garaza: 0,
-    has_klet: 0,
-    has_shramba: 0,
-    has_terasa: 0,
-    stavba_je_dokoncana: 1,
-    ddv_vkljucen: 0,
-  })
+  const form = ref<PredictionFormData>(createDefaultPredictionForm())
   const storedDraft = useLocalStorage<Partial<PredictionFormData>>('prediction_form_draft', {})
 
   const result = ref<PredictionResultPayload | null>(null)
@@ -76,9 +65,15 @@
   const error = ref('')
   const municipalityContextError = ref('')
   const comparablesError = ref('')
-  const predictionTab = ref('intelligence')
+  const predictionTab = ref<PredictionTab>('intelligence')
   let contextRequestToken = 0
   let lastContextSignature = ''
+
+  const predictionRouteSignature = computed(() =>
+    JSON.stringify(
+      Object.fromEntries(predictionRouteFields.map((field) => [field, route.query[field]])),
+    ),
+  )
 
   const municipalityContext = computed(() => stats.municipalityDetail)
   const comparables = computed(() => stats.comparables)
@@ -290,33 +285,17 @@
     }
   }
 
-  function applyRouteQuery(query: PredictionRouteQuery) {
-    const nextForm: PredictionFormData = {
-      ...form.value,
-      naselje: '',
-      municipality: '',
-      property_type: 'stanovanje',
-      size_m2: null,
-      year_built: null,
-      floor: null,
+  function syncTabFromRoute(query = route.query) {
+    const nextTab = readQueryTab(query.tab, predictionTabs, 'intelligence')
+    if (predictionTab.value !== nextTab) {
+      predictionTab.value = nextTab
     }
+  }
 
-    for (const field of ['naselje', 'municipality', 'property_type'] as const) {
-      if (query[field]) {
-        nextForm[field] = String(query[field])
-      }
-    }
-
-    for (const field of ['size_m2', 'year_built', 'floor'] as const) {
-      if (query[field]) {
-        const numericValue = Number(query[field])
-        if (!Number.isNaN(numericValue)) {
-          nextForm[field] = numericValue
-        }
-      }
-    }
-
-    form.value = nextForm
+  function syncTabToRoute(tab: PredictionTab) {
+    const currentTab = readQueryTab(route.query.tab, predictionTabs, 'intelligence')
+    if (currentTab === tab) return
+    void router.replace({ query: { ...route.query, tab } })
   }
 
   function exportHistoryRows() {
@@ -413,13 +392,21 @@
     })
   }
 
+  watch(predictionRouteSignature, () => {
+    if (!hasPredictionRouteState(route.query as PredictionRouteQuery)) return
+    form.value = buildPredictionFormFromQuery(route.query as PredictionRouteQuery)
+  })
+
   watch(
-    () => route.query,
-    (query) => {
-      applyRouteQuery(query as PredictionRouteQuery)
+    () => route.query.tab,
+    () => {
+      syncTabFromRoute(route.query)
     },
-    { immediate: true },
   )
+
+  watch(predictionTab, (tab) => {
+    syncTabToRoute(tab)
+  })
 
   watch(
     form,
@@ -430,11 +417,13 @@
   )
 
   onMounted(async () => {
-    form.value = {
-      ...form.value,
-      ...storedDraft.value,
-    }
-    applyRouteQuery(route.query as PredictionRouteQuery)
+    form.value = hasPredictionRouteState(route.query as PredictionRouteQuery)
+      ? buildPredictionFormFromQuery(route.query as PredictionRouteQuery)
+      : {
+          ...createDefaultPredictionForm(),
+          ...storedDraft.value,
+        }
+    syncTabFromRoute(route.query)
     await Promise.allSettled([
       fetchHistory(),
       referenceData.ensureLoaded(),

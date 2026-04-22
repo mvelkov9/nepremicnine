@@ -2,6 +2,8 @@
 
 import json
 import math
+import os
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel
@@ -20,6 +22,7 @@ from app.schemas.workbench import ActivityFeedItemResponse, AdminRunDetailRespon
 from app.utils.cache import cache_get, cache_set, invalidate_request_caches
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+DATA_DIR = os.path.realpath(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data"))
 
 
 class UserListItem(BaseModel):
@@ -29,6 +32,7 @@ class UserListItem(BaseModel):
     role: str
     is_active: bool
     created_at: str
+    last_login_at: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -36,6 +40,31 @@ class UserListItem(BaseModel):
 class UpdateUserRequest(BaseModel):
     role: str | None = None
     is_active: bool | None = None
+
+
+def _value_or(value, fallback):
+    return fallback if value is None else value
+
+
+def _relative_data_path(path: str | None) -> str | None:
+    if not path or not isinstance(path, str):
+        return path
+    if not os.path.isabs(path):
+        return path
+    resolved = os.path.realpath(path)
+    if resolved.startswith(DATA_DIR + os.sep) or resolved == DATA_DIR:
+        return os.path.relpath(resolved, DATA_DIR).replace("\\", "/")
+    return path
+
+
+def _normalize_data_paths(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: _normalize_data_paths(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_normalize_data_paths(item) for item in value]
+    if isinstance(value, str):
+        return _relative_data_path(value)
+    return value
 
 
 @router.get("/users")
@@ -96,6 +125,7 @@ async def list_users(
             role=u.User.role.value if isinstance(u.User.role, UserRole) else u.User.role,
             is_active=u.User.is_active,
             created_at=u.User.created_at.isoformat(),
+            last_login_at=u.User.last_login_at.isoformat() if u.User.last_login_at else None,
         )
         for u in rows
     ]
@@ -152,6 +182,7 @@ async def update_user(
         role=user.role.value if isinstance(user.role, UserRole) else user.role,
         is_active=user.is_active,
         created_at=user.created_at.isoformat(),
+        last_login_at=user.last_login_at.isoformat() if user.last_login_at else None,
     )
 
 
@@ -241,9 +272,11 @@ def _run_summary_from_prepare(run: PrepareRun) -> AdminRunSummaryResponse:
 
 
 def _run_detail_from_prepare(run: PrepareRun) -> AdminRunDetailResponse:
-    pairs = json.loads(run.source_pairs_json) if run.source_pairs_json else []
-    enrichment_options = json.loads(run.enrichment_options_json) if run.enrichment_options_json else {}
-    result_payload = json.loads(run.result_json) if run.result_json else {}
+    pairs = _normalize_data_paths(json.loads(run.source_pairs_json)) if run.source_pairs_json else []
+    enrichment_options = (
+        _normalize_data_paths(json.loads(run.enrichment_options_json)) if run.enrichment_options_json else {}
+    )
+    result_payload = _normalize_data_paths(json.loads(run.result_json)) if run.result_json else {}
     timeline = [
         {"label": "Queued", "state": "done"},
         {
@@ -255,8 +288,8 @@ def _run_detail_from_prepare(run: PrepareRun) -> AdminRunDetailResponse:
     ]
     metrics = [
         {"label": "Progress", "value": run.progress, "suffix": "%"},
-        {"label": "Pairs completed", "value": run.pairs_completed or 0},
-        {"label": "Rows", "value": run.rows or result_payload.get("rows") or 0},
+        {"label": "Pairs completed", "value": _value_or(run.pairs_completed, 0)},
+        {"label": "Rows", "value": _value_or(run.rows, _value_or(result_payload.get("rows"), 0))},
     ]
     artifacts = []
     if result_payload.get("output_csv_path"):
@@ -286,6 +319,7 @@ def _run_detail_from_prepare(run: PrepareRun) -> AdminRunDetailResponse:
 
 
 def _run_summary_from_training(job: TrainingJob) -> AdminRunSummaryResponse:
+    source_csv_path = _relative_data_path(job.csv_path)
     return AdminRunSummaryResponse(
         id=job.job_id,
         run_type="training",
@@ -293,13 +327,14 @@ def _run_summary_from_training(job: TrainingJob) -> AdminRunSummaryResponse:
         stage=job.stage,
         progress=job.progress,
         title="Model training job",
-        summary=job.current_model or job.csv_path,
+        summary=job.current_model or source_csv_path,
         created_at=job.created_at,
         updated_at=job.updated_at,
     )
 
 
 def _run_detail_from_training(job: TrainingJob) -> AdminRunDetailResponse:
+    source_csv_path = _relative_data_path(job.csv_path)
     timeline = [
         {"label": "Queued", "state": "done"},
         {
@@ -310,13 +345,13 @@ def _run_detail_from_training(job: TrainingJob) -> AdminRunDetailResponse:
     ]
     metrics = [
         {"label": "Progress", "value": job.progress, "suffix": "%"},
-        {"label": "Rows", "value": job.rows or 0},
-        {"label": "Elapsed", "value": job.elapsed_sec or 0, "suffix": "s"},
-        {"label": "ETA", "value": job.eta_sec or 0, "suffix": "s"},
+        {"label": "Rows", "value": _value_or(job.rows, 0)},
+        {"label": "Elapsed", "value": _value_or(job.elapsed_sec, 0), "suffix": "s"},
+        {"label": "ETA", "value": _value_or(job.eta_sec, 0), "suffix": "s"},
     ]
     artifacts = []
-    if job.csv_path:
-        artifacts.append({"label": "Source CSV", "value": job.csv_path})
+    if source_csv_path:
+        artifacts.append({"label": "Source CSV", "value": source_csv_path})
     return AdminRunDetailResponse(
         id=job.job_id,
         run_type="training",
@@ -324,7 +359,7 @@ def _run_detail_from_training(job: TrainingJob) -> AdminRunDetailResponse:
         stage=job.stage,
         progress=job.progress,
         title="Model training job",
-        summary=job.current_model or job.csv_path,
+        summary=job.current_model or source_csv_path,
         created_at=job.created_at,
         updated_at=job.updated_at,
         timeline=timeline,
@@ -359,7 +394,7 @@ async def admin_activity(
         return [ActivityFeedItemResponse(**item) for item in cached]
 
     items: list[ActivityFeedItemResponse] = []
-    segment_limit = min(limit, 6)
+    segment_limit = limit
 
     datasets = await db.execute(select(DatasetFile).order_by(DatasetFile.uploaded_at.desc()).limit(segment_limit))
     for row in datasets.scalars().all():

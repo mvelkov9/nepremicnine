@@ -18,9 +18,11 @@ from app.models.workspace import Workspace
 from app.schemas.workbench import (
     SavedWorkspaceResponse,
     WatchlistCreateRequest,
+    WatchlistEntityType,
     WatchlistFeedItemResponse,
     WatchlistItemResponse,
     WorkspaceCreateRequest,
+    WorkspacePage,
     WorkspaceUpdateRequest,
 )
 from app.utils.cache import invalidate_request_caches
@@ -28,6 +30,25 @@ from app.utils.municipality import municipality_slug
 from app.utils.slovenian_labels import labels_match
 
 router = APIRouter(tags=["workbench"])
+
+WORKSPACE_PAGE_PATHS = {
+    "dashboard": "/",
+    "market": "/trg",
+    "regions": "/regije",
+    "municipalities": "/obcine",
+    "municipality": "/obcine",
+    "map": "/zemljevid",
+    "prediction": "/napoved",
+    "analysis": "/analiza",
+    "benchmark": "/dokaz",
+    "admin-home": "/admin",
+    "data": "/admin/podatki",
+    "prepare": "/admin/priprava",
+    "model": "/admin/model",
+    "diagnostics": "/admin/diagnostika",
+    "admin-benchmark": "/admin/dokaz",
+    "users": "/admin/uporabniki",
+}
 
 
 def _workspace_to_response(item: Workspace) -> SavedWorkspaceResponse:
@@ -55,6 +76,15 @@ def _watchlist_to_response(item: WatchlistItem) -> WatchlistItemResponse:
         metadata=json.loads(item.metadata_json) if item.metadata_json else {},
         created_at=item.created_at,
     )
+
+
+def _workspace_link(page: str, filters: dict | None = None) -> str:
+    values = filters or {}
+    if page == "municipality" and values.get("slug"):
+        return f"/obcine/{municipality_slug(str(values['slug']))}"
+    if page.startswith("/"):
+        return page
+    return WORKSPACE_PAGE_PATHS.get(page, f"/{page}")
 
 
 async def _record_activity(
@@ -189,7 +219,7 @@ def _watchlist_feed_for_region(item: WatchlistItem, df=None) -> WatchlistFeedIte
 
 @router.get("/workspaces", response_model=list[SavedWorkspaceResponse])
 async def list_workspaces(
-    page: str | None = Query(None),
+    page: WorkspacePage | None = Query(None),
     pinned: bool | None = Query(None),
     limit: int | None = Query(None, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
@@ -234,7 +264,7 @@ async def create_workspace(
         category="workspace_created",
         title=f"Saved workspace: {body.name}",
         body=f"{body.page} workspace saved",
-        link=f"/{body.page}" if not body.page.startswith("/") else body.page,
+        link=_workspace_link(body.page, body.filters),
         payload={"workspace_id": item.id, "page": body.page},
     )
     await db.commit()
@@ -285,6 +315,8 @@ async def update_workspace(
     if "pinned" in payload:
         item.pinned = bool(payload["pinned"])
 
+    current_filters = json.loads(item.filters_json) if item.filters_json else {}
+
     await _record_activity(
         db,
         user_id=user.id,
@@ -292,7 +324,7 @@ async def update_workspace(
         category="workspace_updated",
         title=f"Updated workspace: {item.name}",
         body=f"{item.page} workspace refreshed",
-        link=f"/{item.page}" if not item.page.startswith("/") else item.page,
+        link=_workspace_link(item.page, current_filters),
         payload={"workspace_id": item.id, "page": item.page},
     )
     await db.commit()
@@ -318,6 +350,7 @@ async def delete_workspace(
         category="workspace_deleted",
         title=f"Removed workspace: {item.name}",
         body=f"{item.page} workspace deleted",
+        link=_workspace_link(item.page, json.loads(item.filters_json) if item.filters_json else {}),
         payload={"workspace_id": item.id, "page": item.page},
     )
     await db.delete(item)
@@ -328,7 +361,7 @@ async def delete_workspace(
 
 @router.get("/watchlists", response_model=list[WatchlistItemResponse])
 async def list_watchlists(
-    entity_type: str | None = Query(None),
+    entity_type: WatchlistEntityType | None = Query(None),
     limit: int | None = Query(None, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),

@@ -747,6 +747,111 @@ def test_predict_combined_routed_honors_per_type_target_transform_override():
     assert predicted[1] == pytest.approx(100_000.0)
 
 
+def test_build_gurs_benchmark_payload_respects_global_target_transform_without_per_type_models(tmp_path, monkeypatch):
+    import app.services.model_service as ms
+
+    class FakePipeline:
+        def __init__(self, value):
+            self.value = value
+
+        def predict(self, frame):
+            return np.full(len(frame), self.value, dtype=float)
+
+    csv_path = tmp_path / "benchmark.csv"
+    csv_path.write_text("price_eur,size_m2\n1,1\n", encoding="utf-8")
+
+    benchmark_frame = pd.DataFrame(
+        {
+            "size_m2": [100.0],
+            "municipality": ["Ljubljana"],
+            "municipality_normalized": ["ljubljana"],
+            "statistical_region": ["osrednjeslovenska"],
+            "property_type": ["stanovanje"],
+            "transaction_year": [2024],
+            "ev_benchmark_price_eur": [210_000.0],
+            "ev_benchmark_source": ["del_stavbe_enota"],
+            "source_label": ["2024"],
+        }
+    )
+    y_values = np.array([200_000.0], dtype=float)
+
+    monkeypatch.setattr(
+        ms,
+        "load_model",
+        lambda: {
+            "csv_path": str(csv_path),
+            "per_type_models": {},
+            "global_pipeline": FakePipeline(np.log1p(220_000.0)),
+            "target_transform": "log_price",
+        },
+    )
+    monkeypatch.setattr(
+        ms,
+        "_prepare_benchmark_frames_from_csv",
+        lambda *_args, **_kwargs: (
+            benchmark_frame.copy(),
+            benchmark_frame.copy(),
+            benchmark_frame.copy(),
+            y_values.copy(),
+            y_values.copy(),
+        ),
+    )
+
+    payload = ms.build_gurs_benchmark_payload()
+
+    assert payload["summary"]["status"] == "ready"
+    assert payload["rows"][0]["model_price_eur"] == pytest.approx(220_000.0)
+    assert payload["rows"][0]["gurs_price_eur"] == pytest.approx(210_000.0)
+
+
+def test_build_gurs_benchmark_payload_returns_unavailable_for_incomplete_global_artifact(tmp_path, monkeypatch):
+    import app.services.model_service as ms
+
+    csv_path = tmp_path / "benchmark.csv"
+    csv_path.write_text("price_eur,size_m2\n1,1\n", encoding="utf-8")
+
+    benchmark_frame = pd.DataFrame(
+        {
+            "size_m2": [100.0],
+            "municipality": ["Ljubljana"],
+            "municipality_normalized": ["ljubljana"],
+            "statistical_region": ["osrednjeslovenska"],
+            "property_type": ["stanovanje"],
+            "transaction_year": [2024],
+            "ev_benchmark_price_eur": [210_000.0],
+        }
+    )
+    y_values = np.array([200_000.0], dtype=float)
+
+    monkeypatch.setattr(
+        ms,
+        "load_model",
+        lambda: {
+            "csv_path": str(csv_path),
+            "per_type_models": {},
+            "global_model": {},
+            "global_pipeline": None,
+        },
+    )
+    monkeypatch.setattr(
+        ms,
+        "_prepare_benchmark_frames_from_csv",
+        lambda *_args, **_kwargs: (
+            benchmark_frame.copy(),
+            benchmark_frame.copy(),
+            benchmark_frame.copy(),
+            y_values.copy(),
+            y_values.copy(),
+        ),
+    )
+
+    payload = ms.build_gurs_benchmark_payload()
+
+    assert payload["summary"]["status"] == "unavailable"
+    assert payload["summary"]["detail"] == "The current model artifact is incomplete."
+    assert payload["rows"] == []
+
+
 def test_compute_per_type_blend_weight_can_choose_global_per_type_or_blend():
     import app.services.model_service as ms
 
@@ -978,6 +1083,12 @@ async def test_model_info_unauthenticated(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_model_info_viewer_forbidden(client: AsyncClient, viewer_headers: dict):
+    resp = await client.get("/api/model/info", headers=viewer_headers)
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_model_info_no_model(client: AsyncClient, admin_headers: dict):
     """When no model file exists, the endpoint returns 404."""
     with patch("app.api.model.get_model_info", return_value=None):
@@ -1032,6 +1143,12 @@ async def test_model_diagnostics_unauthenticated(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_model_diagnostics_viewer_forbidden(client: AsyncClient, viewer_headers: dict):
+    resp = await client.get("/api/model/diagnostics", headers=viewer_headers)
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_model_diagnostics_no_model(client: AsyncClient, admin_headers: dict):
     with patch("app.api.model.get_model_info", return_value=None):
         resp = await client.get("/api/model/diagnostics", headers=admin_headers)
@@ -1051,6 +1168,51 @@ async def test_model_diagnostics_with_model(client: AsyncClient, admin_headers: 
     assert "variant_matrix" in data
     assert "variant_benchmarks" in data
     assert "segment_diagnostics" in data
+
+
+# ── GET /api/model/benchmark/gurs-summary ────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_gurs_benchmark_summary_unauthenticated(client: AsyncClient):
+    resp = await client.get("/api/model/benchmark/gurs-summary")
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_gurs_benchmark_summary_viewer_forbidden(client: AsyncClient, viewer_headers: dict):
+    resp = await client.get("/api/model/benchmark/gurs-summary", headers=viewer_headers)
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_gurs_benchmark_summary_admin_success(client: AsyncClient, admin_headers: dict):
+    payload = {
+        "summary": {
+            "coverage_rows": 12,
+            "model_metrics": {"mae": 18_000.0},
+            "gurs_metrics": {"mae": 25_000.0},
+            "improvement_vs_gurs": {"mae": 7_000.0, "avg_gain_eur": 5_500.0},
+            "winners": {"model": 8, "gurs": 3, "tie": 1},
+            "top_regions": [],
+            "top_property_types": [],
+            "top_years": [],
+            "methodology": "shared_gurs_coverage_holdout",
+            "status": "ready",
+            "detail": None,
+        }
+    }
+    with (
+        patch("app.api.model.get_model_info", return_value=_FAKE_MODEL_INFO),
+        patch("app.api.model._load_cached_gurs_benchmark_payload", return_value=payload),
+    ):
+        resp = await client.get("/api/model/benchmark/gurs-summary", headers=admin_headers)
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["coverage_rows"] == 12
+    assert data["winners"]["model"] == 8
+    assert data["improvement_vs_gurs"]["mae"] == 7000.0
 
 
 # ── GET /api/model/runs ──────────────────────────────────────────────────────

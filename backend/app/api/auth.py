@@ -86,6 +86,9 @@ async def login(request: Request, body: LoginRequest, db: AsyncSession = Depends
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Account disabled")
 
+    user.last_login_at = datetime.now(UTC)
+    await db.commit()
+
     return TokenResponse(
         access_token=create_access_token(user.id),
         refresh_token=create_refresh_token(user.id),
@@ -117,6 +120,9 @@ async def refresh(request: Request, body: RefreshRequest, db: AsyncSession = Dep
     user = result.scalar_one_or_none()
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="User not found or inactive")
+
+    user.last_login_at = datetime.now(UTC)
+    await db.commit()
 
     # Invalidate the consumed refresh token (token rotation)
     old_ttl = max(0, int(payload["exp"] - datetime.now(UTC).timestamp()))

@@ -90,6 +90,7 @@
       buildWorkspaceRoute(item.page, {
         ...(item.filters || {}),
         ...(item.tab ? { tab: item.tab } : {}),
+        ...(item.sort ? { sort: item.sort } : {}),
       }),
     )
     closeTray()
@@ -136,14 +137,19 @@
   }
 
   function compareMunicipalities() {
-    const slugs = municipalityCompareItems.value
-      .map((item) => item.slug)
+    const labels = municipalityCompareItems.value
+      .map((item) => item.label)
       .filter(Boolean)
-      .join(',')
-    if (!slugs) return
+      .slice(0, 3)
+    if (!labels.length) return
     void router.push({
       path: '/obcine',
-      query: toLocationQuery({ tab: 'compare', compare: slugs }),
+      query: toLocationQuery({
+        tab: 'compare',
+        compare_a: labels[0],
+        compare_b: labels[1],
+        compare_c: labels[2],
+      }),
     })
     closeTray()
   }

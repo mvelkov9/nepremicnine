@@ -1,6 +1,6 @@
 ﻿<script setup lang="ts">
   import { computed, onMounted, ref, watch } from 'vue'
-  import { RouterLink } from 'vue-router'
+  import { RouterLink, useRoute, useRouter } from 'vue-router'
   import { useDebounceFn } from '@vueuse/core'
   import { useI18n } from 'vue-i18n'
   import Button from 'primevue/button'
@@ -32,10 +32,15 @@
   import { useReferenceDataStore } from '../stores/referenceData'
   import type { BenchmarkProofRow, BenchmarkSummaryResponse, ServerTableResult } from '../types/api'
   import { getApiErrorMessage } from '../utils/apiError'
+  import { readQueryTab } from '../utils/routeQuery'
   import { formatCurrency, formatNumber, formatPercent } from '../utils/format'
+
+  const benchmarkTabs = ['snapshot', 'methodology', 'proof'] as const
 
   const { t } = useI18n()
   const { formatType } = useFormat()
+  const route = useRoute()
+  const router = useRouter()
   const auth = useAuthStore()
   const referenceData = useReferenceDataStore()
   const { exportToCSV } = useExport()
@@ -58,7 +63,29 @@
   const proofError = ref('')
   const searchInput = ref('')
   const proofRequestId = ref(0)
-  const benchmarkTab = ref<'snapshot' | 'methodology' | 'proof'>('snapshot')
+  const benchmarkTab = ref<'snapshot' | 'methodology' | 'proof'>(
+    readQueryTab(route.query.tab, benchmarkTabs, 'snapshot'),
+  )
+
+  function syncBenchmarkTabFromRoute(query = route.query) {
+    const allowedTabs = auth.isAdmin
+      ? benchmarkTabs
+      : benchmarkTabs.filter((tab) => tab !== 'proof')
+    const nextTab = readQueryTab(query.tab, allowedTabs, 'snapshot')
+    if (benchmarkTab.value !== nextTab) {
+      benchmarkTab.value = nextTab
+    }
+  }
+
+  function syncBenchmarkTabToRoute(tab: string) {
+    const allowedTabs = auth.isAdmin
+      ? benchmarkTabs
+      : benchmarkTabs.filter((value) => value !== 'proof')
+    const nextTab = readQueryTab(tab, allowedTabs, 'snapshot')
+    const currentTab = readQueryTab(route.query.tab, allowedTabs, 'snapshot')
+    if (currentTab === nextTab) return
+    void router.replace({ query: { ...route.query, tab: nextTab } })
+  }
 
   const table = useServerTableState(
     {
@@ -314,6 +341,17 @@
   })
 
   watch(
+    () => route.query.tab,
+    () => {
+      syncBenchmarkTabFromRoute(route.query)
+    },
+  )
+
+  watch(benchmarkTab, (tab) => {
+    syncBenchmarkTabToRoute(tab)
+  })
+
+  watch(
     () => [
       table.state.page,
       table.state.page_size,
@@ -403,6 +441,7 @@
   }
 
   onMounted(async () => {
+    syncBenchmarkTabFromRoute(route.query)
     try {
       await referenceData.ensureLoaded()
     } catch {

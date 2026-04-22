@@ -34,7 +34,7 @@ services:
     image: nepremicnine-v2-backend-dev
     build:
       context: ./backend
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.dev
     restart: unless-stopped
     env_file: .env
     user: root

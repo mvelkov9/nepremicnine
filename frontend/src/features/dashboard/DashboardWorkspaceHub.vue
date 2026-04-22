@@ -166,14 +166,16 @@
   .workspace-hub {
     display: grid;
     gap: 1rem;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: start;
   }
 
   .workspace-column {
     display: grid;
     gap: 0.85rem;
     align-content: start;
-    padding: 1rem;
+    min-height: 100%;
+    padding: 1.05rem;
     border-radius: var(--radius-md);
     border: 1px solid color-mix(in srgb, var(--border) 76%, var(--primary) 24%);
     background:
@@ -186,10 +188,6 @@
     box-shadow:
       inset 0 1px 0 var(--glass-highlight),
       var(--shadow-sm);
-  }
-
-  .workspace-column:last-child {
-    grid-column: 1 / -1;
   }
 
   .workspace-column-head {
@@ -285,10 +283,6 @@
   @media (max-width: 1100px) {
     .workspace-hub {
       grid-template-columns: 1fr;
-    }
-
-    .workspace-column:last-child {
-      grid-column: auto;
     }
   }
 </style>

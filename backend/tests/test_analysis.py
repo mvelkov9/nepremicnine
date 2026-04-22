@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from unittest.mock import patch
 
 import pytest
 from httpx import AsyncClient
+
+from app.models.prediction import PredictionLog
 
 _LISTING = {
     "size_m2": 65,
@@ -189,3 +192,99 @@ async def test_score_response_includes_listing_fields(client: AsyncClient, admin
     assert item["municipality"] == _LISTING["municipality"]
     assert item["property_type"] == _LISTING["property_type"]
     assert item["rooms"] == _LISTING["rooms"]
+
+
+@pytest.mark.asyncio
+async def test_list_runs_only_returns_current_users_history(
+    client: AsyncClient,
+    admin_headers: dict,
+    viewer_headers: dict,
+):
+    fake_artifact = {"version": "test"}
+    fake_predict = {
+        "predicted_price_eur": 180_000.0,
+        "model_used": "global",
+        "features_used": {},
+    }
+    with (
+        patch("app.api.analysis.load_model", return_value=fake_artifact),
+        patch("app.api.analysis.predict_one", return_value=fake_predict),
+    ):
+        score_resp = await client.post(
+            "/api/analysis/score",
+            json={"listings": [_LISTING]},
+            headers=admin_headers,
+        )
+    assert score_resp.status_code == 200
+
+    admin_runs = await client.get("/api/analysis/runs", headers=admin_headers)
+    viewer_runs = await client.get("/api/analysis/runs", headers=viewer_headers)
+
+    assert admin_runs.status_code == 200
+    assert viewer_runs.status_code == 200
+    assert admin_runs.json()["total"] == 1
+    assert viewer_runs.json()["total"] == 0
+    assert viewer_runs.json()["items"] == []
+
+
+@pytest.mark.asyncio
+async def test_activity_feed_only_includes_current_users_analysis_runs(
+    client: AsyncClient,
+    admin_headers: dict,
+    viewer_headers: dict,
+):
+    fake_artifact = {"version": "test"}
+    fake_predict = {
+        "predicted_price_eur": 180_000.0,
+        "model_used": "global",
+        "features_used": {},
+    }
+    with (
+        patch("app.api.analysis.load_model", return_value=fake_artifact),
+        patch("app.api.analysis.predict_one", return_value=fake_predict),
+    ):
+        score_resp = await client.post(
+            "/api/analysis/score",
+            json={"listings": [_LISTING]},
+            headers=admin_headers,
+        )
+    assert score_resp.status_code == 200
+
+    admin_feed = await client.get("/api/activity/feed", headers=admin_headers)
+    viewer_feed = await client.get("/api/activity/feed", headers=viewer_headers)
+
+    assert admin_feed.status_code == 200
+    assert viewer_feed.status_code == 200
+    assert any(item["id"].startswith("analysis:") for item in admin_feed.json())
+    assert not any(item["id"].startswith("analysis:") for item in viewer_feed.json())
+
+
+@pytest.mark.asyncio
+async def test_activity_feed_does_not_truncate_busy_single_category(
+    client: AsyncClient,
+    viewer_headers: dict,
+    db_session,
+):
+    me = await client.get("/api/auth/me", headers=viewer_headers)
+    assert me.status_code == 200
+    user_id = me.json()["id"]
+
+    db_session.add_all(
+        [
+            PredictionLog(
+                user_id=user_id,
+                payload_json=json.dumps({"municipality": f"Ljubljana {index}"}, ensure_ascii=True),
+                predicted_price_eur=200_000 + index,
+                used_features_json="{}",
+            )
+            for index in range(5)
+        ]
+    )
+    await db_session.commit()
+
+    feed = await client.get("/api/activity/feed?limit=5", headers=viewer_headers)
+
+    assert feed.status_code == 200
+    items = feed.json()
+    assert len(items) == 5
+    assert all(item["id"].startswith("prediction:") for item in items)

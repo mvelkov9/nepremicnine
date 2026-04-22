@@ -27,45 +27,25 @@
   import { getApiErrorMessage } from '../utils/apiError'
   import { useFormat } from '../composables/useFormat'
   import { municipalitySlug, normalizeMunicipalityName } from '../utils/municipality'
+  import {
+    buildGuidedFormFromQuery,
+    createDefaultGuidedForm,
+    guidedFormRouteFields,
+    hasGuidedFormQuery,
+  } from '../features/analysis/routeState'
   import type {
+    AnalysisBinaryField,
     AnalysisHeroMetric,
     AnalysisHeroPill,
     AnalysisListing,
     AnalysisReadinessItem,
     AnalysisResultPayload,
     AnalysisSummaryCard,
+    GuidedAnalysisForm,
   } from '../features/analysis/types'
+  import { readQueryTab } from '../utils/routeQuery'
 
-  interface GuidedAnalysisForm {
-    naselje: string
-    municipality: string
-    ime_ko: string
-    property_type: string
-    size_m2: number
-    uporabna_povrsina: number | null
-    rooms: number | null
-    year_built: number | null
-    floor: number | null
-    lega_v_stavbi: string
-    novogradnja: number
-    has_garaza: number
-    has_klet: number
-    has_shramba: number
-    has_terasa: number
-    stavba_je_dokoncana: number
-    ddv_vkljucen: number
-    asking_price: number | null
-    notes: string
-  }
-
-  type BinaryGuidedField =
-    | 'novogradnja'
-    | 'has_garaza'
-    | 'has_klet'
-    | 'has_shramba'
-    | 'has_terasa'
-    | 'stavba_je_dokoncana'
-    | 'ddv_vkljucen'
+  const analysisTabs = ['guided', 'results', 'explore', 'bulk'] as const
 
   const { t } = useI18n()
   const { fmt, fmtCurrency, formatType } = useFormat()
@@ -76,28 +56,7 @@
   const route = useRoute()
   const router = useRouter()
 
-  const defaultGuidedForm: GuidedAnalysisForm = {
-    naselje: '',
-    municipality: '',
-    ime_ko: '',
-    property_type: 'stanovanje',
-    size_m2: 65,
-    uporabna_povrsina: null,
-    rooms: 2.5,
-    year_built: null,
-    floor: null,
-    lega_v_stavbi: '',
-    novogradnja: 0,
-    has_garaza: 0,
-    has_klet: 0,
-    has_shramba: 0,
-    has_terasa: 0,
-    stavba_je_dokoncana: 1,
-    ddv_vkljucen: 0,
-    asking_price: null,
-    notes: '',
-  }
-  const guidedForm = ref<GuidedAnalysisForm>({ ...defaultGuidedForm })
+  const guidedForm = ref<GuidedAnalysisForm>(createDefaultGuidedForm())
   const threshold = ref(15)
   const loading = ref(false)
   const error = ref('')
@@ -110,6 +69,12 @@
   const naseljeOptions = ref([])
   let activeNaseljeController: AbortController | null = null
   let naseljeRequestToken = 0
+
+  const analysisRouteSignature = computed(() =>
+    JSON.stringify(
+      Object.fromEntries(guidedFormRouteFields.map((field) => [field, route.query[field]])),
+    ),
+  )
 
   const propertyTypes = [
     'stanovanje',
@@ -236,7 +201,7 @@
           'has_terasa',
           'stavba_je_dokoncana',
           'ddv_vkljucen',
-        ] as BinaryGuidedField[]
+        ] as AnalysisBinaryField[]
       ).filter((field) => guidedForm.value[field] === 1).length,
   )
   const heroMetrics = computed<AnalysisHeroMetric[]>(() => [
@@ -322,12 +287,6 @@
     },
   ])
 
-  function queryNumber(value: unknown) {
-    if (typeof value !== 'string' || !value) return null
-    const parsed = Number(value)
-    return Number.isFinite(parsed) ? parsed : null
-  }
-
   function labelSeverity(label?: string | null) {
     if (label === 'overpriced') return 'danger'
     if (label === 'underpriced') return 'success'
@@ -362,38 +321,21 @@
     }
   }
 
-  function applyRouteQuery(query = route.query) {
-    guidedForm.value = {
-      ...defaultGuidedForm,
-      ...guidedForm.value,
-      naselje: typeof query.naselje === 'string' ? query.naselje : defaultGuidedForm.naselje,
-      municipality:
-        typeof query.municipality === 'string'
-          ? query.municipality
-          : defaultGuidedForm.municipality,
-      property_type:
-        typeof query.property_type === 'string'
-          ? query.property_type
-          : defaultGuidedForm.property_type,
+  function syncAnalysisTabFromRoute(query = route.query) {
+    const allowedTabs = auth.isAdmin ? analysisTabs : analysisTabs.filter((tab) => tab !== 'bulk')
+    const nextTab = readQueryTab(query.tab, allowedTabs, 'guided')
+    if (analysisTab.value !== nextTab) {
+      analysisTab.value = nextTab
     }
+  }
 
-    const size = queryNumber(query.size_m2)
-    guidedForm.value.size_m2 = size ?? defaultGuidedForm.size_m2
-
-    const usable = queryNumber(query.uporabna_povrsina)
-    guidedForm.value.uporabna_povrsina = usable ?? defaultGuidedForm.uporabna_povrsina
-
-    const rooms = queryNumber(query.rooms)
-    guidedForm.value.rooms = rooms ?? defaultGuidedForm.rooms
-
-    const yearBuilt = queryNumber(query.year_built)
-    guidedForm.value.year_built = yearBuilt ?? defaultGuidedForm.year_built
-
-    const floor = queryNumber(query.floor)
-    guidedForm.value.floor = floor ?? defaultGuidedForm.floor
-
-    const askingPrice = queryNumber(query.asking_price)
-    guidedForm.value.asking_price = askingPrice ?? defaultGuidedForm.asking_price
+  function syncAnalysisTabToRoute(tab: string) {
+    const allowedTabs = auth.isAdmin
+      ? analysisTabs
+      : analysisTabs.filter((value) => value !== 'bulk')
+    const currentTab = readQueryTab(route.query.tab, allowedTabs, 'guided')
+    if (currentTab === tab) return
+    void router.replace({ query: { ...route.query, tab } })
   }
 
   function searchMunicipalities(event) {
@@ -535,11 +477,11 @@
     filters: buildGuidedPayload(),
   }))
 
-  function toggleValue(field: BinaryGuidedField) {
+  function toggleValue(field: AnalysisBinaryField) {
     return guidedForm.value[field] === 1
   }
 
-  function updateToggle(field: BinaryGuidedField, checked: boolean) {
+  function updateToggle(field: AnalysisBinaryField, checked: boolean) {
     guidedForm.value[field] = checked ? 1 : 0
   }
 
@@ -631,7 +573,10 @@
   }
 
   onMounted(() => {
-    applyRouteQuery()
+    guidedForm.value = hasGuidedFormQuery(route.query)
+      ? buildGuidedFormFromQuery(route.query)
+      : createDefaultGuidedForm()
+    syncAnalysisTabFromRoute(route.query)
     void referenceData.ensureLoaded()
   })
 
@@ -639,12 +584,21 @@
     activeNaseljeController?.abort()
   })
 
+  watch(analysisRouteSignature, () => {
+    if (!hasGuidedFormQuery(route.query)) return
+    guidedForm.value = buildGuidedFormFromQuery(route.query)
+  })
+
   watch(
-    () => route.query,
-    (query) => {
-      applyRouteQuery(query)
+    () => route.query.tab,
+    () => {
+      syncAnalysisTabFromRoute(route.query)
     },
   )
+
+  watch(analysisTab, (tab) => {
+    syncAnalysisTabToRoute(tab)
+  })
 
   watch(
     () => guidedForm.value.municipality,

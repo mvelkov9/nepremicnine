@@ -17,7 +17,7 @@ from app.models.model_run import ModelRun
 from app.models.user import User
 from app.schemas.model import BenchmarkProofResponse, BenchmarkSummaryResponse, ModelInfoResponse
 from app.services.model_service import build_gurs_benchmark_payload, get_model_info
-from app.utils.cache import cache_get, cache_set
+from app.utils.cache import cache_get, cache_set, invalidate_request_caches
 from app.utils.slovenian_labels import labels_match
 
 logger = logging.getLogger(__name__)
@@ -63,7 +63,7 @@ async def _load_cached_gurs_benchmark_payload(request: Request) -> dict:
 
 
 @router.get("/info", response_model=ModelInfoResponse)
-async def model_info(request: Request, response: Response, _user: User = Depends(get_current_user)):
+async def model_info(request: Request, response: Response, _user: User = Depends(require_admin)):
     """Get current trained model metadata."""
     response.headers["Cache-Control"] = "private, max-age=60"
 
@@ -111,7 +111,7 @@ async def feature_importance(request: Request, response: Response, _user: User =
 
 
 @router.get("/diagnostics")
-async def model_diagnostics(request: Request, response: Response, _user: User = Depends(get_current_user)):
+async def model_diagnostics(request: Request, response: Response, _user: User = Depends(require_admin)):
     """Get per-type and per-region model diagnostics."""
     response.headers["Cache-Control"] = "private, max-age=60"
 
@@ -204,7 +204,7 @@ async def model_runs(
 async def gurs_benchmark_summary(
     request: Request,
     response: Response,
-    _user: User = Depends(get_current_user),
+    _user: User = Depends(require_admin),
 ):
     """Return summary proof that compares the current model against GURS on shared coverage."""
     response.headers["Cache-Control"] = "private, max-age=300"
@@ -324,6 +324,7 @@ async def gurs_benchmark_transactions(
 
 @router.delete("/runs/clear", status_code=status.HTTP_200_OK)
 async def clear_model_runs(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_admin),
 ):
@@ -332,4 +333,5 @@ async def clear_model_runs(
     count = result.scalar() or 0
     await db.execute(delete(ModelRun))
     await db.commit()
+    await invalidate_request_caches(request, prefixes=("cache:activity:", "cache:admin:", "cache:model:"))
     return {"deleted": count}

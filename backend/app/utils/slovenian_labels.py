@@ -37,20 +37,26 @@ REGION_OVERRIDES = {
 }
 
 PHRASE_OVERRIDES = {
+    "borovnic a": "Borovnica",
     "kanal": "Kanal ob Soči",
     "kanal ob soci": "Kanal ob Soči",
     "crna na koroskem": "Črna na Koroškem",
+    "dobrova": "Dobrova - Polhov Gradec",
     "dobrova polhov gradec": "Dobrova - Polhov Gradec",
+    "dolenje toplice": "Dolenjske Toplice",
     "domzale": "Domžale",
     "gorenja vas poljane": "Gorenja vas - Poljane",
     "hoce slivnica": "Hoče - Slivnica",
     "hrpelje kozina": "Hrpelje - Kozina",
     "kocevje": "Kočevje",
     "koroskem": "Koroškem",
+    "ljubljana center": "Ljubljana",
+    "ljubljana vic": "Ljubljana",
     "luce": "Luče",
     "log dragomer": "Log - Dragomer",
     "menges": "Mengeš",
     "miren kostanjevica": "Miren - Kostanjevica",
+    "mol": "Ljubljana",
     "mokronog trebelno": "Mokronog - Trebelno",
     "moravce": "Moravče",
     "novo mesto": "Novo mesto",
@@ -76,7 +82,9 @@ PHRASE_OVERRIDES = {
     "sveti tomaz": "Sveti Tomaž",
     "tisina": "Tišina",
     "trzic": "Tržič",
+    "videm pri ptuju": "Videm",
     "velike lasce": "Velike Lašče",
+    "vogrsko": "Renče - Vogrsko",
 }
 
 WORD_OVERRIDES = {
@@ -163,6 +171,7 @@ UNKNOWN_LABELS = {
     "n a",
     "na",
     "sucna vas",
+    "ni podatka",
 }
 
 

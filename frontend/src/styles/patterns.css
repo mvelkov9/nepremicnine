@@ -215,6 +215,7 @@
   .state-card:hover,
   .hero-panel:hover,
   .spotlight-card:hover,
+  .action-tile:hover,
   .selected-source-card:hover,
   .source-option:hover,
   .mini-status-card:hover {
@@ -222,6 +223,14 @@
     box-shadow:
       inset 0 1px 0 var(--content-glow),
       0 18px 34px color-mix(in srgb, var(--shadow-color) 12%, transparent);
+  }
+
+  .hero-panel:hover,
+  .spotlight-card:hover,
+  .action-tile:hover,
+  .selected-source-card:hover,
+  .source-option:hover,
+  .mini-status-card:hover {
     transform: translateY(-1px);
   }
 }
