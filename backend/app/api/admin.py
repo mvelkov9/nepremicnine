@@ -483,7 +483,9 @@ async def list_prepare_runs(
 
     result = await db.execute(select(PrepareRun).order_by(PrepareRun.updated_at.desc()).limit(limit))
     payload = [_run_summary_from_prepare(item) for item in result.scalars().all()]
-    await cache_set(request, cache_key, [item.model_dump(mode="json") for item in payload], ttl=ADMIN_RUN_LIST_CACHE_TTL)
+    await cache_set(
+        request, cache_key, [item.model_dump(mode="json") for item in payload], ttl=ADMIN_RUN_LIST_CACHE_TTL
+    )
     return payload
 
 
@@ -516,7 +518,9 @@ async def list_training_runs(
 
     result = await db.execute(select(TrainingJob).order_by(TrainingJob.updated_at.desc()).limit(limit))
     payload = [_run_summary_from_training(item) for item in result.scalars().all()]
-    await cache_set(request, cache_key, [item.model_dump(mode="json") for item in payload], ttl=ADMIN_RUN_LIST_CACHE_TTL)
+    await cache_set(
+        request, cache_key, [item.model_dump(mode="json") for item in payload], ttl=ADMIN_RUN_LIST_CACHE_TTL
+    )
     return payload
 
 

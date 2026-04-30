@@ -268,7 +268,15 @@ def _extract_year_series(df: pd.DataFrame) -> pd.Series:
         if extracted.notna().any():
             return extracted
 
-    for year_col in ["transaction_year", "transaction_date", "sale_date", "datum_sklenitve", "source_label", "year", "sale_year"]:
+    for year_col in [
+        "transaction_year",
+        "transaction_date",
+        "sale_date",
+        "datum_sklenitve",
+        "source_label",
+        "year",
+        "sale_year",
+    ]:
         if year_col not in df.columns:
             continue
         extracted = df[year_col].astype("string").str.extract(r"(\d{4})", expand=False)
@@ -926,7 +934,9 @@ def _build_price_distribution_payload(df: pd.DataFrame | None, bins: int) -> dic
     return {
         "bins": [float(b) for b in bin_edges],
         "counts": [int(c) for c in counts_arr],
-        "bin_labels": [f"{_format_eur(bin_edges[i])}\u2013{_format_eur(bin_edges[i + 1])}" for i in range(len(counts_arr))],
+        "bin_labels": [
+            f"{_format_eur(bin_edges[i])}\u2013{_format_eur(bin_edges[i + 1])}" for i in range(len(counts_arr))
+        ],
     }
 
 
@@ -1024,7 +1034,9 @@ def _build_trend_payload(df: pd.DataFrame | None) -> list[dict]:
     frame["_trend_year"] = year_series
     results: list[dict] = []
 
-    for year, group in sorted(frame[frame["_trend_year"].notna()].groupby("_trend_year"), key=lambda item: int(item[0])):
+    for year, group in sorted(
+        frame[frame["_trend_year"].notna()].groupby("_trend_year"), key=lambda item: int(item[0])
+    ):
         entry = {
             "year": str(year),
             "count": len(group),
@@ -1629,8 +1641,7 @@ async def municipality_detail(
 ):
     _set_stats_cache_headers(response)
     cache_key = (
-        f"{_stats_cache_prefix('municipality')}:"
-        f"{municipality_slug(slug)}:{property_type or 'all'}:{year or 'all'}"
+        f"{_stats_cache_prefix('municipality')}:{municipality_slug(slug)}:{property_type or 'all'}:{year or 'all'}"
     )
     cached = await cache_get(request, cache_key)
     if cached is not None:
@@ -1877,11 +1888,7 @@ async def naselja(
         return []
 
     group_columns = ["_naselje_normalized", "naselje", "municipality", "statistical_region"]
-    rows = (
-        frame.groupby(group_columns, dropna=False)
-        .agg(sample_count=("naselje", "size"))
-        .reset_index()
-    )
+    rows = frame.groupby(group_columns, dropna=False).agg(sample_count=("naselje", "size")).reset_index()
 
     map_frame, _reason = _prepare_map_coordinates(frame)
     if map_frame.empty:
@@ -2237,9 +2244,7 @@ def _build_map_overview_payload(
                 "lat": _round_or_none(group["_map_lat"].median(), 6),
                 "lon": _round_or_none(group["_map_lon"].median(), 6),
                 "avg_price": _round_or_none(group["price_eur"].mean()) if "price_eur" in group.columns else None,
-                "median_price": _round_or_none(group["price_eur"].median())
-                if "price_eur" in group.columns
-                else None,
+                "median_price": _round_or_none(group["price_eur"].median()) if "price_eur" in group.columns else None,
                 "avg_price_per_m2": avg_price_per_m2,
                 "price_band": None,
             }

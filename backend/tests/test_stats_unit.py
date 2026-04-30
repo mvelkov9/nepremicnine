@@ -238,7 +238,9 @@ async def test_comparables_keeps_location_context_when_property_type_has_no_loca
         lambda property_type=None: (
             _build_market_df()
             if property_type is None
-            else _build_market_df()[_build_market_df()["property_type"].astype(str).str.casefold() == str(property_type).casefold()]
+            else _build_market_df()[
+                _build_market_df()["property_type"].astype(str).str.casefold() == str(property_type).casefold()
+            ]
         ),
     )
     monkeypatch.setattr("app.api.stats._RAW_DF_CACHE", {"mtime": None, "df": None})
@@ -490,10 +492,7 @@ def test_build_common_stats_cache_entries_warms_dashboard_and_explorer_defaults(
     assert any(":stats:trend:" in key for key in cache_keys)
     assert any(":stats:transactions:" in key and ":1:6:recent:desc" in key for key in cache_keys)
     assert any(":stats:municipalities:" in key and ":1:24:count:desc" in key for key in cache_keys)
-    assert any(
-        ":stats:regions-explorer:" in key and ":1:12:median_price_per_m2:desc" in key
-        for key in cache_keys
-    )
+    assert any(":stats:regions-explorer:" in key and ":1:12:median_price_per_m2:desc" in key for key in cache_keys)
 
 
 @pytest.mark.asyncio

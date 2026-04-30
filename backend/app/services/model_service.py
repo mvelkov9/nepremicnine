@@ -7074,12 +7074,18 @@ def build_gurs_benchmark_payload() -> dict[str, Any]:
 
     mae_delta = (
         round(float(gurs_metrics["mae"] - model_metrics["mae"]), 6)
-        if gurs_metrics and model_metrics and gurs_metrics.get("mae") is not None and model_metrics.get("mae") is not None
+        if gurs_metrics
+        and model_metrics
+        and gurs_metrics.get("mae") is not None
+        and model_metrics.get("mae") is not None
         else None
     )
     rmse_delta = (
         round(float(gurs_metrics["rmse"] - model_metrics["rmse"]), 6)
-        if gurs_metrics and model_metrics and gurs_metrics.get("rmse") is not None and model_metrics.get("rmse") is not None
+        if gurs_metrics
+        and model_metrics
+        and gurs_metrics.get("rmse") is not None
+        and model_metrics.get("rmse") is not None
         else None
     )
     median_ae_delta = (
@@ -7092,7 +7098,10 @@ def build_gurs_benchmark_payload() -> dict[str, Any]:
     )
     mape_delta = (
         round(float(gurs_metrics["mape"] - model_metrics["mape"]), 6)
-        if gurs_metrics and model_metrics and gurs_metrics.get("mape") is not None and model_metrics.get("mape") is not None
+        if gurs_metrics
+        and model_metrics
+        and gurs_metrics.get("mape") is not None
+        and model_metrics.get("mape") is not None
         else None
     )
     r2_delta = (
