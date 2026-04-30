@@ -16,12 +16,11 @@ services:
   backend:
     # Remove dev overrides: no source mount, no reload, run as appuser
     user: appuser
-    # 2 workers: ~1.8GB each at steady state fits within 7.6GB host RAM, and
-    # parallelizes concurrent dashboard requests (8+ endpoints fan-out per page).
-    # Single worker caused 25-39s tail latency from request queueing.
-    # The Dokazi benchmark rebuild (~1GB peak) only runs on cache miss and is
-    # serialized through one worker at a time, so OOM risk is minimal.
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+    # 1 worker: 2 workers OOM under real concurrent load (each loads 500 MB CSV
+    # + model artifact + stats KDTree, peaks ~3.5 GB under fan-out). Startup
+    # cache warmup makes most endpoints hit Redis instead of recomputing, so a
+    # single worker handles the dashboard fan-out in <1 s after warmup completes.
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
     volumes: !override
       - backend-data:/app/data
       - backend-models:/app/models

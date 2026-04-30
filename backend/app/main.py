@@ -113,6 +113,25 @@ async def _warm_stats_data(app: FastAPI) -> None:
     except Exception:
         logger.exception("Unable to warm stats dataset")
 
+    # Warm the GURS benchmark cache. It rebuilds in ~30-90s and is too heavy to
+    # serve cold under a 1-worker uvicorn; pre-populating Redis here means the
+    # first user request reads from cache instead of triggering the rebuild.
+    try:
+        from app.services.model_service import build_gurs_benchmark_payload
+
+        existing = await app.state.redis.exists("cache:model:benchmark:gurs:all")
+        if not existing:
+            payload = await asyncio.to_thread(build_gurs_benchmark_payload)
+            await cache_set_value(
+                app.state.redis,
+                "cache:model:benchmark:gurs:all",
+                payload,
+                ttl=86400,
+            )
+            logger.info("GURS benchmark cache warmed (%d rows)", len(payload.get("rows", [])))
+    except Exception:
+        logger.exception("Unable to warm GURS benchmark cache")
+
 
 def create_app() -> FastAPI:
     settings = get_settings()
