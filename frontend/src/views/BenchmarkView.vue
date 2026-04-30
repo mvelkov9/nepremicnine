@@ -559,9 +559,6 @@
             </div>
 
             <div class="benchmark-hero-story">
-              <p class="benchmark-hero-kicker">
-                {{ methodologyLabel || t('benchmark.sharedCoverageTitle') }}
-              </p>
               <p class="benchmark-hero-note">
                 {{ heroStory || summary.detail || t('benchmark.sharedCoverageBody') }}
               </p>

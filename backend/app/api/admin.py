@@ -23,6 +23,7 @@ from app.utils.cache import cache_get, cache_set, invalidate_request_caches
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 DATA_DIR = os.path.realpath(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data"))
+ADMIN_RUN_LIST_CACHE_TTL = 15
 
 
 class UserListItem(BaseModel):
@@ -468,12 +469,22 @@ async def admin_activity(
 
 @router.get("/prepare-runs", response_model=list[AdminRunSummaryResponse])
 async def list_prepare_runs(
+    request: Request,
+    response: Response,
     limit: int = Query(12, ge=1, le=50),
     db: AsyncSession = Depends(get_db),
     _admin: User = Depends(require_admin),
 ):
+    response.headers["Cache-Control"] = f"private, max-age={ADMIN_RUN_LIST_CACHE_TTL}"
+    cache_key = f"cache:admin:prepare-runs:{limit}"
+    cached = await cache_get(request, cache_key)
+    if cached is not None:
+        return [AdminRunSummaryResponse(**item) for item in cached]
+
     result = await db.execute(select(PrepareRun).order_by(PrepareRun.updated_at.desc()).limit(limit))
-    return [_run_summary_from_prepare(item) for item in result.scalars().all()]
+    payload = [_run_summary_from_prepare(item) for item in result.scalars().all()]
+    await cache_set(request, cache_key, [item.model_dump(mode="json") for item in payload], ttl=ADMIN_RUN_LIST_CACHE_TTL)
+    return payload
 
 
 @router.get("/prepare-runs/{job_id}", response_model=AdminRunDetailResponse)
@@ -491,12 +502,22 @@ async def get_prepare_run_detail(
 
 @router.get("/training-runs", response_model=list[AdminRunSummaryResponse])
 async def list_training_runs(
+    request: Request,
+    response: Response,
     limit: int = Query(12, ge=1, le=50),
     db: AsyncSession = Depends(get_db),
     _admin: User = Depends(require_admin),
 ):
+    response.headers["Cache-Control"] = f"private, max-age={ADMIN_RUN_LIST_CACHE_TTL}"
+    cache_key = f"cache:admin:training-runs:{limit}"
+    cached = await cache_get(request, cache_key)
+    if cached is not None:
+        return [AdminRunSummaryResponse(**item) for item in cached]
+
     result = await db.execute(select(TrainingJob).order_by(TrainingJob.updated_at.desc()).limit(limit))
-    return [_run_summary_from_training(item) for item in result.scalars().all()]
+    payload = [_run_summary_from_training(item) for item in result.scalars().all()]
+    await cache_set(request, cache_key, [item.model_dump(mode="json") for item in payload], ttl=ADMIN_RUN_LIST_CACHE_TTL)
+    return payload
 
 
 @router.get("/training-runs/{job_id}", response_model=AdminRunDetailResponse)

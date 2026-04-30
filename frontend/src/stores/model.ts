@@ -20,9 +20,15 @@ export const useModelStore = defineStore('model', () => {
   let infoFetchedAt = 0
   let diagnosticsFetchedAt = 0
   let importanceFetchedAt = 0
+  let activeTrainingFetchedAt = 0
+  let jobsFetchedAt = 0
+  let runsFetchedAt = 0
   let fetchInfoInFlight: Promise<unknown> | null = null
   let fetchDiagnosticsInFlight: Promise<unknown> | null = null
   let fetchImportanceInFlight: Promise<unknown> | null = null
+  let fetchActiveTrainingInFlight: Promise<unknown> | null = null
+  let fetchJobsInFlight: Promise<unknown> | null = null
+  let fetchRunsInFlight: Promise<unknown> | null = null
 
   function isSharedModelCacheFresh(timestamp: number) {
     return timestamp > 0 && Date.now() - timestamp < SHARED_MODEL_CACHE_TTL_MS
@@ -32,6 +38,12 @@ export const useModelStore = defineStore('model', () => {
     infoFetchedAt = 0
     diagnosticsFetchedAt = 0
     importanceFetchedAt = 0
+  }
+
+  function invalidateModelRuntimeCache() {
+    activeTrainingFetchedAt = 0
+    jobsFetchedAt = 0
+    runsFetchedAt = 0
   }
 
   async function fetchInfo(force = false) {
@@ -120,6 +132,8 @@ export const useModelStore = defineStore('model', () => {
     try {
       const { data } = await api.post('/api/train/start', { csv_path: csvPath })
       trainingStatus.value = data
+      invalidateModelRuntimeCache()
+      activeTrainingFetchedAt = Date.now()
       return data
     } catch (e) {
       const activeJob =
@@ -137,6 +151,7 @@ export const useModelStore = defineStore('model', () => {
       if (activeJob) {
         training.value = activeJob.status === 'queued' || activeJob.status === 'running'
         trainingStatus.value = activeJob
+        activeTrainingFetchedAt = Date.now()
         return activeJob
       }
 
@@ -146,20 +161,35 @@ export const useModelStore = defineStore('model', () => {
     }
   }
 
-  async function fetchActiveTraining() {
-    try {
-      const { data } = await api.get('/api/train/active')
-      trainingStatus.value = data
-      training.value = data.status === 'queued' || data.status === 'running'
-      return data
-    } catch (e) {
-      if (e.response?.status === 404) {
-        training.value = false
-        return null
-      }
-      error.value = getApiErrorMessage(e, i18n.global.t)
-      return null
+  async function fetchActiveTraining(force = false) {
+    if (!force && isSharedModelCacheFresh(activeTrainingFetchedAt)) {
+      return trainingStatus.value
     }
+    if (fetchActiveTrainingInFlight) return fetchActiveTrainingInFlight
+
+    fetchActiveTrainingInFlight = (async () => {
+      try {
+        const { data } = await api.get('/api/train/active')
+        trainingStatus.value = data
+        training.value = data.status === 'queued' || data.status === 'running'
+        activeTrainingFetchedAt = Date.now()
+        return data
+      } catch (e) {
+        if (e.response?.status === 404) {
+          training.value = false
+          trainingStatus.value = null
+          activeTrainingFetchedAt = Date.now()
+          return null
+        }
+        error.value = getApiErrorMessage(e, i18n.global.t)
+        activeTrainingFetchedAt = 0
+        return null
+      } finally {
+        fetchActiveTrainingInFlight = null
+      }
+    })()
+
+    return fetchActiveTrainingInFlight
   }
 
   async function pollStatus(jobId) {
@@ -167,8 +197,10 @@ export const useModelStore = defineStore('model', () => {
       const { data } = await api.get(`/api/train/status/${jobId}`)
       trainingStatus.value = data
       training.value = data.status === 'queued' || data.status === 'running'
+      activeTrainingFetchedAt = Date.now()
       if (!training.value) {
         invalidateModelMetadataCache()
+        invalidateModelRuntimeCache()
       }
       return data
     } catch (e) {
@@ -178,46 +210,72 @@ export const useModelStore = defineStore('model', () => {
     }
   }
 
-  async function fetchJobs(params = {}) {
-    jobsLoading.value = true
-    try {
-      const { data } = await api.get('/api/train/jobs', {
-        params: { per_page: 8, ...params },
-      })
-      jobHistory.value = data.items || []
-      return data
-    } catch (e) {
-      jobHistory.value = []
-      error.value = getApiErrorMessage(e, i18n.global.t)
-      return null
-    } finally {
-      jobsLoading.value = false
+  async function fetchJobs(force = false, params = {}) {
+    if (!force && isSharedModelCacheFresh(jobsFetchedAt)) {
+      return { items: jobHistory.value }
     }
+    if (fetchJobsInFlight) return fetchJobsInFlight
+
+    jobsLoading.value = true
+    fetchJobsInFlight = (async () => {
+      try {
+        const { data } = await api.get('/api/train/jobs', {
+          params: { per_page: 8, ...params },
+        })
+        jobHistory.value = data.items || []
+        jobsFetchedAt = Date.now()
+        return data
+      } catch (e) {
+        jobHistory.value = []
+        jobsFetchedAt = 0
+        error.value = getApiErrorMessage(e, i18n.global.t)
+        return null
+      } finally {
+        jobsLoading.value = false
+        fetchJobsInFlight = null
+      }
+    })()
+
+    return fetchJobsInFlight
   }
 
-  async function fetchRuns(params = {}) {
-    runsLoading.value = true
-    try {
-      const { data } = await api.get('/api/model/runs', {
-        params: { per_page: 8, ...params },
-      })
-      modelRuns.value = data.items || []
-      return data
-    } catch (e) {
-      modelRuns.value = []
-      error.value = getApiErrorMessage(e, i18n.global.t)
-      return null
-    } finally {
-      runsLoading.value = false
+  async function fetchRuns(force = false, params = {}) {
+    if (!force && isSharedModelCacheFresh(runsFetchedAt)) {
+      return { items: modelRuns.value }
     }
+    if (fetchRunsInFlight) return fetchRunsInFlight
+
+    runsLoading.value = true
+    fetchRunsInFlight = (async () => {
+      try {
+        const { data } = await api.get('/api/model/runs', {
+          params: { per_page: 8, ...params },
+        })
+        modelRuns.value = data.items || []
+        runsFetchedAt = Date.now()
+        return data
+      } catch (e) {
+        modelRuns.value = []
+        runsFetchedAt = 0
+        error.value = getApiErrorMessage(e, i18n.global.t)
+        return null
+      } finally {
+        runsLoading.value = false
+        fetchRunsInFlight = null
+      }
+    })()
+
+    return fetchRunsInFlight
   }
 
   function reset() {
     training.value = false
     trainingStatus.value = null
+    jobHistory.value = []
     modelRuns.value = []
     error.value = null
     invalidateModelMetadataCache()
+    invalidateModelRuntimeCache()
   }
 
   return {

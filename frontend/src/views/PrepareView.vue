@@ -205,7 +205,7 @@
 
   async function ensureTrainingDatasetLoaded(force = false) {
     if (!force && trainingDatasetLoaded.value) return
-    await dataStore.fetchTrainingDataset()
+    await dataStore.fetchTrainingDataset(force)
     trainingDatasetLoaded.value = true
   }
 

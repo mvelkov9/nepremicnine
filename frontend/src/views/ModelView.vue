@@ -515,7 +515,7 @@
       modelInfoLoaded.value = true
       return
     }
-    await model.fetchInfo()
+    await model.fetchInfo(force)
     modelInfoLoaded.value = true
   }
 
@@ -524,7 +524,7 @@
       modelDiagnosticsLoaded.value = true
       return
     }
-    await model.fetchDiagnostics()
+    await model.fetchDiagnostics(force)
     modelDiagnosticsLoaded.value = true
   }
 
@@ -533,7 +533,7 @@
       featureImportanceLoaded.value = true
       return
     }
-    await model.fetchImportance()
+    await model.fetchImportance(force)
     featureImportanceLoaded.value = true
   }
 
@@ -543,7 +543,7 @@
       jobHistoryLoaded.value = true
       return
     }
-    await model.fetchJobs()
+    await model.fetchJobs(force)
     jobHistoryLoaded.value = true
   }
 
@@ -553,7 +553,7 @@
       modelRunsLoaded.value = true
       return
     }
-    await model.fetchRuns()
+    await model.fetchRuns(force)
     modelRunsLoaded.value = true
   }
 
@@ -570,7 +570,7 @@
       trainingDatasetLoaded.value = true
       return
     }
-    await dataStore.fetchTrainingDataset()
+    await dataStore.fetchTrainingDataset(force)
     trainingDatasetLoaded.value = true
   }
 
@@ -589,7 +589,7 @@
     if (!force && activeTrainingLoaded.value) {
       return trainingStatus.value
     }
-    const activeJob = await model.fetchActiveTraining()
+    const activeJob = await model.fetchActiveTraining(force)
     activeTrainingLoaded.value = true
     return activeJob
   }

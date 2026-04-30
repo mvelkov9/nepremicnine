@@ -34,16 +34,12 @@
   const heroAvailability = reactive({
     trainingDataset: false,
     modelInfo: false,
-    diagnostics: false,
   })
 
   const visibleTrainingDataset = computed(() =>
     heroAvailability.trainingDataset ? dataStore.trainingDataset : null,
   )
   const visibleModelInfo = computed(() => (heroAvailability.modelInfo ? modelStore.info : null))
-  const visibleModelDiagnostics = computed(() =>
-    heroAvailability.diagnostics ? modelStore.diagnostics : null,
-  )
 
   const summaryCards = computed(() => [
     {
@@ -66,7 +62,7 @@
     },
     {
       label: t('nav.diagnostics'),
-      value: visibleModelDiagnostics.value ? t('common.open') : t('common.noData'),
+      value: visibleModelInfo.value ? t('common.open') : t('common.noData'),
       meta:
         visibleModelInfo.value?.global_metrics?.r2 != null
           ? `R2 ${visibleModelInfo.value.global_metrics.r2.toFixed(3)}`
@@ -105,13 +101,11 @@
     const heroRequests = await Promise.allSettled([
       dataStore.fetchTrainingDataset(),
       modelStore.fetchInfo(),
-      modelStore.fetchDiagnostics(),
       api.get('/api/admin/stats'),
     ])
     const heroSections = [
       { key: 'trainingDataset' as const, label: t('nav.data') },
       { key: 'modelInfo' as const, label: t('nav.model') },
-      { key: 'diagnostics' as const, label: t('nav.diagnostics') },
     ]
     const failedSections: string[] = []
     let firstFailure: unknown = null
@@ -128,7 +122,7 @@
         }
       }
     })
-    const statsResult = heroRequests[3]
+    const statsResult = heroRequests[2]
 
     if (statsResult.status === 'fulfilled') {
       adminStats.value = statsResult.value.data

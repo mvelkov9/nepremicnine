@@ -1139,7 +1139,7 @@
 
   async function ensureDiagnosticsCoreLoaded(force = false) {
     if (!force && diagnosticsCoreLoaded.value) return
-    await Promise.allSettled([model.fetchInfo(), model.fetchDiagnostics()])
+    await Promise.allSettled([model.fetchInfo(force), model.fetchDiagnostics(force)])
     diagnosticsCoreLoaded.value = true
     if (
       segmentGroupOptions.value.length &&
@@ -1153,7 +1153,7 @@
     if (!force && (diagnosticsImportanceLoaded.value || diagnosticsImportanceLoading.value)) return
     diagnosticsImportanceLoading.value = true
     try {
-      await model.fetchImportance()
+      await model.fetchImportance(force)
       diagnosticsImportanceLoaded.value = true
     } finally {
       diagnosticsImportanceLoading.value = false
@@ -1182,7 +1182,7 @@
     diagnosticsTrainingDatasetLoading.value = true
     diagnosticsTrainingDatasetError.value = ''
     try {
-      await dataStore.fetchTrainingDataset()
+      await dataStore.fetchTrainingDataset(force)
       diagnosticsTrainingDatasetLoaded.value = true
     } catch (error) {
       diagnosticsTrainingDatasetLoaded.value = false

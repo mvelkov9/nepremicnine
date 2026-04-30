@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
 import pytest
 from httpx import AsyncClient
 
+from app.models.prepare_run import PrepareRun
 from app.models.training_job import JobStatus, TrainingJob
 
 # ── GET /api/admin/users ─────────────────────────────────────────────────────
@@ -213,6 +216,78 @@ async def test_admin_activity_does_not_truncate_busy_single_category(
     items = resp.json()
     assert len(items) == 7
     assert all(item["id"].startswith("training:") for item in items)
+
+
+@pytest.mark.asyncio
+async def test_admin_run_summary_lists_set_short_cache_headers_and_cache_results(
+    client: AsyncClient,
+    admin_headers: dict,
+    db_session,
+):
+    now = datetime.now(UTC)
+    db_session.add_all(
+        [
+            PrepareRun(
+                job_id="prepare-cached-1",
+                status="running",
+                stage="matching",
+                progress=20,
+                updated_at=now,
+            ),
+            TrainingJob(
+                job_id="train-cached-1",
+                status=JobStatus.running,
+                stage="training_global",
+                progress=30,
+                csv_path="raw/train.csv",
+                updated_at=now,
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    prepare_first = await client.get("/api/admin/prepare-runs?limit=1", headers=admin_headers)
+    training_first = await client.get("/api/admin/training-runs?limit=1", headers=admin_headers)
+
+    assert prepare_first.status_code == 200
+    assert training_first.status_code == 200
+    assert prepare_first.headers["Cache-Control"] == "private, max-age=15"
+    assert training_first.headers["Cache-Control"] == "private, max-age=15"
+    assert prepare_first.json()[0]["id"] == "prepare-cached-1"
+    assert training_first.json()[0]["id"] == "train-cached-1"
+
+    redis = client._transport.app.state.redis
+    assert await redis.get("cache:admin:prepare-runs:1") is not None
+    assert await redis.get("cache:admin:training-runs:1") is not None
+
+    db_session.add_all(
+        [
+            PrepareRun(
+                job_id="prepare-cached-2",
+                status="completed",
+                stage="completed",
+                progress=100,
+                updated_at=now + timedelta(hours=1),
+            ),
+            TrainingJob(
+                job_id="train-cached-2",
+                status=JobStatus.completed,
+                stage="completed",
+                progress=100,
+                csv_path="raw/train.csv",
+                updated_at=now + timedelta(hours=1),
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    prepare_second = await client.get("/api/admin/prepare-runs?limit=1", headers=admin_headers)
+    training_second = await client.get("/api/admin/training-runs?limit=1", headers=admin_headers)
+
+    assert prepare_second.status_code == 200
+    assert training_second.status_code == 200
+    assert prepare_second.json()[0]["id"] == "prepare-cached-1"
+    assert training_second.json()[0]["id"] == "train-cached-1"
 
 
 # ── GET /api/admin/users — pagination ────────────────────────────────────────

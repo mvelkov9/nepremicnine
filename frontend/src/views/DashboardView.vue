@@ -371,8 +371,9 @@
     {
       label: t('dashboard.medianPrice'),
       value: formatCurrency(marketHome.value.headline?.median_price),
-      meta: t('dashboard.latestYearLabel', {
-        year: marketHome.value.headline?.latest_year || '-',
+      meta: t('dashboard.marketCoverageYears', {
+        from: marketHome.value.headline?.earliest_year || '-',
+        to: marketHome.value.headline?.latest_year || '-',
       }),
     },
     {
@@ -407,9 +408,11 @@
     ]
 
     if (marketHome.value.headline?.latest_year) {
+      const earliest = marketHome.value.headline.earliest_year
+      const latest = marketHome.value.headline.latest_year
       chips.push({
         label: t('dashboard.yearCoverage'),
-        value: String(marketHome.value.headline.latest_year),
+        value: earliest && earliest !== latest ? `${earliest}–${latest}` : String(latest),
       })
     }
 

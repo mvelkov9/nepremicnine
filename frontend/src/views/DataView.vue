@@ -377,7 +377,7 @@
       trainingDatasetLoaded.value = true
       return
     }
-    await dataStore.fetchTrainingDataset()
+    await dataStore.fetchTrainingDataset(force)
     trainingDatasetLoaded.value = true
   }
 
@@ -387,7 +387,7 @@
       qualitySummaryLoaded.value = true
       return
     }
-    await dataStore.fetchQualitySummary()
+    await dataStore.fetchQualitySummary(force)
     qualitySummaryLoaded.value = true
   }
 
@@ -397,7 +397,7 @@
       uploadCapacityLoaded.value = true
       return
     }
-    await dataStore.fetchUploadCapacity()
+    await dataStore.fetchUploadCapacity(force)
     uploadCapacityLoaded.value = true
   }
 
