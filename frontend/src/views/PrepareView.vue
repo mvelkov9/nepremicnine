@@ -170,6 +170,8 @@
   )
   const PREPARE_REQUEST_TIMEOUT_MS = 10 * 60 * 1000
   const detectedPairsFromApi = ref<PrepareDetectedPair[]>([])
+  const detectedPairsLoading = ref(false)
+  const detectedPairsLoaded = ref(false)
   const datasetsLoadingForSelection = ref(false)
   const datasetsLoadedForSelection = ref(false)
   const prepareRunsLoaded = ref(false)
@@ -181,12 +183,23 @@
 
     prepareRunsLoading.value = true
     try {
-      await workbench.fetchPrepareRuns()
+      await workbench.fetchPrepareRuns(force)
       prepareRunsLoaded.value = true
     } catch {
       prepareRunsLoaded.value = false
     } finally {
       prepareRunsLoading.value = false
+    }
+  }
+
+  async function ensureSelectedPrepareRunLoaded(force = false, jobId = selectedPrepareRunId.value) {
+    if (!jobId) return
+    await ensurePrepareRunsLoaded(force)
+    if (
+      workbench.prepareRuns.some((item) => item.id === jobId) &&
+      selectedPrepareRun.value?.id !== jobId
+    ) {
+      await workbench.fetchPrepareRunDetail(jobId)
     }
   }
 
@@ -196,11 +209,37 @@
     trainingDatasetLoaded.value = true
   }
 
+  function handlePrepareBackgroundError(cause: unknown) {
+    if (!error.value) {
+      error.value = getApiErrorMessage(cause, t)
+    }
+  }
+
+  async function ensureDetectedPairsLoaded(force = false) {
+    if (!force && (detectedPairsLoaded.value || detectedPairsLoading.value)) return
+
+    detectedPairsLoading.value = true
+    try {
+      await fetchDetectedPairs()
+      detectedPairsLoaded.value = true
+    } finally {
+      detectedPairsLoading.value = false
+    }
+  }
+
+  async function loadActivePrepareTabData(force = false) {
+    if (prepareWorkspaceTab.value === 'configure') {
+      await ensureDetectedPairsLoaded(force)
+    } else if (force || !detectedPairsLoaded.value) {
+      void ensureDetectedPairsLoaded(force).catch(handlePrepareBackgroundError)
+    }
+  }
+
   async function initializePage() {
     error.value = ''
-    bootstrapLoading.value = true
+    bootstrapLoading.value = prepareWorkspaceTab.value === 'configure'
     try {
-      await Promise.allSettled([fetchDetectedPairs(), modelStore.fetchActiveTraining()])
+      await Promise.allSettled([loadActivePrepareTabData(), modelStore.fetchActiveTraining()])
       await syncExistingPrepareJob()
     } finally {
       bootstrapLoading.value = false
@@ -261,12 +300,19 @@
     () => route.query.run,
     () => {
       syncPrepareRunFromRoute(route.query)
+      const requestedRunId = readQueryString(route.query.run)
+      if (requestedRunId && (prepareRunsLoaded.value || workbench.prepareRuns.length)) {
+        void ensureSelectedPrepareRunLoaded(false, requestedRunId)
+      }
     },
   )
 
   watch(
     () => prepareWorkspaceTab.value,
     (tab) => {
+      if (tab === 'configure') {
+        void loadActivePrepareTabData()
+      }
       if (tab === 'monitor') {
         void ensurePrepareRunsLoaded()
       }
@@ -635,12 +681,14 @@
         enrichment_options: buildEnrichmentOptionsPayload(),
       })
       await handlePrepareStatus(data)
+      void ensurePrepareRunsLoaded(true)
       startPreparePolling(data.job_id)
     } catch (e) {
       const activeJob = e?.response?.status === 409 ? e?.response?.data?.detail : null
       if (activeJob?.job_id) {
         error.value = t('prepare.jobAlreadyRunning')
         await handlePrepareStatus(activeJob)
+        void ensurePrepareRunsLoaded(true)
         startPreparePolling(activeJob.job_id)
         return
       }
@@ -1010,7 +1058,7 @@
         <TabPanel value="configure">
           <section class="prepare-workspace-grid prepare-workspace-grid--single">
             <div
-              v-if="bootstrapLoading"
+              v-if="bootstrapLoading || (detectedPairsLoading && !detectedPairsLoaded)"
               class="prepare-workbench-panel prepare-workbench-panel--loading"
             >
               <div class="prepare-loading-shell" aria-busy="true">

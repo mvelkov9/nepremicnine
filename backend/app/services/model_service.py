@@ -2542,17 +2542,38 @@ def _build_model(
 
 
 def _compute_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict:
-    mask = y_true > 0
-    y_t = y_true[mask]
-    y_p = y_pred[mask]
+    y_t = np.asarray(y_true, dtype=float)
+    y_p = np.asarray(y_pred, dtype=float)
+    mask = (y_t > 0) & np.isfinite(y_t) & np.isfinite(y_p)
+    y_t = y_t[mask]
+    y_p = y_p[mask]
     if len(y_t) == 0:
         return {}
     mae = float(mean_absolute_error(y_t, y_p))
     rmse = float(np.sqrt(mean_squared_error(y_t, y_p)))
-    r2 = float(r2_score(y_t, y_p))
+    r2 = float(r2_score(y_t, y_p)) if len(y_t) >= 2 else float("nan")
     mape = float(np.mean(np.abs((y_t - y_p) / y_t)) * 100)
     median_ae = float(np.median(np.abs(y_t - y_p)))
     return {"mae": mae, "rmse": rmse, "r2": r2, "mape": mape, "median_ae": median_ae}
+
+
+def _sanitize_metric_summary(metrics: dict[str, Any] | None) -> dict[str, float | None] | None:
+    if not metrics:
+        return None
+
+    sanitized: dict[str, float | None] = {}
+    for key in ("mae", "rmse", "r2", "mape", "median_ae"):
+        value = metrics.get(key)
+        if value is None:
+            sanitized[key] = None
+            continue
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            sanitized[key] = None
+            continue
+        sanitized[key] = numeric if np.isfinite(numeric) else None
+    return sanitized
 
 
 def _candidate_metrics_tuple(candidate: dict[str, Any]) -> tuple[float, float, float]:
@@ -6967,6 +6988,15 @@ def build_gurs_benchmark_payload() -> dict[str, Any]:
         (benchmark_frame["improvement_eur"] / benchmark_frame["gurs_abs_error"]) * 100,
         0.0,
     )
+    finite_benchmark_mask = np.isfinite(
+        benchmark_frame[["actual_price_eur", "model_price_eur", "gurs_price_eur"]].to_numpy(dtype=float)
+    ).all(axis=1)
+    benchmark_frame = benchmark_frame.loc[finite_benchmark_mask].copy()
+    if benchmark_frame.empty:
+        return _empty_gurs_benchmark_payload(
+            "Shared benchmark coverage exists, but the current model artifact produced no finite comparable predictions.",
+            status="empty",
+        )
     benchmark_frame["winner"] = np.where(
         np.isclose(benchmark_frame["model_abs_error"], benchmark_frame["gurs_abs_error"], atol=0.01),
         "tie",
@@ -7024,13 +7054,17 @@ def build_gurs_benchmark_payload() -> dict[str, Any]:
             }
         )
 
-    model_metrics = _compute_metrics(
-        benchmark_frame["actual_price_eur"].to_numpy(),
-        benchmark_frame["model_price_eur"].to_numpy(),
+    model_metrics = _sanitize_metric_summary(
+        _compute_metrics(
+            benchmark_frame["actual_price_eur"].to_numpy(),
+            benchmark_frame["model_price_eur"].to_numpy(),
+        )
     )
-    gurs_metrics = _compute_metrics(
-        benchmark_frame["actual_price_eur"].to_numpy(),
-        benchmark_frame["gurs_price_eur"].to_numpy(),
+    gurs_metrics = _sanitize_metric_summary(
+        _compute_metrics(
+            benchmark_frame["actual_price_eur"].to_numpy(),
+            benchmark_frame["gurs_price_eur"].to_numpy(),
+        )
     )
     winners = {
         "model": int((benchmark_frame["winner"] == "model").sum()),
@@ -7038,18 +7072,45 @@ def build_gurs_benchmark_payload() -> dict[str, Any]:
         "tie": int((benchmark_frame["winner"] == "tie").sum()),
     }
 
+    mae_delta = (
+        round(float(gurs_metrics["mae"] - model_metrics["mae"]), 6)
+        if gurs_metrics and model_metrics and gurs_metrics.get("mae") is not None and model_metrics.get("mae") is not None
+        else None
+    )
+    rmse_delta = (
+        round(float(gurs_metrics["rmse"] - model_metrics["rmse"]), 6)
+        if gurs_metrics and model_metrics and gurs_metrics.get("rmse") is not None and model_metrics.get("rmse") is not None
+        else None
+    )
+    median_ae_delta = (
+        round(float(gurs_metrics["median_ae"] - model_metrics["median_ae"]), 6)
+        if gurs_metrics
+        and model_metrics
+        and gurs_metrics.get("median_ae") is not None
+        and model_metrics.get("median_ae") is not None
+        else None
+    )
+    mape_delta = (
+        round(float(gurs_metrics["mape"] - model_metrics["mape"]), 6)
+        if gurs_metrics and model_metrics and gurs_metrics.get("mape") is not None and model_metrics.get("mape") is not None
+        else None
+    )
+    r2_delta = (
+        round(float(model_metrics["r2"] - gurs_metrics["r2"]), 6)
+        if gurs_metrics and model_metrics and gurs_metrics.get("r2") is not None and model_metrics.get("r2") is not None
+        else None
+    )
+
     summary = {
         "coverage_rows": int(len(rows)),
         "model_metrics": model_metrics,
         "gurs_metrics": gurs_metrics,
         "improvement_vs_gurs": {
-            "mae": round(float(gurs_metrics.get("mae", 0) - model_metrics.get("mae", 0)), 6),
-            "rmse": round(float(gurs_metrics.get("rmse", 0) - model_metrics.get("rmse", 0)), 6),
-            "median_ae": round(float(gurs_metrics.get("median_ae", 0) - model_metrics.get("median_ae", 0)), 6),
-            "mape": round(float(gurs_metrics.get("mape", 0) - model_metrics.get("mape", 0)), 6)
-            if gurs_metrics.get("mape") is not None and model_metrics.get("mape") is not None
-            else None,
-            "r2": round(float(model_metrics.get("r2", 0) - gurs_metrics.get("r2", 0)), 6),
+            "mae": mae_delta,
+            "rmse": rmse_delta,
+            "median_ae": median_ae_delta,
+            "mape": mape_delta,
+            "r2": r2_delta,
             "avg_gain_eur": round(float(benchmark_frame["improvement_eur"].mean()), 2),
             "median_gain_eur": round(float(benchmark_frame["improvement_eur"].median()), 2),
         },

@@ -1166,7 +1166,7 @@
     diagnosticsTrainingRunsLoading.value = true
     diagnosticsTrainingRunsError.value = ''
     try {
-      await workbench.fetchTrainingRuns()
+      await workbench.fetchTrainingRuns(force)
       diagnosticsTrainingRunsLoaded.value = true
     } catch (error) {
       diagnosticsTrainingRunsLoaded.value = false
@@ -1207,7 +1207,7 @@
   }
 
   async function loadActiveDiagnosticsTabData(force = false) {
-    if (diagnosticsTab.value === 'overview') {
+    if (diagnosticsTab.value === 'overview' || diagnosticsTab.value === 'history') {
       await ensureOverviewRunDetail(force)
       return
     }

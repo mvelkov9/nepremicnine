@@ -252,6 +252,8 @@ def test_format_municipality_label_canonicalizes_aliases_and_unknowns():
     assert format_municipality_label("Videm pri Ptuju") == "Videm"
     assert format_municipality_label("Vogrsko") == "Renče - Vogrsko"
     assert format_municipality_label("Borovnic?a") == "Borovnica"
+    assert format_municipality_label("Polzepa") == "Polzela"
+    assert format_municipality_label("Sveti Jurij") is None
     assert format_municipality_label("Ni Podatka") is None
     assert format_municipality_label("sucna vas") is None
 
@@ -293,6 +295,7 @@ def test_build_quality_summary_excludes_noncanonical_municipalities_from_coverag
             "municipality": [
                 "Ljubljana",
                 "Sveti Jurij",
+                "Polzela",
                 "Polzepa",
                 "Ni Podatka",
             ]
@@ -303,10 +306,12 @@ def test_build_quality_summary_excludes_noncanonical_municipalities_from_coverag
 
     summary = data_api._build_quality_summary()
 
-    assert summary["covered_municipalities"] == 1
-    assert summary["unresolved_rows"] == 3
-    assert summary["noncanonical_rows"] == 2
-    assert {item["label"] for item in summary["noncanonical_labels"]} == {"Sveti Jurij", "Polzepa"}
+    assert summary["covered_municipalities"] == 2
+    assert summary["unresolved_rows"] == 2
+    assert summary["noncanonical_rows"] == 0
+    assert summary["noncanonical_labels"] == []
+    assert {item["label"] for item in summary["unresolved_labels"]} == {"Sveti Jurij", "Ni Podatka"}
+    assert any(item["canonical"] == "Polzela" for item in summary["alias_collisions"])
 
 
 def test_build_training_df_from_etn_kpp_extracts_requested_share_and_phase_features():

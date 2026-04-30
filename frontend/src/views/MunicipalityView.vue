@@ -1,5 +1,6 @@
 <script setup lang="ts">
   import { computed, ref, watch } from 'vue'
+  import { useDebounceFn } from '@vueuse/core'
   import { RouterLink, useRoute, useRouter } from 'vue-router'
   import Button from 'primevue/button'
   import Column from 'primevue/column'
@@ -100,23 +101,30 @@
   const router = useRouter()
   const stats = useStatsStore()
   const workbench = useWorkbenchStore()
+  const MUNICIPALITY_TREND_METRICS = ['median_price', 'median_price_per_m2', 'count'] as const
+  type MunicipalityTrendMetric = (typeof MUNICIPALITY_TREND_METRICS)[number]
   const viewerQuery = useViewerQueryState({
     tab: 'overview',
     property_type: '',
     year: '',
     search: '',
+    trend_metric: 'median_price',
   })
 
   const loading = ref(false)
+  const detailRefreshing = ref(false)
+  const transactionsLoading = ref(false)
   const error = ref('')
   const transactionsError = ref('')
+  const detailData = ref<MunicipalityDetail | null>(null)
   const transactions = ref<ExplorerResponse<TransactionRecord>>(emptyTransactions())
+  const municipalityDetailCache = new Map<string, MunicipalityDetail>()
+  const municipalityTransactionsCache = new Map<string, ExplorerResponse<TransactionRecord>>()
+  const MUNICIPALITY_CACHE_LIMIT = 48
   let municipalityLoadToken = 0
   let transactionsLoadToken = 0
 
-  const detail = computed<MunicipalityDetail | null>(
-    () => stats.municipalityDetail as MunicipalityDetail | null,
-  )
+  const detail = computed<MunicipalityDetail | null>(() => detailData.value)
 
   const pageTitle = computed(() => detail.value?.municipality || t('municipality.pageTitle'))
   const pageDescription = computed(() =>
@@ -157,6 +165,18 @@
       ? t('dashboard.activeFilterCount', { count: selectedFilterCount.value })
       : t('dashboard.noActiveFilters'),
   )
+  const trendMetric = computed<MunicipalityTrendMetric>({
+    get: () =>
+      MUNICIPALITY_TREND_METRICS.includes(viewerQuery.state.trend_metric as MunicipalityTrendMetric)
+        ? (viewerQuery.state.trend_metric as MunicipalityTrendMetric)
+        : 'median_price',
+    set: (value) => viewerQuery.patchState({ trend_metric: value }),
+  })
+  const trendMetricOptions = computed(() => [
+    { label: t('dashboard.medianPrice'), value: 'median_price' },
+    { label: t('dashboard.pricePerM2'), value: 'median_price_per_m2' },
+    { label: t('regions.transactionCount'), value: 'count' },
+  ])
 
   const propertyTypeOptions = computed(() => [
     { label: t('market.allPropertyTypes'), value: '' },
@@ -207,20 +227,78 @@
     () => transactions.value || emptyTransactions(),
   )
   const transactionRows = computed(() => transactionState.value.items || [])
+  const filtersRefreshing = computed(
+    () =>
+      detailRefreshing.value || (activeTab.value === 'transactions' && transactionsLoading.value),
+  )
+
+  function currentMunicipalitySlug() {
+    return String(route.params.slug || '')
+  }
+
+  function rememberMunicipalityCache<T>(cache: Map<string, T>, cacheKey: string, payload: T) {
+    cache.delete(cacheKey)
+    cache.set(cacheKey, payload)
+
+    while (cache.size > MUNICIPALITY_CACHE_LIMIT) {
+      const oldestKey = cache.keys().next().value
+      if (!oldestKey) break
+      cache.delete(oldestKey)
+    }
+  }
+
+  function municipalityDetailCacheKey(slug = currentMunicipalitySlug()) {
+    return JSON.stringify({
+      slug,
+      property_type: viewerQuery.state.property_type || '',
+      year: viewerQuery.state.year || '',
+    })
+  }
+
+  function municipalityTransactionsCacheKey(slug = currentMunicipalitySlug()) {
+    return JSON.stringify({
+      slug,
+      property_type: viewerQuery.state.property_type || '',
+      year: viewerQuery.state.year || '',
+      search: viewerQuery.state.search || '',
+      page: transactionState.value.page,
+      page_size: transactionState.value.page_size,
+      sort: 'recent',
+      order: 'desc',
+    })
+  }
 
   function shareStyle(share: number | null | undefined) {
     return { width: `${Math.max(10, Math.round((share || 0) * 100))}%` }
+  }
+
+  function municipalityFilters() {
+    return {
+      property_type: viewerQuery.state.property_type || undefined,
+      year: viewerQuery.state.year || undefined,
+    }
   }
 
   async function loadTransactions(
     municipalityRequestToken = municipalityLoadToken,
     transactionRequestToken = ++transactionsLoadToken,
   ) {
+    const slug = currentMunicipalitySlug()
+    const cacheKey = municipalityTransactionsCacheKey(slug)
+    const cached = municipalityTransactionsCache.get(cacheKey)
+
+    if (cached) {
+      transactions.value = cached
+      transactionsError.value = ''
+      transactionsLoading.value = false
+      return
+    }
+
+    transactionsLoading.value = true
     transactionsError.value = ''
     try {
-      const data = await stats.fetchMunicipalityTransactions(String(route.params.slug), {
-        property_type: viewerQuery.state.property_type || undefined,
-        year: viewerQuery.state.year || undefined,
+      const data = await stats.fetchMunicipalityTransactions(slug, {
+        ...municipalityFilters(),
         search: viewerQuery.state.search || undefined,
         page: transactionState.value.page,
         page_size: transactionState.value.page_size,
@@ -233,7 +311,9 @@
       ) {
         return
       }
-      transactions.value = data || emptyTransactions()
+      const next = data || emptyTransactions()
+      transactions.value = next
+      rememberMunicipalityCache(municipalityTransactionsCache, cacheKey, next)
     } catch (err) {
       if (
         municipalityRequestToken !== municipalityLoadToken ||
@@ -243,31 +323,86 @@
       }
       transactions.value = emptyTransactions()
       transactionsError.value = getApiErrorMessage(err, t)
-    }
-  }
-
-  async function loadMunicipality() {
-    const requestToken = ++municipalityLoadToken
-    const transactionRequestToken = ++transactionsLoadToken
-    loading.value = true
-    error.value = ''
-    try {
-      await Promise.all([
-        stats.fetchMunicipalityDetail(String(route.params.slug)),
-        loadTransactions(requestToken, transactionRequestToken),
-      ])
-    } catch (err) {
-      if (requestToken !== municipalityLoadToken) return
-      stats.resetMunicipalityDetail()
-      transactions.value = emptyTransactions()
-      transactionsError.value = ''
-      error.value = getApiErrorMessage(err, t)
     } finally {
-      if (requestToken === municipalityLoadToken) {
-        loading.value = false
+      if (
+        municipalityRequestToken === municipalityLoadToken &&
+        transactionRequestToken === transactionsLoadToken
+      ) {
+        transactionsLoading.value = false
       }
     }
   }
+
+  async function loadMunicipality(showBlockingLoader = false) {
+    const requestToken = ++municipalityLoadToken
+    const transactionRequestToken = ++transactionsLoadToken
+    const slug = currentMunicipalitySlug()
+    const detailCacheKey = municipalityDetailCacheKey(slug)
+    const cachedDetail = municipalityDetailCache.get(detailCacheKey) || null
+
+    if (cachedDetail) {
+      detailData.value = cachedDetail
+      error.value = ''
+    }
+
+    const shouldBlockPage =
+      (showBlockingLoader && !cachedDetail) ||
+      (!cachedDetail && (!detail.value || detail.value.slug !== slug))
+    const shouldLoadTransactions = activeTab.value === 'transactions'
+
+    if (shouldBlockPage) {
+      loading.value = true
+      error.value = ''
+    } else if (!cachedDetail) {
+      detailRefreshing.value = true
+    }
+    try {
+      const requests: Promise<unknown>[] = []
+
+      if (!cachedDetail) {
+        requests.push(
+          stats.fetchMunicipalityDetail(slug, municipalityFilters()).then((data) => {
+            if (requestToken !== municipalityLoadToken) return
+            const nextDetail = (data as MunicipalityDetail | null) || null
+            detailData.value = nextDetail
+            if (nextDetail) {
+              rememberMunicipalityCache(municipalityDetailCache, detailCacheKey, nextDetail)
+            }
+          }),
+        )
+      }
+
+      if (shouldLoadTransactions) {
+        requests.push(loadTransactions(requestToken, transactionRequestToken))
+      } else {
+        transactionsLoading.value = false
+      }
+
+      if (requests.length) {
+        await Promise.all(requests)
+      }
+    } catch (err) {
+      if (requestToken !== municipalityLoadToken) return
+      if (shouldBlockPage) {
+        detailData.value = null
+        transactions.value = emptyTransactions()
+        transactionsError.value = ''
+        error.value = getApiErrorMessage(err, t)
+      }
+    } finally {
+      if (requestToken === municipalityLoadToken) {
+        if (shouldBlockPage) {
+          loading.value = false
+        }
+        detailRefreshing.value = false
+      }
+    }
+  }
+
+  const debouncedLoadTransactions = useDebounceFn(() => {
+    transactions.value.page = 1
+    void loadTransactions()
+  }, 220)
 
   function openPrediction(transaction: TransactionRecord | null = null) {
     router.push({
@@ -345,16 +480,33 @@
   watch(
     () => route.params.slug,
     () => {
-      transactions.value.page = 1
-      void loadMunicipality()
+      transactions.value = emptyTransactions()
+      transactionsError.value = ''
+      void loadMunicipality(true)
     },
     { immediate: true },
   )
 
   watch(
-    () => [viewerQuery.state.property_type, viewerQuery.state.year, viewerQuery.state.search],
+    () => [viewerQuery.state.property_type, viewerQuery.state.year],
     () => {
       transactions.value.page = 1
+      void loadMunicipality(false)
+    },
+  )
+
+  watch(
+    () => viewerQuery.state.search,
+    () => {
+      if (activeTab.value !== 'transactions') return
+      debouncedLoadTransactions()
+    },
+  )
+
+  watch(
+    () => activeTab.value,
+    (tab) => {
+      if (tab !== 'transactions') return
       void loadTransactions()
     },
   )
@@ -375,7 +527,7 @@
           outlined
           icon="pi pi-refresh"
           :label="t('common.retry')"
-          @click="loadMunicipality"
+          @click="() => loadMunicipality(true)"
         />
       </div>
     </div>
@@ -396,6 +548,7 @@
                 property_type: viewerQuery.state.property_type || undefined,
                 year: viewerQuery.state.year || undefined,
                 search: viewerQuery.state.search || undefined,
+                trend_metric: trendMetric,
               },
               tab: viewerQuery.state.tab,
             }"
@@ -449,10 +602,16 @@
 
       <SectionPanel :eyebrow="t('common.explore')" :title="t('dashboard.activeFilters')" compact>
         <template #actions>
-          <Tag
-            :severity="selectedFilterCount > 0 ? 'contrast' : 'secondary'"
-            :value="selectedFilterTag"
-          />
+          <div class="panel-actions-inline">
+            <span v-if="filtersRefreshing" class="panel-inline-status">
+              <i class="pi pi-spin pi-spinner" aria-hidden="true"></i>
+              {{ t('common.loading') }}
+            </span>
+            <Tag
+              :severity="selectedFilterCount > 0 ? 'contrast' : 'secondary'"
+              :value="selectedFilterTag"
+            />
+          </div>
         </template>
 
         <FilterBar :columns="3">
@@ -485,6 +644,10 @@
       >
         <template #actions>
           <div class="explore-actions">
+            <span v-if="transactionsLoading" class="panel-inline-status">
+              <i class="pi pi-spin pi-spinner" aria-hidden="true"></i>
+              {{ t('common.loading') }}
+            </span>
             <Button
               icon="pi pi-table"
               severity="secondary"
@@ -521,10 +684,18 @@
                 :title="t('municipality.yearTrend')"
                 compact
               >
+                <template #actions>
+                  <Select
+                    v-model="trendMetric"
+                    :options="trendMetricOptions"
+                    option-label="label"
+                    option-value="value"
+                  />
+                </template>
                 <TrendLineChart
                   v-if="yearTrendRows.length"
                   :data="yearTrendRows"
-                  metric="median_price"
+                  :metric="trendMetric"
                 />
                 <EmptyState v-else :message="t('common.noData')" />
               </SectionPanel>
@@ -720,13 +891,33 @@
   .tab-grid,
   .related-list,
   .mix-list,
-  .benchmark-grid {
+  .benchmark-grid,
+  .panel-actions-inline {
     display: grid;
     gap: var(--space-grid);
   }
 
   .municipality-page {
     gap: var(--space-section);
+  }
+
+  .panel-actions-inline,
+  .explore-actions,
+  .panel-inline-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.65rem;
+  }
+
+  .panel-inline-status {
+    padding: 0.3rem 0.65rem;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--border) 70%, var(--primary) 30%);
+    background: color-mix(in srgb, var(--surface-card) 92%, var(--primary-overlay) 8%);
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    font-weight: 700;
+    white-space: nowrap;
   }
 
   .state-frame {

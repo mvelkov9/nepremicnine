@@ -50,6 +50,16 @@
     counts?: Record<string, number> | null
   }
 
+  interface MapMetaPayload {
+    reason?: string | null
+    legend?: MapLegendPayload | null
+    price_band?: string | null
+    filtered_total?: number | null
+    band_total?: number | null
+    returned_total?: number | null
+    truncated?: boolean | null
+  }
+
   interface MapActionState {
     canUse: boolean
     reason: string
@@ -99,6 +109,18 @@
     avg_price_per_m2?: number | null
   }
 
+  interface MapTransactionsPayload {
+    transactions?: MapTransactionRecord[]
+    count?: number
+    meta?: MapMetaPayload | null
+  }
+
+  interface MapOverviewPayload {
+    municipalities?: MapMunicipalityRecord[]
+    count?: number
+    meta?: MapMetaPayload | null
+  }
+
   type MapSelectableRecord = MapTransactionRecord | MapMunicipalityRecord
 
   const { t } = useI18n()
@@ -143,6 +165,10 @@
   let mapRequestToken = 0
   let detailRequestToken = 0
   const validPriceBands = new Set(['low', 'mid', 'high'])
+  const mapPayloadCache = new Map<string, MapTransactionsPayload | MapOverviewPayload>()
+  const inflightPrefetches = new Set<string>()
+  const MAP_PAYLOAD_CACHE_LIMIT = 24
+  let lastRouteDataSignature = ''
 
   function semanticColor(name: string, fallback: string) {
     const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
@@ -747,32 +773,125 @@
     resetDetailState()
   }
 
-  async function fetchTransactions(signal?: AbortSignal) {
+  function currentMapParams(): MapFilterParams {
     const params: MapFilterParams = {}
     if (selectedType.value) params.property_type = selectedType.value
     if (selectedRegion.value) params.statistical_region = selectedRegion.value
     if (selectedYear.value) params.year = selectedYear.value
     if (selectedMunicipality.value) params.municipality = selectedMunicipality.value
     if (selectedPriceBand.value) params.price_band = selectedPriceBand.value
+    return params
+  }
 
-    const { data } = await api.get('/api/stats/map-transactions', { params, signal })
-    mapMetaReason.value = data.meta?.reason || null
-    mapLegend.value = data.meta?.legend || null
-    transactions.value = data.transactions || []
+  function mapPayloadCacheKey(
+    mode: 'transactions' | 'overview' = viewMode.value,
+    params: MapFilterParams = currentMapParams(),
+  ) {
+    return JSON.stringify({
+      mode,
+      property_type: params.property_type || '',
+      statistical_region: params.statistical_region || '',
+      year: params.year || '',
+      municipality: params.municipality || '',
+      price_band: params.price_band || '',
+    })
+  }
+
+  function rememberMapPayload(key: string, payload: MapTransactionsPayload | MapOverviewPayload) {
+    if (mapPayloadCache.has(key)) {
+      mapPayloadCache.delete(key)
+    }
+    mapPayloadCache.set(key, payload)
+    while (mapPayloadCache.size > MAP_PAYLOAD_CACHE_LIMIT) {
+      const oldestKey = mapPayloadCache.keys().next().value
+      if (!oldestKey) break
+      mapPayloadCache.delete(oldestKey)
+    }
+  }
+
+  function applyTransactionsPayload(payload: MapTransactionsPayload) {
+    mapMetaReason.value = payload.meta?.reason || null
+    mapLegend.value = payload.meta?.legend || null
+    transactions.value = payload.transactions || []
+  }
+
+  function applyOverviewPayload(payload: MapOverviewPayload) {
+    mapMetaReason.value = payload.meta?.reason || null
+    mapLegend.value = payload.meta?.legend || null
+    municipalities.value = payload.municipalities || []
+  }
+
+  function tryApplyCachedMapPayload(
+    mode: 'transactions' | 'overview' = viewMode.value,
+    params: MapFilterParams = currentMapParams(),
+  ) {
+    const cached = mapPayloadCache.get(mapPayloadCacheKey(mode, params))
+    if (!cached) return false
+
+    if (mode === 'transactions') {
+      applyTransactionsPayload(cached as MapTransactionsPayload)
+    } else {
+      applyOverviewPayload(cached as MapOverviewPayload)
+    }
+    return true
+  }
+
+  async function prefetchMapMode(
+    mode: 'transactions' | 'overview',
+    params: MapFilterParams = currentMapParams(),
+  ) {
+    const cacheKey = mapPayloadCacheKey(mode, params)
+    if (mapPayloadCache.has(cacheKey) || inflightPrefetches.has(cacheKey)) return
+
+    inflightPrefetches.add(cacheKey)
+    try {
+      if (mode === 'transactions') {
+        const { data } = await api.get<MapTransactionsPayload>('/api/stats/map-transactions', {
+          params,
+        })
+        rememberMapPayload(cacheKey, data || {})
+      } else {
+        const { data } = await api.get<MapOverviewPayload>('/api/stats/map-overview', {
+          params,
+        })
+        rememberMapPayload(cacheKey, data || {})
+      }
+    } catch {
+      // Best-effort warm path only.
+    } finally {
+      inflightPrefetches.delete(cacheKey)
+    }
+  }
+
+  function routeDataSignature(query = route.query) {
+    return JSON.stringify({
+      property_type: typeof query.property_type === 'string' ? query.property_type : '',
+      region: typeof query.region === 'string' ? query.region : '',
+      year: typeof query.year === 'string' ? query.year : '',
+      price_band: typeof query.price_band === 'string' ? query.price_band : '',
+      municipality: typeof query.municipality === 'string' ? query.municipality : '',
+      view: query.view === 'overview' ? 'overview' : 'transactions',
+    })
+  }
+
+  async function fetchTransactions(signal?: AbortSignal) {
+    const params = currentMapParams()
+    const { data } = await api.get<MapTransactionsPayload>('/api/stats/map-transactions', {
+      params,
+      signal,
+    })
+    rememberMapPayload(mapPayloadCacheKey('transactions', params), data || {})
+    applyTransactionsPayload(data || {})
   }
 
   async function fetchOverviewMarkers(signal?: AbortSignal) {
-    const params: MapFilterParams = {}
-    if (selectedType.value) params.property_type = selectedType.value
-    if (selectedRegion.value) params.statistical_region = selectedRegion.value
-    if (selectedYear.value) params.year = selectedYear.value
-    if (selectedMunicipality.value) params.municipality = selectedMunicipality.value
-    if (selectedPriceBand.value) params.price_band = selectedPriceBand.value
-
-    const { data } = await api.get('/api/stats/map-overview', { params, signal })
-    mapMetaReason.value = data.meta?.reason || null
-    mapLegend.value = data.meta?.legend || null
-    municipalities.value = data.municipalities || []
+    const params = currentMapParams()
+    const { data } = await api.get<MapOverviewPayload>('/api/stats/map-overview', {
+      params,
+      signal,
+    })
+    rememberMapPayload(mapPayloadCacheKey('overview', params), data || {})
+    applyOverviewPayload(data || {})
   }
 
   async function loadReferenceData() {
@@ -794,6 +913,7 @@
 
   async function initializePage() {
     applyRouteQuery()
+    lastRouteDataSignature = routeDataSignature(route.query)
     if (!map) initMap()
     error.value = ''
 
@@ -810,12 +930,23 @@
 
   async function fetchData() {
     const requestToken = ++mapRequestToken
+    error.value = ''
+    mapMetaReason.value = null
+    const params = currentMapParams()
+
+    if (tryApplyCachedMapPayload(viewMode.value, params)) {
+      loading.value = false
+      await nextTick()
+      map?.invalidateSize()
+      renderMarkers()
+      void prefetchMapMode(viewMode.value === 'transactions' ? 'overview' : 'transactions', params)
+      return
+    }
+
     activeMapRequestController?.abort()
     const controller = new AbortController()
     activeMapRequestController = controller
     loading.value = true
-    error.value = ''
-    mapMetaReason.value = null
 
     try {
       if (viewMode.value === 'transactions') {
@@ -829,6 +960,7 @@
       await nextTick()
       map?.invalidateSize()
       renderMarkers()
+      void prefetchMapMode(viewMode.value === 'transactions' ? 'overview' : 'transactions', params)
     } catch (err) {
       if (controller.signal.aborted || isCancelledRequest(err)) return
       clearMapResults(viewMode.value)
@@ -1002,6 +1134,9 @@
   watch(
     () => route.query,
     () => {
+      const previousSignature = lastRouteDataSignature
+      lastRouteDataSignature = routeDataSignature(route.query)
+
       if (writingRoute) {
         writingRoute = false
         return
@@ -1009,7 +1144,9 @@
       applyRouteQuery()
       const normalized = referenceData.loaded ? normalizeSelectionState() : false
       if (normalized) syncRouteQuery()
-      if (initialized.value) debouncedFetchData()
+      if (initialized.value && lastRouteDataSignature !== previousSignature) {
+        debouncedFetchData()
+      }
     },
   )
 

@@ -34,6 +34,7 @@ from app.models.region import RegionLookup
 from app.rate_limit import limiter
 from app.services.regions_service import CANONICAL_REGION_ROWS
 from app.tasks.training_worker import _parse_redis_url
+from app.utils.cache import cache_set_value
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +92,7 @@ async def lifespan(app: FastAPI):
     await _seed_region_lookup_if_empty()
     # Redis pool for token blacklist
     app.state.redis = await create_pool(_parse_redis_url(settings.redis_url))
-    app.state.stats_warmup_task = asyncio.create_task(asyncio.to_thread(_warm_stats_data))
+    app.state.stats_warmup_task = asyncio.create_task(_warm_stats_data(app))
     yield
     # Shutdown
     warmup_task = getattr(app.state, "stats_warmup_task", None)
@@ -101,11 +102,14 @@ async def lifespan(app: FastAPI):
     await engine.dispose()
 
 
-def _warm_stats_data() -> None:
+async def _warm_stats_data(app: FastAPI) -> None:
     try:
-        from app.api.stats import warm_market_data_cache
+        from app.api.stats import build_common_stats_cache_entries, warm_market_data_cache
 
-        warm_market_data_cache()
+        await asyncio.to_thread(warm_market_data_cache)
+        warm_entries = await asyncio.to_thread(build_common_stats_cache_entries)
+        for key, payload, ttl in warm_entries:
+            await cache_set_value(app.state.redis, key, payload, ttl=ttl)
     except Exception:
         logger.exception("Unable to warm stats dataset")
 

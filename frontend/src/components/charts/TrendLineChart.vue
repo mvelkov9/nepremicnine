@@ -17,7 +17,7 @@
   const props = withDefaults(
     defineProps<{
       data: TrendPoint[]
-      metric?: 'median_price' | 'avg_price' | 'avg_price_per_m2' | 'count'
+      metric?: 'median_price' | 'avg_price' | 'avg_price_per_m2' | 'median_price_per_m2' | 'count'
       compact?: boolean
       showByType?: boolean
     }>(),
@@ -67,6 +67,7 @@
       if (props.metric === 'count') return p.count ?? null
       if (props.metric === 'avg_price') return p.avg_price ?? null
       if (props.metric === 'avg_price_per_m2') return p.avg_price_per_m2 ?? null
+      if (props.metric === 'median_price_per_m2') return p.median_price_per_m2 ?? null
       return p.median_price ?? null
     })
 

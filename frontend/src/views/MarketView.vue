@@ -1,5 +1,6 @@
 <script setup lang="ts">
   import { computed, onMounted, ref, watch } from 'vue'
+  import { useDebounceFn } from '@vueuse/core'
   import { RouterLink } from 'vue-router'
   import Button from 'primevue/button'
   import Column from 'primevue/column'
@@ -159,6 +160,12 @@
     page: 1,
     page_size: 6,
   })
+  const marketHomeData = ref<MarketAnalysisData>(emptyMarketHome())
+  const trendRows = ref<TrendPoint[]>([])
+  const distributionSnapshot = ref<PriceDistribution | null>(null)
+  const featureImportanceRows = ref<FeatureImportanceItem[]>([])
+  const marketSectionCache = new Map<string, unknown>()
+  const MARKET_SECTION_CACHE_LIMIT = 64
 
   function emptyMarketHome(): MarketAnalysisData {
     return {
@@ -177,23 +184,41 @@
     }
   }
 
+  function rememberMarketSection(cacheKey: string, payload: unknown) {
+    marketSectionCache.delete(cacheKey)
+    marketSectionCache.set(cacheKey, payload)
+
+    while (marketSectionCache.size > MARKET_SECTION_CACHE_LIMIT) {
+      const oldestKey = marketSectionCache.keys().next().value
+      if (!oldestKey) break
+      marketSectionCache.delete(oldestKey)
+    }
+  }
+
+  function marketSectionCacheKey(
+    section: string,
+    extra: Record<string, string | number | undefined> = {},
+  ) {
+    return JSON.stringify({
+      section,
+      property_type: viewerQuery.state.property_type || '',
+      region: viewerQuery.state.region || '',
+      municipality: viewerQuery.state.municipality || '',
+      year: viewerQuery.state.year || '',
+      search: viewerQuery.state.search || '',
+      ...extra,
+    })
+  }
+
   const marketHome = computed<MarketAnalysisData>(() =>
-    marketError.value
-      ? emptyMarketHome()
-      : (stats.marketHome as MarketAnalysisData | null) || emptyMarketHome(),
+    marketError.value ? emptyMarketHome() : marketHomeData.value,
   )
-  const trendData = computed<TrendPoint[]>(() =>
-    trendError.value ? [] : (stats.trend as TrendPoint[]) || [],
-  )
+  const trendData = computed<TrendPoint[]>(() => (trendError.value ? [] : trendRows.value))
   const distributionData = computed<PriceDistribution | null>(() =>
-    distributionError.value ? null : (stats.priceDistribution as PriceDistribution | null) || null,
+    distributionError.value ? null : distributionSnapshot.value,
   )
   const marketFeatureImportance = computed<FeatureImportanceItem[]>(() =>
-    featureImportanceError.value
-      ? []
-      : Array.isArray(stats.featureImportance)
-        ? (stats.featureImportance as FeatureImportanceItem[])
-        : [],
+    featureImportanceError.value ? [] : featureImportanceRows.value,
   )
 
   const selectedRegionRef = computed(() => viewerQuery.state.region || '')
@@ -324,6 +349,18 @@
       ? t('dashboard.activeFilterCount', { count: activeFilterCountValue.value })
       : t('dashboard.noActiveFilters'),
   )
+  const filtersRefreshing = computed(() =>
+    [
+      marketLoading.value,
+      trendLoading.value,
+      distributionLoading.value,
+      transactionsLoading.value,
+      regionsLoading.value,
+      largestMarketsLoading.value,
+      priceLeadersLoading.value,
+      featureImportanceLoading.value,
+    ].some(Boolean),
+  )
 
   const workspaceState = computed<TableViewState>(() => ({
     page: 'market',
@@ -350,6 +387,23 @@
       municipality: viewerQuery.state.municipality || undefined,
       year: viewerQuery.state.year || undefined,
       search: viewerQuery.state.search || undefined,
+    }
+  }
+
+  function marketHomeFilters() {
+    return {
+      property_type: viewerQuery.state.property_type || undefined,
+      region: viewerQuery.state.region || undefined,
+      municipality: viewerQuery.state.municipality || undefined,
+      year: viewerQuery.state.year || undefined,
+    }
+  }
+
+  function trendFilters() {
+    return {
+      property_type: viewerQuery.state.property_type || undefined,
+      region: viewerQuery.state.region || undefined,
+      municipality: viewerQuery.state.municipality || undefined,
     }
   }
 
@@ -439,10 +493,25 @@
 
   async function loadMarketHome() {
     const requestVersion = ++marketRequestVersion
+    const cacheKey = marketSectionCacheKey('marketHome', {
+      search: undefined,
+    })
+    const cached = marketSectionCache.get(cacheKey)
+
+    if (cached) {
+      marketError.value = ''
+      marketHomeData.value = (cached as MarketAnalysisData | null) || emptyMarketHome()
+      marketLoading.value = false
+      return
+    }
+
     marketLoading.value = true
     marketError.value = ''
     try {
-      await stats.fetchMarketHome(filters())
+      const payload = await stats.fetchMarketHome(marketHomeFilters())
+      if (requestVersion !== marketRequestVersion) return
+      marketHomeData.value = (payload as MarketAnalysisData | null) || emptyMarketHome()
+      rememberMarketSection(cacheKey, marketHomeData.value)
     } catch (error) {
       if (requestVersion !== marketRequestVersion) return
       marketError.value = getApiErrorMessage(error, t)
@@ -455,14 +524,26 @@
 
   async function loadTrend() {
     const requestVersion = ++trendRequestVersion
+    const cacheKey = marketSectionCacheKey('trend', {
+      year: undefined,
+      search: undefined,
+    })
+    const cached = marketSectionCache.get(cacheKey)
+
+    if (cached) {
+      trendError.value = ''
+      trendRows.value = Array.isArray(cached) ? (cached as TrendPoint[]) : []
+      trendLoading.value = false
+      return
+    }
+
     trendLoading.value = true
     trendError.value = ''
     try {
-      await stats.fetchTrend({
-        property_type: viewerQuery.state.property_type || undefined,
-        region: viewerQuery.state.region || undefined,
-        municipality: viewerQuery.state.municipality || undefined,
-      })
+      const payload = await stats.fetchTrend(trendFilters())
+      if (requestVersion !== trendRequestVersion) return
+      trendRows.value = Array.isArray(payload) ? (payload as TrendPoint[]) : []
+      rememberMarketSection(cacheKey, trendRows.value)
     } catch (error) {
       if (requestVersion !== trendRequestVersion) return
       trendError.value = getApiErrorMessage(error, t)
@@ -475,16 +556,32 @@
 
   async function loadDistribution() {
     const requestVersion = ++distributionRequestVersion
+    const cacheKey = marketSectionCacheKey('distribution', {
+      bins: distributionBins.value,
+      search: undefined,
+    })
+    const cached = marketSectionCache.get(cacheKey)
+
+    if (cached) {
+      distributionError.value = ''
+      distributionSnapshot.value = (cached as PriceDistribution | null) || null
+      distributionLoading.value = false
+      return
+    }
+
     distributionLoading.value = true
     distributionError.value = ''
     try {
-      await stats.fetchPriceDistribution({
+      const payload = await stats.fetchPriceDistribution({
         property_type: viewerQuery.state.property_type || undefined,
         region: viewerQuery.state.region || undefined,
         municipality: viewerQuery.state.municipality || undefined,
         year: viewerQuery.state.year || undefined,
         bins: distributionBins.value,
       })
+      if (requestVersion !== distributionRequestVersion) return
+      distributionSnapshot.value = (payload as PriceDistribution | null) || null
+      rememberMarketSection(cacheKey, distributionSnapshot.value)
     } catch (error) {
       if (requestVersion !== distributionRequestVersion) return
       distributionError.value = getApiErrorMessage(error, t)
@@ -497,10 +594,31 @@
 
   async function loadFeatureImportance() {
     const requestVersion = ++featureImportanceRequestVersion
+    const cacheKey = marketSectionCacheKey('featureImportance', {
+      property_type: undefined,
+      region: undefined,
+      municipality: undefined,
+      year: undefined,
+      search: undefined,
+    })
+    const cached = marketSectionCache.get(cacheKey)
+
+    if (cached) {
+      featureImportanceError.value = ''
+      featureImportanceRows.value = Array.isArray(cached) ? (cached as FeatureImportanceItem[]) : []
+      featureImportanceLoading.value = false
+      return
+    }
+
     featureImportanceLoading.value = true
     featureImportanceError.value = ''
     try {
-      await stats.fetchFeatureImportance()
+      const payload = await stats.fetchFeatureImportance()
+      if (requestVersion !== featureImportanceRequestVersion) return
+      featureImportanceRows.value = Array.isArray(payload)
+        ? (payload as FeatureImportanceItem[])
+        : []
+      rememberMarketSection(cacheKey, featureImportanceRows.value)
     } catch (error) {
       if (requestVersion !== featureImportanceRequestVersion) return
       featureImportanceError.value = getApiErrorMessage(error, t)
@@ -513,6 +631,26 @@
 
   async function loadTransactions() {
     const requestVersion = ++transactionsRequestVersion
+    const cacheKey = marketSectionCacheKey('transactions', {
+      page: transactions.value.page,
+      page_size: transactions.value.page_size,
+      sort: transactionSort.value,
+      order: transactionOrder.value,
+    })
+    const cached = marketSectionCache.get(cacheKey)
+
+    if (cached) {
+      transactionsError.value = ''
+      transactions.value =
+        (cached as MarketTablePage<TransactionRecord> | null) ||
+        emptyMarketTablePage<TransactionRecord>(
+          transactions.value.page,
+          transactions.value.page_size,
+        )
+      transactionsLoading.value = false
+      return
+    }
+
     transactionsLoading.value = true
     transactionsError.value = ''
     try {
@@ -527,6 +665,7 @@
       })
       if (requestVersion !== transactionsRequestVersion) return
       transactions.value = data || transactions.value
+      rememberMarketSection(cacheKey, transactions.value)
     } catch (error) {
       if (requestVersion !== transactionsRequestVersion) return
       transactions.value = emptyMarketTablePage<TransactionRecord>(
@@ -543,6 +682,23 @@
 
   async function loadRegions() {
     const requestVersion = ++regionsRequestVersion
+    const cacheKey = marketSectionCacheKey('regions', {
+      page: regions.value.page,
+      page_size: regions.value.page_size,
+      sort: 'count',
+      order: 'desc',
+    })
+    const cached = marketSectionCache.get(cacheKey)
+
+    if (cached) {
+      regionsError.value = ''
+      regions.value =
+        (cached as MarketTablePage<RegionExplorerItem> | null) ||
+        emptyMarketTablePage<RegionExplorerItem>(regions.value.page, regions.value.page_size)
+      regionsLoading.value = false
+      return
+    }
+
     regionsLoading.value = true
     regionsError.value = ''
     try {
@@ -557,6 +713,7 @@
       })
       if (requestVersion !== regionsRequestVersion) return
       regions.value = data || regions.value
+      rememberMarketSection(cacheKey, regions.value)
     } catch (error) {
       if (requestVersion !== regionsRequestVersion) return
       regions.value = emptyMarketTablePage<RegionExplorerItem>(
@@ -573,6 +730,26 @@
 
   async function loadLargestMarkets() {
     const requestVersion = ++largestMarketsRequestVersion
+    const cacheKey = marketSectionCacheKey('largestMarkets', {
+      page: largestMarkets.value.page,
+      page_size: largestMarkets.value.page_size,
+      sort: rankingSort.value,
+      order: rankingOrder.value,
+    })
+    const cached = marketSectionCache.get(cacheKey)
+
+    if (cached) {
+      largestMarketsError.value = ''
+      largestMarkets.value =
+        (cached as MarketTablePage<MunicipalityExplorerItem> | null) ||
+        emptyMarketTablePage<MunicipalityExplorerItem>(
+          largestMarkets.value.page,
+          largestMarkets.value.page_size,
+        )
+      largestMarketsLoading.value = false
+      return
+    }
+
     largestMarketsLoading.value = true
     largestMarketsError.value = ''
     try {
@@ -587,6 +764,7 @@
       })
       if (requestVersion !== largestMarketsRequestVersion) return
       largestMarkets.value = data || largestMarkets.value
+      rememberMarketSection(cacheKey, largestMarkets.value)
     } catch (error) {
       if (requestVersion !== largestMarketsRequestVersion) return
       largestMarkets.value = emptyMarketTablePage<MunicipalityExplorerItem>(
@@ -603,6 +781,26 @@
 
   async function loadPriceLeaders() {
     const requestVersion = ++priceLeadersRequestVersion
+    const cacheKey = marketSectionCacheKey('priceLeaders', {
+      page: priceLeaders.value.page,
+      page_size: priceLeaders.value.page_size,
+      sort: 'median_price_per_m2',
+      order: 'desc',
+    })
+    const cached = marketSectionCache.get(cacheKey)
+
+    if (cached) {
+      priceLeadersError.value = ''
+      priceLeaders.value =
+        (cached as MarketTablePage<MunicipalityExplorerItem> | null) ||
+        emptyMarketTablePage<MunicipalityExplorerItem>(
+          priceLeaders.value.page,
+          priceLeaders.value.page_size,
+        )
+      priceLeadersLoading.value = false
+      return
+    }
+
     priceLeadersLoading.value = true
     priceLeadersError.value = ''
     try {
@@ -617,6 +815,7 @@
       })
       if (requestVersion !== priceLeadersRequestVersion) return
       priceLeaders.value = data || priceLeaders.value
+      rememberMarketSection(cacheKey, priceLeaders.value)
     } catch (error) {
       if (requestVersion !== priceLeadersRequestVersion) return
       priceLeaders.value = emptyMarketTablePage<MunicipalityExplorerItem>(
@@ -631,15 +830,39 @@
     }
   }
 
-  function refreshFilterDependentData() {
-    void loadMarketHome()
-    void loadTrend()
-    void loadDistribution()
-    void loadTransactions()
-    void loadRegions()
-    void loadLargestMarkets()
-    void loadPriceLeaders()
+  function activeTabLoaders(includeStaticOverview = false): Promise<void>[] {
+    if (activeTab.value === 'transactions') {
+      return [loadTransactions()]
+    }
+
+    if (activeTab.value === 'rankings') {
+      return [loadLargestMarkets(), loadPriceLeaders()]
+    }
+
+    if (activeTab.value === 'distribution') {
+      return [loadDistribution()]
+    }
+
+    return [
+      loadTrend(),
+      loadRegions(),
+      loadLargestMarkets(),
+      loadPriceLeaders(),
+      ...(includeStaticOverview &&
+      !marketFeatureImportance.value.length &&
+      !featureImportanceLoading.value
+        ? [loadFeatureImportance()]
+        : []),
+    ]
   }
+
+  function refreshVisibleData(includeStaticOverview = false) {
+    void Promise.allSettled([loadMarketHome(), ...activeTabLoaders(includeStaticOverview)])
+  }
+
+  const debouncedRefreshVisibleData = useDebounceFn(() => {
+    refreshVisibleData()
+  }, 180)
 
   function clearFilters() {
     viewerQuery.patchState({
@@ -707,8 +930,7 @@
     }
 
     if (!bootstrapError.value) {
-      refreshFilterDependentData()
-      void loadFeatureImportance()
+      refreshVisibleData(true)
     }
   }
 
@@ -724,7 +946,15 @@
       if (!initialized.value) return
       if (normalizeQueryState()) return
       resetTablePages()
-      refreshFilterDependentData()
+      debouncedRefreshVisibleData()
+    },
+  )
+
+  watch(
+    () => activeTab.value,
+    () => {
+      if (!initialized.value) return
+      void Promise.allSettled(activeTabLoaders(true))
     },
   )
 
@@ -750,6 +980,7 @@
     () => distributionBins.value,
     () => {
       if (!initialized.value) return
+      if (activeTab.value !== 'distribution') return
       void loadDistribution()
     },
   )
@@ -795,6 +1026,10 @@
 
         <div class="market-hero__status">
           <Tag :severity="activeFilterTagSeverity" :value="activeFilterTagLabel" />
+          <span v-if="filtersRefreshing" class="market-loading-chip">
+            <i class="pi pi-spin pi-spinner" aria-hidden="true"></i>
+            {{ t('common.loading') }}
+          </span>
           <span>{{ t('dashboard.marketLens') }}</span>
         </div>
       </div>
@@ -820,6 +1055,10 @@
       <template #actions>
         <div class="market-filters__actions">
           <Tag :severity="activeFilterTagSeverity" :value="activeFilterTagLabel" />
+          <span v-if="filtersRefreshing" class="market-loading-chip">
+            <i class="pi pi-spin pi-spinner" aria-hidden="true"></i>
+            {{ t('common.loading') }}
+          </span>
           <Button
             severity="secondary"
             outlined
@@ -1535,6 +1774,20 @@
     color: var(--text-muted);
     font-size: 0.86rem;
     font-weight: 700;
+  }
+
+  .market-loading-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.3rem 0.65rem;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--border) 70%, var(--primary) 30%);
+    background: color-mix(in srgb, var(--surface-card) 88%, var(--primary-overlay) 12%);
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    font-weight: 700;
+    white-space: nowrap;
   }
 
   .market-hero__metrics {

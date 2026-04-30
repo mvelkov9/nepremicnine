@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useWorkbenchStore } from '@/stores/workbench'
+import api from '@/composables/useApi'
 
 vi.mock('@/composables/useApi', () => ({
   default: {
@@ -15,6 +16,7 @@ describe('workbench store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     localStorage.clear()
+    vi.clearAllMocks()
   })
 
   it('deduplicates compare tray entries by id', () => {
@@ -92,5 +94,33 @@ describe('workbench store', () => {
 
     expect(workbench.pinnedWorkspaces).toHaveLength(1)
     expect(workbench.pinnedWorkspaces[0].name).toBe('Pinned market')
+  })
+
+  it('reuses cached admin activity responses across quick repeated fetches', async () => {
+    const workbench = useWorkbenchStore()
+    vi.mocked(api.get).mockResolvedValueOnce({
+      data: [{ id: 'event:1', title: 'Test event' }],
+    } as never)
+
+    const first = await workbench.fetchAdminActivity()
+    const second = await workbench.fetchAdminActivity()
+
+    expect(api.get).toHaveBeenCalledTimes(1)
+    expect(first).toEqual([{ id: 'event:1', title: 'Test event' }])
+    expect(second).toEqual(first)
+  })
+
+  it('reuses cached training run summaries across quick repeated fetches', async () => {
+    const workbench = useWorkbenchStore()
+    vi.mocked(api.get).mockResolvedValueOnce({
+      data: [{ id: 'run-1', status: 'completed' }],
+    } as never)
+
+    const first = await workbench.fetchTrainingRuns()
+    const second = await workbench.fetchTrainingRuns()
+
+    expect(api.get).toHaveBeenCalledTimes(1)
+    expect(first).toEqual([{ id: 'run-1', status: 'completed' }])
+    expect(second).toEqual(first)
   })
 })

@@ -63,6 +63,8 @@
   const proofError = ref('')
   const searchInput = ref('')
   const proofRequestId = ref(0)
+  const proofRowsCache = new Map<string, ServerTableResult<BenchmarkProofRow>>()
+  const PROOF_CACHE_LIMIT = 40
   const benchmarkTab = ref<'snapshot' | 'methodology' | 'proof'>(
     readQueryTab(route.query.tab, benchmarkTabs, 'snapshot'),
   )
@@ -328,6 +330,29 @@
     }
   }
 
+  function rememberProofRows(cacheKey: string, payload: ServerTableResult<BenchmarkProofRow>) {
+    proofRowsCache.delete(cacheKey)
+    proofRowsCache.set(cacheKey, payload)
+
+    while (proofRowsCache.size > PROOF_CACHE_LIMIT) {
+      const oldestKey = proofRowsCache.keys().next().value
+      if (!oldestKey) break
+      proofRowsCache.delete(oldestKey)
+    }
+  }
+
+  function proofRowsCacheKey() {
+    return JSON.stringify({
+      page: table.page.value,
+      page_size: table.pageSize.value,
+      sort: table.sort.value,
+      order: table.order.value,
+      search: table.search.value || '',
+      property_type: table.state.property_type || '',
+      winner: table.state.winner || '',
+    })
+  }
+
   watch(
     () => table.search.value,
     (value) => {
@@ -349,6 +374,9 @@
 
   watch(benchmarkTab, (tab) => {
     syncBenchmarkTabToRoute(tab)
+    if (auth.isAdmin && tab === 'proof') {
+      void fetchProofRows()
+    }
   })
 
   watch(
@@ -362,7 +390,7 @@
       table.state.winner,
     ],
     () => {
-      if (auth.isAdmin) void fetchProofRows()
+      if (auth.isAdmin && benchmarkTab.value === 'proof') void fetchProofRows()
     },
   )
 
@@ -414,6 +442,16 @@
 
   async function fetchProofRows() {
     const requestId = ++proofRequestId.value
+    const cacheKey = proofRowsCacheKey()
+    const cached = proofRowsCache.get(cacheKey)
+
+    if (cached) {
+      proofError.value = ''
+      proofRows.value = cached
+      proofLoading.value = false
+      return
+    }
+
     proofLoading.value = true
     proofError.value = ''
     try {
@@ -423,6 +461,7 @@
       )
       if (requestId !== proofRequestId.value) return
       proofRows.value = data
+      rememberProofRows(cacheKey, data)
     } catch (err) {
       if (requestId !== proofRequestId.value) return
       proofRows.value = emptyProofRows()
@@ -448,7 +487,7 @@
       // Keep benchmark rendering even if shared reference data refresh fails.
     }
     await fetchSummary()
-    if (auth.isAdmin) await fetchProofRows()
+    if (auth.isAdmin && benchmarkTab.value === 'proof') await fetchProofRows()
   })
 </script>
 

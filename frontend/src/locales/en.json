@@ -630,6 +630,7 @@
     "metric_median_price": "Median price",
     "metric_avg_price": "Average price",
     "metric_avg_price_per_m2": "Avg. price per m²",
+    "metric_median_price_per_m2": "Median €/m²",
     "metric_count": "Transaction count",
     "priceLeadersTitle": "Highest-priced municipalities per m²",
     "largestMarketsTitle": "Most active municipalities",

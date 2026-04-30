@@ -1,5 +1,6 @@
 ﻿<script setup lang="ts">
   import { computed, onMounted, ref, watch } from 'vue'
+  import { useDebounceFn } from '@vueuse/core'
   import { RouterLink } from 'vue-router'
   import Button from 'primevue/button'
   import Column from 'primevue/column'
@@ -66,6 +67,7 @@
   const regionsError = ref('')
   const drilldownLoading = ref(false)
   const drilldownError = ref('')
+  const filtersRefreshing = computed(() => regionsLoading.value || drilldownLoading.value)
   const regions = ref<ExplorerPage<RegionExplorerItem>>({
     items: [],
     total: 0,
@@ -78,6 +80,9 @@
     page: 1,
     page_size: 12,
   })
+  const regionsPageCache = new Map<string, ExplorerPage<RegionExplorerItem>>()
+  const drilldownPageCache = new Map<string, ExplorerPage<MunicipalityExplorerItem>>()
+  const REGIONS_CACHE_LIMIT = 32
   let regionsRequestVersion = 0
   let drilldownRequestVersion = 0
 
@@ -181,6 +186,44 @@
     }
   }
 
+  function rememberCachedPage<T>(
+    cache: Map<string, ExplorerPage<T>>,
+    cacheKey: string,
+    payload: ExplorerPage<T>,
+  ) {
+    cache.delete(cacheKey)
+    cache.set(cacheKey, payload)
+
+    while (cache.size > REGIONS_CACHE_LIMIT) {
+      const oldestKey = cache.keys().next().value
+      if (!oldestKey) break
+      cache.delete(oldestKey)
+    }
+  }
+
+  function regionsCacheKey() {
+    return JSON.stringify({
+      property_type: viewerQuery.state.property_type || '',
+      region: viewerQuery.state.region || '',
+      year: viewerQuery.state.year || '',
+      search: viewerQuery.state.search || '',
+      sort: chartMetric.value,
+      page: regions.value.page,
+      page_size: regions.value.page_size,
+    })
+  }
+
+  function drilldownCacheKey() {
+    return JSON.stringify({
+      property_type: viewerQuery.state.property_type || '',
+      region: viewerQuery.state.region || '',
+      year: viewerQuery.state.year || '',
+      search: viewerQuery.state.search || '',
+      page: drilldown.value.page,
+      page_size: drilldown.value.page_size,
+    })
+  }
+
   function filters() {
     return {
       property_type: viewerQuery.state.property_type || undefined,
@@ -249,6 +292,16 @@
 
   async function loadRegions() {
     const requestVersion = ++regionsRequestVersion
+    const cacheKey = regionsCacheKey()
+    const cached = regionsPageCache.get(cacheKey)
+
+    if (cached) {
+      regionsError.value = ''
+      regions.value = cached
+      regionsLoading.value = false
+      return
+    }
+
     regionsLoading.value = true
     regionsError.value = ''
 
@@ -265,6 +318,7 @@
 
       if (requestVersion !== regionsRequestVersion) return
       regions.value = data
+      rememberCachedPage(regionsPageCache, cacheKey, data)
     } catch (error) {
       if (requestVersion !== regionsRequestVersion) return
       regions.value = emptyRegionsPage()
@@ -278,7 +332,6 @@
 
   async function loadDrilldown() {
     const requestVersion = ++drilldownRequestVersion
-    drilldownLoading.value = true
     drilldownError.value = ''
 
     if (!viewerQuery.state.region) {
@@ -286,6 +339,17 @@
       drilldownLoading.value = false
       return
     }
+
+    const cacheKey = drilldownCacheKey()
+    const cached = drilldownPageCache.get(cacheKey)
+
+    if (cached) {
+      drilldown.value = cached
+      drilldownLoading.value = false
+      return
+    }
+
+    drilldownLoading.value = true
 
     try {
       const { data } = await api.get('/api/stats/municipalities', {
@@ -303,6 +367,7 @@
 
       if (requestVersion !== drilldownRequestVersion) return
       drilldown.value = data
+      rememberCachedPage(drilldownPageCache, cacheKey, data)
     } catch (error) {
       if (requestVersion !== drilldownRequestVersion) return
       drilldown.value = emptyDrilldownPage()
@@ -333,7 +398,10 @@
     try {
       await referenceData.ensureLoaded()
       normalizeQueryState()
-      await Promise.all([loadRegions(), loadDrilldown()])
+      await Promise.all([
+        loadRegions(),
+        ...(activeTab.value === 'drilldown' ? [loadDrilldown()] : []),
+      ])
       initialized.value = true
     } catch (error) {
       bootstrapError.value = getApiErrorMessage(error, t)
@@ -341,6 +409,13 @@
       bootstrapLoading.value = false
     }
   }
+
+  const debouncedReloadRegionData = useDebounceFn(() => {
+    void loadRegions()
+    if (activeTab.value === 'drilldown') {
+      void loadDrilldown()
+    }
+  }, 180)
 
   watch(
     () => [
@@ -354,8 +429,17 @@
       if (!initialized.value) return
       regions.value.page = 1
       drilldown.value.page = 1
-      void loadRegions()
-      void loadDrilldown()
+      debouncedReloadRegionData()
+    },
+  )
+
+  watch(
+    () => activeTab.value,
+    (tab) => {
+      if (!initialized.value) return
+      if (tab === 'drilldown') {
+        void loadDrilldown()
+      }
     },
   )
 
@@ -498,6 +582,10 @@
           <InputText v-model="viewerQuery.state.search" :placeholder="t('common.search')" />
         </FilterField>
       </FilterBar>
+      <div v-if="filtersRefreshing" class="filter-panel-status" role="status">
+        <i class="pi pi-spin pi-spinner" aria-hidden="true"></i>
+        {{ t('common.loading') }}
+      </div>
     </section>
 
     <LoadingSpinner v-if="bootstrapLoading && !initialized" :label="t('common.loading')" />
@@ -913,6 +1001,19 @@
     margin: 0;
     color: var(--text-soft);
     line-height: 1.55;
+  }
+
+  .filter-panel-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    margin-top: 0.85rem;
+    padding: 0.4rem 0.7rem;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--surface-soft) 78%, var(--primary) 22%);
+    color: var(--text);
+    font-size: var(--text-xs);
+    font-weight: 700;
   }
 
   .hero-summary {

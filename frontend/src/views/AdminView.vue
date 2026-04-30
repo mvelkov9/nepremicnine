@@ -254,11 +254,11 @@
     }
   }
 
-  async function fetchActivity() {
+  async function fetchActivity(force = false) {
     activityLoading.value = true
     activityError.value = ''
     try {
-      await workbench.fetchAdminActivity()
+      await workbench.fetchAdminActivity(force)
     } catch (requestError) {
       activityError.value = getApiErrorMessage(requestError, t)
     } finally {
@@ -378,7 +378,8 @@
   }
 
   async function initializePage() {
-    await Promise.allSettled([fetchUsers(), fetchStats(), fetchActivity()])
+    await Promise.allSettled([fetchUsers(), fetchStats()])
+    void fetchActivity()
   }
 
   onMounted(async () => {
@@ -441,7 +442,7 @@
         :items="adminActivity"
         :loading="activityLoading"
         :error="activityError"
-        @retry="fetchActivity"
+        @retry="() => void fetchActivity(true)"
       />
     </div>
   </div>

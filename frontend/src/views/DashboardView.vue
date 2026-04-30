@@ -1,5 +1,6 @@
 <script setup lang="ts">
   import { computed, onMounted, reactive, ref, watch } from 'vue'
+  import { useDebounceFn } from '@vueuse/core'
   import { RouterLink, type RouteLocationRaw } from 'vue-router'
   import Button from 'primevue/button'
   import Column from 'primevue/column'
@@ -35,11 +36,13 @@
   import { useStatsStore } from '../stores/stats'
   import { useWorkbenchStore } from '../stores/workbench'
   import type {
+    ExplorerResponse,
     MunicipalityExplorerItem,
     PropertyTypeMix,
     RegionExplorerItem,
     SavedWorkspace,
     TransactionRecord,
+    TrendPoint,
     WatchlistFeedItem,
   } from '../types/api'
   import { getApiErrorMessage } from '../utils/apiError'
@@ -86,6 +89,20 @@
     regions: '',
     municipalities: '',
   })
+  const sectionDataKeys = reactive({
+    marketHome: '',
+    trend: '',
+    transactions: '',
+    regions: '',
+    municipalities: '',
+  })
+  const marketHomeData = ref<DashboardMarketHome>(emptyMarketHome())
+  const trendRows = ref<TrendPoint[]>([])
+  const latestSalesPage = ref<ExplorerResponse<TransactionRecord> | null>(null)
+  const regionsPage = ref<ExplorerResponse<RegionExplorerItem> | null>(null)
+  const municipalitiesPage = ref<ExplorerResponse<MunicipalityExplorerItem> | null>(null)
+  const dashboardSectionCache = new Map<string, unknown>()
+  const DASHBOARD_CACHE_LIMIT = 36
   let dashboardRequestToken = 0
 
   interface DashboardMarketHome {
@@ -150,23 +167,118 @@
     }
   }
 
+  function emptyExplorerPage<T>(): ExplorerResponse<T> {
+    return {
+      items: [],
+      total: 0,
+      page: 1,
+      page_size: 0,
+      pages: 0,
+      filters: {},
+      sort: '',
+      order: 'desc',
+    }
+  }
+
+  function rememberDashboardSection(cacheKey: string, payload: unknown) {
+    dashboardSectionCache.delete(cacheKey)
+    dashboardSectionCache.set(cacheKey, payload)
+
+    while (dashboardSectionCache.size > DASHBOARD_CACHE_LIMIT) {
+      const oldestKey = dashboardSectionCache.keys().next().value
+      if (!oldestKey) break
+      dashboardSectionCache.delete(oldestKey)
+    }
+  }
+
+  type DashboardParams = ReturnType<typeof viewerParams>
+
+  function dashboardSectionCacheKey(
+    section: string,
+    params: DashboardParams,
+    extra: Record<string, string | number | undefined> = {},
+  ) {
+    return JSON.stringify({
+      section,
+      property_type: params.property_type || '',
+      region: params.region || '',
+      municipality: params.municipality || '',
+      year: params.year || '',
+      ...extra,
+    })
+  }
+
+  function sectionRequestCacheKey(key: keyof typeof sectionLoading, params = viewerParams()) {
+    if (key === 'trend') {
+      return dashboardSectionCacheKey('trend', {
+        property_type: params.property_type,
+        region: params.region,
+        municipality: params.municipality,
+        year: undefined,
+      })
+    }
+
+    if (key === 'transactions') {
+      return dashboardSectionCacheKey('transactions', params, {
+        page: 1,
+        page_size: 6,
+        sort: 'recent',
+        order: 'desc',
+      })
+    }
+
+    if (key === 'regions') {
+      return dashboardSectionCacheKey('regions', params, {
+        page: 1,
+        page_size: 8,
+        sort: 'count',
+        order: 'desc',
+      })
+    }
+
+    if (key === 'municipalities') {
+      return dashboardSectionCacheKey('municipalities', params, {
+        page: 1,
+        page_size: 8,
+        sort: 'count',
+        order: 'desc',
+      })
+    }
+
+    return dashboardSectionCacheKey('marketHome', params)
+  }
+
   const marketHome = computed<DashboardMarketHome>(() =>
-    sectionErrors.marketHome
+    sectionErrors.marketHome || sectionDataKeys.marketHome !== sectionRequestCacheKey('marketHome')
       ? emptyMarketHome()
-      : (stats.marketHome as DashboardMarketHome | null) || emptyMarketHome(),
+      : marketHomeData.value,
   )
 
   const propertyMix = computed<PropertyTypeMix[]>(() => marketHome.value.property_type_mix || [])
   const latestSales = computed<TransactionRecord[]>(() =>
-    sectionErrors.transactions ? [] : stats.transactionsExplorer?.items || [],
+    sectionErrors.transactions ||
+    sectionDataKeys.transactions !== sectionRequestCacheKey('transactions')
+      ? []
+      : latestSalesPage.value?.items || [],
   )
   const topRegions = computed<RegionExplorerItem[]>(
-    () => (sectionErrors.regions ? [] : stats.regionsExplorer?.items?.slice(0, 5)) || [],
+    () =>
+      (sectionErrors.regions || sectionDataKeys.regions !== sectionRequestCacheKey('regions')
+        ? []
+        : regionsPage.value?.items?.slice(0, 5)) || [],
   )
   const municipalitySpotlight = computed<MunicipalityExplorerItem | null>(
-    () => (sectionErrors.municipalities ? null : stats.municipalitiesExplorer?.items?.[0]) || null,
+    () =>
+      (sectionErrors.municipalities ||
+      sectionDataKeys.municipalities !== sectionRequestCacheKey('municipalities')
+        ? null
+        : municipalitiesPage.value?.items?.[0]) || null,
   )
-  const trendData = computed(() => (sectionErrors.trend ? [] : stats.trend) || [])
+  const trendData = computed<TrendPoint[]>(() =>
+    sectionErrors.trend || sectionDataKeys.trend !== sectionRequestCacheKey('trend')
+      ? []
+      : trendRows.value,
+  )
   const pinnedWorkspaces = computed(() =>
     workspacesError.value ? [] : workbench.pinnedWorkspaces.slice(0, 4),
   )
@@ -234,6 +346,7 @@
       ? t('dashboard.activeFilterCount', { count: activeFilterCountValue.value })
       : t('dashboard.noActiveFilters'),
   )
+  const dashboardRefreshing = computed(() => Object.values(sectionLoading).some(Boolean))
   const activeTab = computed({
     get: () =>
       ['overview', 'workspace', 'transactions'].includes(viewerQuery.state.tab)
@@ -300,7 +413,7 @@
       })
     }
 
-    if (topRegions.value[0]?.region) {
+    if (activeTab.value === 'overview' && topRegions.value[0]?.region) {
       chips.push({
         label: t('dashboard.regionSnapshot'),
         value: topRegions.value[0].region,
@@ -308,7 +421,7 @@
       })
     }
 
-    if (municipalitySpotlight.value?.municipality) {
+    if (activeTab.value === 'overview' && municipalitySpotlight.value?.municipality) {
       chips.push({
         label: t('dashboard.municipalitySpotlight'),
         value: municipalitySpotlight.value.municipality,
@@ -415,16 +528,29 @@
 
   async function loadSection(
     key: keyof typeof sectionLoading,
-    request: (params: Record<string, string | undefined>) => Promise<unknown>,
-    params: Record<string, string | undefined>,
+    cacheKey: string,
+    request: () => Promise<unknown>,
+    apply: (payload: unknown) => void,
     token: number,
   ) {
     if (token !== dashboardRequestToken) return
-    sectionLoading[key] = true
     sectionErrors[key] = ''
 
+    if (dashboardSectionCache.has(cacheKey)) {
+      apply(dashboardSectionCache.get(cacheKey))
+      sectionDataKeys[key] = cacheKey
+      sectionLoading[key] = false
+      return
+    }
+
+    sectionLoading[key] = true
+
     try {
-      await request(params)
+      const payload = await request()
+      if (token !== dashboardRequestToken) return
+      apply(payload)
+      sectionDataKeys[key] = cacheKey
+      rememberDashboardSection(cacheKey, payload)
     } catch (error) {
       if (token === dashboardRequestToken) {
         sectionErrors[key] = getApiErrorMessage(error, t)
@@ -436,67 +562,121 @@
     }
   }
 
-  async function loadDashboard() {
-    const token = ++dashboardRequestToken
-    const params = viewerParams()
+  function activeTabLoaders(params: DashboardParams, token: number) {
+    if (activeTab.value === 'transactions') {
+      return [
+        loadSection(
+          'transactions',
+          sectionRequestCacheKey('transactions', params),
+          () =>
+            stats.fetchTransactionsExplorer({
+              ...params,
+              page: 1,
+              page_size: 6,
+              sort: 'recent',
+              order: 'desc',
+            }),
+          (payload) => {
+            latestSalesPage.value =
+              (payload as ExplorerResponse<TransactionRecord> | null) || emptyExplorerPage()
+          },
+          token,
+        ),
+      ]
+    }
 
-    await Promise.allSettled([
-      loadSection('marketHome', stats.fetchMarketHome, params, token),
+    if (activeTab.value === 'workspace') {
+      return []
+    }
+
+    return [
       loadSection(
         'trend',
-        (requestParams) =>
+        sectionRequestCacheKey('trend', params),
+        () =>
           stats.fetchTrend({
-            property_type: requestParams.property_type,
-            region: requestParams.region,
-            municipality: requestParams.municipality,
+            property_type: params.property_type,
+            region: params.region,
+            municipality: params.municipality,
           }),
-        params,
-        token,
-      ),
-      loadSection(
-        'transactions',
-        (requestParams) =>
-          stats.fetchTransactionsExplorer({
-            ...requestParams,
-            page: 1,
-            page_size: 6,
-            sort: 'recent',
-            order: 'desc',
-          }),
-        params,
+        (payload) => {
+          trendRows.value = Array.isArray(payload) ? (payload as TrendPoint[]) : []
+        },
         token,
       ),
       loadSection(
         'regions',
-        (requestParams) =>
+        sectionRequestCacheKey('regions', params),
+        () =>
           stats.fetchRegionsExplorer({
-            ...requestParams,
+            ...params,
             page: 1,
             page_size: 8,
             sort: 'count',
             order: 'desc',
           }),
-        params,
+        (payload) => {
+          regionsPage.value =
+            (payload as ExplorerResponse<RegionExplorerItem> | null) || emptyExplorerPage()
+        },
         token,
       ),
       loadSection(
         'municipalities',
-        (requestParams) =>
+        sectionRequestCacheKey('municipalities', params),
+        () =>
           stats.fetchMunicipalitiesExplorer({
-            ...requestParams,
+            ...params,
             page: 1,
             page_size: 8,
             sort: 'count',
             order: 'desc',
           }),
-        params,
+        (payload) => {
+          municipalitiesPage.value =
+            (payload as ExplorerResponse<MunicipalityExplorerItem> | null) || emptyExplorerPage()
+        },
         token,
       ),
-    ])
+    ]
   }
+
+  async function loadDashboard(includeMarketHome = true) {
+    const token = ++dashboardRequestToken
+    const params = viewerParams()
+    const requests = activeTabLoaders(params, token)
+
+    ;(Object.keys(sectionLoading) as Array<keyof typeof sectionLoading>).forEach((key) => {
+      sectionLoading[key] = false
+    })
+
+    if (includeMarketHome) {
+      requests.unshift(
+        loadSection(
+          'marketHome',
+          sectionRequestCacheKey('marketHome', params),
+          () => stats.fetchMarketHome(params),
+          (payload) => {
+            marketHomeData.value = (payload as DashboardMarketHome | null) || emptyMarketHome()
+          },
+          token,
+        ),
+      )
+    }
+
+    await Promise.allSettled(requests)
+  }
+
+  const debouncedLoadDashboard = useDebounceFn(() => {
+    void loadDashboard()
+  }, 180)
 
   function clearFilters() {
     viewerQuery.resetState()
+  }
+
+  function retryDashboard() {
+    void loadDashboard()
   }
 
   async function watchMunicipalitySpotlight() {
@@ -530,7 +710,15 @@
     ],
     () => {
       if (!dashboardReady.value) return
-      void loadDashboard()
+      debouncedLoadDashboard()
+    },
+  )
+
+  watch(
+    () => activeTab.value,
+    () => {
+      if (!dashboardReady.value) return
+      void loadDashboard(false)
     },
   )
 
@@ -619,6 +807,10 @@
       <template #actions>
         <div class="filter-summary">
           <Tag :severity="activeFilterTagSeverity" :value="activeFilterTagLabel" />
+          <span v-if="dashboardRefreshing" class="dashboard-loading-chip" role="status">
+            <i class="pi pi-spin pi-spinner" aria-hidden="true"></i>
+            {{ t('common.loading') }}
+          </span>
           <Button
             severity="secondary"
             outlined
@@ -726,7 +918,7 @@
                       severity="secondary"
                       outlined
                       :label="t('common.retry')"
-                      @click="loadDashboard"
+                      @click="retryDashboard"
                     />
                   </div>
                 </div>
@@ -771,7 +963,7 @@
                       severity="secondary"
                       outlined
                       :label="t('common.retry')"
-                      @click="loadDashboard"
+                      @click="retryDashboard"
                     />
                   </div>
                 </div>
@@ -871,7 +1063,7 @@
                       severity="secondary"
                       outlined
                       :label="t('common.retry')"
-                      @click="loadDashboard"
+                      @click="retryDashboard"
                     />
                   </div>
                 </div>
@@ -924,7 +1116,7 @@
                       severity="secondary"
                       outlined
                       :label="t('common.retry')"
-                      @click="loadDashboard"
+                      @click="retryDashboard"
                     />
                   </div>
                 </div>
@@ -1028,7 +1220,7 @@
                     severity="secondary"
                     outlined
                     :label="t('common.retry')"
-                    @click="loadDashboard"
+                    @click="retryDashboard"
                   />
                 </div>
               </div>
@@ -1242,6 +1434,18 @@
     align-items: center;
     gap: 0.6rem;
     flex-wrap: wrap;
+  }
+
+  .dashboard-loading-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.4rem 0.7rem;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--surface-soft) 78%, var(--primary) 22%);
+    color: var(--text);
+    font-size: var(--text-xs);
+    font-weight: 700;
   }
 
   .municipality-spotlight {

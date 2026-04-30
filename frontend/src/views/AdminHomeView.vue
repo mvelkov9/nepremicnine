@@ -21,7 +21,6 @@
   const ui = useUiStore()
   const workbench = useWorkbenchStore()
 
-  const pageReady = ref(false)
   const heroError = ref('')
   const statsLoading = ref(false)
   const statsError = ref('')
@@ -89,13 +88,13 @@
 
   const heroStatus = computed(() => {
     if (heroError.value || statsError.value) return t('common.error')
-    if (statsLoading.value || !pageReady.value) return t('common.loading')
+    if (statsLoading.value) return t('common.loading')
     return t('admin.active')
   })
 
   const heroStatusSeverity = computed(() => {
     if (heroError.value || statsError.value) return 'danger'
-    if (statsLoading.value || !pageReady.value) return 'secondary'
+    if (statsLoading.value) return 'secondary'
     return 'success'
   })
 
@@ -107,6 +106,7 @@
       dataStore.fetchTrainingDataset(),
       modelStore.fetchInfo(),
       modelStore.fetchDiagnostics(),
+      api.get('/api/admin/stats'),
     ])
     const heroSections = [
       { key: 'trainingDataset' as const, label: t('nav.data') },
@@ -116,7 +116,7 @@
     const failedSections: string[] = []
     let firstFailure: unknown = null
 
-    heroRequests.forEach((result, index) => {
+    heroRequests.slice(0, heroSections.length).forEach((result, index) => {
       const section = heroSections[index]
       const succeeded = result.status === 'fulfilled'
       heroAvailability[section.key] = succeeded
@@ -128,6 +128,14 @@
         }
       }
     })
+    const statsResult = heroRequests[3]
+
+    if (statsResult.status === 'fulfilled') {
+      adminStats.value = statsResult.value.data
+    } else {
+      adminStats.value = null
+      statsError.value = getApiErrorMessage(statsResult.reason, t)
+    }
 
     if (failedSections.length) {
       const message = firstFailure ? getApiErrorMessage(firstFailure, t) : t('common.error')
@@ -137,21 +145,13 @@
           : `${message} (${failedSections.join(', ')})`
     }
     statsLoading.value = false
-
-    try {
-      const { data } = await api.get('/api/admin/stats')
-      adminStats.value = data
-    } catch (error) {
-      adminStats.value = null
-      statsError.value = getApiErrorMessage(error, t)
-    }
   }
 
-  async function loadActivity() {
+  async function loadActivity(force = false) {
     activityLoading.value = true
     activityError.value = ''
     try {
-      await workbench.fetchAdminActivity()
+      await workbench.fetchAdminActivity(force)
     } catch (error) {
       activityError.value = getApiErrorMessage(error, t)
     } finally {
@@ -159,11 +159,11 @@
     }
   }
 
-  async function loadPrepareRuns() {
+  async function loadPrepareRuns(force = false) {
     prepareLoading.value = true
     prepareError.value = ''
     try {
-      await workbench.fetchPrepareRuns()
+      await workbench.fetchPrepareRuns(force)
     } catch (error) {
       prepareError.value = getApiErrorMessage(error, t)
     } finally {
@@ -171,11 +171,11 @@
     }
   }
 
-  async function loadTrainingRuns() {
+  async function loadTrainingRuns(force = false) {
     trainingLoading.value = true
     trainingError.value = ''
     try {
-      await workbench.fetchTrainingRuns()
+      await workbench.fetchTrainingRuns(force)
     } catch (error) {
       trainingError.value = getApiErrorMessage(error, t)
     } finally {
@@ -184,9 +184,10 @@
   }
 
   async function reloadAdminHome() {
-    pageReady.value = false
-    await Promise.allSettled([loadHero(), loadActivity(), loadPrepareRuns(), loadTrainingRuns()])
-    pageReady.value = true
+    void loadActivity()
+    void loadPrepareRuns()
+    void loadTrainingRuns()
+    await loadHero()
   }
 
   function openActivityCenter() {
@@ -248,9 +249,9 @@
         :eyebrow="t('workbench.activityCenter')"
         :title="t('workbench.adminTimeline')"
         :items="activityItems"
-        :loading="!pageReady || activityLoading"
+        :loading="activityLoading"
         :error="activityError"
-        @retry="loadActivity"
+        @retry="() => void loadActivity(true)"
       />
 
       <div class="admin-home-rail">
@@ -258,22 +259,22 @@
           :eyebrow="t('nav.prepare')"
           :title="t('workbench.recentPrepareRuns')"
           :items="prepareRuns"
-          :loading="!pageReady || prepareLoading"
+          :loading="prepareLoading"
           :error="prepareError"
           to="/admin/priprava"
           run-type="prepare"
-          @retry="loadPrepareRuns"
+          @retry="() => void loadPrepareRuns(true)"
         />
 
         <AdminHomeRunList
           :eyebrow="t('nav.model')"
           :title="t('workbench.recentTrainingRuns')"
           :items="trainingRuns"
-          :loading="!pageReady || trainingLoading"
+          :loading="trainingLoading"
           :error="trainingError"
           to="/admin/model"
           run-type="training"
-          @retry="loadTrainingRuns"
+          @retry="() => void loadTrainingRuns(true)"
         />
       </div>
     </section>

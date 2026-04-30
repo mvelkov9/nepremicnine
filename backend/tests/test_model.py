@@ -12,6 +12,28 @@ import pytest
 from httpx import AsyncClient
 
 
+class _FakeRedis:
+    def __init__(self):
+        self.store: dict[str, str] = {}
+
+    async def get(self, key: str):
+        return self.store.get(key)
+
+    async def set(self, key: str, value: str, ex: int | None = None):
+        self.store[key] = value
+
+
+class _FakeResponse:
+    def __init__(self):
+        self.headers: dict[str, str] = {}
+
+
+def _fake_request():
+    from types import SimpleNamespace
+
+    return SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(redis=_FakeRedis())))
+
+
 def _make_synthetic_csv(path: str, n: int = 80) -> None:
     """Write a tiny synthetic CSV that satisfies train_from_csv requirements."""
     rng = np.random.default_rng(0)
@@ -852,6 +874,79 @@ def test_build_gurs_benchmark_payload_returns_unavailable_for_incomplete_global_
     assert payload["rows"] == []
 
 
+def test_build_gurs_benchmark_payload_drops_nonfinite_predictions_and_nulls_single_row_r2(tmp_path, monkeypatch):
+    import app.services.model_service as ms
+
+    class FakePipeline:
+        def predict(self, frame):
+            return np.array([np.log1p(220_000.0), np.nan], dtype=float)
+
+    csv_path = tmp_path / "benchmark.csv"
+    csv_path.write_text("price_eur,size_m2\n1,1\n", encoding="utf-8")
+
+    benchmark_frame = pd.DataFrame(
+        {
+            "size_m2": [100.0, 120.0],
+            "municipality": ["Ljubljana", "Maribor"],
+            "municipality_normalized": ["ljubljana", "maribor"],
+            "statistical_region": ["osrednjeslovenska", "podravska"],
+            "property_type": ["stanovanje", "stanovanje"],
+            "transaction_year": [2024, 2024],
+            "ev_benchmark_price_eur": [210_000.0, 190_000.0],
+            "ev_benchmark_source": ["del_stavbe_enota", "del_stavbe_enota"],
+            "source_label": ["2024", "2024"],
+        }
+    )
+    y_values = np.array([200_000.0, 180_000.0], dtype=float)
+
+    monkeypatch.setattr(
+        ms,
+        "load_model",
+        lambda: {
+            "csv_path": str(csv_path),
+            "per_type_models": {},
+            "global_pipeline": FakePipeline(),
+            "target_transform": "log_price",
+        },
+    )
+    monkeypatch.setattr(
+        ms,
+        "_prepare_benchmark_frames_from_csv",
+        lambda *_args, **_kwargs: (
+            benchmark_frame.copy(),
+            benchmark_frame.copy(),
+            benchmark_frame.copy(),
+            y_values.copy(),
+            y_values.copy(),
+        ),
+    )
+
+    payload = ms.build_gurs_benchmark_payload()
+
+    assert payload["summary"]["status"] == "ready"
+    assert payload["summary"]["coverage_rows"] == 1
+    assert len(payload["rows"]) == 1
+    assert payload["rows"][0]["municipality"] == "Ljubljana"
+    assert payload["summary"]["model_metrics"]["mae"] == pytest.approx(20_000.0)
+    assert payload["summary"]["model_metrics"]["r2"] is None
+    assert payload["summary"]["improvement_vs_gurs"]["r2"] is None
+
+
+def test_sort_benchmark_rows_desc_keeps_missing_values_last():
+    from app.api.model import _sort_benchmark_rows
+
+    rows = [
+        {"municipality": "Ljubljana", "improvement_pct": None},
+        {"municipality": "Maribor", "improvement_pct": 18.0},
+        {"municipality": "Celje", "improvement_pct": float("nan")},
+        {"municipality": "Kranj", "improvement_pct": 5.0},
+    ]
+
+    result = _sort_benchmark_rows(rows, "improvement_pct", reverse=True)
+
+    assert [item["municipality"] for item in result] == ["Maribor", "Kranj", "Ljubljana", "Celje"]
+
+
 def test_compute_per_type_blend_weight_can_choose_global_per_type_or_blend():
     import app.services.model_service as ms
 
@@ -1213,6 +1308,30 @@ async def test_gurs_benchmark_summary_admin_success(client: AsyncClient, admin_h
     assert data["coverage_rows"] == 12
     assert data["winners"]["model"] == 8
     assert data["improvement_vs_gurs"]["mae"] == 7000.0
+
+
+@pytest.mark.asyncio
+async def test_model_info_cache_key_rolls_when_model_signature_changes(monkeypatch):
+    from app.api.model import model_info
+
+    request = _fake_request()
+    response = _FakeResponse()
+    signatures = iter(["sig-a", "sig-b"])
+    infos = iter(
+        [
+            {**_FAKE_MODEL_INFO, "version": "v1"},
+            {**_FAKE_MODEL_INFO, "version": "v2"},
+        ]
+    )
+
+    monkeypatch.setattr("app.api.model._model_cache_namespace", lambda include_research_report=False: next(signatures))
+    monkeypatch.setattr("app.api.model.get_model_info", lambda: next(infos))
+
+    first = await model_info(request, response, _user=object())
+    second = await model_info(request, response, _user=object())
+
+    assert first.version == "v1"
+    assert second.version == "v2"
 
 
 # ── GET /api/model/runs ──────────────────────────────────────────────────────

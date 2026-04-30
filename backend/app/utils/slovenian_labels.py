@@ -60,6 +60,7 @@ PHRASE_OVERRIDES = {
     "mokronog trebelno": "Mokronog - Trebelno",
     "moravce": "Moravče",
     "novo mesto": "Novo mesto",
+    "polzepa": "Polzela",
     "poljcane": "Poljčane",
     "radece": "Radeče",
     "ravne na koroskem": "Ravne na Koroškem",
@@ -161,6 +162,10 @@ WORD_OVERRIDES = {
     "zuzemberk": "Žužemberk",
 }
 
+AMBIGUOUS_MUNICIPALITY_LABELS = {
+    "sveti jurij",
+}
+
 UNKNOWN_LABELS = {
     "",
     "unknown",
@@ -214,6 +219,8 @@ def format_municipality_label(value: object | None) -> str | None:
     text = " ".join(str(value).strip().split())
     normalized = normalize_label(text)
     if not normalized or normalized in UNKNOWN_LABELS:
+        return None
+    if normalized in AMBIGUOUS_MUNICIPALITY_LABELS:
         return None
 
     if normalized in PHRASE_OVERRIDES:

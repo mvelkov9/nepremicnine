@@ -630,6 +630,7 @@
     "metric_median_price": "Mediana cene",
     "metric_avg_price": "Povprečna cena",
     "metric_avg_price_per_m2": "Povp. cena na m²",
+    "metric_median_price_per_m2": "Mediana €/m²",
     "metric_count": "Število transakcij",
     "priceLeadersTitle": "Občine z najvišjo ceno na m²",
     "largestMarketsTitle": "Najaktivnejše občine",

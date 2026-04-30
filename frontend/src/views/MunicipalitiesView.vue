@@ -77,6 +77,7 @@
   const explorerError = ref('')
   const compareLoading = ref(false)
   const compareError = ref('')
+  const filtersRefreshing = computed(() => explorerLoading.value || compareLoading.value)
   const municipalities = ref<ExplorerResponse<MunicipalityExplorerItem>>({
     items: [],
     total: 0,
@@ -88,6 +89,9 @@
     order: 'desc',
   })
   const compareRows = ref<MunicipalityExplorerItem[]>([])
+  const explorerPageCache = new Map<string, ExplorerResponse<MunicipalityExplorerItem>>()
+  const compareRowsCache = new Map<string, MunicipalityExplorerItem[]>()
+  const MUNICIPALITIES_CACHE_LIMIT = 40
   let explorerRequestVersion = 0
   let compareRequestVersion = 0
   let lastCompareSignature = ''
@@ -104,6 +108,7 @@
 
   const sortOptions = computed(() => [
     { label: t('municipalities.sortTransactions'), value: 'count' },
+    { label: t('dashboard.medianPrice'), value: 'median_price' },
     { label: t('municipalities.sortPrice'), value: 'median_price_per_m2' },
     { label: t('municipalities.sortName'), value: 'municipality' },
   ])
@@ -166,6 +171,39 @@
       sort: viewerQuery.state.sort || 'count',
       order: viewerQuery.state.sort === 'municipality' ? 'asc' : 'desc',
     }
+  }
+
+  function rememberMunicipalitiesCache<T>(cache: Map<string, T>, cacheKey: string, payload: T) {
+    cache.delete(cacheKey)
+    cache.set(cacheKey, payload)
+
+    while (cache.size > MUNICIPALITIES_CACHE_LIMIT) {
+      const oldestKey = cache.keys().next().value
+      if (!oldestKey) break
+      cache.delete(oldestKey)
+    }
+  }
+
+  function explorerCacheKey() {
+    return JSON.stringify({
+      region: viewerQuery.state.region || '',
+      property_type: viewerQuery.state.property_type || '',
+      year: viewerQuery.state.year || '',
+      search: viewerQuery.state.search || '',
+      sort: viewerQuery.state.sort || 'count',
+      page: explorerPage.value,
+      page_size: explorerPageSize.value,
+    })
+  }
+
+  function compareCacheKey() {
+    return JSON.stringify({
+      compare_a: viewerQuery.state.compare_a || '',
+      compare_b: viewerQuery.state.compare_b || '',
+      compare_c: viewerQuery.state.compare_c || '',
+      property_type: viewerQuery.state.property_type || '',
+      year: viewerQuery.state.year || '',
+    })
   }
 
   function filters() {
@@ -271,6 +309,16 @@
 
   async function loadMunicipalities() {
     const requestVersion = ++explorerRequestVersion
+    const cacheKey = explorerCacheKey()
+    const cached = explorerPageCache.get(cacheKey)
+
+    if (cached) {
+      explorerError.value = ''
+      municipalities.value = cached
+      explorerLoading.value = false
+      return
+    }
+
     explorerLoading.value = true
     explorerError.value = ''
 
@@ -281,6 +329,7 @@
 
       if (requestVersion !== explorerRequestVersion) return
       municipalities.value = data
+      rememberMunicipalitiesCache(explorerPageCache, cacheKey, data)
     } catch (error) {
       if (requestVersion !== explorerRequestVersion) return
       municipalities.value = emptyMunicipalitiesPage()
@@ -294,14 +343,9 @@
 
   async function loadCompareRows() {
     const requestVersion = ++compareRequestVersion
-    compareLoading.value = true
     compareError.value = ''
     const targets = compareTargets()
-    const compareSignature = JSON.stringify({
-      targets,
-      property_type: viewerQuery.state.property_type || '',
-      year: viewerQuery.state.year || '',
-    })
+    const compareSignature = compareCacheKey()
 
     if (!targets.length) {
       lastCompareSignature = ''
@@ -309,6 +353,16 @@
       compareLoading.value = false
       return
     }
+
+    const cached = compareRowsCache.get(compareSignature)
+    if (cached) {
+      lastCompareSignature = compareSignature
+      compareRows.value = cached
+      compareLoading.value = false
+      return
+    }
+
+    compareLoading.value = true
 
     if (compareSignature !== lastCompareSignature) {
       compareRows.value = []
@@ -347,6 +401,7 @@
         .filter((row): row is MunicipalityExplorerItem => row !== null)
 
       compareRows.value = fulfilledRows
+      rememberMunicipalitiesCache(compareRowsCache, compareSignature, fulfilledRows)
 
       const firstRejected = rowResults.find(
         (result): result is PromiseRejectedResult => result.status === 'rejected',
@@ -409,6 +464,7 @@
     ],
     () => {
       if (!initialized.value) return
+      if (activeTab.value !== 'compare') return
       void loadCompareRows()
     },
   )
@@ -428,7 +484,10 @@
     try {
       await referenceData.ensureLoaded()
       normalizeQueryState()
-      await Promise.all([loadMunicipalities(), loadCompareRows()])
+      await Promise.all([
+        loadMunicipalities(),
+        ...(activeTab.value === 'compare' ? [loadCompareRows()] : []),
+      ])
       initialized.value = true
     } catch (error) {
       bootstrapError.value = getApiErrorMessage(error, t)
@@ -440,6 +499,16 @@
   onMounted(() => {
     void initializePage()
   })
+
+  watch(
+    () => activeTab.value,
+    (tab) => {
+      if (!initialized.value) return
+      if (tab === 'compare') {
+        void loadCompareRows()
+      }
+    },
+  )
 </script>
 
 <template>
@@ -516,6 +585,10 @@
           />
         </FilterField>
       </FilterBar>
+      <div v-if="filtersRefreshing" class="filter-panel-status" role="status">
+        <i class="pi pi-spin pi-spinner" aria-hidden="true"></i>
+        {{ t('common.loading') }}
+      </div>
     </section>
 
     <LoadingSpinner v-if="bootstrapLoading && !initialized" :label="t('common.loading')" />
@@ -784,6 +857,19 @@
       inset 0 1px 0 var(--content-glow),
       0 24px 46px color-mix(in srgb, rgb(2 6 23) 10%, transparent);
     transform: translateY(-1px);
+  }
+
+  .filter-panel-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    margin-top: 0.85rem;
+    padding: 0.4rem 0.7rem;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--surface-soft) 78%, var(--primary) 22%);
+    color: var(--text);
+    font-size: var(--text-xs);
+    font-weight: 700;
   }
 
   @keyframes municipalities-in {

@@ -436,6 +436,25 @@ async def test_municipality_detail_returns_404_for_unknown_slug(client: AsyncCli
     assert resp.status_code == 404
 
 
+@pytest.mark.asyncio
+async def test_municipality_detail_applies_property_type_and_year_filters(
+    client: AsyncClient,
+    admin_headers: dict,
+):
+    fake_df = _build_market_df()
+    with patch("app.api.stats._load_df", return_value=fake_df):
+        resp = await client.get(
+            "/api/stats/municipality/ljubljana?property_type=stanovanje&year=2023",
+            headers=admin_headers,
+        )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["municipality"] == "Ljubljana"
+    assert data["overview"]["count"] == 1
+    assert data["overview"]["median_price"] == 245000.0
+    assert [item["year"] for item in data["year_trend"]] == ["2023"]
+
+
 # ── GET /api/stats/comparables ──────────────────────────────────────────────
 
 

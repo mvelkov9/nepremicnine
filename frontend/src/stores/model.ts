@@ -5,6 +5,7 @@ import { i18n } from '../i18n'
 import { getApiErrorMessage } from '../utils/apiError'
 
 export const useModelStore = defineStore('model', () => {
+  const SHARED_MODEL_CACHE_TTL_MS = 15_000
   const info = ref(null)
   const diagnostics = ref(null)
   const importance = ref([])
@@ -16,37 +17,101 @@ export const useModelStore = defineStore('model', () => {
   const runsLoading = ref(false)
   const loading = ref(false)
   const error = ref(null)
+  let infoFetchedAt = 0
+  let diagnosticsFetchedAt = 0
+  let importanceFetchedAt = 0
+  let fetchInfoInFlight: Promise<unknown> | null = null
+  let fetchDiagnosticsInFlight: Promise<unknown> | null = null
+  let fetchImportanceInFlight: Promise<unknown> | null = null
 
-  async function fetchInfo() {
+  function isSharedModelCacheFresh(timestamp: number) {
+    return timestamp > 0 && Date.now() - timestamp < SHARED_MODEL_CACHE_TTL_MS
+  }
+
+  function invalidateModelMetadataCache() {
+    infoFetchedAt = 0
+    diagnosticsFetchedAt = 0
+    importanceFetchedAt = 0
+  }
+
+  async function fetchInfo(force = false) {
+    if (!force && isSharedModelCacheFresh(infoFetchedAt)) {
+      return info.value
+    }
+    if (fetchInfoInFlight) return fetchInfoInFlight
+
     loading.value = true
     error.value = null
-    try {
-      const { data } = await api.get('/api/model/info')
-      info.value = data
-    } catch (e) {
-      if (e.response?.status !== 404) error.value = getApiErrorMessage(e, i18n.global.t)
-      info.value = null
-    } finally {
-      loading.value = false
-    }
+    fetchInfoInFlight = (async () => {
+      try {
+        const { data } = await api.get('/api/model/info')
+        info.value = data
+        infoFetchedAt = Date.now()
+        return data
+      } catch (e) {
+        if (e.response?.status !== 404) {
+          error.value = getApiErrorMessage(e, i18n.global.t)
+          infoFetchedAt = 0
+        } else {
+          infoFetchedAt = Date.now()
+        }
+        info.value = null
+        return null
+      } finally {
+        loading.value = false
+        fetchInfoInFlight = null
+      }
+    })()
+
+    return fetchInfoInFlight
   }
 
-  async function fetchImportance() {
-    try {
-      const { data } = await api.get('/api/model/importance')
-      importance.value = data
-    } catch {
-      importance.value = []
+  async function fetchImportance(force = false) {
+    if (!force && isSharedModelCacheFresh(importanceFetchedAt)) {
+      return importance.value
     }
+    if (fetchImportanceInFlight) return fetchImportanceInFlight
+
+    fetchImportanceInFlight = (async () => {
+      try {
+        const { data } = await api.get('/api/model/importance')
+        importance.value = data
+        importanceFetchedAt = Date.now()
+        return data
+      } catch {
+        importance.value = []
+        importanceFetchedAt = 0
+        return []
+      } finally {
+        fetchImportanceInFlight = null
+      }
+    })()
+
+    return fetchImportanceInFlight
   }
 
-  async function fetchDiagnostics() {
-    try {
-      const { data } = await api.get('/api/model/diagnostics')
-      diagnostics.value = data
-    } catch {
-      diagnostics.value = null
+  async function fetchDiagnostics(force = false) {
+    if (!force && isSharedModelCacheFresh(diagnosticsFetchedAt)) {
+      return diagnostics.value
     }
+    if (fetchDiagnosticsInFlight) return fetchDiagnosticsInFlight
+
+    fetchDiagnosticsInFlight = (async () => {
+      try {
+        const { data } = await api.get('/api/model/diagnostics')
+        diagnostics.value = data
+        diagnosticsFetchedAt = Date.now()
+        return data
+      } catch {
+        diagnostics.value = null
+        diagnosticsFetchedAt = 0
+        return null
+      } finally {
+        fetchDiagnosticsInFlight = null
+      }
+    })()
+
+    return fetchDiagnosticsInFlight
   }
 
   async function startTraining(csvPath) {
@@ -102,6 +167,9 @@ export const useModelStore = defineStore('model', () => {
       const { data } = await api.get(`/api/train/status/${jobId}`)
       trainingStatus.value = data
       training.value = data.status === 'queued' || data.status === 'running'
+      if (!training.value) {
+        invalidateModelMetadataCache()
+      }
       return data
     } catch (e) {
       training.value = false
@@ -149,6 +217,7 @@ export const useModelStore = defineStore('model', () => {
     trainingStatus.value = null
     modelRuns.value = []
     error.value = null
+    invalidateModelMetadataCache()
   }
 
   return {

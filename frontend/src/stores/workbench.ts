@@ -32,6 +32,7 @@ function recentRouteKey(item: RecentRouteItem) {
 }
 
 export const useWorkbenchStore = defineStore('workbench', () => {
+  const ADMIN_LIST_CACHE_TTL_MS = 15_000
   const workspaces = ref<SavedWorkspace[]>([])
   const watchlists = ref<WatchlistItem[]>([])
   const watchlistFeed = ref<WatchlistFeedItem[]>([])
@@ -52,6 +53,12 @@ export const useWorkbenchStore = defineStore('workbench', () => {
   let activityFeedVersion = 0
   let prepareRunDetailVersion = 0
   let trainingRunDetailVersion = 0
+  let adminActivityFetchedAt = 0
+  let prepareRunsFetchedAt = 0
+  let trainingRunsFetchedAt = 0
+  let fetchAdminActivityInFlight: Promise<ActivityFeedItem[]> | null = null
+  let fetchPrepareRunsInFlight: Promise<AdminRunSummary[]> | null = null
+  let fetchTrainingRunsInFlight: Promise<AdminRunSummary[]> | null = null
 
   const compareTray = useLocalStorage<CompareTrayItem[]>('workbench_compare_tray', [])
   const recentRoutes = useLocalStorage<RecentRouteItem[]>('workbench_recent_routes', [])
@@ -61,6 +68,10 @@ export const useWorkbenchStore = defineStore('workbench', () => {
   )
 
   const pinnedWorkspaces = computed(() => workspaces.value.filter((item) => item.pinned))
+
+  function isAdminListCacheFresh(timestamp: number) {
+    return timestamp > 0 && Date.now() - timestamp < ADMIN_LIST_CACHE_TTL_MS
+  }
 
   async function fetchWorkspaces(page?: string) {
     const { data } = await api.get<SavedWorkspace[]>('/api/workspaces', {
@@ -169,38 +180,81 @@ export const useWorkbenchStore = defineStore('workbench', () => {
     return unreadCount.value
   }
 
-  async function fetchAdminActivity() {
-    const { data } = await api.get<ActivityFeedItem[]>('/api/admin/activity')
-    adminActivity.value = data || []
-    return data
+  async function fetchAdminActivity(force = false) {
+    if (!force && isAdminListCacheFresh(adminActivityFetchedAt)) {
+      return adminActivity.value
+    }
+    if (fetchAdminActivityInFlight) return fetchAdminActivityInFlight
+
+    fetchAdminActivityInFlight = (async () => {
+      try {
+        const { data } = await api.get<ActivityFeedItem[]>('/api/admin/activity')
+        adminActivity.value = data || []
+        adminActivityFetchedAt = Date.now()
+        return adminActivity.value
+      } catch (error) {
+        adminActivityFetchedAt = 0
+        throw error
+      } finally {
+        fetchAdminActivityInFlight = null
+      }
+    })()
+
+    return fetchAdminActivityInFlight
   }
 
-  async function fetchPrepareRuns() {
+  async function fetchPrepareRuns(force = false) {
+    if (!force && isAdminListCacheFresh(prepareRunsFetchedAt)) {
+      return prepareRuns.value
+    }
+    if (fetchPrepareRunsInFlight) return fetchPrepareRunsInFlight
+
     prepareRunsError.value = ''
-    try {
-      const { data } = await api.get<AdminRunSummary[]>('/api/admin/prepare-runs')
-      prepareRuns.value = data || []
-      return data
-    } catch (error) {
-      prepareRuns.value = []
-      selectedPrepareRun.value = null
-      prepareRunsError.value = getApiErrorMessage(error, i18n.global.t)
-      throw error
-    }
+    fetchPrepareRunsInFlight = (async () => {
+      try {
+        const { data } = await api.get<AdminRunSummary[]>('/api/admin/prepare-runs')
+        prepareRuns.value = data || []
+        prepareRunsFetchedAt = Date.now()
+        return prepareRuns.value
+      } catch (error) {
+        prepareRunsFetchedAt = 0
+        prepareRuns.value = []
+        selectedPrepareRun.value = null
+        prepareRunsError.value = getApiErrorMessage(error, i18n.global.t)
+        throw error
+      } finally {
+        fetchPrepareRunsInFlight = null
+      }
+    })()
+
+    return fetchPrepareRunsInFlight
   }
 
-  async function fetchTrainingRuns() {
-    trainingRunsError.value = ''
-    try {
-      const { data } = await api.get<AdminRunSummary[]>('/api/admin/training-runs')
-      trainingRuns.value = data || []
-      return data
-    } catch (error) {
-      trainingRuns.value = []
-      selectedTrainingRun.value = null
-      trainingRunsError.value = getApiErrorMessage(error, i18n.global.t)
-      throw error
+  async function fetchTrainingRuns(force = false) {
+    if (!force && isAdminListCacheFresh(trainingRunsFetchedAt)) {
+      return trainingRuns.value
     }
+    if (fetchTrainingRunsInFlight) return fetchTrainingRunsInFlight
+
+    trainingRunsError.value = ''
+    fetchTrainingRunsInFlight = (async () => {
+      try {
+        const { data } = await api.get<AdminRunSummary[]>('/api/admin/training-runs')
+        trainingRuns.value = data || []
+        trainingRunsFetchedAt = Date.now()
+        return trainingRuns.value
+      } catch (error) {
+        trainingRunsFetchedAt = 0
+        trainingRuns.value = []
+        selectedTrainingRun.value = null
+        trainingRunsError.value = getApiErrorMessage(error, i18n.global.t)
+        throw error
+      } finally {
+        fetchTrainingRunsInFlight = null
+      }
+    })()
+
+    return fetchTrainingRunsInFlight
   }
 
   async function fetchPrepareRunDetail(jobId: string) {

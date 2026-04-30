@@ -13,7 +13,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from app.dependencies.auth import get_current_user
 from app.models.user import User
 from app.services.regions_service import CANONICAL_REGION_LOOKUP, CANONICAL_REGION_ROWS, lookup_region
-from app.utils.cache import cache_get, cache_set
+from app.utils.cache import cache_get
+from app.utils.cache import cache_set as _base_cache_set
 from app.utils.municipality import municipality_slug, normalize_municipality_name
 from app.utils.slovenian_labels import (
     format_municipality_label,
@@ -86,6 +87,17 @@ _PREPARED_DF_CACHE: dict[str, object] = {
 _CACHE_LOCK = threading.RLock()
 _CANONICAL_REGION_TOTAL = len(CANONICAL_REGION_ROWS)
 _CANONICAL_MUNICIPALITY_KEYS = set(CANONICAL_REGION_LOOKUP)
+STATS_CACHE_TTL = 86400
+STATS_CACHE_CONTROL = f"private, max-age={STATS_CACHE_TTL}"
+
+
+async def cache_set(request: Request, key: str, value, ttl: int = STATS_CACHE_TTL) -> None:
+    await _base_cache_set(request, key, value, ttl=ttl)
+
+
+def _set_stats_cache_headers(response: Response | None) -> None:
+    if response is not None:
+        response.headers["Cache-Control"] = STATS_CACHE_CONTROL
 
 
 def _resolve_train_csv_path() -> str:
@@ -168,6 +180,16 @@ def _training_file_signature() -> tuple[str, int | None, int | None]:
     return train_csv, int(stats.st_mtime_ns), int(stats.st_size)
 
 
+def _stats_cache_namespace() -> str:
+    train_csv, mtime_ns, size_bytes = _training_file_signature()
+    file_token = os.path.basename(train_csv) or "train.csv"
+    return f"{file_token}:{mtime_ns if mtime_ns is not None else 'missing'}:{size_bytes if size_bytes is not None else 'missing'}"
+
+
+def _stats_cache_prefix(name: str) -> str:
+    return f"cache:stats:{name}:{_stats_cache_namespace()}"
+
+
 def _load_df(property_type: str | None = None) -> pd.DataFrame | None:
     train_csv, mtime_ns, size_bytes = _training_file_signature()
     if mtime_ns is None:
@@ -238,6 +260,22 @@ def _year_bounds(df: pd.DataFrame) -> tuple[str | None, str | None]:
     if years.empty:
         return None, None
     return str(int(years.min())), str(int(years.max()))
+
+
+def _extract_year_series(df: pd.DataFrame) -> pd.Series:
+    if "_year" in df.columns:
+        extracted = df["_year"].astype("string").str.extract(r"(\d{4})", expand=False)
+        if extracted.notna().any():
+            return extracted
+
+    for year_col in ["transaction_year", "transaction_date", "sale_date", "datum_sklenitve", "source_label", "year", "sale_year"]:
+        if year_col not in df.columns:
+            continue
+        extracted = df[year_col].astype("string").str.extract(r"(\d{4})", expand=False)
+        if extracted.notna().any():
+            return extracted
+
+    return pd.Series(pd.NA, index=df.index, dtype="string")
 
 
 def _normalize_location_name(value: object | None) -> str:
@@ -612,6 +650,18 @@ def _find_municipality_frame(df: pd.DataFrame, slug_or_name: str) -> pd.DataFram
     return pd.DataFrame(columns=df.columns)
 
 
+def _municipality_match_mask(df: pd.DataFrame, slug_or_name: str) -> pd.Series:
+    if df.empty:
+        return pd.Series(False, index=df.index, dtype=bool)
+
+    slug = municipality_slug(slug_or_name)
+    if "_municipality_slug" in df.columns:
+        return (df["_municipality_slug"] == slug).fillna(False)
+    if "municipality" in df.columns:
+        return df["municipality"].map(municipality_slug) == slug
+    return pd.Series(False, index=df.index, dtype=bool)
+
+
 def _clean_query_value(value: object | None) -> str | None:
     if value is None:
         return None
@@ -690,7 +740,7 @@ def _explorer_cache_key(
     order: str,
 ) -> str:
     return (
-        f"cache:stats:{prefix}:"
+        f"{_stats_cache_prefix(prefix)}:"
         f"{property_type or 'all'}:{region or 'all'}:{municipality_slug(municipality) if municipality else 'all'}:"
         f"{year or 'all'}:{(search or '').strip().casefold() or 'all'}:{page}:{page_size}:{sort}:{order}"
     )
@@ -764,39 +814,22 @@ def _build_explorer_response(
     }
 
 
-@router.get("/overview")
-async def overview(
-    request: Request,
-    response: Response,
-    property_type: str | None = None,
-    region: str | None = None,
-    municipality: str | None = None,
-    year: str | None = None,
-    _user: User = Depends(get_current_user),
-):
-    response.headers["Cache-Control"] = "private, max-age=300"
-    cache_key = (
-        "cache:stats:overview:"
-        f"{property_type or 'all'}:{region or 'all'}:{municipality_slug(municipality) if municipality else 'all'}:{year or 'all'}"
-    )
-    cached = await cache_get(request, cache_key)
-    if cached is not None:
-        return cached
+def _empty_overview_payload() -> dict:
+    return {
+        "total_records": 0,
+        "avg_price": None,
+        "median_price": None,
+        "avg_area": None,
+        "median_area": None,
+        "avg_price_per_m2": None,
+        "top_municipalities": [],
+        "property_types": [],
+    }
 
-    df = _prepare_market_df(property_type)
-    if df is not None and not df.empty:
-        df = _apply_market_filters(df, region=region, municipality=municipality, year=year)
+
+def _build_overview_payload(df: pd.DataFrame | None) -> dict:
     if df is None or df.empty:
-        return {
-            "total_records": 0,
-            "avg_price": None,
-            "median_price": None,
-            "avg_area": None,
-            "median_area": None,
-            "avg_price_per_m2": None,
-            "top_municipalities": [],
-            "property_types": [],
-        }
+        return _empty_overview_payload()
 
     result = {
         "total_records": len(df),
@@ -813,7 +846,6 @@ async def overview(
         "property_types": [],
     }
 
-    # Year built stats
     if "year_built" in df.columns:
         yb = pd.to_numeric(df["year_built"], errors="coerce").dropna()
         if not yb.empty:
@@ -821,10 +853,9 @@ async def overview(
             result["year_built_min"] = int(yb.min())
             result["year_built_max"] = int(yb.max())
 
-    # Data years from source_label
-    if "source_label" in df.columns:
-        years = df["source_label"].astype(str).str[:4].unique().tolist()
-        result["data_years"] = sorted(years)
+    years = _extract_year_series(df).dropna()
+    if not years.empty:
+        result["data_years"] = sorted(years.unique().tolist())
 
     if "price_eur" in df.columns and "size_m2" in df.columns:
         tmp = df[["price_eur"]].copy()
@@ -849,42 +880,17 @@ async def overview(
         types = df["property_type"].value_counts()
         result["property_types"] = [{"type": t, "count": int(c)} for t, c in types.items()]
 
-    await cache_set(request, cache_key, result)
     return result
 
 
-@router.get("/regions")
-async def regions_stats(
-    request: Request,
-    response: Response,
-    property_type: str | None = None,
-    region: str | None = None,
-    municipality: str | None = None,
-    year: str | None = None,
-    _user: User = Depends(get_current_user),
-):
-    response.headers["Cache-Control"] = "private, max-age=300"
-    cache_key = (
-        "cache:stats:regions:"
-        f"{property_type or 'all'}:{region or 'all'}:{municipality_slug(municipality) if municipality else 'all'}:{year or 'all'}"
-    )
-    cached = await cache_get(request, cache_key)
-    if cached is not None:
-        return cached
-
-    df = _prepare_market_df(property_type)
-    if df is not None and not df.empty:
-        df = _apply_market_filters(df, region=region, municipality=municipality, year=year)
-    if df is None or df.empty:
-        return []
-
-    if "statistical_region" not in df.columns:
+def _build_regions_stats_payload(df: pd.DataFrame | None) -> list[dict]:
+    if df is None or df.empty or "statistical_region" not in df.columns:
         return []
 
     results = []
-    for region, group in df.groupby("statistical_region"):
+    for region_name, group in df.groupby("statistical_region"):
         entry = {
-            "region": format_region_label(region) or region,
+            "region": format_region_label(region_name) or region_name,
             "count": len(group),
             "avg_price": round(float(group["price_eur"].mean()), 2) if "price_eur" in group.columns else None,
             "median_price": round(float(group["price_eur"].median()), 2) if "price_eur" in group.columns else None,
@@ -902,7 +908,78 @@ async def regions_stats(
         entry["max_price"] = round(float(group["price_eur"].max()), 2) if "price_eur" in group.columns else None
         results.append(entry)
 
-    result = sorted(results, key=lambda x: x["count"], reverse=True)
+    return sorted(results, key=lambda x: x["count"], reverse=True)
+
+
+def _build_price_distribution_payload(df: pd.DataFrame | None, bins: int) -> dict:
+    if df is None or "price_eur" not in df.columns or df.empty:
+        return {"bins": [], "counts": [], "bin_labels": []}
+
+    prices = pd.to_numeric(df["price_eur"], errors="coerce").dropna()
+    prices = prices[prices > 0]
+    if len(prices) > 1:
+        prices = prices[prices <= prices.quantile(0.99)]
+    if prices.empty:
+        return {"bins": [], "counts": [], "bin_labels": []}
+
+    counts_arr, bin_edges = np.histogram(prices, bins=bins)
+    return {
+        "bins": [float(b) for b in bin_edges],
+        "counts": [int(c) for c in counts_arr],
+        "bin_labels": [f"{_format_eur(bin_edges[i])}\u2013{_format_eur(bin_edges[i + 1])}" for i in range(len(counts_arr))],
+    }
+
+
+@router.get("/overview")
+async def overview(
+    request: Request,
+    response: Response,
+    property_type: str | None = None,
+    region: str | None = None,
+    municipality: str | None = None,
+    year: str | None = None,
+    _user: User = Depends(get_current_user),
+):
+    _set_stats_cache_headers(response)
+    cache_key = (
+        f"{_stats_cache_prefix('overview')}:"
+        f"{property_type or 'all'}:{region or 'all'}:{municipality_slug(municipality) if municipality else 'all'}:{year or 'all'}"
+    )
+    cached = await cache_get(request, cache_key)
+    if cached is not None:
+        return cached
+
+    df = _prepare_market_df(property_type)
+    if df is not None and not df.empty:
+        df = _apply_market_filters(df, region=region, municipality=municipality, year=year)
+    result = _build_overview_payload(df)
+    await cache_set(request, cache_key, result)
+    return result
+
+
+@router.get("/regions")
+async def regions_stats(
+    request: Request,
+    response: Response,
+    property_type: str | None = None,
+    region: str | None = None,
+    municipality: str | None = None,
+    year: str | None = None,
+    _user: User = Depends(get_current_user),
+):
+    _set_stats_cache_headers(response)
+    cache_key = (
+        f"{_stats_cache_prefix('regions')}:"
+        f"{property_type or 'all'}:{region or 'all'}:{municipality_slug(municipality) if municipality else 'all'}:{year or 'all'}"
+    )
+    cached = await cache_get(request, cache_key)
+    if cached is not None:
+        return cached
+
+    df = _prepare_market_df(property_type)
+    if df is not None and not df.empty:
+        df = _apply_market_filters(df, region=region, municipality=municipality, year=year)
+    result = _build_regions_stats_payload(df)
     await cache_set(request, cache_key, result)
     return result
 
@@ -910,6 +987,7 @@ async def regions_stats(
 @router.get("/price-distribution")
 async def price_distribution(
     request: Request,
+    response: Response = None,
     bins: int = Query(20, ge=5, le=100),
     property_type: str | None = None,
     region: str | None = None,
@@ -917,8 +995,9 @@ async def price_distribution(
     year: str | None = None,
     _user: User = Depends(get_current_user),
 ):
+    _set_stats_cache_headers(response)
     cache_key = (
-        "cache:stats:price-distribution:"
+        f"{_stats_cache_prefix('price-distribution')}:"
         f"{bins}:{property_type or 'all'}:{region or 'all'}:{municipality_slug(municipality) if municipality else 'all'}:{year or 'all'}"
     )
     cached = await cache_get(request, cache_key)
@@ -928,62 +1007,24 @@ async def price_distribution(
     df = _prepare_market_df(property_type)
     if df is not None and not df.empty:
         df = _apply_market_filters(df, region=region, municipality=municipality, year=year)
-    if df is None or "price_eur" not in df.columns or df.empty:
-        return {"bins": [], "counts": [], "bin_labels": []}
-
-    prices = df["price_eur"].dropna()
-    prices = prices[(prices > 0) & (prices < prices.quantile(0.99))]
-    if prices.empty:
-        return {"bins": [], "counts": [], "bin_labels": []}
-
-    counts_arr, bin_edges = np.histogram(prices, bins=bins)
-    bin_labels = [f"{_format_eur(bin_edges[i])}\u2013{_format_eur(bin_edges[i + 1])}" for i in range(len(counts_arr))]
-
-    result = {
-        "bins": [float(b) for b in bin_edges],
-        "counts": [int(c) for c in counts_arr],
-        "bin_labels": bin_labels,
-    }
+    result = _build_price_distribution_payload(df, bins=bins)
     await cache_set(request, cache_key, result)
     return result
 
 
-@router.get("/trend")
-async def trend(
-    request: Request,
-    property_type: str | None = None,
-    region: str | None = None,
-    municipality: str | None = None,
-    _user: User = Depends(get_current_user),
-):
-    cache_key = (
-        "cache:stats:trend:"
-        f"{property_type or 'all'}:{region or 'all'}:{municipality_slug(municipality) if municipality else 'all'}"
-    )
-    cached = await cache_get(request, cache_key)
-    if cached is not None:
-        return cached
-
-    df = _prepare_market_df(property_type)
-    if df is not None and not df.empty:
-        df = _apply_market_filters(df, region=region, municipality=municipality)
+def _build_trend_payload(df: pd.DataFrame | None) -> list[dict]:
     if df is None or df.empty:
         return []
 
-    # Detect year column
-    year_col = None
-    for col in ["source_label", "year", "sale_year"]:
-        if col in df.columns:
-            year_col = col
-            break
-
-    if year_col is None:
+    year_series = _extract_year_series(df)
+    if year_series.dropna().empty:
         return []
 
-    df["_year"] = df[year_col].astype(str).str[:4]
-    results = []
+    frame = df.copy()
+    frame["_trend_year"] = year_series
+    results: list[dict] = []
 
-    for year, group in sorted(df.groupby("_year")):
+    for year, group in sorted(frame[frame["_trend_year"].notna()].groupby("_trend_year"), key=lambda item: int(item[0])):
         entry = {
             "year": str(year),
             "count": len(group),
@@ -1024,71 +1065,65 @@ async def trend(
                 entry["by_type"][pt] = pt_entry
         results.append(entry)
 
-    await cache_set(request, cache_key, results)
     return results
 
 
-@router.get("/market-home")
-async def market_home(
-    request: Request,
-    response: Response,
-    property_type: str | None = None,
-    region: str | None = None,
-    municipality: str | None = None,
-    year: str | None = None,
-    _user: User = Depends(get_current_user),
-):
-    response.headers["Cache-Control"] = "private, max-age=300"
-    cache_key = (
-        "cache:stats:market-home:"
-        f"{property_type or 'all'}:{region or 'all'}:{municipality_slug(municipality) if municipality else 'all'}:{year or 'all'}"
-    )
-    cached = await cache_get(request, cache_key)
-    if cached is not None:
-        return cached
+def _empty_market_home_payload(
+    *,
+    property_type: str | None,
+    region: str | None,
+    municipality: str | None,
+    year: str | None,
+) -> dict:
+    return {
+        "headline": {
+            "total_records": 0,
+            "municipalities_count": 0,
+            "known_municipalities_count": 0,
+            "unresolved_municipality_rows": 0,
+            "regions_count": 0,
+            "avg_price": None,
+            "median_price": None,
+            "avg_price_per_m2": None,
+            "latest_year": None,
+            "earliest_year": None,
+        },
+        "active_property_type": property_type,
+        "largest_markets": [],
+        "price_leaders": [],
+        "region_snapshot": [],
+        "latest_sales": [],
+        "year_coverage": [],
+        "property_type_mix": [],
+        "active_filters": {
+            "property_type": property_type,
+            "region": region,
+            "municipality": municipality,
+            "year": year,
+        },
+        "market_coverage": {
+            "present": 0,
+            "official_total": _CANONICAL_REGION_TOTAL,
+            "unresolved_rows": 0,
+        },
+    }
 
-    df = _prepare_market_df(property_type=property_type)
-    if df is not None and not df.empty:
-        df = _apply_market_filters(
-            df,
+
+def _build_market_home_payload(
+    df: pd.DataFrame | None,
+    *,
+    property_type: str | None,
+    region: str | None,
+    municipality: str | None,
+    year: str | None,
+) -> dict:
+    if df is None or df.empty:
+        return _empty_market_home_payload(
+            property_type=property_type,
             region=region,
             municipality=municipality,
             year=year,
-            viewer_only=False,
         )
-    if df is None or df.empty:
-        return {
-            "headline": {
-                "total_records": 0,
-                "municipalities_count": 0,
-                "known_municipalities_count": 0,
-                "unresolved_municipality_rows": 0,
-                "regions_count": 0,
-                "avg_price": None,
-                "median_price": None,
-                "avg_price_per_m2": None,
-                "latest_year": None,
-                "earliest_year": None,
-            },
-            "active_property_type": property_type,
-            "largest_markets": [],
-            "price_leaders": [],
-            "region_snapshot": [],
-            "latest_sales": [],
-            "year_coverage": [],
-            "property_type_mix": [],
-            "active_filters": {
-                "property_type": property_type,
-                "region": region,
-                "municipality": municipality,
-                "year": year,
-            },
-            "market_coverage": {
-                "present": 0,
-                "official_total": _CANONICAL_REGION_TOTAL,
-                "unresolved_rows": 0,
-            },
-        }
 
     viewer_df = _viewer_frame(df)
     coverage = _canonical_municipality_coverage(df)
@@ -1116,11 +1151,11 @@ async def market_home(
 
     region_snapshot = []
     if "statistical_region" in viewer_df.columns:
-        for region, group in viewer_df.groupby("statistical_region"):
+        for region_name, group in viewer_df.groupby("statistical_region"):
             price_per_m2 = group["_price_per_m2"].dropna()
             region_snapshot.append(
                 {
-                    "region": format_region_label(region) or str(region),
+                    "region": format_region_label(region_name) or str(region_name),
                     "count": int(len(group)),
                     "avg_price": _round_or_none(group["price_eur"].mean()) if "price_eur" in group.columns else None,
                     "median_price": _round_or_none(group["price_eur"].median())
@@ -1153,16 +1188,16 @@ async def market_home(
         total = int(counts.sum()) or 1
         property_type_mix = [
             {
-                "property_type": str(property_type),
+                "property_type": str(property_name),
                 "count": int(count),
                 "share": round(int(count) / total, 4),
             }
-            for property_type, count in counts.items()
+            for property_name, count in counts.items()
         ]
 
     earliest_year, latest_year = _year_bounds(df)
 
-    result = {
+    return {
         "headline": {
             "total_records": int(len(df)),
             "municipalities_count": int(coverage["present"]),
@@ -1192,6 +1227,70 @@ async def market_home(
         "property_type_mix": property_type_mix,
         "market_coverage": coverage,
     }
+
+
+@router.get("/trend")
+async def trend(
+    request: Request,
+    response: Response,
+    property_type: str | None = None,
+    region: str | None = None,
+    municipality: str | None = None,
+    _user: User = Depends(get_current_user),
+):
+    _set_stats_cache_headers(response)
+    cache_key = (
+        f"{_stats_cache_prefix('trend')}:"
+        f"{property_type or 'all'}:{region or 'all'}:{municipality_slug(municipality) if municipality else 'all'}"
+    )
+    cached = await cache_get(request, cache_key)
+    if cached is not None:
+        return cached
+
+    df = _prepare_market_df(property_type)
+    if df is not None and not df.empty:
+        df = _apply_market_filters(df, region=region, municipality=municipality)
+    results = _build_trend_payload(df)
+
+    await cache_set(request, cache_key, results)
+    return results
+
+
+@router.get("/market-home")
+async def market_home(
+    request: Request,
+    response: Response,
+    property_type: str | None = None,
+    region: str | None = None,
+    municipality: str | None = None,
+    year: str | None = None,
+    _user: User = Depends(get_current_user),
+):
+    _set_stats_cache_headers(response)
+    cache_key = (
+        f"{_stats_cache_prefix('market-home')}:"
+        f"{property_type or 'all'}:{region or 'all'}:{municipality_slug(municipality) if municipality else 'all'}:{year or 'all'}"
+    )
+    cached = await cache_get(request, cache_key)
+    if cached is not None:
+        return cached
+
+    df = _prepare_market_df(property_type=property_type)
+    if df is not None and not df.empty:
+        df = _apply_market_filters(
+            df,
+            region=region,
+            municipality=municipality,
+            year=year,
+            viewer_only=False,
+        )
+    result = _build_market_home_payload(
+        df,
+        property_type=property_type,
+        region=region,
+        municipality=municipality,
+        year=year,
+    )
     await cache_set(request, cache_key, result)
     return result
 
@@ -1199,6 +1298,7 @@ async def market_home(
 @router.get("/transactions")
 async def transactions_explorer(
     request: Request,
+    response: Response,
     property_type: str | None = None,
     region: str | None = None,
     municipality: str | None = None,
@@ -1210,6 +1310,7 @@ async def transactions_explorer(
     order: str = Query("desc"),
     _user: User = Depends(get_current_user),
 ):
+    _set_stats_cache_headers(response)
     cache_key = _explorer_cache_key(
         "transactions",
         property_type=property_type,
@@ -1288,6 +1389,7 @@ async def transactions_explorer(
 @router.get("/municipalities")
 async def municipalities_explorer(
     request: Request,
+    response: Response,
     property_type: str | None = None,
     region: str | None = None,
     municipality: str | None = None,
@@ -1299,6 +1401,7 @@ async def municipalities_explorer(
     order: str = Query("desc"),
     _user: User = Depends(get_current_user),
 ):
+    _set_stats_cache_headers(response)
     cache_key = _explorer_cache_key(
         "municipalities",
         property_type=property_type,
@@ -1395,6 +1498,7 @@ async def municipalities_explorer(
 @router.get("/regions-explorer")
 async def regions_explorer(
     request: Request,
+    response: Response,
     property_type: str | None = None,
     region: str | None = None,
     municipality: str | None = None,
@@ -1406,6 +1510,7 @@ async def regions_explorer(
     order: str = Query("desc"),
     _user: User = Depends(get_current_user),
 ):
+    _set_stats_cache_headers(response)
     cache_key = _explorer_cache_key(
         "regions-explorer",
         property_type=property_type,
@@ -1517,9 +1622,16 @@ async def regions_explorer(
 async def municipality_detail(
     slug: str,
     request: Request,
+    response: Response,
+    property_type: str | None = None,
+    year: str | None = None,
     _user: User = Depends(get_current_user),
 ):
-    cache_key = f"cache:stats:municipality:{slug}"
+    _set_stats_cache_headers(response)
+    cache_key = (
+        f"{_stats_cache_prefix('municipality')}:"
+        f"{municipality_slug(slug)}:{property_type or 'all'}:{year or 'all'}"
+    )
     cached = await cache_get(request, cache_key)
     if cached is not None:
         return cached
@@ -1529,16 +1641,27 @@ async def municipality_detail(
         raise HTTPException(status_code=404, detail="Municipality not found")
 
     viewer_df = _viewer_frame(df)
-    municipality_df = _find_municipality_frame(viewer_df, slug)
-    if municipality_df.empty:
+    municipality_source_df = _find_municipality_frame(viewer_df, slug)
+    if municipality_source_df.empty:
         raise HTTPException(status_code=404, detail="Municipality not found")
 
-    municipality_name = str(municipality_df["municipality"].iloc[0])
-    municipality_slug_value = str(municipality_df["_municipality_slug"].iloc[0])
+    municipality_name = str(municipality_source_df["municipality"].iloc[0])
+    municipality_slug_value = str(municipality_source_df["_municipality_slug"].iloc[0])
     region = (
-        _mode_or_none(municipality_df["statistical_region"])
-        if "statistical_region" in municipality_df.columns
+        _mode_or_none(municipality_source_df["statistical_region"])
+        if "statistical_region" in municipality_source_df.columns
         else None
+    )
+    municipality_df = _apply_market_filters(
+        municipality_source_df,
+        property_type=property_type,
+        year=year,
+        viewer_only=False,
+    )
+    filtered_viewer_df = _apply_market_filters(
+        viewer_df,
+        property_type=property_type,
+        year=year,
     )
 
     year_trend = []
@@ -1574,7 +1697,7 @@ async def municipality_detail(
     region_rank_by_activity = None
     region_rank_by_price = None
     if region:
-        region_df = viewer_df[viewer_df["statistical_region"] == region]
+        region_df = filtered_viewer_df[filtered_viewer_df["statistical_region"] == region]
         region_stats = [_municipality_stats(group) for _, group in region_df.groupby("_municipality_slug")]
         region_stats.sort(key=lambda item: item["count"], reverse=True)
         related_municipalities = [item for item in region_stats if item["slug"] != municipality_slug_value][:6]
@@ -1642,6 +1765,7 @@ async def municipality_detail(
 async def municipality_transactions(
     slug: str,
     request: Request,
+    response: Response,
     property_type: str | None = None,
     year: str | None = None,
     search: str | None = None,
@@ -1651,6 +1775,7 @@ async def municipality_transactions(
     order: str = Query("desc"),
     _user: User = Depends(get_current_user),
 ):
+    _set_stats_cache_headers(response)
     cache_key = _explorer_cache_key(
         f"municipality-transactions:{municipality_slug(slug)}",
         property_type=property_type,
@@ -1719,12 +1844,17 @@ async def municipality_transactions(
 @router.get("/naselja")
 async def naselja(
     request: Request,
+    response: Response = None,
     q: str | None = Query(None, min_length=1),
     municipality: str | None = Query(None),
     limit: int = Query(20, ge=5, le=50),
     _user: User = Depends(get_current_user),
 ):
-    cache_key = f"cache:stats:naselja:{municipality_slug(municipality) if municipality else 'all'}:{_normalize_location_name(q)}:{limit}"
+    _set_stats_cache_headers(response)
+    cache_key = (
+        f"{_stats_cache_prefix('naselja')}:"
+        f"{municipality_slug(municipality) if municipality else 'all'}:{_normalize_location_name(q)}:{limit}"
+    )
     cached = await cache_get(request, cache_key)
     if cached is not None:
         return cached
@@ -1746,17 +1876,29 @@ async def naselja(
     if frame.empty:
         return []
 
+    group_columns = ["_naselje_normalized", "naselje", "municipality", "statistical_region"]
     rows = (
-        frame.groupby(["_naselje_normalized", "naselje", "municipality", "statistical_region"], dropna=False)
-        .agg(
-            sample_count=("naselje", "size"),
-            latitude=("latitude", "median"),
-            longitude=("longitude", "median"),
-        )
+        frame.groupby(group_columns, dropna=False)
+        .agg(sample_count=("naselje", "size"))
         .reset_index()
-        .sort_values(["sample_count", "naselje"], ascending=[False, True])
-        .head(limit)
     )
+
+    map_frame, _reason = _prepare_map_coordinates(frame)
+    if map_frame.empty:
+        rows["latitude"] = pd.NA
+        rows["longitude"] = pd.NA
+    else:
+        coordinate_rows = (
+            map_frame.groupby(group_columns, dropna=False)
+            .agg(
+                latitude=("_map_lat", "median"),
+                longitude=("_map_lon", "median"),
+            )
+            .reset_index()
+        )
+        rows = rows.merge(coordinate_rows, on=group_columns, how="left")
+
+    rows = rows.sort_values(["sample_count", "naselje"], ascending=[False, True]).head(limit)
 
     result = [
         {
@@ -1776,6 +1918,7 @@ async def naselja(
 @router.get("/comparables")
 async def comparables(
     request: Request,
+    response: Response = None,
     municipality: str = Query(..., min_length=1),
     naselje: str | None = Query(None),
     property_type: str = Query(..., min_length=1),
@@ -1785,14 +1928,16 @@ async def comparables(
     limit: int = Query(8, ge=3, le=20),
     _user: User = Depends(get_current_user),
 ):
+    _set_stats_cache_headers(response)
     cache_key = (
-        f"cache:stats:comparables:{municipality_slug(municipality)}:{_normalize_location_name(naselje)}:"
+        f"{_stats_cache_prefix('comparables')}:{municipality_slug(municipality)}:{_normalize_location_name(naselje)}:"
         f"{property_type}:{size_m2}:{year_built}:{price_eur}:{limit}"
     )
     cached = await cache_get(request, cache_key)
     if cached is not None:
         return cached
 
+    full_df = _prepare_market_df()
     df = _prepare_market_df(property_type=property_type)
     target_slug = municipality_slug(municipality)
     target = {
@@ -1806,10 +1951,10 @@ async def comparables(
         "region": None,
     }
 
-    if df is None or df.empty:
+    if full_df is None or full_df.empty:
         return {"target": target, "summary": {"count": 0, "municipality_matched": False}, "items": []}
 
-    target_df = _find_municipality_frame(df, municipality)
+    target_df = _find_municipality_frame(full_df, municipality)
     municipality_matched = not target_df.empty
     region = (
         _mode_or_none(target_df["statistical_region"])
@@ -1832,12 +1977,27 @@ async def comparables(
         }
     )
 
+    if df is None or df.empty:
+        result = {"target": target, "summary": {"count": 0, "municipality_matched": municipality_matched}, "items": []}
+        await cache_set(request, cache_key, result)
+        return result
+
     candidates = _viewer_frame(df)
     candidates = candidates[candidates["_area"].notna() & (candidates["_area"] > 0)].copy()
     target_naselje_key = _normalize_location_name(target_naselje)
     if target_naselje and "_naselje_normalized" in candidates.columns:
         same_naselje = candidates[candidates["_naselje_normalized"] == target_naselje_key].copy()
-        if len(same_naselje) >= limit:
+        local_same_naselje = same_naselje[_municipality_match_mask(same_naselje, target["slug"])]
+        regional_same_naselje = (
+            same_naselje[same_naselje["statistical_region"] == region].copy()
+            if region and "statistical_region" in same_naselje.columns
+            else pd.DataFrame(columns=same_naselje.columns)
+        )
+        if len(local_same_naselje) >= limit:
+            candidates = local_same_naselje
+        elif len(regional_same_naselje) >= limit:
+            candidates = regional_same_naselje
+        elif not municipality_matched and len(same_naselje) >= limit:
             candidates = same_naselje
     if region:
         regional_candidates = candidates[candidates["statistical_region"] == region].copy()
@@ -1868,12 +2028,7 @@ async def comparables(
     candidates["location_bonus"] = 0.0
     if target_naselje and "_naselje_normalized" in candidates.columns:
         candidates["location_bonus"] += np.where(candidates["_naselje_normalized"] == target_naselje_key, 0.24, 0.0)
-    if "_municipality_slug" in candidates.columns:
-        municipality_match = candidates["_municipality_slug"] == target["slug"]
-    elif "municipality" in candidates.columns:
-        municipality_match = candidates["municipality"].map(municipality_slug) == target["slug"]
-    else:
-        municipality_match = pd.Series(False, index=candidates.index)
+    municipality_match = _municipality_match_mask(candidates, target["slug"])
     candidates["location_bonus"] += np.where(municipality_match, 0.14, 0.0)
     if region:
         candidates["location_bonus"] += np.where(candidates["statistical_region"] == region, 0.06, 0.0)
@@ -1926,11 +2081,13 @@ async def comparables(
 @router.get("/municipalities-by-region")
 async def municipalities_by_region(
     request: Request,
+    response: Response = None,
     region: str | None = None,
     _user: User = Depends(get_current_user),
 ):
     """Return {region: [municipality, ...]} from training data."""
-    cache_key = f"cache:stats:municipalities-by-region:{region or 'all'}"
+    _set_stats_cache_headers(response)
+    cache_key = f"{_stats_cache_prefix('municipalities-by-region')}:{region or 'all'}"
     cached = await cache_get(request, cache_key)
     if cached is not None:
         return cached
@@ -1969,58 +2126,93 @@ async def municipalities_by_region(
     return result
 
 
-@router.get("/map-overview")
-async def map_overview(
-    request: Request,
-    response: Response,
+def _map_overview_cache_key(
+    *,
     property_type: str | None = None,
     statistical_region: str | None = None,
     year: str | None = None,
     municipality: str | None = None,
     price_band: str | None = None,
-    _user: User = Depends(get_current_user),
-):
-    """Return municipality markers for the overview map without relying on model artifacts."""
-    response.headers["Cache-Control"] = "private, max-age=180"
+) -> str:
     municipality_key = municipality_slug(municipality) if municipality else "all"
-    cache_key = (
-        "cache:stats:map-overview:"
+    return (
+        f"{_stats_cache_prefix('map-overview')}:"
         f"{property_type or 'all'}:{statistical_region or 'all'}:{year or 'all'}:{municipality_key}:{price_band or 'all'}"
     )
-    cached = await cache_get(request, cache_key)
-    if cached is not None:
-        return cached
 
-    df = _prepare_market_df()
+
+def _map_transactions_cache_key(
+    *,
+    property_type: str | None = None,
+    statistical_region: str | None = None,
+    year: str | None = None,
+    municipality: str | None = None,
+    price_band: str | None = None,
+    limit: int | None = None,
+) -> str:
+    municipality_key = municipality_slug(municipality) if municipality else "all"
+    return (
+        f"{_stats_cache_prefix('map-transactions')}:"
+        f"{property_type or 'all'}:{statistical_region or 'all'}:{year or 'all'}:{municipality_key}:{price_band or 'all'}:{limit}"
+    )
+
+
+def _default_market_year(df: pd.DataFrame) -> str | None:
+    if "_year" not in df.columns:
+        return None
+
+    years = pd.to_numeric(df["_year"], errors="coerce").dropna().astype(int)
+    if years.empty:
+        return None
+
+    current_year = int(pd.Timestamp.now("UTC").year)
+    completed_years = years[years < current_year]
+    target_year = int(completed_years.max()) if not completed_years.empty else int(years.max())
+    return str(target_year)
+
+
+def _filtered_map_frame(
+    df: pd.DataFrame,
+    *,
+    property_type: str | None = None,
+    statistical_region: str | None = None,
+    year: str | None = None,
+    municipality: str | None = None,
+) -> pd.DataFrame:
+    return _apply_market_filters(
+        df,
+        property_type=property_type,
+        region=statistical_region,
+        municipality=municipality,
+        year=year,
+    )
+
+
+def _build_map_overview_payload(
+    df: pd.DataFrame | None,
+    *,
+    property_type: str | None = None,
+    statistical_region: str | None = None,
+    year: str | None = None,
+    municipality: str | None = None,
+    price_band: str | None = None,
+) -> dict:
     if df is None or df.empty:
-        result = {"municipalities": [], "count": 0, "meta": {"reason": "no_train_dataset"}}
-        await cache_set(request, cache_key, result)
-        return result
+        return {"municipalities": [], "count": 0, "meta": {"reason": "no_train_dataset"}}
 
-    df = _viewer_frame(df)
+    frame = _filtered_map_frame(
+        df,
+        property_type=property_type,
+        statistical_region=statistical_region,
+        year=year,
+        municipality=municipality,
+    )
+    if frame.empty:
+        return {"municipalities": [], "count": 0, "meta": {"reason": "no_matches"}}
 
-    if property_type and "property_type" in df.columns:
-        df = df[df["property_type"].astype(str).str.casefold() == str(property_type).casefold()]
-
-    if statistical_region and "statistical_region" in df.columns:
-        df = df[df["statistical_region"].map(lambda value: labels_match(value, statistical_region))]
-
-    if municipality and "municipality" in df.columns:
-        df = df[df["municipality"].map(lambda value: labels_match(value, municipality))]
-
-    if year and "_year" in df.columns:
-        df = df[df["_year"].astype(str) == str(year)]
-
-    if df.empty:
-        result = {"municipalities": [], "count": 0, "meta": {"reason": "no_matches"}}
-        await cache_set(request, cache_key, result)
-        return result
-
-    map_df, reason = _prepare_map_coordinates(df)
+    map_df, reason = _prepare_map_coordinates(frame)
     if map_df.empty:
-        result = {"municipalities": [], "count": 0, "meta": {"reason": reason or "no_coordinates"}}
-        await cache_set(request, cache_key, result)
-        return result
+        return {"municipalities": [], "count": 0, "meta": {"reason": reason or "no_coordinates"}}
 
     municipalities = []
     group_key = "_municipality_slug" if "_municipality_slug" in map_df.columns else "municipality"
@@ -2045,7 +2237,9 @@ async def map_overview(
                 "lat": _round_or_none(group["_map_lat"].median(), 6),
                 "lon": _round_or_none(group["_map_lon"].median(), 6),
                 "avg_price": _round_or_none(group["price_eur"].mean()) if "price_eur" in group.columns else None,
-                "median_price": _round_or_none(group["price_eur"].median()) if "price_eur" in group.columns else None,
+                "median_price": _round_or_none(group["price_eur"].median())
+                if "price_eur" in group.columns
+                else None,
                 "avg_price_per_m2": avg_price_per_m2,
                 "price_band": None,
             }
@@ -2058,16 +2252,14 @@ async def map_overview(
     if price_band:
         municipalities = [item for item in municipalities if item.get("price_band") == str(price_band).casefold()]
         if not municipalities:
-            result = {
+            return {
                 "municipalities": [],
                 "count": 0,
                 "meta": {"reason": "no_matches", "legend": legend, "price_band": price_band},
             }
-            await cache_set(request, cache_key, result)
-            return result
 
     municipalities.sort(key=lambda item: item["count"], reverse=True)
-    result = {
+    return {
         "municipalities": municipalities,
         "count": len(municipalities),
         "meta": {
@@ -2077,6 +2269,340 @@ async def map_overview(
             "filtered_total": len(municipalities),
         },
     }
+
+
+def _build_map_transactions_payload(
+    df: pd.DataFrame | None,
+    *,
+    property_type: str | None = None,
+    statistical_region: str | None = None,
+    year: str | None = None,
+    municipality: str | None = None,
+    price_band: str | None = None,
+    limit: int | None = None,
+) -> dict:
+    if df is None or df.empty:
+        return {"transactions": [], "count": 0, "meta": {"reason": "no_train_dataset"}}
+
+    frame = _filtered_map_frame(
+        df,
+        property_type=property_type,
+        statistical_region=statistical_region,
+        year=year,
+        municipality=municipality,
+    )
+    if frame.empty:
+        return {"transactions": [], "count": 0, "meta": {"reason": "no_matches"}}
+
+    map_df, reason = _prepare_map_coordinates(frame)
+    if map_df.empty:
+        return {"transactions": [], "count": 0, "meta": {"reason": reason or "no_coordinates"}}
+
+    legend = _build_price_band_meta(map_df["_price_per_m2"])
+    if legend:
+        map_df["_price_band"] = map_df["_price_per_m2"].map(lambda value: _price_band_key(value, legend["thresholds"]))
+    else:
+        map_df["_price_band"] = None
+
+    filtered_total = int(len(map_df))
+    if price_band:
+        map_df = map_df[map_df["_price_band"] == str(price_band).casefold()]
+        if map_df.empty:
+            return {
+                "transactions": [],
+                "count": 0,
+                "meta": {"reason": "no_matches", "legend": legend, "price_band": price_band},
+            }
+
+    filtered_after_band = int(len(map_df))
+    truncated = False
+    if isinstance(limit, int) and len(map_df) > limit:
+        map_df = map_df.sample(n=limit, random_state=42)
+        truncated = True
+
+    map_df = map_df.copy()
+    map_df["_area"] = _effective_area(map_df)
+
+    transactions = []
+    for _, row in map_df.iterrows():
+        item = _serialize_price_row(row)
+        item["price_band"] = row.get("_price_band")
+        transactions.append(item)
+
+    return {
+        "transactions": transactions,
+        "count": len(transactions),
+        "meta": {
+            "reason": None,
+            "legend": legend,
+            "price_band": price_band,
+            "filtered_total": filtered_total,
+            "band_total": filtered_after_band,
+            "returned_total": len(transactions),
+            "truncated": truncated,
+        },
+    }
+
+
+def build_common_stats_cache_entries() -> list[tuple[str, object, int]]:
+    df = _prepare_market_df()
+    if df is None or df.empty:
+        return []
+
+    default_year = _default_market_year(df)
+    years_to_warm = [None]
+    if default_year:
+        years_to_warm.append(default_year)
+
+    entries: list[tuple[str, object, int]] = []
+    seen: set[str] = set()
+
+    def add_entry(cache_key: str, payload: object):
+        if cache_key in seen:
+            return
+        entries.append((cache_key, payload, STATS_CACHE_TTL))
+        seen.add(cache_key)
+
+    default_filters = {
+        "property_type": None,
+        "region": None,
+        "municipality": None,
+        "year": None,
+        "search": None,
+    }
+
+    def build_default_transactions_payload(*, page_size: int, sort: str, order: str) -> dict:
+        frame = _apply_market_filters(df)
+        frame = _sort_frame_for_explorer(
+            frame,
+            sort=None if sort == "recent" else sort,
+            order=order,
+            default=["_sale_date", "_year", "price_eur"],
+        )
+        items = [_serialize_price_row(row) for _, row in frame.iloc[:page_size].iterrows()]
+        return _build_explorer_response(
+            items=items,
+            total=int(len(frame)),
+            page=1,
+            page_size=page_size,
+            filters=default_filters,
+            sort=sort,
+            order=order,
+        )
+
+    def build_default_municipalities_payload(*, page_size: int, sort: str, order: str) -> dict:
+        frame = _apply_market_filters(df)
+        municipality_groups = (
+            [_municipality_stats(group) for _, group in frame.groupby("_municipality_slug")]
+            if "_municipality_slug" in frame.columns
+            else []
+        )
+        grouped = pd.DataFrame(municipality_groups)
+        if grouped.empty:
+            return _build_explorer_response(
+                items=[],
+                total=0,
+                page=1,
+                page_size=page_size,
+                filters=default_filters,
+                sort=sort,
+                order=order,
+            )
+
+        grouped = _sort_frame_for_explorer(grouped, sort=sort, order=order, default=["count", "municipality"])
+        items = grouped.iloc[:page_size].replace({np.nan: None}).to_dict("records")
+        return _build_explorer_response(
+            items=items,
+            total=int(len(grouped)),
+            page=1,
+            page_size=page_size,
+            filters=default_filters,
+            sort=sort,
+            order=order,
+        )
+
+    def build_default_regions_payload(*, page_size: int, sort: str, order: str) -> dict:
+        frame = _apply_market_filters(df)
+        if frame.empty or "statistical_region" not in frame.columns:
+            return _build_explorer_response(
+                items=[],
+                total=0,
+                page=1,
+                page_size=page_size,
+                filters=default_filters,
+                sort=sort,
+                order=order,
+            )
+
+        rows = []
+        for region_name, group in frame.groupby("statistical_region"):
+            rows.append(
+                {
+                    "region": format_region_label(region_name) or str(region_name),
+                    "count": int(len(group)),
+                    "municipality_count": int(group["_municipality_slug"].nunique())
+                    if "_municipality_slug" in group.columns
+                    else 0,
+                    "avg_price": _round_or_none(group["price_eur"].mean()) if "price_eur" in group.columns else None,
+                    "median_price": _round_or_none(group["price_eur"].median())
+                    if "price_eur" in group.columns
+                    else None,
+                    "avg_price_per_m2": _round_or_none(group["_price_per_m2"].dropna().mean()),
+                    "median_price_per_m2": _round_or_none(group["_price_per_m2"].dropna().median()),
+                    "latest_year": str(group["_year"].dropna().max())
+                    if "_year" in group.columns and group["_year"].notna().any()
+                    else None,
+                }
+            )
+
+        grouped = pd.DataFrame(rows)
+        grouped = _sort_frame_for_explorer(grouped, sort=sort, order=order, default=["count", "region"])
+        items = grouped.iloc[:page_size].replace({np.nan: None}).to_dict("records")
+        return _build_explorer_response(
+            items=items,
+            total=int(len(grouped)),
+            page=1,
+            page_size=page_size,
+            filters=default_filters,
+            sort=sort,
+            order=order,
+        )
+
+    for year in years_to_warm:
+        overview_key = _map_overview_cache_key(year=year)
+        add_entry(overview_key, _build_map_overview_payload(df, year=year))
+
+        transactions_key = _map_transactions_cache_key(year=year, limit=None)
+        add_entry(transactions_key, _build_map_transactions_payload(df, year=year, limit=None))
+
+    add_entry(
+        f"{_stats_cache_prefix('market-home')}:all:all:all:all",
+        _build_market_home_payload(df, property_type=None, region=None, municipality=None, year=None),
+    )
+    add_entry(f"{_stats_cache_prefix('trend')}:all:all:all", _build_trend_payload(_apply_market_filters(df)))
+    add_entry(
+        f"{_stats_cache_prefix('overview')}:all:all:all:all",
+        _build_overview_payload(_apply_market_filters(df)),
+    )
+    add_entry(
+        f"{_stats_cache_prefix('regions')}:all:all:all:all",
+        _build_regions_stats_payload(_apply_market_filters(df)),
+    )
+    add_entry(
+        f"{_stats_cache_prefix('price-distribution')}:20:all:all:all:all",
+        _build_price_distribution_payload(_apply_market_filters(df), bins=20),
+    )
+    add_entry(
+        _explorer_cache_key(
+            "transactions",
+            property_type=None,
+            region=None,
+            municipality=None,
+            year=None,
+            search=None,
+            page=1,
+            page_size=6,
+            sort="recent",
+            order="desc",
+        ),
+        build_default_transactions_payload(page_size=6, sort="recent", order="desc"),
+    )
+    add_entry(
+        _explorer_cache_key(
+            "municipalities",
+            property_type=None,
+            region=None,
+            municipality=None,
+            year=None,
+            search=None,
+            page=1,
+            page_size=8,
+            sort="count",
+            order="desc",
+        ),
+        build_default_municipalities_payload(page_size=8, sort="count", order="desc"),
+    )
+    add_entry(
+        _explorer_cache_key(
+            "municipalities",
+            property_type=None,
+            region=None,
+            municipality=None,
+            year=None,
+            search=None,
+            page=1,
+            page_size=24,
+            sort="count",
+            order="desc",
+        ),
+        build_default_municipalities_payload(page_size=24, sort="count", order="desc"),
+    )
+    add_entry(
+        _explorer_cache_key(
+            "regions-explorer",
+            property_type=None,
+            region=None,
+            municipality=None,
+            year=None,
+            search=None,
+            page=1,
+            page_size=8,
+            sort="count",
+            order="desc",
+        ),
+        build_default_regions_payload(page_size=8, sort="count", order="desc"),
+    )
+    add_entry(
+        _explorer_cache_key(
+            "regions-explorer",
+            property_type=None,
+            region=None,
+            municipality=None,
+            year=None,
+            search=None,
+            page=1,
+            page_size=12,
+            sort="median_price_per_m2",
+            order="desc",
+        ),
+        build_default_regions_payload(page_size=12, sort="median_price_per_m2", order="desc"),
+    )
+
+    return entries
+
+
+@router.get("/map-overview")
+async def map_overview(
+    request: Request,
+    response: Response,
+    property_type: str | None = None,
+    statistical_region: str | None = None,
+    year: str | None = None,
+    municipality: str | None = None,
+    price_band: str | None = None,
+    _user: User = Depends(get_current_user),
+):
+    """Return municipality markers for the overview map without relying on model artifacts."""
+    _set_stats_cache_headers(response)
+    cache_key = _map_overview_cache_key(
+        property_type=property_type,
+        statistical_region=statistical_region,
+        year=year,
+        municipality=municipality,
+        price_band=price_band,
+    )
+    cached = await cache_get(request, cache_key)
+    if cached is not None:
+        return cached
+
+    result = _build_map_overview_payload(
+        _prepare_market_df(),
+        property_type=property_type,
+        statistical_region=statistical_region,
+        year=year,
+        municipality=municipality,
+        price_band=price_band,
+    )
     await cache_set(request, cache_key, result)
     return result
 
@@ -2094,104 +2620,30 @@ async def map_transactions(
     _user: User = Depends(get_current_user),
 ):
     """Return transaction points for map visualization (WGS84 coords)."""
-    if response is not None:
-        response.headers["Cache-Control"] = "private, max-age=120"
+    _set_stats_cache_headers(response)
     if not isinstance(limit, int):
         limit = None
-    municipality_key = municipality_slug(municipality) if municipality else "all"
-    cache_key = (
-        "cache:stats:map-transactions:"
-        f"{property_type or 'all'}:{statistical_region or 'all'}:{year or 'all'}:{municipality_key}:{price_band or 'all'}:{limit}"
+    cache_key = _map_transactions_cache_key(
+        property_type=property_type,
+        statistical_region=statistical_region,
+        year=year,
+        municipality=municipality,
+        price_band=price_band,
+        limit=limit,
     )
     cached = await cache_get(request, cache_key) if request is not None else None
     if cached is not None:
         return cached
 
-    df = _prepare_market_df()
-    if df is None or df.empty:
-        result = {"transactions": [], "count": 0, "meta": {"reason": "no_train_dataset"}}
-        if request is not None:
-            await cache_set(request, cache_key, result)
-        return result
-
-    df = _viewer_frame(df)
-
-    if property_type and "property_type" in df.columns:
-        df = df[df["property_type"].astype(str).str.casefold() == str(property_type).casefold()]
-
-    # Apply filters
-    if statistical_region and "statistical_region" in df.columns:
-        df = df[df["statistical_region"].map(lambda value: labels_match(value, statistical_region))]
-    if municipality and "municipality" in df.columns:
-        df = df[df["municipality"].map(lambda value: labels_match(value, municipality))]
-
-    if year and "_year" in df.columns:
-        df = df[df["_year"].astype(str) == str(year)]
-
-    if df.empty:
-        result = {"transactions": [], "count": 0, "meta": {"reason": "no_matches"}}
-        if request is not None:
-            await cache_set(request, cache_key, result)
-        return result
-
-    map_df, reason = _prepare_map_coordinates(df)
-    if map_df.empty:
-        result = {"transactions": [], "count": 0, "meta": {"reason": reason or "no_coordinates"}}
-        if request is not None:
-            await cache_set(request, cache_key, result)
-        return result
-
-    legend = _build_price_band_meta(map_df["_price_per_m2"])
-    if legend:
-        map_df["_price_band"] = map_df["_price_per_m2"].map(lambda value: _price_band_key(value, legend["thresholds"]))
-    else:
-        map_df["_price_band"] = None
-
-    filtered_total = int(len(map_df))
-    if price_band:
-        map_df = map_df[map_df["_price_band"] == str(price_band).casefold()]
-        if map_df.empty:
-            result = {
-                "transactions": [],
-                "count": 0,
-                "meta": {"reason": "no_matches", "legend": legend, "price_band": price_band},
-            }
-            if request is not None:
-                await cache_set(request, cache_key, result)
-            return result
-
-    filtered_after_band = int(len(map_df))
-
-    # Sample if too many
-    truncated = False
-    if limit is not None and len(map_df) > limit:
-        map_df = map_df.sample(n=limit, random_state=42)
-        truncated = True
-
-    area = _effective_area(map_df)
-
-    # Build result DataFrame vectorized (no iterrows)
-    map_df = map_df.copy()
-    map_df["_area"] = area
-    transactions = []
-    for _, row in map_df.iterrows():
-        item = _serialize_price_row(row)
-        item["price_band"] = row.get("_price_band")
-        transactions.append(item)
-
-    result = {
-        "transactions": transactions,
-        "count": len(transactions),
-        "meta": {
-            "reason": None,
-            "legend": legend,
-            "price_band": price_band,
-            "filtered_total": filtered_total,
-            "band_total": filtered_after_band,
-            "returned_total": len(transactions),
-            "truncated": truncated,
-        },
-    }
+    result = _build_map_transactions_payload(
+        _prepare_market_df(),
+        property_type=property_type,
+        statistical_region=statistical_region,
+        year=year,
+        municipality=municipality,
+        price_band=price_band,
+        limit=limit,
+    )
     if request is not None:
         await cache_set(request, cache_key, result)
     return result

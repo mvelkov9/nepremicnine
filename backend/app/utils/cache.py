@@ -35,13 +35,21 @@ async def cache_get(request: Request, key: str) -> dict | list | None:
     return None
 
 
+async def cache_set_value(redis, key: str, value, ttl: int = CACHE_TTL) -> None:
+    """Store value in Redis with TTL. Silently ignores errors."""
+    try:
+        if redis is None:
+            return
+        await redis.set(key, json.dumps(value, default=str), ex=ttl)
+    except Exception:
+        logger.debug("Redis cache set error for key=%s", key)
+
+
 async def cache_set(request: Request, key: str, value, ttl: int = CACHE_TTL) -> None:
     """Store value in Redis cache with TTL. Silently ignores errors."""
     try:
         redis = getattr(request.app.state, "redis", None)
-        if redis is None:
-            return
-        await redis.set(key, json.dumps(value, default=str), ex=ttl)
+        await cache_set_value(redis, key, value, ttl=ttl)
     except Exception:
         logger.debug("Redis cache set error for key=%s", key)
 

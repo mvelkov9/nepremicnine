@@ -8,6 +8,7 @@
   import Column from 'primevue/column'
   import DataTable from 'primevue/datatable'
   import Dialog from 'primevue/dialog'
+  import Skeleton from 'primevue/skeleton'
   import Tab from 'primevue/tab'
   import TabList from 'primevue/tablist'
   import TabPanel from 'primevue/tabpanel'
@@ -78,6 +79,13 @@
       ? readQueryTab(route.query.tab, dataTabs, 'upload')
       : readQueryTab(route.query.tab, dataTabs, 'library'),
   )
+  const datasetPageLoaded = ref(false)
+  const datasetPageRequestKey = ref('')
+  const qualitySummaryLoaded = ref(false)
+  const uploadCapacityLoaded = ref(false)
+  const trainingDatasetLoaded = ref(false)
+  const prepareRunsLoaded = ref(false)
+  const prepareRunsLoading = ref(false)
 
   const qualitySummary = computed(() => dataStore.qualitySummary as QualitySummary | null)
   const uploadCapacity = computed(() => dataStore.uploadCapacity as UploadCapacitySummary | null)
@@ -266,19 +274,35 @@
     () => route.query.run,
     () => {
       syncPrepareRunFromRoute(route.query)
+      const requestedRunId = readQueryString(route.query.run)
+      if (
+        auth.isAdmin &&
+        requestedRunId &&
+        (prepareRunsLoaded.value || workbench.prepareRuns.length)
+      ) {
+        void ensureSelectedPrepareRunLoaded(false, requestedRunId)
+      }
     },
     { immediate: true },
   )
 
   watch(dataTab, (tab) => {
     const currentTab = readQueryTab(route.query.tab, dataTabs, auth.isAdmin ? 'upload' : 'library')
-    if (currentTab === tab) return
-    void router.replace({ query: { ...route.query, tab } })
+    if (currentTab !== tab) {
+      void router.replace({ query: { ...route.query, tab } })
+    }
+    void loadActiveDataTabData()
   })
 
   watch(datasetSearchInput, (value) => {
     debouncedDatasetSearchSync(value)
   })
+
+  function handleBackgroundError(cause: unknown) {
+    if (!error.value) {
+      error.value = getApiErrorMessage(cause, t)
+    }
+  }
 
   watch(
     () => [
@@ -289,6 +313,7 @@
       datasetTable.state.search,
     ],
     async () => {
+      if (dataTab.value !== 'library') return
       error.value = ''
       try {
         await fetchDatasetPage(
@@ -314,49 +339,137 @@
     order: 'asc' | 'desc' = datasetTable.order.value,
   ) {
     await dataStore.fetchDatasets(withSync, false, { page, perPage, search, sort, order })
+    datasetPageLoaded.value = true
+    datasetPageRequestKey.value = JSON.stringify({ page, perPage, search, sort, order })
   }
 
-  function refreshAdminDiagnosticsBackground() {
+  function currentDatasetPageRequestKey() {
+    return JSON.stringify({
+      page: datasetTable.page.value,
+      perPage: datasetTable.pageSize.value,
+      search: datasetTable.search.value,
+      sort: datasetTable.sort.value,
+      order: datasetTable.order.value,
+    })
+  }
+
+  async function ensureDatasetPageLoaded(force = false) {
+    if (
+      !force &&
+      datasetPageLoaded.value &&
+      datasetPageRequestKey.value === currentDatasetPageRequestKey()
+    ) {
+      return
+    }
+    await fetchDatasetPage(
+      datasetTable.page.value,
+      datasetTable.pageSize.value,
+      false,
+      datasetTable.search.value,
+      datasetTable.sort.value,
+      datasetTable.order.value,
+    )
+  }
+
+  async function ensureTrainingDatasetLoaded(force = false) {
+    if (!auth.isAdmin) return
+    if (!force && (trainingDatasetLoaded.value || Boolean(trainingDataset.value))) {
+      trainingDatasetLoaded.value = true
+      return
+    }
+    await dataStore.fetchTrainingDataset()
+    trainingDatasetLoaded.value = true
+  }
+
+  async function ensureQualitySummaryLoaded(force = false) {
+    if (!auth.isAdmin) return
+    if (!force && (qualitySummaryLoaded.value || Boolean(qualitySummary.value))) {
+      qualitySummaryLoaded.value = true
+      return
+    }
+    await dataStore.fetchQualitySummary()
+    qualitySummaryLoaded.value = true
+  }
+
+  async function ensureUploadCapacityLoaded(force = false) {
+    if (!auth.isAdmin) return
+    if (!force && (uploadCapacityLoaded.value || Boolean(uploadCapacity.value))) {
+      uploadCapacityLoaded.value = true
+      return
+    }
+    await dataStore.fetchUploadCapacity()
+    uploadCapacityLoaded.value = true
+  }
+
+  async function ensurePrepareRunsLoaded(force = false) {
+    if (!auth.isAdmin) return
+    if (!force && (prepareRunsLoaded.value || prepareRunsLoading.value)) return
+
+    prepareRunsLoading.value = true
+    try {
+      await workbench.fetchPrepareRuns(force)
+      prepareRunsLoaded.value = true
+    } finally {
+      prepareRunsLoading.value = false
+    }
+  }
+
+  async function ensureSelectedPrepareRunLoaded(force = false, jobId = selectedPrepareRunId.value) {
+    if (!auth.isAdmin || !jobId) return
+    await ensurePrepareRunsLoaded(force)
+    if (
+      workbench.prepareRuns.some((item) => item.id === jobId) &&
+      selectedPrepareRun.value?.id !== jobId
+    ) {
+      await workbench.fetchPrepareRunDetail(jobId)
+    }
+  }
+
+  function refreshAdminDiagnosticsBackground(force = false) {
     if (!auth.isAdmin) return
 
-    void dataStore.fetchQualitySummary().catch((e) => {
-      if (!error.value) error.value = getApiErrorMessage(e, t)
-    })
-
-    void dataStore.fetchUploadCapacity().catch((e) => {
-      if (!error.value) error.value = getApiErrorMessage(e, t)
-    })
+    void ensureQualitySummaryLoaded(force).catch(handleBackgroundError)
+    void ensureUploadCapacityLoaded(force).catch(handleBackgroundError)
   }
 
-  async function loadDataView() {
-    const results = await Promise.allSettled([
-      fetchDatasetPage(
-        datasetTable.page.value,
-        datasetTable.pageSize.value,
-        false,
-        datasetTable.search.value,
-        datasetTable.sort.value,
-        datasetTable.order.value,
-      ),
-      dataStore.fetchTrainingDataset(),
-    ])
+  function refreshDataSummaryBackground(force = false) {
+    if (!auth.isAdmin) return
+    void ensureTrainingDatasetLoaded(force).catch(handleBackgroundError)
+    refreshAdminDiagnosticsBackground(force)
+  }
 
-    const firstFailure = results.find((result) => result.status === 'rejected')
-    if (firstFailure && firstFailure.status === 'rejected') {
-      throw firstFailure.reason
+  async function loadActiveDataTabData(force = false) {
+    if (auth.isAdmin && dataTab.value === 'upload') {
+      await ensureUploadCapacityLoaded(force)
+      if (readQueryString(route.query.run)) {
+        await ensureSelectedPrepareRunLoaded(force)
+      } else {
+        void ensurePrepareRunsLoaded(force).catch(handleBackgroundError)
+      }
+      refreshDataSummaryBackground(force)
+      return
     }
 
-    refreshAdminDiagnosticsBackground()
+    if (auth.isAdmin && dataTab.value === 'quality') {
+      const results = await Promise.allSettled([
+        ensureQualitySummaryLoaded(force),
+        ensureTrainingDatasetLoaded(force),
+      ])
+      const firstFailure = results.find((result) => result.status === 'rejected')
+      if (firstFailure && firstFailure.status === 'rejected') {
+        throw firstFailure.reason
+      }
+      void ensureUploadCapacityLoaded(force).catch(handleBackgroundError)
+      return
+    }
+
+    await ensureDatasetPageLoaded(force)
+    refreshDataSummaryBackground(force)
   }
 
   async function initializePage() {
     error.value = ''
-    const results = await Promise.allSettled([loadDataView(), workbench.fetchPrepareRuns()])
-
-    const dataViewResult = results[0]
-    if (dataViewResult.status === 'rejected') {
-      throw dataViewResult.reason
-    }
+    await loadActiveDataTabData()
   }
 
   onMounted(async () => {
@@ -569,8 +682,11 @@
         result?.fileResults?.filter((entry) => Boolean(entry.errorMessage)).length || 0
       selectedFiles.value = []
       uploadResetToken.value += 1
-      await dataStore.fetchTrainingDataset()
-      refreshAdminDiagnosticsBackground()
+      datasetPageLoaded.value = false
+      datasetPageRequestKey.value = ''
+      trainingDatasetLoaded.value = true
+      qualitySummaryLoaded.value = true
+      uploadCapacityLoaded.value = true
       showToast(
         failedCount
           ? t('data.uploadPartialFailureToast', { failed: failedCount, uploaded: uploadedCount })
@@ -612,8 +728,8 @@
       accept: async () => {
         try {
           await dataStore.deleteDataset(row.id)
-          await dataStore.fetchTrainingDataset()
-          refreshAdminDiagnosticsBackground()
+          await ensureTrainingDatasetLoaded(true)
+          refreshAdminDiagnosticsBackground(true)
         } catch (e) {
           error.value = getApiErrorMessage(e, t)
         }
@@ -650,8 +766,8 @@
           if (String(nextPage) !== datasetTable.state.page) {
             await datasetTable.patchState({ page: String(nextPage) })
           }
-          await dataStore.fetchTrainingDataset()
-          refreshAdminDiagnosticsBackground()
+          await ensureTrainingDatasetLoaded(true)
+          refreshAdminDiagnosticsBackground(true)
         } catch (e) {
           error.value = getApiErrorMessage(e, t)
         }
@@ -665,6 +781,14 @@
     rescanning.value = true
     try {
       const result = await dataStore.rescanDatasets()
+      datasetPageLoaded.value = false
+      datasetPageRequestKey.value = ''
+      trainingDatasetLoaded.value = true
+      qualitySummaryLoaded.value = true
+      uploadCapacityLoaded.value = true
+      if (dataTab.value === 'library') {
+        await ensureDatasetPageLoaded(true)
+      }
       showToast(
         t('data.rescanSuccessToast', {
           indexed: Number(result?.indexed || 0),
@@ -784,7 +908,19 @@
             />
 
             <aside class="data-side-stack">
+              <div
+                v-if="prepareRunsLoading && !prepareRunsLoaded"
+                class="card data-run-skeleton"
+                aria-busy="true"
+              >
+                <div class="data-run-skeleton-copy">
+                  <Skeleton width="38%" height="0.9rem" />
+                  <Skeleton width="68%" height="1.1rem" />
+                  <Skeleton width="100%" height="10rem" border-radius="var(--radius-sm)" />
+                </div>
+              </div>
               <AdminRunDetailPanel
+                v-else
                 :eyebrow="t('nav.prepare')"
                 :title="t('workbench.recentPrepareRuns')"
                 :description="t('workbench.prepareRunDetailHint')"
@@ -1068,6 +1204,19 @@
   .quality-grid,
   .state-card-stack {
     gap: 1rem;
+  }
+
+  .data-run-skeleton {
+    padding: 1rem;
+    border-radius: var(--radius-lg);
+    border: 1px solid color-mix(in srgb, var(--border) 72%, var(--content-border-strong) 28%);
+    background: var(--surface-panel);
+    box-shadow: var(--accent-shadow, var(--shadow-sm));
+  }
+
+  .data-run-skeleton-copy {
+    display: grid;
+    gap: 0.85rem;
   }
 
   .quality-grid--split {

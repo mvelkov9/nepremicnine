@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/model", tags=["model"])
 DATA_DIR = os.path.realpath(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data"))
 RESEARCH_QUEUE_DIR = os.path.join(DATA_DIR, "models", "research_queue")
+MODEL_ARTIFACT_PATH = os.path.join(DATA_DIR, "models", "price_model.joblib")
 
 
 def _relative_data_path(path: str | None) -> str | None:
@@ -48,11 +49,26 @@ def _load_research_impact_report() -> dict | None:
         return None
 
 
+def _file_cache_token(path: str) -> str:
+    try:
+        stats = os.stat(path)
+        return f"{int(stats.st_mtime_ns)}:{int(stats.st_size)}"
+    except OSError:
+        return "missing"
+
+
+def _model_cache_namespace(*, include_research_report: bool = False) -> str:
+    namespace = _file_cache_token(MODEL_ARTIFACT_PATH)
+    if include_research_report:
+        namespace = f"{namespace}:{_file_cache_token(os.path.join(RESEARCH_QUEUE_DIR, 'impact_report.json'))}"
+    return namespace
+
+
 async def _load_cached_gurs_benchmark_payload(request: Request) -> dict:
     # Benchmark rebuild reads the full CSV + runs predictions (~30-60s).
     # Results only change when the model is retrained, so cache aggressively (24h).
     # Cache is invalidated automatically on model retrain via invalidate_cache_prefixes.
-    cache_key = "cache:model:benchmark:gurs:all"
+    cache_key = f"cache:model:benchmark:gurs:{_model_cache_namespace()}:all"
     cached = await cache_get(request, cache_key)
     if cached is not None:
         return cached
@@ -62,12 +78,41 @@ async def _load_cached_gurs_benchmark_payload(request: Request) -> dict:
     return payload
 
 
+def _benchmark_sort_key(row: dict, field: str) -> tuple[bool, str | float]:
+    value = row.get(field)
+    if field in {"municipality", "region", "property_type", "winner"}:
+        text = str(value).strip() if value is not None else ""
+        return (not bool(text), text.casefold())
+
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return (True, 0.0)
+    if not math.isfinite(numeric):
+        return (True, 0.0)
+    return (False, numeric)
+
+
+def _sort_benchmark_rows(rows: list[dict], field: str, reverse: bool) -> list[dict]:
+    present_rows: list[tuple[str | float, dict]] = []
+    missing_rows: list[dict] = []
+    for row in rows:
+        is_missing, sort_value = _benchmark_sort_key(row, field)
+        if is_missing:
+            missing_rows.append(row)
+        else:
+            present_rows.append((sort_value, row))
+
+    present_rows.sort(key=lambda item: item[0], reverse=reverse)
+    return [row for _, row in present_rows] + missing_rows
+
+
 @router.get("/info", response_model=ModelInfoResponse)
 async def model_info(request: Request, response: Response, _user: User = Depends(require_admin)):
     """Get current trained model metadata."""
     response.headers["Cache-Control"] = "private, max-age=60"
 
-    cache_key = "cache:model:info"
+    cache_key = f"cache:model:info:{_model_cache_namespace()}"
     cached = await cache_get(request, cache_key)
     if cached is not None:
         return ModelInfoResponse(**cached)
@@ -85,7 +130,7 @@ async def feature_importance(request: Request, response: Response, _user: User =
     """Get feature importance from the global model."""
     response.headers["Cache-Control"] = "private, max-age=60"
 
-    cache_key = "cache:model:importance"
+    cache_key = f"cache:model:importance:{_model_cache_namespace()}"
     cached = await cache_get(request, cache_key)
     if cached is not None:
         return cached
@@ -115,7 +160,7 @@ async def model_diagnostics(request: Request, response: Response, _user: User = 
     """Get per-type and per-region model diagnostics."""
     response.headers["Cache-Control"] = "private, max-age=60"
 
-    cache_key = "cache:model:diagnostics"
+    cache_key = f"cache:model:diagnostics:{_model_cache_namespace(include_research_report=True)}"
     cached = await cache_get(request, cache_key)
     if cached is not None:
         return cached
@@ -287,16 +332,7 @@ async def gurs_benchmark_transactions(
     }
     sort_field = sort_field_map.get(sort, "improvement_eur")
     reverse = str(order).casefold() != "asc"
-    rows = sorted(
-        rows,
-        key=lambda row: (
-            row.get(sort_field) is None,
-            str(row.get(sort_field) or "").casefold()
-            if sort_field in {"municipality", "region", "property_type", "winner"}
-            else float(row.get(sort_field) or 0),
-        ),
-        reverse=reverse,
-    )
+    rows = _sort_benchmark_rows(rows, sort_field, reverse)
 
     total = len(rows)
     pages = math.ceil(total / page_size) if total > 0 else 0

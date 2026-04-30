@@ -45,7 +45,16 @@ interface FetchDatasetsOptions {
   order?: 'asc' | 'desc'
 }
 
+interface DatasetPageCacheEntry {
+  items: unknown[]
+  page: number
+  perPage: number
+  total: number
+  pages: number
+}
+
 export const useDataStore = defineStore('data', () => {
+  const SHARED_DATA_CACHE_TTL_MS = 15_000
   const datasets = ref([])
   const datasetsPage = ref(1)
   const datasetsPerPage = ref(10)
@@ -62,7 +71,26 @@ export const useDataStore = defineStore('data', () => {
   let fetchDatasetsRequestKey = ''
   let fetchTrainingDatasetInFlight: Promise<unknown> | null = null
   let fetchQualitySummaryInFlight: Promise<unknown> | null = null
+  let fetchUploadCapacityInFlight: Promise<unknown> | null = null
   let allDatasetsCached = false
+  const datasetPageCache = new Map<string, DatasetPageCacheEntry>()
+  let trainingDatasetFetchedAt = 0
+  let qualitySummaryFetchedAt = 0
+  let uploadCapacityFetchedAt = 0
+
+  function clearDatasetPageCache() {
+    datasetPageCache.clear()
+  }
+
+  function isSharedDataCacheFresh(timestamp: number) {
+    return timestamp > 0 && Date.now() - timestamp < SHARED_DATA_CACHE_TTL_MS
+  }
+
+  function invalidateSharedDatasetMetadata() {
+    trainingDatasetFetchedAt = 0
+    qualitySummaryFetchedAt = 0
+    uploadCapacityFetchedAt = 0
+  }
 
   async function fetchDatasets(
     withSync = false,
@@ -81,6 +109,21 @@ export const useDataStore = defineStore('data', () => {
       sort: String(options.sort || 'uploaded_at'),
       order: options.order === 'asc' ? 'asc' : 'desc',
     })
+
+    if (!withSync) {
+      const cached = datasetPageCache.get(requestKey)
+      if (cached) {
+        datasets.value = [...cached.items]
+        datasetsPage.value = cached.page
+        datasetsPerPage.value = cached.perPage
+        datasetsTotal.value = cached.total
+        datasetsPages.value = cached.pages
+        if (fetchAllPages) {
+          allDatasetsCached = true
+        }
+        return
+      }
+    }
 
     if (fetchDatasetsInFlight && fetchDatasetsRequestKey === requestKey)
       return fetchDatasetsInFlight
@@ -131,6 +174,13 @@ export const useDataStore = defineStore('data', () => {
             datasetsTotal.value = total
             datasetsPages.value = totalPages
             allDatasetsCached = true
+            datasetPageCache.set(requestKey, {
+              items: [...allItems],
+              page: requestedPage,
+              perPage: requestedPerPage,
+              total,
+              pages: totalPages,
+            })
           }
           return
         }
@@ -155,6 +205,13 @@ export const useDataStore = defineStore('data', () => {
           datasetsPerPage.value = requestedPerPage
           datasetsTotal.value = total
           datasetsPages.value = pages
+          datasetPageCache.set(requestKey, {
+            items: [...items],
+            page: requestedPage,
+            perPage: requestedPerPage,
+            total,
+            pages,
+          })
         }
       } finally {
         if (requestVersion === fetchDatasetsVersion) {
@@ -176,6 +233,9 @@ export const useDataStore = defineStore('data', () => {
   ): Promise<UploadBatchResult> {
     uploading.value = true
     uploadProgress.value = 0
+    allDatasetsCached = false
+    clearDatasetPageCache()
+    invalidateSharedDatasetMetadata()
     try {
       const totalBytes = files.reduce((sum, file) => sum + (file.size || 0), 0)
       let completedBytes = 0
@@ -255,7 +315,6 @@ export const useDataStore = defineStore('data', () => {
           : 100
       }
 
-      allDatasetsCached = false
       await Promise.all([
         fetchDatasets(),
         fetchTrainingDataset(),
@@ -272,6 +331,8 @@ export const useDataStore = defineStore('data', () => {
 
   async function deleteDataset(id: number) {
     allDatasetsCached = false
+    clearDatasetPageCache()
+    invalidateSharedDatasetMetadata()
     await api.delete(`/api/data/datasets/${id}`)
     datasets.value = datasets.value.filter((d) => d.id !== id)
     datasetsTotal.value = Math.max(0, Number(datasetsTotal.value || 0) - 1)
@@ -282,6 +343,8 @@ export const useDataStore = defineStore('data', () => {
 
   async function deleteAllDatasets() {
     allDatasetsCached = false
+    clearDatasetPageCache()
+    invalidateSharedDatasetMetadata()
     const ids = datasets.value.map((d) => d.id)
     if (!ids.length) return
     await api.post('/api/data/datasets/delete-bulk', { dataset_ids: ids })
@@ -296,12 +359,21 @@ export const useDataStore = defineStore('data', () => {
     return data
   }
 
-  async function fetchTrainingDataset() {
+  async function fetchTrainingDataset(force = false) {
+    if (!force && isSharedDataCacheFresh(trainingDatasetFetchedAt)) {
+      return trainingDataset.value
+    }
     if (fetchTrainingDatasetInFlight) return fetchTrainingDatasetInFlight
     fetchTrainingDatasetInFlight = (async () => {
-      const { data } = await api.get('/api/data/training-dataset')
-      trainingDataset.value = data
-      return data
+      try {
+        const { data } = await api.get('/api/data/training-dataset')
+        trainingDataset.value = data
+        trainingDatasetFetchedAt = Date.now()
+        return data
+      } catch (error) {
+        trainingDatasetFetchedAt = 0
+        throw error
+      }
     })()
     try {
       return await fetchTrainingDatasetInFlight
@@ -310,12 +382,21 @@ export const useDataStore = defineStore('data', () => {
     }
   }
 
-  async function fetchQualitySummary() {
+  async function fetchQualitySummary(force = false) {
+    if (!force && isSharedDataCacheFresh(qualitySummaryFetchedAt)) {
+      return qualitySummary.value
+    }
     if (fetchQualitySummaryInFlight) return fetchQualitySummaryInFlight
     fetchQualitySummaryInFlight = (async () => {
-      const { data } = await api.get('/api/data/quality-summary')
-      qualitySummary.value = data
-      return data
+      try {
+        const { data } = await api.get('/api/data/quality-summary')
+        qualitySummary.value = data
+        qualitySummaryFetchedAt = Date.now()
+        return data
+      } catch (error) {
+        qualitySummaryFetchedAt = 0
+        throw error
+      }
     })()
     try {
       return await fetchQualitySummaryInFlight
@@ -324,14 +405,33 @@ export const useDataStore = defineStore('data', () => {
     }
   }
 
-  async function fetchUploadCapacity() {
-    const { data } = await api.get('/api/data/upload-capacity')
-    uploadCapacity.value = data
-    return data
+  async function fetchUploadCapacity(force = false) {
+    if (!force && isSharedDataCacheFresh(uploadCapacityFetchedAt)) {
+      return uploadCapacity.value
+    }
+    if (fetchUploadCapacityInFlight) return fetchUploadCapacityInFlight
+
+    fetchUploadCapacityInFlight = (async () => {
+      try {
+        const { data } = await api.get('/api/data/upload-capacity')
+        uploadCapacity.value = data
+        uploadCapacityFetchedAt = Date.now()
+        return data
+      } catch (error) {
+        uploadCapacityFetchedAt = 0
+        throw error
+      } finally {
+        fetchUploadCapacityInFlight = null
+      }
+    })()
+
+    return fetchUploadCapacityInFlight
   }
 
   async function rescanDatasets() {
     allDatasetsCached = false
+    clearDatasetPageCache()
+    invalidateSharedDatasetMetadata()
     const { data } = await api.post('/api/data/datasets/rescan', null, { timeout: 0 })
     await Promise.all([
       fetchDatasets(false, false),

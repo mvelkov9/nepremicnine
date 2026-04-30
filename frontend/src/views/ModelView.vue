@@ -93,6 +93,15 @@
   )
   const pollTimer = ref<number | null>(null)
   const selectedTrainingRunId = ref(readQueryString(route.query.run) || '')
+  const modelInfoLoaded = ref(false)
+  const modelDiagnosticsLoaded = ref(false)
+  const featureImportanceLoaded = ref(false)
+  const jobHistoryLoaded = ref(false)
+  const modelRunsLoaded = ref(false)
+  const sourceDatasetsLoaded = ref(false)
+  const trainingDatasetLoaded = ref(false)
+  const trainingRunsLoaded = ref(false)
+  const activeTrainingLoaded = ref(false)
 
   const isAdmin = computed(() => auth.user?.role === 'admin')
   const trainingDataset = computed(() => dataStore.trainingDataset as TrainingDatasetSource | null)
@@ -472,6 +481,12 @@
     if (isAdmin.value && modelTab.value !== 'history') {
       modelTab.value = 'history'
     }
+    if (
+      workbench.trainingRuns.some((item) => item.id === nextRunId) &&
+      selectedTrainingRun.value?.id !== nextRunId
+    ) {
+      void workbench.fetchTrainingRunDetail(nextRunId)
+    }
   }
 
   function syncTrainingRunToRoute(jobId: string) {
@@ -495,25 +510,151 @@
     await workbench.fetchTrainingRunDetail(jobId)
   }
 
+  async function ensureModelInfoLoaded(force = false) {
+    if (!force && (modelInfoLoaded.value || Boolean(modelInfo.value))) {
+      modelInfoLoaded.value = true
+      return
+    }
+    await model.fetchInfo()
+    modelInfoLoaded.value = true
+  }
+
+  async function ensureDiagnosticsLoaded(force = false) {
+    if (!force && (modelDiagnosticsLoaded.value || Boolean(modelDiagnostics.value))) {
+      modelDiagnosticsLoaded.value = true
+      return
+    }
+    await model.fetchDiagnostics()
+    modelDiagnosticsLoaded.value = true
+  }
+
+  async function ensureImportanceLoaded(force = false) {
+    if (!force && (featureImportanceLoaded.value || featureImportance.value.length > 0)) {
+      featureImportanceLoaded.value = true
+      return
+    }
+    await model.fetchImportance()
+    featureImportanceLoaded.value = true
+  }
+
+  async function ensureJobsLoaded(force = false) {
+    if (!isAdmin.value) return
+    if (!force && (jobHistoryLoaded.value || recentJobs.value.length > 0)) {
+      jobHistoryLoaded.value = true
+      return
+    }
+    await model.fetchJobs()
+    jobHistoryLoaded.value = true
+  }
+
+  async function ensureRunsLoaded(force = false) {
+    if (!isAdmin.value) return
+    if (!force && (modelRunsLoaded.value || recentRuns.value.length > 0)) {
+      modelRunsLoaded.value = true
+      return
+    }
+    await model.fetchRuns()
+    modelRunsLoaded.value = true
+  }
+
+  async function ensureSourceDatasetsLoaded(force = false) {
+    if (!isAdmin.value) return
+    if (!force && sourceDatasetsLoaded.value) return
+    await dataStore.fetchDatasets(false, true, { perPage: 200 })
+    sourceDatasetsLoaded.value = true
+  }
+
+  async function ensureTrainingDatasetLoaded(force = false) {
+    if (!isAdmin.value) return
+    if (!force && (trainingDatasetLoaded.value || Boolean(trainingDataset.value?.exists))) {
+      trainingDatasetLoaded.value = true
+      return
+    }
+    await dataStore.fetchTrainingDataset()
+    trainingDatasetLoaded.value = true
+  }
+
+  async function ensureTrainingRunsLoaded(force = false) {
+    if (!isAdmin.value) return
+    if (!force && (trainingRunsLoaded.value || workbench.trainingRuns.length > 0)) {
+      trainingRunsLoaded.value = true
+      return
+    }
+    await workbench.fetchTrainingRuns(force)
+    trainingRunsLoaded.value = true
+  }
+
+  async function ensureActiveTrainingLoaded(force = false) {
+    if (!isAdmin.value) return null
+    if (!force && activeTrainingLoaded.value) {
+      return trainingStatus.value
+    }
+    const activeJob = await model.fetchActiveTraining()
+    activeTrainingLoaded.value = true
+    return activeJob
+  }
+
+  async function ensureAdminSetupLoaded(force = false) {
+    if (!isAdmin.value) return
+    await Promise.allSettled([
+      ensureSourceDatasetsLoaded(force),
+      ensureTrainingDatasetLoaded(force),
+      ensureActiveTrainingLoaded(force),
+    ])
+  }
+
+  async function ensureHistoryLoaded(force = false) {
+    if (!isAdmin.value) return
+    await Promise.allSettled([
+      ensureJobsLoaded(force),
+      ensureRunsLoaded(force),
+      ensureTrainingRunsLoaded(force),
+    ])
+  }
+
+  async function loadActiveModelTabData(force = false) {
+    if (modelTab.value === 'importance') {
+      await Promise.allSettled([ensureModelInfoLoaded(force), ensureImportanceLoaded(force)])
+      return
+    }
+
+    if (modelTab.value === 'history' && isAdmin.value) {
+      await Promise.allSettled([ensureModelInfoLoaded(force), ensureHistoryLoaded(force)])
+      return
+    }
+
+    await Promise.allSettled([ensureModelInfoLoaded(force), ensureDiagnosticsLoaded(force)])
+  }
+
   async function train() {
     if (!selectedCsv.value || trainingLocked.value) return
     const result = await model.startTraining(selectedCsv.value)
-    await Promise.all([model.fetchJobs(), model.fetchRuns()])
+    if (isAdmin.value) {
+      await Promise.allSettled([ensureJobsLoaded(true), ensureRunsLoaded(true)])
+      void workbench.fetchTrainingRuns(true)
+    }
     if (result?.job_id) {
       startPolling(result.job_id)
     }
   }
 
   async function refreshModelArtifacts() {
-    await Promise.allSettled([
-      model.fetchInfo(),
-      model.fetchImportance(),
-      model.fetchDiagnostics(),
-      model.fetchJobs(),
-      model.fetchRuns(),
-      dataStore.fetchTrainingDataset(),
-      workbench.fetchTrainingRuns(),
-    ])
+    if (modelTab.value !== 'analysis') {
+      modelDiagnosticsLoaded.value = false
+    }
+    if (modelTab.value !== 'importance') {
+      featureImportanceLoaded.value = false
+    }
+    if (modelTab.value !== 'history') {
+      jobHistoryLoaded.value = false
+      modelRunsLoaded.value = false
+      trainingRunsLoaded.value = false
+    }
+
+    await Promise.allSettled([ensureAdminSetupLoaded(true), loadActiveModelTabData(true)])
+    if (modelTab.value !== 'history' && isAdmin.value) {
+      void ensureHistoryLoaded(true)
+    }
   }
 
   function stopPolling() {
@@ -540,23 +681,14 @@
   }
 
   async function syncExistingTraining() {
-    const activeJob = await model.fetchActiveTraining()
+    const activeJob = await ensureActiveTrainingLoaded()
     if (activeJob?.job_id && !isTerminalStatus(activeJob.status)) {
       startPolling(activeJob.job_id)
     }
   }
 
   async function initializePage() {
-    await Promise.allSettled([
-      model.fetchInfo(),
-      model.fetchImportance(),
-      model.fetchDiagnostics(),
-      model.fetchJobs(),
-      model.fetchRuns(),
-      dataStore.fetchDatasets(false, true, { perPage: 200 }),
-      dataStore.fetchTrainingDataset(),
-      workbench.fetchTrainingRuns(),
-    ])
+    await Promise.allSettled([ensureAdminSetupLoaded(), loadActiveModelTabData()])
     await syncExistingTraining()
   }
 
@@ -581,11 +713,15 @@
     () => route.query.run,
     () => {
       syncTrainingRunFromRoute(route.query)
+      if (isAdmin.value && readQueryString(route.query.run)) {
+        void ensureHistoryLoaded()
+      }
     },
   )
 
   watch(modelTab, (tab) => {
     syncModelTabToRoute(tab)
+    void loadActiveModelTabData()
   })
 </script>
 

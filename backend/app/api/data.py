@@ -85,7 +85,8 @@ _CACHE_LOCK = threading.Lock()
 _TRAINING_DATASET_CACHE: dict[str, object | None] = {"signature": None, "value": None}
 _QUALITY_SUMMARY_CACHE: dict[str, object | None] = {"signature": None, "value": None}
 _CANONICAL_MUNICIPALITY_KEYS = {normalize_municipality_name(str(row["obcina_naziv"])) for row in CANONICAL_REGION_ROWS}
-_QUALITY_SUMMARY_CACHE_VERSION = 2
+_TRAINING_DATASET_CACHE_VERSION = 1
+_QUALITY_SUMMARY_CACHE_VERSION = 3
 
 
 def _upload_disk_reserve_bytes() -> int:
@@ -444,7 +445,7 @@ def _get_training_dataset_metadata() -> TrainingDatasetResponse:
     file_exists = os.path.exists(TRAIN_CSV)
     relative_path = _to_relative_data_path(TRAIN_CSV)
     if not file_exists:
-        signature = ("missing", _QUALITY_SUMMARY_CACHE_VERSION)
+        signature = ("missing", _TRAINING_DATASET_CACHE_VERSION)
         with _CACHE_LOCK:
             if _TRAINING_DATASET_CACHE["signature"] == signature and _TRAINING_DATASET_CACHE["value"] is not None:
                 return _TRAINING_DATASET_CACHE["value"]
@@ -454,7 +455,7 @@ def _get_training_dataset_metadata() -> TrainingDatasetResponse:
             _TRAINING_DATASET_CACHE["value"] = response
         return response
 
-    signature = ("present", _QUALITY_SUMMARY_CACHE_VERSION) + _training_file_signature(TRAIN_CSV)
+    signature = ("present", _TRAINING_DATASET_CACHE_VERSION) + _training_file_signature(TRAIN_CSV)
     with _CACHE_LOCK:
         if _TRAINING_DATASET_CACHE["signature"] == signature and _TRAINING_DATASET_CACHE["value"] is not None:
             return _TRAINING_DATASET_CACHE["value"]
