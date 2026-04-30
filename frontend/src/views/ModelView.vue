@@ -603,6 +603,14 @@
     ])
   }
 
+  async function ensureInitialAdminModelContext(force = false) {
+    if (!isAdmin.value) return
+    await Promise.allSettled([
+      ensureTrainingDatasetLoaded(force),
+      ensureActiveTrainingLoaded(force),
+    ])
+  }
+
   async function ensureHistoryLoaded(force = false) {
     if (!isAdmin.value) return
     await Promise.allSettled([
@@ -688,7 +696,10 @@
   }
 
   async function initializePage() {
-    await Promise.allSettled([ensureAdminSetupLoaded(), loadActiveModelTabData()])
+    await Promise.allSettled([ensureInitialAdminModelContext(), loadActiveModelTabData()])
+    if (isAdmin.value) {
+      void ensureSourceDatasetsLoaded().catch(() => undefined)
+    }
     await syncExistingTraining()
   }
 

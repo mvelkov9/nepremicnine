@@ -239,7 +239,8 @@
     error.value = ''
     bootstrapLoading.value = prepareWorkspaceTab.value === 'configure'
     try {
-      await Promise.allSettled([loadActivePrepareTabData(), modelStore.fetchActiveTraining()])
+      void modelStore.fetchActiveTraining()
+      await loadActivePrepareTabData()
       await syncExistingPrepareJob()
     } finally {
       bootstrapLoading.value = false
