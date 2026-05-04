@@ -1,14 +1,9 @@
 <script setup lang="ts">
   import { computed, onMounted, ref, watch } from 'vue'
-  import { RouterLink, useRoute, useRouter } from 'vue-router'
+  import { useRoute, useRouter } from 'vue-router'
   import { useLocalStorage } from '@vueuse/core'
   import { useI18n } from 'vue-i18n'
   import Button from 'primevue/button'
-  import Tab from 'primevue/tab'
-  import TabList from 'primevue/tablist'
-  import TabPanel from 'primevue/tabpanel'
-  import TabPanels from 'primevue/tabpanels'
-  import Tabs from 'primevue/tabs'
   import api from '../composables/useApi'
   import EmptyState from '../components/EmptyState.vue'
   import LoadingSpinner from '../components/LoadingSpinner.vue'
@@ -16,7 +11,6 @@
   import PredictionComparables from '../components/prediction/PredictionComparables.vue'
   import PredictionForm from '../components/prediction/PredictionForm.vue'
   import PredictionResultSummary from '../components/prediction/PredictionResultSummary.vue'
-  import FeatureImportanceChart from '../components/charts/FeatureImportanceChart.vue'
   import SavedWorkspaceMenu from '../components/workbench/SavedWorkspaceMenu.vue'
   import { useExport } from '../composables/useExport'
   import { useReferenceDataStore } from '../stores/referenceData'
@@ -27,8 +21,6 @@
     createDefaultPredictionForm,
     hasPredictionRouteState,
     predictionRouteFields,
-    predictionTabs,
-    type PredictionTab,
   } from '../features/prediction/routeState'
   import { buildNepremicnineSearchUrl } from '../utils/externalSearch'
   import { getApiErrorMessage } from '../utils/apiError'
@@ -65,7 +57,6 @@
   const error = ref('')
   const municipalityContextError = ref('')
   const comparablesError = ref('')
-  const predictionTab = ref<PredictionTab>('intelligence')
   let contextRequestToken = 0
   let lastContextSignature = ''
 
@@ -285,19 +276,6 @@
     }
   }
 
-  function syncTabFromRoute(query = route.query) {
-    const nextTab = readQueryTab(query.tab, predictionTabs, 'intelligence')
-    if (predictionTab.value !== nextTab) {
-      predictionTab.value = nextTab
-    }
-  }
-
-  function syncTabToRoute(tab: PredictionTab) {
-    const currentTab = readQueryTab(route.query.tab, predictionTabs, 'intelligence')
-    if (currentTab === tab) return
-    void router.replace({ query: { ...route.query, tab } })
-  }
-
   function exportHistoryRows() {
     exportToCSV(history.value, 'prediction-history.csv')
   }
@@ -398,17 +376,6 @@
   })
 
   watch(
-    () => route.query.tab,
-    () => {
-      syncTabFromRoute(route.query)
-    },
-  )
-
-  watch(predictionTab, (tab) => {
-    syncTabToRoute(tab)
-  })
-
-  watch(
     form,
     (value) => {
       storedDraft.value = { ...value }
@@ -423,12 +390,7 @@
           ...createDefaultPredictionForm(),
           ...storedDraft.value,
         }
-    syncTabFromRoute(route.query)
-    await Promise.allSettled([
-      fetchHistory(),
-      referenceData.ensureLoaded(),
-      stats.fetchFeatureImportance(),
-    ])
+    await Promise.allSettled([fetchHistory(), referenceData.ensureLoaded()])
     if (form.value.municipality && effectiveSize.value) {
       await loadContext(result.value?.predicted_price_eur || null)
     }
@@ -449,7 +411,7 @@
               page="prediction"
               :state="{
                 page: 'prediction',
-                tab: predictionTab,
+                tab: 'history',
                 filters: { ...form, predicted_price_eur: result?.predicted_price_eur || undefined },
               }"
             />
@@ -640,73 +602,31 @@
       </article>
     </section>
 
-    <Tabs v-model:value="predictionTab" class="prediction-tabs">
-      <TabList>
-        <Tab value="intelligence">{{ t('market.featureImportance') }}</Tab>
-        <Tab value="history">{{ t('predict.history') }}</Tab>
-      </TabList>
-      <TabPanels>
-        <TabPanel value="intelligence">
-          <section class="prediction-tab-content">
-            <article class="panel secondary-panel">
-              <div class="story-head">
-                <h3>{{ t('market.featureImportance') }}</h3>
-                <RouterLink
-                  :to="{
-                    path: '/trg',
-                    query: {
-                      tab: 'rankings',
-                      municipality: currentMunicipality || undefined,
-                      property_type: form.property_type || undefined,
-                    },
-                  }"
-                  class="story-link"
-                >
-                  <Button severity="secondary" text :label="t('market.viewAll')" />
-                </RouterLink>
-              </div>
-              <p class="muted feature-desc">{{ t('market.featureImportanceDesc') }}</p>
-              <FeatureImportanceChart
-                v-if="stats.featureImportance?.length"
-                :features="stats.featureImportance"
-                :limit="12"
-              />
-              <EmptyState v-else icon="pi pi-chart-bar" :message="t('common.noData')" />
-            </article>
-          </section>
-        </TabPanel>
+    <article class="panel secondary-panel">
+      <div class="story-head">
+        <h3>{{ t('predict.history') }}</h3>
+        <Button
+          severity="secondary"
+          text
+          :label="t('predict.exportHistory')"
+          @click="exportHistoryRows"
+        />
+      </div>
 
-        <TabPanel value="history">
-          <section class="prediction-tab-content">
-            <article class="panel secondary-panel">
-              <div class="story-head">
-                <h3>{{ t('predict.history') }}</h3>
-                <Button
-                  severity="secondary"
-                  text
-                  :label="t('predict.exportHistory')"
-                  @click="exportHistoryRows"
-                />
-              </div>
-
-              <div v-if="history.length" class="history-list">
-                <article v-for="item in history" :key="item.id" class="history-card">
-                  <div>
-                    <strong>{{ item.payload?.municipality || '-' }}</strong>
-                    <small>{{ formatDateTime(item.created_at) }}</small>
-                  </div>
-                  <div class="history-metric">
-                    <strong>{{ fmtCurrency(item.predicted_price_eur) }}</strong>
-                    <small>{{ formatType(item.payload?.property_type) || '-' }}</small>
-                  </div>
-                </article>
-              </div>
-              <EmptyState v-else icon="pi pi-inbox" :message="t('predict.noHistory')" />
-            </article>
-          </section>
-        </TabPanel>
-      </TabPanels>
-    </Tabs>
+      <div v-if="history.length" class="history-list">
+        <article v-for="item in history" :key="item.id" class="history-card">
+          <div>
+            <strong>{{ item.payload?.municipality || '-' }}</strong>
+            <small>{{ formatDateTime(item.created_at) }}</small>
+          </div>
+          <div class="history-metric">
+            <strong>{{ fmtCurrency(item.predicted_price_eur) }}</strong>
+            <small>{{ formatType(item.payload?.property_type) || '-' }}</small>
+          </div>
+        </article>
+      </div>
+      <EmptyState v-else icon="pi pi-inbox" :message="t('predict.noHistory')" />
+    </article>
   </div>
 </template>
 

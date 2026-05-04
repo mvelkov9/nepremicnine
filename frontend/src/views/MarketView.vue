@@ -22,7 +22,6 @@
   import MetricCard from '../components/MetricCard.vue'
   import PageHeader from '../components/PageHeader.vue'
   import SectionPanel from '../components/SectionPanel.vue'
-  import FeatureImportanceChart from '../components/charts/FeatureImportanceChart.vue'
   import PriceDistributionChart from '../components/charts/PriceDistributionChart.vue'
   import PropertyTypePieChart from '../components/charts/PropertyTypePieChart.vue'
   import TrendLineChart from '../components/charts/TrendLineChart.vue'
@@ -73,12 +72,6 @@
     page_size: number
   }
 
-  interface FeatureImportanceItem {
-    feature: string
-    label: string
-    importance: number
-  }
-
   interface MarketPageEvent {
     page: number
     rows: number
@@ -124,8 +117,6 @@
   const largestMarketsError = ref('')
   const priceLeadersLoading = ref(false)
   const priceLeadersError = ref('')
-  const featureImportanceLoading = ref(false)
-  const featureImportanceError = ref('')
 
   let marketRequestVersion = 0
   let trendRequestVersion = 0
@@ -134,7 +125,6 @@
   let regionsRequestVersion = 0
   let largestMarketsRequestVersion = 0
   let priceLeadersRequestVersion = 0
-  let featureImportanceRequestVersion = 0
 
   const transactions = ref<MarketTablePage<TransactionRecord>>({
     items: [],
@@ -163,7 +153,6 @@
   const marketHomeData = ref<MarketAnalysisData>(emptyMarketHome())
   const trendRows = ref<TrendPoint[]>([])
   const distributionSnapshot = ref<PriceDistribution | null>(null)
-  const featureImportanceRows = ref<FeatureImportanceItem[]>([])
   const marketSectionCache = new Map<string, unknown>()
   const MARKET_SECTION_CACHE_LIMIT = 64
 
@@ -217,10 +206,6 @@
   const distributionData = computed<PriceDistribution | null>(() =>
     distributionError.value ? null : distributionSnapshot.value,
   )
-  const marketFeatureImportance = computed<FeatureImportanceItem[]>(() =>
-    featureImportanceError.value ? [] : featureImportanceRows.value,
-  )
-
   const selectedRegionRef = computed(() => viewerQuery.state.region || '')
   const { propertyTypeOptions, regionOptions, municipalityOptions, yearOptions } = useFilterOptions(
     {
@@ -358,7 +343,6 @@
       regionsLoading.value,
       largestMarketsLoading.value,
       priceLeadersLoading.value,
-      featureImportanceLoading.value,
     ].some(Boolean),
   )
 
@@ -592,43 +576,6 @@
     }
   }
 
-  async function loadFeatureImportance() {
-    const requestVersion = ++featureImportanceRequestVersion
-    const cacheKey = marketSectionCacheKey('featureImportance', {
-      property_type: undefined,
-      region: undefined,
-      municipality: undefined,
-      year: undefined,
-      search: undefined,
-    })
-    const cached = marketSectionCache.get(cacheKey)
-
-    if (cached) {
-      featureImportanceError.value = ''
-      featureImportanceRows.value = Array.isArray(cached) ? (cached as FeatureImportanceItem[]) : []
-      featureImportanceLoading.value = false
-      return
-    }
-
-    featureImportanceLoading.value = true
-    featureImportanceError.value = ''
-    try {
-      const payload = await stats.fetchFeatureImportance()
-      if (requestVersion !== featureImportanceRequestVersion) return
-      featureImportanceRows.value = Array.isArray(payload)
-        ? (payload as FeatureImportanceItem[])
-        : []
-      rememberMarketSection(cacheKey, featureImportanceRows.value)
-    } catch (error) {
-      if (requestVersion !== featureImportanceRequestVersion) return
-      featureImportanceError.value = getApiErrorMessage(error, t)
-    } finally {
-      if (requestVersion === featureImportanceRequestVersion) {
-        featureImportanceLoading.value = false
-      }
-    }
-  }
-
   async function loadTransactions() {
     const requestVersion = ++transactionsRequestVersion
     const cacheKey = marketSectionCacheKey('transactions', {
@@ -830,7 +777,7 @@
     }
   }
 
-  function activeTabLoaders(includeStaticOverview = false): Promise<void>[] {
+  function activeTabLoaders(): Promise<void>[] {
     if (activeTab.value === 'transactions') {
       return [loadTransactions()]
     }
@@ -843,21 +790,11 @@
       return [loadDistribution()]
     }
 
-    return [
-      loadTrend(),
-      loadRegions(),
-      loadLargestMarkets(),
-      loadPriceLeaders(),
-      ...(includeStaticOverview &&
-      !marketFeatureImportance.value.length &&
-      !featureImportanceLoading.value
-        ? [loadFeatureImportance()]
-        : []),
-    ]
+    return [loadTrend(), loadRegions(), loadLargestMarkets(), loadPriceLeaders()]
   }
 
-  function refreshVisibleData(includeStaticOverview = false) {
-    void Promise.allSettled([loadMarketHome(), ...activeTabLoaders(includeStaticOverview)])
+  function refreshVisibleData() {
+    void Promise.allSettled([loadMarketHome(), ...activeTabLoaders()])
   }
 
   const debouncedRefreshVisibleData = useDebounceFn(() => {
@@ -930,7 +867,7 @@
     }
 
     if (!bootstrapError.value) {
-      refreshVisibleData(true)
+      refreshVisibleData()
     }
   }
 
@@ -954,7 +891,7 @@
     () => activeTab.value,
     () => {
       if (!initialized.value) return
-      void Promise.allSettled(activeTabLoaders(true))
+      void Promise.allSettled(activeTabLoaders())
     },
   )
 
@@ -1288,31 +1225,6 @@
                 </MarketStateFrame>
               </MarketSectionCard>
             </div>
-
-            <MarketSectionCard
-              featured
-              :eyebrow="t('market.featureImportance')"
-              :title="t('market.featureImportanceDesc')"
-              :description="t('market.consumerKicker')"
-            >
-              <MarketStateFrame
-                :loading="featureImportanceLoading"
-                :error="featureImportanceError"
-                :has-data="marketFeatureImportance.length > 0"
-              >
-                <template #actions>
-                  <Button
-                    size="small"
-                    severity="secondary"
-                    outlined
-                    icon="pi pi-refresh"
-                    :label="t('common.retry')"
-                    @click="loadFeatureImportance"
-                  />
-                </template>
-                <FeatureImportanceChart :features="marketFeatureImportance" :limit="15" />
-              </MarketStateFrame>
-            </MarketSectionCard>
           </section>
         </TabPanel>
 

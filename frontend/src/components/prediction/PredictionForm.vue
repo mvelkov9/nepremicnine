@@ -129,12 +129,13 @@
 
   function searchMunicipalities(event: { query: string }) {
     const query = normalizeMunicipalityName(event.query || '')
+    // Slovenia has ~212 municipalities — show all when no query so the dropdown
+    // works as a browse-and-pick list, not a search-only field.
     municipalitySuggestions.value = query
       ? referenceData.municipalities
           .filter((item) => normalizeMunicipalityName(item.municipality).includes(query))
           .map((item) => item.municipality)
-          .slice(0, 12)
-      : referenceData.municipalities.map((item) => item.municipality).slice(0, 12)
+      : referenceData.municipalities.map((item) => item.municipality)
   }
 
   async function searchNaselja(event: { query: string }) {
@@ -345,6 +346,21 @@
       </div>
       <div class="form-grid">
         <label class="field">
+          <span>{{ t('predict.municipality') }}</span>
+          <AutoComplete
+            v-model="form.municipality"
+            :suggestions="municipalitySuggestions"
+            :placeholder="t('predict.municipalityPlaceholder')"
+            input-class="form-input"
+            dropdown
+            :force-selection="false"
+            fluid
+            @complete="searchMunicipalities"
+            @update:model-value="formErrors.location = null"
+          />
+        </label>
+
+        <label class="field">
           <span>{{ t('predict.naselje') }}</span>
           <AutoComplete
             v-model="form.naselje"
@@ -359,21 +375,6 @@
             @update:model-value="formErrors.location = null"
           />
           <small v-if="formErrors.location" class="field-error">{{ formErrors.location }}</small>
-        </label>
-
-        <label class="field">
-          <span>{{ t('predict.municipality') }}</span>
-          <AutoComplete
-            v-model="form.municipality"
-            :suggestions="municipalitySuggestions"
-            :placeholder="t('predict.municipalityPlaceholder')"
-            input-class="form-input"
-            dropdown
-            :force-selection="false"
-            fluid
-            @complete="searchMunicipalities"
-            @update:model-value="formErrors.location = null"
-          />
         </label>
 
         <label class="field">

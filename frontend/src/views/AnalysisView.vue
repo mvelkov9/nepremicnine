@@ -340,12 +340,12 @@
 
   function searchMunicipalities(event) {
     const query = normalizeMunicipalityName(event.query || '')
+    // Show all ~212 municipalities so the dropdown is browseable.
     municipalitySuggestions.value = query
       ? referenceData.municipalities
           .filter((item) => normalizeMunicipalityName(item.municipality).includes(query))
           .map((item) => item.municipality)
-          .slice(0, 12)
-      : referenceData.municipalities.map((item) => item.municipality).slice(0, 12)
+      : referenceData.municipalities.map((item) => item.municipality)
   }
 
   async function searchNaselja(event) {
@@ -712,18 +712,6 @@
                   <div class="guided-form-stack">
                     <div class="form-grid">
                       <label class="field">
-                        <span>{{ t('predict.naselje') }}</span>
-                        <AutoComplete
-                          v-model="guidedForm.naselje"
-                          :suggestions="naseljeSuggestions"
-                          :placeholder="t('predict.naseljePlaceholder')"
-                          dropdown
-                          fluid
-                          @complete="searchNaselja"
-                        />
-                      </label>
-
-                      <label class="field">
                         <span>{{ t('predict.municipality') }}</span>
                         <AutoComplete
                           v-model="guidedForm.municipality"
@@ -732,6 +720,18 @@
                           dropdown
                           fluid
                           @complete="searchMunicipalities"
+                        />
+                      </label>
+
+                      <label class="field">
+                        <span>{{ t('predict.naselje') }}</span>
+                        <AutoComplete
+                          v-model="guidedForm.naselje"
+                          :suggestions="naseljeSuggestions"
+                          :placeholder="t('predict.naseljePlaceholder')"
+                          dropdown
+                          fluid
+                          @complete="searchNaselja"
                         />
                       </label>
 
