@@ -1,5 +1,5 @@
 <script setup lang="ts">
-  import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+  import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
   import { RouterLink, useRoute } from 'vue-router'
   import { useI18n } from 'vue-i18n'
   import { useLocalStorage, useWindowScroll } from '@vueuse/core'
@@ -28,6 +28,7 @@
   const profileOpen = ref(false)
   const appVersion = ref('')
   const sidebarCollapsed = useLocalStorage('sidebar_collapsed', false)
+  const mobileMenuButton = ref<{ $el?: HTMLElement } | HTMLElement | null>(null)
 
   const isAdminArea = computed(() => route.path.startsWith('/admin'))
   const currentNavItems = computed(() => (isAdminArea.value ? adminNavigation : viewerNavigation))
@@ -108,7 +109,7 @@
   watch(
     () => route.fullPath,
     () => {
-      mobileMenuOpen.value = false
+      closeMobileMenu()
       workbench.rememberRoute({
         label: currentTitle.value,
         path: route.path,
@@ -118,7 +119,26 @@
     },
   )
 
+  watch(mobileMenuOpen, async (open, wasOpen) => {
+    document.documentElement.style.overflow = open ? 'hidden' : ''
+    document.body.style.overflow = open ? 'hidden' : ''
+
+    if (!open && wasOpen) {
+      await nextTick()
+      const target =
+        mobileMenuButton.value && '$el' in mobileMenuButton.value
+          ? mobileMenuButton.value.$el
+          : mobileMenuButton.value
+      target?.focus?.()
+    }
+  })
+
   function handleGlobalShortcuts(event: KeyboardEvent) {
+    if (event.key === 'Escape' && mobileMenuOpen.value) {
+      event.preventDefault()
+      closeMobileMenu()
+      return
+    }
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
       event.preventDefault()
       ui.toggleCommandPalette()
@@ -153,10 +173,20 @@
 
   onBeforeUnmount(() => {
     window.removeEventListener('keydown', handleGlobalShortcuts)
+    document.documentElement.style.overflow = ''
+    document.body.style.overflow = ''
   })
 
   function toggleSidebar() {
     sidebarCollapsed.value = !sidebarCollapsed.value
+  }
+
+  function closeMobileMenu() {
+    mobileMenuOpen.value = false
+  }
+
+  function toggleMobileMenu() {
+    mobileMenuOpen.value = !mobileMenuOpen.value
   }
 
   function openProfile() {
@@ -172,49 +202,83 @@
 <template>
   <div class="app-shell" :style="shellStyle" :class="{ collapsed: sidebarCollapsed }">
     <!-- Mobile Top Bar -->
-    <div class="mobile-shell-bar">
-      <div class="mobile-shell-actions">
+    <div class="mobile-shell-bar" :class="{ open: mobileMenuOpen }">
+      <div class="mobile-shell-row">
+        <div class="mobile-shell-actions">
+          <Button
+            ref="mobileMenuButton"
+            class="shell-icon-button mobile-menu-button"
+            text
+            rounded
+            @click="toggleMobileMenu"
+            :aria-label="mobileMenuOpen ? t('ui.closeMenu') : t('ui.openMenu')"
+            :aria-expanded="mobileMenuOpen"
+            aria-controls="mobile-navigation"
+          >
+            <i :class="mobileMenuOpen ? 'pi pi-times' : 'pi pi-bars'" aria-hidden="true"></i>
+          </Button>
+        </div>
+
+        <RouterLink to="/" class="shell-brand shell-brand-mobile">
+          <span class="brand-mark">
+            <AppIcon name="brand" :size="22" :stroke="1.9" />
+          </span>
+          <div class="brand-copy">
+            <strong>{{ t('app.title') }}</strong>
+            <small>{{ t('layout.brandTagline') }}</small>
+          </div>
+        </RouterLink>
+
         <Button
-          class="shell-icon-button mobile-menu-button"
+          class="profile-trigger compact"
           text
           rounded
-          @click="mobileMenuOpen = !mobileMenuOpen"
-          :aria-label="mobileMenuOpen ? t('ui.closeMenu') : t('ui.openMenu')"
-          :aria-expanded="mobileMenuOpen"
+          :aria-label="t('layout.profile')"
+          @click="openProfile"
         >
-          <i :class="mobileMenuOpen ? 'pi pi-times' : 'pi pi-bars'" aria-hidden="true"></i>
+          <span class="avatar-frame">
+            <img
+              v-if="avatarUrl"
+              :src="avatarUrl"
+              :alt="auth.user?.full_name || t('layout.profile')"
+            />
+            <span v-else>{{ profileInitials }}</span>
+          </span>
         </Button>
       </div>
 
-      <RouterLink to="/" class="shell-brand shell-brand-mobile">
-        <span class="brand-mark">
-          <AppIcon name="brand" :size="22" :stroke="1.9" />
-        </span>
-        <div class="brand-copy">
-          <strong>{{ t('app.title') }}</strong>
-          <small>{{ t('layout.brandTagline') }}</small>
+      <div class="mobile-shell-meta">
+        <div class="mobile-shell-title-group">
+          <span class="page-kicker">{{ workspaceLabel }}</span>
+          <p class="mobile-shell-title">{{ currentTitle }}</p>
         </div>
-      </RouterLink>
 
-      <Button
-        class="profile-trigger compact"
-        text
-        rounded
-        :aria-label="t('layout.profile')"
-        @click="openProfile"
-      >
-        <span class="avatar-frame">
-          <img
-            v-if="avatarUrl"
-            :src="avatarUrl"
-            :alt="auth.user?.full_name || t('layout.profile')"
-          />
-          <span v-else>{{ profileInitials }}</span>
-        </span>
-      </Button>
+        <div class="mobile-shell-quick-actions">
+          <RouterLink
+            v-if="switchLink"
+            :to="switchLink.to"
+            class="shell-link-pill mobile-shell-link"
+            @click="closeMobileMenu"
+          >
+            <AppIcon :name="switchLink.icon" :size="16" />
+            <span>{{ switchLink.label }}</span>
+          </RouterLink>
+
+          <Button
+            class="shell-action-button shell-action-button--badge mobile-workspace-button"
+            rounded
+            @click="ui.toggleWorkspaceTray()"
+            :aria-label="t('layout.workspace')"
+          >
+            <AppIcon name="market" :size="16" />
+            <span>{{ t('layout.workspace') }}</span>
+            <small v-if="workspaceBadge" class="shell-badge">{{ workspaceBadge }}</small>
+          </Button>
+        </div>
+      </div>
     </div>
 
-    <div v-if="mobileMenuOpen" class="mobile-shell-backdrop" @click="mobileMenuOpen = false"></div>
+    <div v-if="mobileMenuOpen" class="mobile-shell-backdrop" @click="closeMobileMenu"></div>
 
     <!-- Sidebar -->
     <AppSidebar
@@ -225,7 +289,7 @@
       :footer-summary="footerSummary"
       :switch-link="switchLink"
       :is-active-route="isActiveRoute"
-      @close="mobileMenuOpen = false"
+      @close="closeMobileMenu"
     />
 
     <!-- Main Workspace -->
@@ -581,6 +645,51 @@
     gap: 0.6rem;
   }
 
+  .mobile-shell-row,
+  .mobile-shell-meta,
+  .mobile-shell-title-group,
+  .mobile-shell-quick-actions {
+    display: flex;
+    gap: 0.75rem;
+  }
+
+  .mobile-shell-row,
+  .mobile-shell-meta {
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .mobile-shell-bar {
+    flex-direction: column;
+    gap: 0.8rem;
+  }
+
+  .mobile-shell-title-group {
+    min-width: 0;
+    flex-direction: column;
+    gap: 0.22rem;
+  }
+
+  .mobile-shell-title {
+    margin: 0;
+    min-width: 0;
+    color: var(--app-shell-text);
+    font-size: 1rem;
+    font-weight: 800;
+    line-height: 1.15;
+    text-wrap: balance;
+  }
+
+  .mobile-shell-quick-actions {
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+
+  .mobile-shell-link {
+    min-height: 2.75rem;
+  }
+
   .shell-brand {
     display: flex;
     align-items: center;
@@ -786,10 +895,7 @@
       position: sticky;
       top: 0;
       z-index: 30;
-      align-items: center;
-      justify-content: space-between;
-      gap: 0.75rem;
-      padding: 0.9rem 1rem;
+      padding: 0.9rem 1rem 1rem;
       background: var(--app-shell-bg);
       border-bottom: 1px solid var(--app-shell-border);
       backdrop-filter: blur(16px);
@@ -806,6 +912,10 @@
       flex: 1;
     }
 
+    .shell-topbar {
+      display: none;
+    }
+
     .desktop-sidebar-toggle,
     .shell-header-actions .profile-trigger {
       display: none;
@@ -813,7 +923,6 @@
   }
 
   @media (max-width: 760px) {
-    .shell-topbar-inner,
     .shell-main,
     .shell-footer-inner {
       padding-inline: 1rem;
@@ -827,14 +936,33 @@
       gap: 0.55rem;
     }
 
+    .mobile-shell-meta {
+      align-items: stretch;
+      flex-direction: column;
+    }
+
+    .mobile-shell-quick-actions {
+      justify-content: stretch;
+    }
+
+    .mobile-shell-quick-actions > * {
+      flex: 1 1 12rem;
+    }
+
     .shell-utility-cluster {
       width: 100%;
       justify-content: flex-start;
       border-radius: 1rem;
     }
 
-    .shell-link-pill,
-    .shell-action-button {
+    .mobile-shell-quick-actions .mobile-shell-link,
+    .mobile-shell-quick-actions .mobile-workspace-button {
+      width: 100%;
+      justify-content: center;
+    }
+
+    .shell-link-pill:not(.mobile-shell-link),
+    .shell-action-button:not(.mobile-workspace-button) {
       width: auto;
       justify-content: center;
     }

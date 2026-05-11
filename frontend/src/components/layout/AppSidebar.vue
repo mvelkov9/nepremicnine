@@ -1,5 +1,5 @@
 <script setup lang="ts">
-  import { computed } from 'vue'
+  import { computed, nextTick, ref, watch } from 'vue'
   import { RouterLink } from 'vue-router'
   import { useI18n } from 'vue-i18n'
   import AppIcon from '../AppIcon.vue'
@@ -20,6 +20,7 @@
   }>()
 
   const { t } = useI18n()
+  const closeButtonRef = ref<{ $el?: HTMLElement } | HTMLElement | null>(null)
 
   interface NavGroup {
     key: string
@@ -44,10 +45,36 @@
   function sidebarTooltip(label: string) {
     return props.collapsed ? { value: label, showDelay: 120, autoHide: true } : null
   }
+
+  function handleNavActivate() {
+    if (props.mobileOpen) {
+      emit('close')
+    }
+  }
+
+  watch(
+    () => props.mobileOpen,
+    async (open) => {
+      if (!open) return
+      await nextTick()
+      const target =
+        closeButtonRef.value && '$el' in closeButtonRef.value
+          ? closeButtonRef.value.$el
+          : closeButtonRef.value
+      target?.focus?.()
+    },
+  )
 </script>
 
 <template>
-  <aside class="shell-sidebar" :class="{ 'mobile-open': mobileOpen, collapsed: collapsed }">
+  <aside
+    id="mobile-navigation"
+    class="shell-sidebar"
+    :class="{ 'mobile-open': mobileOpen, collapsed: collapsed }"
+    :role="mobileOpen ? 'dialog' : undefined"
+    :aria-modal="mobileOpen ? 'true' : undefined"
+    :aria-label="t('layout.navigation')"
+  >
     <div class="sidebar-pane">
       <div class="sidebar-mobile-header">
         <RouterLink to="/" class="shell-brand">
@@ -61,6 +88,7 @@
         </RouterLink>
 
         <Button
+          ref="closeButtonRef"
           class="sidebar-close-button shell-icon-button"
           text
           rounded
@@ -100,6 +128,7 @@
             :class="{ active: isActiveRoute(item) }"
             :aria-current="isActiveRoute(item) ? 'page' : undefined"
             v-tooltip.right="sidebarTooltip(t(item.label))"
+            @click="handleNavActivate"
           >
             <span class="shell-nav-icon">
               <AppIcon :name="item.icon" :size="18" />
@@ -117,6 +146,7 @@
           :to="switchLink.to"
           class="shell-switch-link"
           v-tooltip.right="sidebarTooltip(switchLink.label)"
+          @click="handleNavActivate"
         >
           <span class="shell-nav-icon subtle">
             <AppIcon :name="switchLink.icon" :size="16" />
@@ -136,6 +166,7 @@
     top: 0;
     height: 100vh;
     overflow-y: auto;
+    overscroll-behavior: contain;
     background: var(--app-shell-bg);
     color: var(--app-shell-text);
     border-right: 1px solid var(--app-shell-border);
@@ -388,6 +419,7 @@
       inset: 0 auto 0 0;
       width: min(90vw, 21rem);
       transform: translateX(-102%);
+      box-shadow: 0 22px 44px color-mix(in srgb, var(--shadow-color) 20%, transparent);
       z-index: 40;
     }
 
@@ -418,6 +450,16 @@
 
     .sidebar-close-button {
       align-self: flex-start;
+    }
+  }
+
+  @media (max-width: 560px) {
+    .shell-sidebar {
+      width: min(92vw, 20rem);
+    }
+
+    .sidebar-pane {
+      padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
     }
   }
 </style>
