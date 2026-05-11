@@ -271,7 +271,8 @@
 
   @media (max-width: 740px) {
     .run-list-head,
-    .run-row-top {
+    .run-row-top,
+    .run-row-meta {
       flex-direction: column;
       align-items: stretch;
     }

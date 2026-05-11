@@ -521,6 +521,11 @@
   gap: 0.45rem;
 }
 
+#app .p-datatable .p-datatable-table-container {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 #app .p-paginator .p-paginator-page,
 #app .p-paginator .p-paginator-next,
 #app .p-paginator .p-paginator-prev,
@@ -710,6 +715,11 @@
   width: fit-content;
   max-width: 100%;
   padding: 0.3rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
   border: 1px solid color-mix(in srgb, var(--control-border) 82%, var(--content-border-strong) 18%);
   border-radius: 999px;
   background:
@@ -805,10 +815,59 @@
 @media (max-width: 760px) {
   #app .p-tabs .p-tablist {
     width: 100%;
-    border-radius: var(--radius-sm);
+    max-width: 100%;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    border-radius: var(--radius-md);
   }
 
   #app .p-tabs .p-tab {
-    flex: 1 1 auto;
+    flex: 0 0 auto;
+    min-width: max-content;
+    white-space: nowrap;
+  }
+
+  #app .p-datatable .p-datatable-thead > tr > th {
+    padding: 0.7rem 0.75rem;
+    font-size: 0.72rem;
+  }
+
+  #app .p-datatable .p-datatable-tbody > tr > td {
+    padding: 0.8rem 0.75rem;
+  }
+
+  #app .p-datatable.p-datatable-sm .p-datatable-thead > tr > th,
+  #app .p-datatable.p-datatable-sm .p-datatable-tbody > tr > td {
+    padding-inline: 0.72rem;
+  }
+
+  #app .p-paginator {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 0.45rem 0.5rem;
+  }
+
+  #app .p-paginator .p-paginator-current {
+    width: 100%;
+    order: 10;
+    text-align: left;
+  }
+
+  #app .p-dialog,
+  .p-dialog {
+    max-width: calc(100vw - 1rem) !important;
+    margin: 0.5rem;
+  }
+
+  #app .p-dialog .p-dialog-footer,
+  .p-dialog .p-dialog-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  #app .p-dialog .p-dialog-footer .p-button,
+  .p-dialog .p-dialog-footer .p-button {
+    width: 100%;
+    min-width: 0;
   }
 }

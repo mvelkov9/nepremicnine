@@ -447,6 +447,55 @@
   }
 }
 
+@media (max-width: 860px) {
+  #app .dashboard-page,
+  #app .market-page,
+  #app .regions-page,
+  #app .municipalities-page,
+  #app .benchmark-page,
+  #app .analysis-page,
+  #app .prediction-page,
+  #app .municipality-page,
+  #app .map-page,
+  #app .prepare-page,
+  #app .model-page,
+  #app .data-page,
+  #app .diagnostics-page,
+  #app .admin-home,
+  #app .admin-view {
+    gap: 1rem;
+  }
+
+  #app .market-page .market-hero,
+  #app .prediction-page .prediction-shell,
+  #app .prediction-page .prediction-secondary-grid,
+  #app .analysis-page .hero-shell,
+  #app .analysis-page .guided-layout,
+  #app .municipality-page .tab-grid,
+  #app .municipality-page .benchmark-grid,
+  #app .map-page .map-workbench,
+  #app .data-page .quality-board-head,
+  #app .data-page .quality-grid--split,
+  #app .prepare-page .prepare-workspace-grid,
+  #app .prepare-page .prepare-monitor-grid,
+  #app .model-page .model-primary-grid,
+  #app .model-page .model-secondary-grid,
+  #app .model-page .history-grid,
+  #app .diagnostics-page .diagnostics-primary-grid,
+  #app .diagnostics-page .compare-chart-grid,
+  #app .benchmark-page .benchmark-comparison-grid,
+  #app .admin-home .admin-grid {
+    grid-template-columns: 1fr;
+  }
+
+  #app .prediction-page .story-panel,
+  #app .analysis-page .workspace-status,
+  #app .map-page .map-workspace-rail {
+    position: static;
+    top: auto;
+  }
+}
+
 @media (max-width: 640px) {
   #app .dashboard-page .metric-grid,
   #app .market-page .metric-grid,
@@ -456,6 +505,178 @@
   #app .admin-home .hero-metrics,
   #app .admin-view .hero-metrics {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  #app .dashboard-page,
+  #app .market-page,
+  #app .regions-page,
+  #app .municipalities-page,
+  #app .benchmark-page,
+  #app .analysis-page,
+  #app .prediction-page,
+  #app .municipality-page,
+  #app .map-page,
+  #app .prepare-page,
+  #app .model-page,
+  #app .data-page,
+  #app .diagnostics-page,
+  #app .admin-home,
+  #app .admin-view {
+    gap: 0.95rem;
+  }
+
+  #app .dashboard-page .hero-shell,
+  #app .market-page .hero-shell,
+  #app .regions-page .hero-shell,
+  #app .municipalities-page .hero-shell,
+  #app .benchmark-page .benchmark-hero,
+  #app .analysis-page .hero-shell,
+  #app .prediction-page .input-panel,
+  #app .prediction-page .story-panel,
+  #app .prediction-page .secondary-panel,
+  #app .municipality-page .municipality-hero,
+  #app .map-page .map-hero,
+  #app .prepare-page .prepare-workbench-panel,
+  #app .model-page .model-snapshot-panel,
+  #app .model-page .model-analysis-panel,
+  #app .model-page .model-chart-panel,
+  #app .model-page .model-history-panel,
+  #app .data-page .quality-overview-card,
+  #app .data-page .quality-card,
+  #app .diagnostics-page .diagnostics-card,
+  #app .admin-home .admin-hero,
+  #app .admin-view .admin-workspace-hero {
+    padding: 1rem;
+  }
+
+  #app .market-page .market-hero__actions,
+  #app .market-page .market-hero__status,
+  #app .market-page .market-filters__actions,
+  #app .market-page .market-toolbar,
+  #app .prediction-page .context-card-loading,
+  #app .prediction-page .context-alert,
+  #app .prediction-page .history-card,
+  #app .municipality-page .related-card,
+  #app .municipality-page .explore-actions,
+  #app .prepare-page .prepare-selection-summary,
+  #app .prepare-page .prepare-selection-toolbar--split,
+  #app .prepare-page .prepare-action-row,
+  #app .map-page .map-panel-header,
+  #app .benchmark-page .benchmark-proof-toolbar,
+  #app .benchmark-page .benchmark-proof-meta,
+  #app .benchmark-page .benchmark-hero-summary,
+  #app .benchmark-page .benchmark-hero-facts,
+  #app .data-page .quality-card-head,
+  #app .diagnostics-page .diagnostics-section-intro,
+  #app .diagnostics-page .diagnostics-deck-actions,
+  #app .admin-view .panel-toolbar {
+    align-items: stretch;
+    justify-content: flex-start;
+  }
+
+  #app .prediction-page .context-card-loading,
+  #app .prediction-page .context-alert,
+  #app .prediction-page .history-card,
+  #app .municipality-page .related-card,
+  #app .prepare-page .prepare-selection-summary,
+  #app .prepare-page .prepare-selection-toolbar--split,
+  #app .prepare-page .prepare-action-row,
+  #app .map-page .map-panel-header,
+  #app .benchmark-page .benchmark-proof-toolbar,
+  #app .benchmark-page .benchmark-proof-meta,
+  #app .benchmark-page .benchmark-hero-summary,
+  #app .benchmark-page .benchmark-hero-facts,
+  #app .diagnostics-page .diagnostics-deck-actions {
+    flex-direction: column;
+  }
+
+  #app .analysis-page .analysis-preview-card,
+  #app .analysis-page .guided-readiness-item,
+  #app .analysis-page .focus-chip,
+  #app .prediction-page .preview-signal-card,
+  #app .prediction-page .readiness-item,
+  #app .prediction-page .context-metrics,
+  #app .analysis-page .results-overview,
+  #app .analysis-page .result-band,
+  #app .analysis-page .guided-readiness,
+  #app .analysis-page .hero-story-grid,
+  #app .analysis-page .analysis-preview-grid,
+  #app .prediction-page .preview-signal-grid,
+  #app .prediction-page .workflow-band,
+  #app .prediction-page .input-brief {
+    grid-template-columns: 1fr;
+  }
+
+  #app .market-page .market-rank-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  #app .market-page .market-rank-row .p-tag {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+
+  #app .analysis-table-shell,
+  #app .proof-table-shell,
+  #app .prepare-table-shell,
+  #app .table-shell {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  #app .analysis-table-shell .p-datatable,
+  #app .proof-table-shell .p-datatable,
+  #app .prepare-table-shell .p-datatable,
+  #app .table-shell .p-datatable {
+    min-width: 40rem;
+  }
+
+  #app .market-page .market-hero__actions :is(.p-button, .p-select, .p-inputnumber, .p-inputtext),
+  #app
+    .market-page
+    .market-filters__actions
+    :is(.p-button, .p-select, .p-inputnumber, .p-inputtext),
+  #app .market-page .market-toolbar :is(.p-button, .p-select, .p-inputnumber, .p-inputtext),
+  #app .prediction-page .state-card-actions :is(.p-button, .p-select, .p-inputnumber, .p-inputtext),
+  #app .municipality-page .explore-actions :is(.p-button, .p-select, .p-inputnumber, .p-inputtext),
+  #app
+    .prepare-page
+    .prepare-selection-toolbar
+    :is(.p-button, .p-select, .p-inputnumber, .p-inputtext),
+  #app .prepare-page .prepare-action-row :is(.p-button, .p-select, .p-inputnumber, .p-inputtext),
+  #app
+    .benchmark-page
+    .benchmark-proof-toolbar
+    :is(.p-button, .p-select, .p-inputnumber, .p-inputtext),
+  #app .data-page .state-card-actions :is(.p-button, .p-select, .p-inputnumber, .p-inputtext),
+  #app
+    .diagnostics-page
+    .state-card-actions
+    :is(.p-button, .p-select, .p-inputnumber, .p-inputtext),
+  #app .admin-view .panel-toolbar :is(.p-button, .p-select, .p-inputnumber, .p-inputtext) {
+    width: 100%;
+  }
+
+  #app .data-page .quality-card-value {
+    justify-self: start;
+  }
+
+  #app .map-page .map-shell,
+  #app .map-page .map-container {
+    min-height: 420px;
+  }
+
+  #app .map-page .state-card-overlay {
+    width: 100%;
+  }
+}
+
+@media (max-width: 560px) {
+  #app .map-page .map-shell,
+  #app .map-page .map-container {
+    min-height: 360px;
   }
 }
 

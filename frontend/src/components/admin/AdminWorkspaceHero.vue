@@ -304,4 +304,30 @@
       flex-direction: column;
     }
   }
+
+  @media (max-width: 640px) {
+    .admin-workspace-hero {
+      padding: 1rem;
+    }
+
+    .hero-actions {
+      width: 100%;
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .hero-actions :deep(.p-button),
+    .hero-actions :deep(.p-select),
+    .hero-actions :deep(.p-inputtext) {
+      width: 100%;
+    }
+
+    .hero-nav-card {
+      grid-template-columns: auto 1fr;
+    }
+
+    .hero-nav-arrow {
+      display: none;
+    }
+  }
 </style>

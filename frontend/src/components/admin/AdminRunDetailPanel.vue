@@ -373,4 +373,18 @@
       grid-template-columns: 1fr;
     }
   }
+
+  @media (max-width: 720px) {
+    .run-detail-summary,
+    .timeline-row,
+    .artifact-row {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .run-list-meta,
+    .run-progress {
+      align-self: flex-start;
+    }
+  }
 </style>

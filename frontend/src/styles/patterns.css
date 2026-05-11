@@ -705,6 +705,121 @@
   box-shadow: var(--shadow-sm);
 }
 
+@media (max-width: 980px) {
+  .hero-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .panel-head,
+  .filter-card-head,
+  .section-head,
+  .profile-header,
+  .profile-preview,
+  .modal-actions,
+  .training-hero,
+  .training-hero-status,
+  .story-head {
+    align-items: stretch;
+  }
+
+  .filter-card-head,
+  .section-head,
+  .profile-header,
+  .profile-preview,
+  .modal-actions,
+  .training-hero,
+  .training-hero-status,
+  .story-head {
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 720px) {
+  .card,
+  .panel {
+    padding: 1rem;
+  }
+
+  .state-card,
+  .hero-shell,
+  .filter-shell,
+  .hero-panel,
+  .story-block {
+    padding: 1rem;
+  }
+
+  .hero-shell,
+  .filter-shell {
+    border-radius: var(--radius-md);
+  }
+
+  .hero-panel,
+  .hero-actions-grid,
+  .spotlight-grid,
+  .kpi-grid,
+  .kpi-skeleton-grid,
+  .charts-grid,
+  .grid-2 {
+    grid-template-columns: 1fr;
+  }
+
+  .action-tile.compact,
+  .actions,
+  .filter-actions,
+  .toolbar,
+  .panel-toolbar,
+  .row-actions,
+  .selected-source-card,
+  .source-option,
+  .empty-card,
+  .story-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .search-field,
+  .toolbar-select,
+  .rows-select {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+  }
+
+  .context-chip {
+    align-items: flex-start;
+    border-radius: var(--radius-sm);
+  }
+
+  .context-chip span,
+  .context-chip strong {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+  }
+
+  .actions :is(.p-button, .p-select, .p-inputtext, .p-inputnumber, .p-autocomplete, .p-password),
+  .filter-actions
+    :is(.p-button, .p-select, .p-inputtext, .p-inputnumber, .p-autocomplete, .p-password),
+  .toolbar :is(.p-button, .p-select, .p-inputtext, .p-inputnumber, .p-autocomplete, .p-password),
+  .panel-toolbar
+    :is(.p-button, .p-select, .p-inputtext, .p-inputnumber, .p-autocomplete, .p-password),
+  .row-actions
+    :is(.p-button, .p-select, .p-inputtext, .p-inputnumber, .p-autocomplete, .p-password),
+  .selected-source-card :is(.p-button, .p-select),
+  .source-option :is(.p-button, .p-select),
+  .empty-card :is(.p-button, .p-select) {
+    width: 100%;
+  }
+}
+
+@media (max-width: 560px) {
+  .hero-copy p,
+  .training-hero-copy p,
+  .page-subtitle {
+    font-size: 0.9rem;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .card,
   .panel,

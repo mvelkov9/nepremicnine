@@ -632,6 +632,14 @@
   }
 
   @media (max-width: 900px) {
+    .detail-summary,
+    .detail-actions,
+    .comparable-top,
+    .comparable-bottom {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
     .detail-grid,
     .detail-actions-panel,
     .detail-metrics {
