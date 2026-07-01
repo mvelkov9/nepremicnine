@@ -70,7 +70,7 @@ jobs:
           cache: pip
       - run: pip install -e ".[dev]"
       - run: pytest -v --tb=short --cov=app --cov-report=xml
-      - uses: codecov/codecov-action@v6
+      - uses: codecov/codecov-action@v7
         if: always()
         with:
           file: backend/coverage.xml
@@ -110,7 +110,7 @@ jobs:
           version: 9.15.4
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:coverage
-      - uses: codecov/codecov-action@v6
+      - uses: codecov/codecov-action@v7
         if: always()
         with:
           flags: frontend
